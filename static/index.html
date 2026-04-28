@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrainMesh Agent</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-deep: #0a0e14;
+  --bg-panel: #11161d;
+  --bg-surface: #161c24;
+  --bg-hover: #1c2430;
+  --bg-input: #0d1117;
+  --border: #1e2a36;
+  --border-active: #2d4a5e;
+  --text-primary: #d4dce8;
+  --text-secondary: #7b8ca3;
+  --text-muted: #4a5568;
+  --cyan: #39bae6;
+  --cyan-dim: #1f5a7a;
+  --teal: #3bceb4;
+  --red: #f26d78;
+  --yellow: #ffb454;
+  --green: #7fd962;
+  --purple: #baa1ff;
+  --orange: #ff8f40;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --transition: 180ms ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Title Bar ── */
+.titlebar {
+  height: 42px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 10px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.titlebar-logo {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--cyan);
+  letter-spacing: 0.5px;
+}
+.titlebar-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.titlebar-dot.cyan { background: var(--cyan); }
+.titlebar-dot.teal { background: var(--teal); }
+.titlebar-dot.amber { background: var(--yellow); }
+.titlebar-status {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-indicator {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+  animation: pulse-status 2s ease-in-out infinite;
+}
+@keyframes pulse-status { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── Main Layout ── */
+.main-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Left Panel: History ── */
+.panel-left {
+  width: 300px;
+  min-width: 260px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.panel-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-header .count {
+  margin-left: auto;
+  background: var(--bg-surface);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+.history-list::-webkit-scrollbar { width: 4px; }
+.history-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.history-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+  margin-bottom: 3px;
+  border: 1px solid transparent;
+}
+.history-item:hover { background: var(--bg-hover); }
+.history-item.active {
+  background: var(--bg-surface);
+  border-color: var(--border-active);
+}
+.history-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-item-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.history-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+.badge-running { background: rgba(57,186,230,0.15); color: var(--cyan); }
+.badge-done { background: rgba(127,217,98,0.12); color: var(--green); }
+.badge-failed { background: rgba(242,109,120,0.12); color: var(--red); }
+.badge-draft { background: rgba(122,140,163,0.12); color: var(--text-secondary); }
+.panel-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+.btn-new {
+  flex: 1;
+  padding: 8px 0;
+  background: transparent;
+  border: 1px solid var(--border-active);
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+  font-weight: 500;
+}
+.btn-new:hover { background: rgba(57,186,230,0.08); }
+
+/* ── Center: Canvas ── */
+.panel-center {
+  flex: 1;
+  background: var(--bg-deep);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.canvas-toolbar {
+  height: 36px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 10px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.canvas-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.canvas-toolbar-right { margin-left: auto; display: flex; gap: 4px; }
+.toggle-btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  font-weight: 500;
+}
+.toggle-btn:hover { border-color: var(--text-muted); color: var(--text-secondary); }
+.toggle-btn.active { border-color: var(--cyan-dim); color: var(--cyan); background: rgba(57,186,230,0.1); }
+.canvas-svg-wrap {
+  flex: 1;
+  position: relative;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.canvas-svg-wrap::-webkit-scrollbar { width: 4px; height: 4px; }
+.canvas-svg-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.canvas-placeholder {
+  text-align: center;
+  color: var(--text-muted);
+  position: absolute;
+}
+.canvas-placeholder svg { display: block; margin: 0 auto 16px; opacity: 0.25; }
+.canvas-placeholder p {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+.canvas-placeholder span {
+  font-size: 11px;
+  display: block;
+  margin-top: 4px;
+  opacity: 0.5;
+}
+.canvas-placeholder.hidden { display: none; }
+
+/* ── Right Panel: Chat ── */
+.panel-right {
+  width: 440px;
+  min-width: 380px;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.panel-right .panel-header {
+  justify-content: space-between;
+}
+.session-id {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--cyan-dim);
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.msg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.msg-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 0 2px;
+}
+.msg-label.user { color: var(--cyan); }
+.msg-label.agent { color: var(--teal); }
+.msg-label.system { color: var(--yellow); }
+.msg-label.error { color: var(--red); }
+
+.msg-bubble {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.55;
+  position: relative;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg-bubble code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(0,0,0,0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.msg-bubble .json-block {
+  display: block;
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.35);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  color: var(--teal);
+  border: 1px solid rgba(58,206,180,0.15);
+}
+
+/* markdown rendered styles */
+.msg-bubble h1,.msg-bubble h2,.msg-bubble h3 { font-size: 15px; margin: 10px 0 6px; color: var(--text-primary); }
+.msg-bubble h2 { font-size: 14px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.msg-bubble h3 { font-size: 13px; }
+.msg-bubble ul,.msg-bubble ol { padding-left: 20px; margin: 4px 0; }
+.msg-bubble li { margin: 2px 0; }
+.msg-bubble p { margin: 4px 0; }
+.msg-bubble table { border-collapse: collapse; margin: 8px 0; font-size: 12px; width: 100%; }
+.msg-bubble th,.msg-bubble td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.msg-bubble th { background: rgba(0,0,0,0.25); font-weight: 600; color: var(--cyan); }
+.msg-bubble td { background: rgba(0,0,0,0.1); }
+.msg-bubble pre {
+  margin: 8px 0; padding: 10px 12px;
+  background: rgba(0,0,0,0.35); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+  overflow-x: auto; border: 1px solid var(--border);
+}
+.msg-bubble pre code { background: none; padding: 0; font-size: 11px; }
+.msg-bubble blockquote {
+  border-left: 3px solid var(--cyan-dim); margin: 6px 0; padding: 4px 10px;
+  color: var(--text-secondary); font-style: italic;
+}
+.msg-bubble hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.msg-bubble strong { color: var(--text-primary); font-weight: 600; }
+.msg-bubble a { color: var(--cyan); }
+.msg-bubble.user {
+  background: rgba(57,186,230,0.06);
+  border: 1px solid rgba(57,186,230,0.18);
+  border-radius: var(--radius) var(--radius) 2px var(--radius);
+}
+.msg-bubble.agent {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) var(--radius) 2px;
+}
+.msg-bubble.system {
+  background: rgba(255,180,84,0.05);
+  border: 1px solid rgba(255,180,84,0.15);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.msg-bubble.error {
+  background: rgba(242,109,120,0.06);
+  border: 1px solid rgba(242,109,120,0.2);
+  color: var(--red);
+}
+.msg-bubble.tool {
+  background: rgba(58,206,180,0.05);
+  border: 1px solid rgba(58,206,180,0.18);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.msg-bubble.mesh {
+  background: rgba(186,161,255,0.05);
+  border: 1px solid rgba(186,161,255,0.18);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* thinking animation */
+.thinking-dots { display: inline-flex; gap: 3px; padding: 2px 0; }
+.thinking-dots span {
+  width: 5px; height: 5px; background: var(--text-muted);
+  border-radius: 50%; animation: dot-bounce 1.2s infinite ease-in-out;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-bounce { 0%,80%,100%{opacity:0.2;transform:translateY(0)} 40%{opacity:1;transform:translateY(-4px)} }
+
+/* ── Input Area ── */
+.chat-input-area {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+.chat-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  resize: none;
+  outline: none;
+  transition: border-color var(--transition);
+  min-height: 40px;
+  max-height: 120px;
+  line-height: 1.5;
+}
+.chat-input:focus { border-color: var(--border-active); }
+.chat-input::placeholder { color: var(--text-muted); }
+.btn-send {
+  width: 40px; height: 40px;
+  background: var(--cyan-dim);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+  color: var(--bg-deep);
+  flex-shrink: 0;
+}
+.btn-send:hover { background: var(--cyan); }
+.btn-send:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ── Quick actions ── */
+.quick-actions {
+  padding: 8px 16px 0;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.quick-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.quick-chip:hover {
+  border-color: var(--border-active);
+  color: var(--cyan);
+  background: var(--bg-hover);
+}
+
+/* ── Utility ── */
+.hidden { display: none !important; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { animation: fade-in 0.25s ease; }
+
+/* ── D3 Mesh Visualization ── */
+.mesh-config-toolbar { display: none; align-items: center; gap: 10px; font-size: 13px; }
+.mesh-config-toolbar label { color: var(--text-secondary); }
+.mesh-config-toolbar input {
+  width: 48px; background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: 4px; padding: 4px 6px; text-align: center;
+}
+.mesh-config-toolbar button {
+  background: #238636; color: #fff; border: none; border-radius: 4px;
+  padding: 5px 12px; cursor: pointer; font-size: 12px;
+}
+.mesh-config-toolbar button:hover { background: #2ea043; }
+.mesh-config-toolbar.visible { display: flex; }
+#mesh-npu-count { margin-left: 8px; color: #58a6ff; }
+#mesh-container { width: 100%; height: 100%; overflow: hidden; position: relative; }
+#mesh-container svg { width: 100%; height: 100%; display: block; }
+.dp-shadow { fill: #161b22; stroke: #58a6ff; stroke-width: 2; }
+.dp-card { fill: #161b22; stroke: #58a6ff; stroke-width: 2; }
+.dp-header { fill: #21262d; }
+.pp-card { fill: var(--bg-deep); stroke: #ff8f40; stroke-width: 1; }
+.pp-header { fill: #ff8f40; }
+.tp-rect { fill: #161b22; stroke: #3fb950; stroke-width: 1; }
+.tp-label { fill: #3fb950; font-size: 10px; font-family: sans-serif; }
+.rank-label { fill: var(--text-primary); font-size: 12px; font-family: sans-serif; font-weight: 500; }
+.pp-label { fill: var(--bg-deep); font-size: 13px; font-family: sans-serif; font-weight: bold; }
+.arrow-line { stroke: #484f58; stroke-width: 1; stroke-dasharray: 3,3; fill: none; }
+.arrow-head { fill: #484f58; }
+.info-text { fill: var(--text-secondary); font-size: 11px; font-family: sans-serif; }
+.pp-ellipsis { fill: #161b22; stroke: #ff8f40; stroke-width: 1; }
+.pp-ellipsis-text { fill: var(--text-secondary); font-size: 18px; font-family: sans-serif; font-weight: bold; }
+.pp-ellipsis-dots { fill: #6e7681; font-size: 11px; font-family: sans-serif; }
+#mesh-dp-select { width: 120px; min-width: 120px; background: #0d1117; color: #58a6ff; border: 1px solid #58a6ff; border-radius: 4px; padding: 3px 8px; font-size: 14px; font-family: sans-serif; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<!-- Title Bar -->
+<div class="titlebar">
+  <span class="titlebar-dot cyan"></span>
+  <span class="titlebar-dot teal"></span>
+  <span class="titlebar-dot amber"></span>
+  <span class="titlebar-logo">TRAINMESH / agent</span>
+  <span class="titlebar-status">
+    <span class="status-indicator"></span>
+    <span id="status-text">idle</span>
+  </span>
+</div>
+
+<!-- Main 3-panel -->
+<div class="main-container">
+
+  <!-- LEFT: History -->
+  <aside class="panel-left">
+    <div class="panel-header">📋 历史任务 <span class="count" id="history-count">3</span></div>
+    <div class="history-list" id="history-list"></div>
+    <div class="panel-footer">
+      <button class="btn-new" onclick="newSession()">+ 新任务</button>
+    </div>
+  </aside>
+
+  <!-- CENTER: Canvas -->
+  <main class="panel-center" id="canvas-panel">
+    <div class="canvas-toolbar" id="canvas-toolbar">
+      <span class="canvas-label" id="canvas-label">等待组网数据...</span>
+      <span class="canvas-toolbar-right">
+        <span class="mesh-config-toolbar" id="mesh-config-toolbar">
+          <label>TP: <input id="mesh-tpInput" type="number" value="4" min="1" max="16"></label>
+          <label>PP: <input id="mesh-ppInput" type="number" value="4" min="1" max="32"></label>
+          <label>DP: <input id="mesh-dpInput" type="number" value="4" min="1" max="8"></label>
+          <button onclick="meshRebuild()">Refresh</button>
+          <span id="mesh-npu-count"></span>
+        </span>
+      </span>
+    </div>
+    <div class="canvas-svg-wrap" id="canvas-svg-wrap">
+      <div id="mesh-container"></div>
+      <div class="canvas-placeholder" id="canvas-placeholder">
+        <svg width="120" height="100" viewBox="0 0 120 100"><rect width="120" height="100" rx="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/><text x="60" y="48" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="11" opacity="0.6">Canvas</text><text x="60" y="66" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="9" opacity="0.35">生成组网后自动渲染</text></svg>
+        <p>组网拓扑画布</p>
+        <span>通过 Agent 生成组网后在此可视化</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT: Chat -->
+  <aside class="panel-right">
+    <div class="panel-header">
+      <span>💬 Agent 交互</span>
+      <span class="session-id" id="session-id-display">—</span>
+    </div>
+
+    <div class="quick-actions" id="quick-actions">
+      <span class="quick-chip" onclick="sendQuick('请帮我生成原始模型: 设备类型A3, DP=8, TP=4, PP=2')">A3 DP8 TP4 PP2</span>
+      <span class="quick-chip" onclick="sendQuick('请帮我生成最小等效模型: 设备类型A5, DP=4, TP=4, PP=4')">A5 DP4 TP4 PP4</span>
+      <span class="quick-chip" onclick="sendQuick('请对比分析原始模型和最小等效模型的仿真结果')">对比分析</span>
+    </div>
+
+    <div class="chat-messages" id="chat-messages">
+      <div class="msg-group fade-in">
+        <span class="msg-label agent">TrainMesh Agent</span>
+        <div class="msg-bubble agent">欢迎使用 TrainMesh Agent。输入组网参数开始仿真测试。</div>
+      </div>
+
+      <div class="msg-group fade-in">
+        <span class="msg-label system">建议</span>
+        <div class="msg-bubble system">试试下方的快捷操作，或直接输入组网参数（设备类型 + DP/TP/PP）</div>
+      </div>
+    </div>
+
+    <div class="chat-input-area">
+      <textarea class="chat-input" id="chat-input" placeholder="输入消息..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
+      <button class="btn-send" id="btn-send" onclick="sendMessage()">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6L8 14l-2-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+const API = '/api';
+let sessionId = '';
+let isStreaming = false;
+
+// ── Mock history ──
+const mockHistory = [
+  { id: 's1', title: 'A3 DP8/TP4/PP2 → A5 DP4/TP4/PP4', time: '2 分钟前', status: 'done', active: true },
+  { id: 's2', title: 'A2 DP4/TP2/PP1 基础验证', time: '1 小时前', status: 'done', active: false },
+  { id: 's3', title: 'A5 DP16/TP8/PP4 大规模测试', time: '3 小时前', status: 'running', active: false },
+];
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  document.getElementById('history-count').textContent = mockHistory.length;
+  list.innerHTML = mockHistory.map(h => `
+    <div class="history-item ${h.active ? 'active' : ''} fade-in" onclick="selectHistory('${h.id}')">
+      <div class="history-item-title">${h.title}</div>
+      <div class="history-item-meta">
+        <span>${h.time}</span>
+        <span class="history-badge badge-${h.status}">${h.status === 'running' ? '运行中' : h.status === 'done' ? '已完成' : '草稿'}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectHistory(id) {
+  mockHistory.forEach(h => h.active = h.id === id);
+  renderHistory();
+}
+
+// ── Session ──
+async function ensureSession() {
+  if (sessionId) return sessionId;
+  const resp = await fetch(`${API}/session`, { method: 'POST' });
+  const data = await resp.json();
+  sessionId = data.session_id;
+  document.getElementById('session-id-display').textContent = sessionId;
+  return sessionId;
+}
+
+function newSession() {
+  sessionId = '';
+  document.getElementById('session-id-display').textContent = '—';
+  document.getElementById('chat-messages').innerHTML = `
+    <div class="msg-group fade-in">
+      <span class="msg-label agent">TrainMesh Agent</span>
+      <div class="msg-bubble agent">新任务已创建。输入组网参数开始。</div>
+    </div>`;
+  ensureSession();
+}
+
+// ── Chat rendering ──
+function formatContent(content) {
+  if (typeof content !== 'string') content = String(content);
+  // Render markdown via marked, keeping it safe (marked escapes HTML by default)
+  let html = marked.parse(content);
+  // Highlight inline JSON blocks with special styling
+  html = html.replace(/(\{[\s\S]*?"[\s\S]*?\})/g, (m) => {
+    try { JSON.parse(m); return `<span class="json-block">${m}</span>`; } catch { return m; }
+  });
+  return html;
+}
+
+function addMessage(role, content, extraClass = '') {
+  const container = document.getElementById('chat-messages');
+  const labelMap = { user: '您', agent: 'Agent', system: '系统', error: '错误', tool: '工具', mesh: '生成' };
+  const label = labelMap[role] || 'Agent';
+  const group = document.createElement('div');
+  group.className = `msg-group fade-in`;
+  group.innerHTML = `
+    <span class="msg-label ${role}">${label}</span>
+    <div class="msg-bubble ${role} ${extraClass}">${formatContent(content)}</div>`;
+  container.appendChild(group);
+  container.scrollTop = container.scrollHeight;
+  return group;
+}
+
+function addThinking() {
+  const container = document.getElementById('chat-messages');
+  const group = document.createElement('div');
+  group.className = 'msg-group fade-in';
+  group.id = 'thinking-group';
+  group.innerHTML = `
+    <span class="msg-label agent">Agent</span>
+    <div class="msg-bubble agent"><div class="thinking-dots"><span></span><span></span><span></span></div></div>`;
+  container.appendChild(group);
+  container.scrollTop = container.scrollHeight;
+  return group;
+}
+
+function removeThinking() {
+  const el = document.getElementById('thinking-group');
+  if (el) el.remove();
+}
+
+function setStatus(text) {
+  document.getElementById('status-text').textContent = text;
+}
+
+// ── SSE Streaming ──
+async function sendMessage(text) {
+  const input = text || document.getElementById('chat-input').value.trim();
+  if (!input || isStreaming) return;
+  if (!text) document.getElementById('chat-input').value = '';
+
+  isStreaming = true;
+  document.getElementById('btn-send').disabled = true;
+  setStatus('thinking');
+
+  await ensureSession();
+  addMessage('user', input);
+  addThinking();
+
+  try {
+    const resp = await fetch(`${API}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, message: input }),
+    });
+
+    if (!resp.ok) {
+      removeThinking();
+      addMessage('error', `请求失败: HTTP ${resp.status}`);
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6);
+          if (!dataStr) continue;
+          try {
+            const data = JSON.parse(dataStr);
+            handleSSEEvent(eventType, data);
+          } catch (e) {
+            console.warn('SSE parse error:', e, dataStr);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    removeThinking();
+    addMessage('error', `连接异常: ${e.message}`);
+  } finally {
+    isStreaming = false;
+    document.getElementById('btn-send').disabled = false;
+    document.getElementById('chat-input').focus();
+    setStatus('idle');
+  }
+}
+
+function handleSSEEvent(type, data) {
+  removeThinking();
+  switch (type) {
+    case 'thinking':
+      setStatus('thinking');
+      addMessage('agent', data.message || '正在思考...');
+      break;
+    case 'tool_call':
+      setStatus('calling');
+      const toolName = data.data?.tool_name || '';
+      const args = data.data?.arguments ? JSON.stringify(data.data.arguments, null, 2) : '';
+      addMessage('tool', `🔧 ${toolName}${args ? '\n' + args : ''}`);
+      break;
+    case 'guard_check':
+      setStatus('validating');
+      const passed = data.data?.passed;
+      const errs = data.data?.errors || [];
+      const warns = data.data?.warnings || [];
+      const guardMsg = passed
+        ? '✅ 护栏校验通过'
+        : '❌ ' + errs.join('; ');
+      addMessage(passed ? 'system' : 'error', guardMsg + (warns.length ? '\n⚠️ ' + warns.join('; ') : ''));
+      break;
+    case 'mesh_json':
+      setStatus('generated');
+      const topoData = data.data || data;
+      const summary = `📦 ${topoData.name || ''}\n节点数: ${topoData.total_nodes || 0}  |  DP×TP×PP = ${topoData.dp_size || 0}×${topoData.tp_size || 0}×${topoData.pp_size || 0}\n通信域: dp=${topoData.comm_dp_groups ?? (topoData.communication_groups?.dp || []).length}  tp=${topoData.comm_tp_groups ?? (topoData.communication_groups?.tp || []).length}  pp=${topoData.comm_pp_groups ?? (topoData.communication_groups?.pp || []).length}`;
+      addMessage('mesh', summary, 'mesh');
+      loadMeshData(topoData);
+      break;
+    case 'message':
+      setStatus('responding');
+      addMessage('agent', data.message || '');
+      break;
+    case 'done':
+      setStatus('idle');
+      break;
+    case 'error':
+      setStatus('error');
+      addMessage('error', data.message || data.data?.error || '未知错误');
+      break;
+  }
+}
+
+// ── D3 Mesh Topology Rendering ──
+var meshOriginal = null;    // { name, device_type, tp, pp, dp }
+var meshEquivalent = null;
+var meshOrigDp = 0;
+var meshEqDp = 0;
+
+function meshBuildData(tp, pp, dpCount, activeDp) {
+  var ranksPerDp = pp * tp;
+  var dpBase = activeDp * ranksPerDp;
+  return {
+    config: { tpCount: tp, ppCount: pp, dpCount: dpCount, activeDp: activeDp },
+    dp: { id: activeDp, label: "DP " + activeDp, isTop: true, stackCount: dpCount, stackIndex: activeDp },
+    pp: d3.range(pp).map(function(pi) {
+      return {
+        id: pi, label: "PP" + pi,
+        tps: d3.range(tp).map(function(ti) {
+          return { id: ti, label: "TP" + ti, rank: "Rank" + (dpBase + pi * tp + ti) };
+        })
+      };
+    })
+  };
+}
+
+var MESH_CARD = {
+  dpShadowOffset: [[90,90],[60,60],[30,30]],
+  tpPadX: 16, tpPadY: 16, headerH: 42,
+  ppGap: 12, ppHeaderH: 24,
+  tpW: 82, tpH: 42, tpGap: 14,
+  maxPpDisplay: 8
+};
+
+var meshWidth = 600, meshHeight = 400;
+
+function meshUpdateSize() {
+  var wrap = document.getElementById("canvas-svg-wrap");
+  meshWidth = wrap.clientWidth || 600;
+  meshHeight = wrap.clientHeight || 400;
+}
+
+function meshBuildDisplayList(ppList) {
+  var total = ppList.length;
+  if (total <= MESH_CARD.maxPpDisplay) {
+    return ppList.map(function(p) { return { type: "pp", data: p }; });
+  }
+  var result = [];
+  for (var i = 0; i < 3; i++) result.push({ type: "pp", data: ppList[i] });
+  result.push({ type: "ellipsis", hiddenStart: 3, hiddenEnd: total - 5, total: total });
+  for (var j = total - 4; j < total; j++) result.push({ type: "pp", data: ppList[j] });
+  return result;
+}
+
+function _meshCalcDims(tp, pp) {
+  var tpCount = tp;
+  var displayCount = Math.min(MESH_CARD.maxPpDisplay, pp);
+  var ppW = 115, ellipsisH = 100;
+  var ppH = MESH_CARD.tpPadY * 2 + MESH_CARD.ppHeaderH + tpCount * (MESH_CARD.tpH + MESH_CARD.tpGap) - MESH_CARD.tpGap + 20;
+  var ppTotalW = displayCount * ppW + (displayCount - 1) * MESH_CARD.ppGap;
+  var dpW = ppTotalW + MESH_CARD.tpPadX * 2;
+  var dpH = Math.max(ppH, ellipsisH) + MESH_CARD.headerH + 80;
+  return { dpW: dpW, dpH: dpH };
+}
+
+function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW, viewH, sharedScale) {
+  var cfg = data.config;
+  var ppList = data.pp;
+  var displayList = meshBuildDisplayList(ppList);
+  var tpCount = ppList[0].tps.length;
+  var displayCount = displayList.length;
+
+  var ppW = 115, ellipsisH = 100;
+  var ppH = MESH_CARD.tpPadY * 2 + MESH_CARD.ppHeaderH + tpCount * (MESH_CARD.tpH + MESH_CARD.tpGap) - MESH_CARD.tpGap + 20;
+  var ppTotalW = displayCount * ppW + (displayCount - 1) * MESH_CARD.ppGap;
+  var dpW = ppTotalW + MESH_CARD.tpPadX * 2;
+  var dpH = Math.max(ppH, ellipsisH) + MESH_CARD.headerH + 80;
+
+  var scale = sharedScale || Math.min(1, viewW * 0.72 / dpW, viewH * 0.72 / dpH);
+  var dpX = viewX + (viewW - dpW * scale) / 2;
+  var dpY = viewY + 8 * scale;
+
+  // DP Stack shadows
+  var shadowG = parentG.append("g").attr("class", "dp-shadows");
+  MESH_CARD.dpShadowOffset.forEach(function(off, i) {
+    shadowG.append("rect")
+      .attr("x", dpX + off[0] * scale).attr("y", dpY + off[1] * scale)
+      .attr("width", dpW * scale).attr("height", dpH * scale)
+      .attr("rx", 14 * scale).attr("ry", 14 * scale)
+      .attr("class", "dp-shadow").attr("opacity", 0.4 + i * 0.15);
+  });
+
+  // Main DP Card
+  var dpG = parentG.append("g").attr("class", "dp-card-group");
+  dpG.append("rect")
+    .attr("x", dpX).attr("y", dpY).attr("width", dpW * scale).attr("height", dpH * scale)
+    .attr("rx", 14 * scale).attr("ry", 14 * scale).attr("class", "dp-card");
+
+  // Header
+  var hdrH = MESH_CARD.headerH * scale;
+  dpG.append("rect").attr("x", dpX).attr("y", dpY).attr("width", dpW * scale).attr("height", hdrH)
+    .attr("rx", 14 * scale).attr("ry", 14 * scale).attr("class", "dp-header");
+  dpG.append("rect").attr("x", dpX).attr("y", dpY + hdrH / 2).attr("width", dpW * scale).attr("height", hdrH / 2)
+    .attr("class", "dp-header");
+
+  // DP select dropdown
+  var fo = dpG.append("foreignObject")
+    .attr("x", dpX + 20 * scale).attr("y", dpY + 6 * scale)
+    .attr("width", 200 * scale).attr("height", 40 * scale);
+  fo.append("xhtml:div").style("display", "inline-block")
+    .html('<select id="' + dpSelectId + '" onchange="' + switchFn + '(parseInt(this.value))" style="font-size:' + (14 * scale) + 'px;min-width:' + (120 * scale) + 'px;background:' + (scale < 0.7 ? '#11161d' : '#0d1117') + ';color:#58a6ff;border:1px solid #58a6ff;border-radius:4px;padding:2px 6px;font-family:sans-serif;cursor:pointer;"></select>');
+
+  // Info text
+  var npuTotal = cfg.tpCount * cfg.ppCount * cfg.dpCount;
+  var hiddenInfo = cfg.ppCount > MESH_CARD.maxPpDisplay ? "" : "";
+  var infoText = "TP" + cfg.tpCount + "×PP" + cfg.ppCount + "×DP" + cfg.dpCount + " | " + npuTotal + " NPUs";
+
+  dpG.append("text")
+    .attr("x", dpX + dpW * scale - 20 * scale).attr("y", dpY + 25 * scale)
+    .attr("text-anchor", "end").attr("class", "info-text")
+    .attr("font-size", Math.max(8, 11 * scale) + "px").text(infoText);
+
+  // PP Cards
+  var ppStartX = dpX + MESH_CARD.tpPadX * scale;
+  var ppStartY = dpY + hdrH + 20 * scale;
+
+  displayList.forEach(function(item, di) {
+    var px = ppStartX + di * (ppW + MESH_CARD.ppGap) * scale;
+    var py = ppStartY;
+
+    if (item.type === "ellipsis") {
+      var eY = py + (ppH - ellipsisH) * scale / 2;
+      var eG = parentG.append("g").attr("class", "pp-ellipsis-group");
+      eG.append("rect").attr("x", px).attr("y", eY).attr("width", ppW * scale).attr("height", ellipsisH * scale)
+        .attr("rx", 8 * scale).attr("ry", 8 * scale).attr("class", "pp-ellipsis");
+      eG.append("text").attr("x", px + ppW * scale / 2).attr("y", eY + ellipsisH * scale / 2 + 6 * scale)
+        .attr("text-anchor", "middle").attr("class", "pp-ellipsis-text")
+        .attr("font-size", Math.max(10, 18 * scale) + "px").text("...");
+      eG.append("title").text("PP" + item.hiddenStart + " ~ PP" + item.hiddenEnd);
+      return;
+    }
+
+    var pp = item.data;
+    var ppG = parentG.append("g").attr("class", "pp-group");
+    ppG.append("rect").attr("x", px).attr("y", py).attr("width", ppW * scale).attr("height", ppH * scale)
+      .attr("rx", 8 * scale).attr("ry", 8 * scale).attr("class", "pp-card");
+    ppG.append("rect").attr("x", px).attr("y", py).attr("width", ppW * scale).attr("height", MESH_CARD.ppHeaderH * scale)
+      .attr("rx", 8 * scale).attr("ry", 8 * scale).attr("class", "pp-header");
+    ppG.append("rect").attr("x", px).attr("y", py + MESH_CARD.ppHeaderH * scale / 2)
+      .attr("width", ppW * scale).attr("height", MESH_CARD.ppHeaderH * scale / 2).attr("class", "pp-header");
+    ppG.append("text").attr("x", px + ppW * scale / 2).attr("y", py + 17 * scale)
+      .attr("text-anchor", "middle").attr("class", "pp-label")
+      .attr("font-size", Math.max(9, 13 * scale) + "px").text(pp.label);
+
+    var tpX = px + (ppW - MESH_CARD.tpW) * scale / 2;
+    var tpY = py + MESH_CARD.ppHeaderH * scale + MESH_CARD.tpPadY * scale;
+    pp.tps.forEach(function(tp, ti) {
+      var ty = tpY + ti * (MESH_CARD.tpH + MESH_CARD.tpGap) * scale;
+      ppG.append("rect").attr("x", tpX).attr("y", ty).attr("width", MESH_CARD.tpW * scale).attr("height", MESH_CARD.tpH * scale)
+        .attr("rx", 4 * scale).attr("ry", 4 * scale).attr("class", "tp-rect");
+      ppG.append("text").attr("x", tpX + MESH_CARD.tpW * scale - 4 * scale).attr("y", ty + 11 * scale)
+        .attr("text-anchor", "end").attr("class", "tp-label")
+        .attr("font-size", Math.max(7, 10 * scale) + "px").text(tp.label);
+      ppG.append("text").attr("x", tpX + MESH_CARD.tpW * scale / 2).attr("y", ty + MESH_CARD.tpH * scale / 2 + 4 * scale)
+        .attr("text-anchor", "middle").attr("class", "rank-label")
+        .attr("font-size", Math.max(8, 12 * scale) + "px").text(tp.rank);
+    });
+
+    if (di < displayList.length - 1) {
+      var ax1 = px + ppW * scale + 2 * scale;
+      var ax2 = px + (ppW + MESH_CARD.ppGap) * scale - 2 * scale;
+      var ay = py + ppH * scale / 2;
+      parentG.append("line").attr("x1", ax1).attr("y1", ay).attr("x2", ax2 - 6 * scale).attr("y2", ay).attr("class", "arrow-line");
+      parentG.append("polygon")
+        .attr("points", ax2+","+ay+" "+(ax2-5*scale)+","+(ay-3*scale)+" "+(ax2-5*scale)+","+(ay+3*scale))
+        .attr("class", "arrow-head");
+    }
+  });
+}
+
+function _populateDpSelect(selId, dpCount, activeDp) {
+  var sel = document.getElementById(selId);
+  if (!sel) return;
+  sel.innerHTML = "";
+  for (var i = 0; i < dpCount; i++) {
+    var opt = document.createElement("option");
+    opt.value = i; opt.textContent = "DP " + i;
+    if (i === activeDp) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function meshSwitchDp(dpIndex) { meshOrigDp = dpIndex; meshRebuild(); }
+function meshSwitchDpOrig(dpIndex) { meshOrigDp = dpIndex; meshRebuild(); }
+function meshSwitchDpEq(dpIndex) { meshEqDp = dpIndex; meshRebuild(); }
+
+function _meshNpuTotal(entry) { return entry.tp * entry.pp * entry.dp; }
+
+function meshRebuild() {
+  var container = d3.select("#mesh-container");
+  container.selectAll("svg").remove();
+  meshUpdateSize();
+
+  if (!meshOriginal && !meshEquivalent) return;
+
+  var toolbar = document.getElementById("mesh-config-toolbar");
+  toolbar.classList.add("visible");
+  document.getElementById("canvas-placeholder").classList.add("hidden");
+
+  if (meshOriginal && meshEquivalent) {
+    // ── Compare Mode ──
+    document.getElementById("mesh-tpInput").parentElement.style.display = "none";
+    document.getElementById("mesh-ppInput").parentElement.style.display = "none";
+    document.getElementById("mesh-dpInput").parentElement.style.display = "none";
+    toolbar.querySelector("button").style.display = "none";
+    document.getElementById("mesh-npu-count").textContent = "原始模型 " + _meshNpuTotal(meshOriginal) + " NPUs  |  最小等效模型 " + _meshNpuTotal(meshEquivalent) + " NPUs";
+    document.getElementById("canvas-label").textContent = (meshOriginal.name || "原始模型") + "  vs  " + (meshEquivalent.name || "最小等效模型");
+
+    var titleH = 26, gap = 24;
+    var availableW = meshWidth - gap;
+    var contentH = meshHeight - titleH;
+
+    var dimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
+    var dimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
+    var origShare = dimsOrig.dpW / (dimsOrig.dpW + dimsEq.dpW);
+    origShare = Math.max(0.45, Math.min(0.6, origShare));
+    var origW = availableW * origShare;
+    var eqW = availableW * (1 - origShare);
+    var dividerX = origW + gap / 2;
+
+    var scaleOrig = Math.min(1, origW * 0.72 / dimsOrig.dpW, contentH * 0.72 / dimsOrig.dpH);
+    var scaleEq = Math.min(1, eqW * 0.72 / dimsEq.dpW, contentH * 0.72 / dimsEq.dpH);
+    var sharedScale = Math.min(scaleOrig, scaleEq);
+
+    var svg = container.append("svg")
+      .attr("viewBox", "0 0 " + meshWidth + " " + meshHeight)
+      .attr("preserveAspectRatio", "xMidYMid meet");
+
+    svg.append("text").attr("x", origW / 2).attr("y", titleH - 8)
+      .attr("text-anchor", "middle").attr("fill", "#58a6ff")
+      .attr("font-family", "sans-serif").attr("font-size", "13px").attr("font-weight", "bold")
+      .text(meshOriginal.name || "原始模型");
+    svg.append("text").attr("x", origW + gap + eqW / 2).attr("y", titleH - 8)
+      .attr("text-anchor", "middle").attr("fill", "#58a6ff")
+      .attr("font-family", "sans-serif").attr("font-size", "13px").attr("font-weight", "bold")
+      .text(meshEquivalent.name || "最小等效模型");
+
+    _meshBuildView(svg.append("g"), meshBuildData(meshOriginal.tp, meshOriginal.pp, meshOriginal.dp, meshOrigDp),
+      "mesh-dp-sel-orig", "meshSwitchDpOrig", 0, titleH, origW, contentH, sharedScale);
+    _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
+
+    _meshBuildView(svg.append("g"), meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
+      "mesh-dp-sel-eq", "meshSwitchDpEq", origW + gap, titleH, eqW, contentH, sharedScale);
+    _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
+
+  } else {
+    // ── Single View Mode ──
+    var entry = meshOriginal || meshEquivalent;
+    if (meshOrigDp >= entry.dp) meshOrigDp = entry.dp - 1;
+
+    document.getElementById("mesh-tpInput").value = entry.tp;
+    document.getElementById("mesh-ppInput").value = entry.pp;
+    document.getElementById("mesh-dpInput").value = entry.dp;
+    document.getElementById("mesh-tpInput").parentElement.style.display = "";
+    document.getElementById("mesh-ppInput").parentElement.style.display = "";
+    document.getElementById("mesh-dpInput").parentElement.style.display = "";
+    toolbar.querySelector("button").style.display = "";
+    document.getElementById("mesh-npu-count").textContent = "Total NPUs: " + _meshNpuTotal(entry);
+    document.getElementById("canvas-label").textContent = (entry.name || "组网拓扑") + " | " + (entry.device_type || "") + "  DP" + entry.dp + "×TP" + entry.tp + "×PP" + entry.pp;
+
+    var data = meshBuildData(entry.tp, entry.pp, entry.dp, meshOrigDp);
+    var svg = container.append("svg")
+      .attr("viewBox", "0 0 " + meshWidth + " " + meshHeight)
+      .attr("preserveAspectRatio", "xMidYMid meet");
+    _meshBuildView(svg, data, "mesh-dp-select", "meshSwitchDp", 0, 0, meshWidth, meshHeight);
+    _populateDpSelect("mesh-dp-select", entry.dp, meshOrigDp);
+  }
+}
+
+function loadMeshData(topoData) {
+  var tp = topoData.tp_size || topoData.tp || 4;
+  var pp = topoData.pp_size || topoData.pp || 4;
+  var dp = topoData.dp_size || topoData.dp || 4;
+  var rawName = topoData.name || "";
+  var name = rawName.indexOf("原始") !== -1 ? "原始模型" : rawName.indexOf("等效") !== -1 ? "最小等效模型" : rawName;
+  var entry = { name: name, device_type: topoData.device_type || "", tp: tp, pp: pp, dp: dp };
+
+  if (name.indexOf("原始") !== -1) { meshOriginal = entry; meshOrigDp = 0; }
+  else { meshEquivalent = entry; meshEqDp = 0; }
+  meshRebuild();
+}
+
+window.addEventListener("resize", function() {
+  if (meshOriginal || meshEquivalent) meshRebuild();
+});
+
+
+function handleKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function sendQuick(text) {
+  document.getElementById('chat-input').value = text;
+  sendMessage();
+}
+
+// ── Init ──
+renderHistory();
+ensureSession();
+document.getElementById('chat-input').focus();
+</script>
+</body>
+</html>

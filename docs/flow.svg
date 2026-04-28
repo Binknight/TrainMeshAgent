@@ -1,0 +1,377 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1250 1850" font-family="'Segoe UI','Microsoft YaHei',Arial,sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#475569"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#10b981"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444"/>
+    </marker>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1e3a5f"/>
+      <stop offset="100%" style="stop-color:#2563eb"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.1"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1250" height="1850" fill="#f8fafc"/>
+
+  <!-- Title Bar -->
+  <rect x="0" y="0" width="1250" height="48" fill="url(#headerGrad)"/>
+  <text x="625" y="31" text-anchor="middle" fill="#fff" font-size="17" font-weight="bold">TrainMesh Agent — 业务流程图 (Business Process Flow)</text>
+
+  <!-- ==================== SWIMLANES ==================== -->
+  <!-- Lane 1: User -->
+  <rect x="10" y="62" width="1230" height="98" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1" rx="6"/>
+  <text x="30" y="84" fill="#4338ca" font-size="13" font-weight="bold">👤 测试人员 (User)</text>
+
+  <!-- Lane 2: Frontend -->
+  <rect x="10" y="168" width="1230" height="290" fill="#f0fdf4" stroke="#86efac" stroke-width="1" rx="6"/>
+  <text x="30" y="190" fill="#166534" font-size="13" font-weight="bold">🌐 前端展示层 (Web Frontend)</text>
+
+  <!-- Lane 3: Agent Core -->
+  <rect x="10" y="466" width="1230" height="372" fill="#eff6ff" stroke="#60a5fa" stroke-width="1" rx="6"/>
+  <text x="30" y="488" fill="#1d4ed8" font-size="13" font-weight="bold">🧠 Agent 核心服务 (Agent Core)</text>
+
+  <!-- Lane 4: Guards -->
+  <rect x="10" y="846" width="600" height="98" fill="#fff7ed" stroke="#fdba74" stroke-width="1" rx="6"/>
+  <text x="30" y="868" fill="#c2410c" font-size="13" font-weight="bold">🛡️ 护栏系统 (Guardrails)</text>
+
+  <!-- Lane 5: Skill Engine -->
+  <rect x="618" y="846" width="622" height="98" fill="#fdf4ff" stroke="#d8b4fe" stroke-width="1" rx="6"/>
+  <text x="638" y="868" fill="#7c3aed" font-size="13" font-weight="bold">🔧 Skill 引擎</text>
+
+  <!-- Lane 6: MCP / Simulation -->
+  <rect x="10" y="952" width="1230" height="600" fill="#fef2f2" stroke="#fca5a5" stroke-width="1" rx="6"/>
+  <text x="30" y="974" fill="#991b1b" font-size="13" font-weight="bold">⚙️ MCP Client + 仿真系统 (Simulation System)</text>
+
+  <!-- Lane 7: Output/Analysis -->
+  <rect x="10" y="1560" width="1230" height="270" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1" rx="6"/>
+  <text x="30" y="1582" fill="#5b21b6" font-size="13" font-weight="bold">📊 分析输出层 (Analysis &amp; Output)</text>
+
+  <!-- ==================== FLOW NODES ==================== -->
+
+  <!-- === USER LANE === -->
+  <!-- U1: Open Web UI -->
+  <rect x="200" y="80" width="180" height="42" rx="20" fill="#6366f1" filter="url(#shadow)"/>
+  <text x="290" y="106" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">🔓 打开 Web 交互界面</text>
+
+  <!-- U2: Input Topology -->
+  <rect x="480" y="80" width="220" height="42" rx="20" fill="#6366f1" filter="url(#shadow)"/>
+  <text x="590" y="98" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">📝 输入原始组网参数</text>
+  <text x="590" y="114" text-anchor="middle" fill="#e0e7ff" font-size="9">设备类型 DP TP PP</text>
+
+  <!-- U3: Input Equivalent -->
+  <rect x="790" y="80" width="220" height="42" rx="20" fill="#6366f1" filter="url(#shadow)"/>
+  <text x="900" y="98" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">📝 输入等效组网参数</text>
+  <text x="900" y="114" text-anchor="middle" fill="#e0e7ff" font-size="9">设备类型 DP TP PP</text>
+
+  <!-- U4: Confirm -->
+  <rect x="820" y="1180" width="180" height="42" rx="20" fill="#6366f1" filter="url(#shadow)"/>
+  <text x="910" y="1198" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">✅ 确认组网·发起仿真</text>
+  <text x="910" y="1214" text-anchor="middle" fill="#e0e7ff" font-size="9">检查无误后继续</text>
+
+  <!-- U5: Review Results -->
+  <rect x="510" y="1590" width="230" height="60" rx="8" fill="#fff" stroke="#a5b4fc" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="625" y="1612" text-anchor="middle" fill="#4338ca" font-size="12" font-weight="bold">👀 审查对比分析结果</text>
+  <text x="625" y="1632" text-anchor="middle" fill="#6b7280" font-size="10">计算强度 · 内存占用 · 通信流量</text>
+  <text x="625" y="1646" text-anchor="middle" fill="#6b7280" font-size="10">等效性判定 · 误差范围</text>
+
+  <!-- Arrows U1→U2, U2→U3 -->
+  <line x1="380" y1="101" x2="470" y2="101" stroke="#a5b4fc" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="700" y1="101" x2="780" y2="101" stroke="#a5b4fc" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- === FRONTEND LANE === -->
+
+  <!-- F1: Receive Input → Guard -->
+  <rect x="100" y="190" width="200" height="50" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="200" y="212" text-anchor="middle" fill="#166534" font-size="11" font-weight="bold">📨 接收用户输入</text>
+  <text x="200" y="230" text-anchor="middle" fill="#6b7280" font-size="9">转发至 Agent Core</text>
+
+  <!-- F2: Topo render box -->
+  <rect x="420" y="190" width="220" height="50" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="530" y="212" text-anchor="middle" fill="#166534" font-size="11" font-weight="bold">🗺️ 渲染原始组网图</text>
+  <text x="530" y="230" text-anchor="middle" fill="#6b7280" font-size="9">基于 JSON 拓扑数据</text>
+
+  <rect x="740" y="190" width="220" height="50" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="850" y="212" text-anchor="middle" fill="#166534" font-size="11" font-weight="bold">🗺️ 渲染等效组网图</text>
+  <text x="850" y="230" text-anchor="middle" fill="#6b7280" font-size="9">基于 JSON 拓扑数据</text>
+
+  <!-- F3: Side by side -->
+  <rect x="420" y="280" width="540" height="50" rx="8" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="690" y="302" text-anchor="middle" fill="#166534" font-size="11" font-weight="bold">📐 原始组网 ↔ 等效组网 同屏对比展示</text>
+  <text x="690" y="320" text-anchor="middle" fill="#6b7280" font-size="9">拓扑结构视觉对比 · 差异节点高亮标注</text>
+
+  <!-- F4: Status display -->
+  <rect x="100" y="360" width="300" height="45" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="250" y="382" text-anchor="middle" fill="#166534" font-size="11" font-weight="bold">📡 仿真状态实时展示</text>
+  <text x="250" y="398" text-anchor="middle" fill="#6b7280" font-size="9">进度条 · 日志流 · 中间状态</text>
+
+  <!-- F5: Results display -->
+  <rect x="250" y="1700" width="740" height="55" rx="8" fill="#fff" stroke="#a5b4fc" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="620" y="1722" text-anchor="middle" fill="#4338ca" font-size="12" font-weight="bold">📊 等效性验证结果展示</text>
+  <text x="620" y="1740" text-anchor="middle" fill="#6b7280" font-size="10">对比报告 · 指标差异表 · 误差热力图 · 验证结论 (通过/不通过)</text>
+
+  <!-- Arrows -->
+  <path d="M 300 240 L 300 360 L 410 305" stroke="#86efac" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 410 215 L 350 215 L 350 240" stroke="#86efac" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 640 240 L 640 270" stroke="#86efac" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 850 240 L 850 270" stroke="#86efac" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- === AGENT CORE LANE === -->
+
+  <!-- A1: Parse intent -->
+  <rect x="100" y="490" width="200" height="50" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="200" y="512" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="bold">🧭 LLM 意图识别</text>
+  <text x="200" y="530" text-anchor="middle" fill="#6b7280" font-size="9">解析拓扑生成 / 仿真请求</text>
+
+  <!-- A2: Call gen skill -->
+  <rect x="380" y="490" width="200" height="50" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="480" y="512" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="bold">📋 调度 Gen Skill</text>
+  <text x="480" y="530" text-anchor="middle" fill="#6b7280" font-size="9">training-mesh-gen-skill</text>
+
+  <!-- A3: Call gen skill again -->
+  <rect x="660" y="490" width="200" height="50" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="760" y="512" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="bold">📋 调度 Gen Skill</text>
+  <text x="760" y="530" text-anchor="middle" fill="#6b7280" font-size="9">training-mesh-gen-skill</text>
+
+  <!-- A4: Receive JSON -->
+  <rect x="380" y="580" width="480" height="50" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="620" y="602" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="bold">📦 接收结构化 JSON 组网对象 (原始 + 等效)</text>
+  <text x="620" y="620" text-anchor="middle" fill="#6b7280" font-size="9">分别保存至会话上下文</text>
+
+  <!-- A5: Dispatch simulation -->
+  <rect x="380" y="680" width="480" height="50" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="620" y="702" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="bold">🚀 MCP Client 下发双仿真任务</text>
+  <text x="620" y="720" text-anchor="middle" fill="#6b7280" font-size="9">原始组网仿真 + 等效组网仿真 并行 / 串行</text>
+
+  <!-- A6: Receive sim results -->
+  <rect x="380" y="760" width="480" height="50" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="620" y="782" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="bold">📥 MCP Client 回收双份仿真结果</text>
+  <text x="620" y="800" text-anchor="middle" fill="#6b7280" font-size="9">状态报告 · 仿真指标 · 单卡详情</text>
+
+  <!-- Arrows -->
+  <line x1="300" y1="515" x2="370" y2="515" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="580" y1="515" x2="650" y2="515" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <path d="M 480 540 L 480 570" stroke="#60a5fa" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 760 540 L 760 570" stroke="#60a5fa" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <line x1="620" y1="630" x2="620" y2="670" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="620" y1="730" x2="620" y2="750" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- === GUARDRAILS LANE === -->
+
+  <!-- G1: Input validation -->
+  <rect x="80" y="870" width="220" height="50" rx="8" fill="#fff" stroke="#fdba74" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="190" y="892" text-anchor="middle" fill="#c2410c" font-size="11" font-weight="bold">🛡️ 输入护栏检查</text>
+  <text x="190" y="910" text-anchor="middle" fill="#6b7280" font-size="9">设备类型(A2/A3/A5) · DP/TP/PP</text>
+
+  <!-- G2: Re-input -->
+  <rect x="370" y="870" width="180" height="50" rx="15" fill="#fef2f2" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="460" y="892" text-anchor="middle" fill="#b91c1c" font-size="10" font-weight="bold">❌ 不通过 → 重输</text>
+  <text x="460" y="908" text-anchor="middle" fill="#b91c1c" font-size="8">返回前端提示错误</text>
+
+  <!-- G3: Output validation -->
+  <rect x="80" y="870" width="220" height="50" rx="8" fill="#fff" stroke="#fdba74" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="190" y="892" text-anchor="middle" fill="#c2410c" font-size="11" font-weight="bold">🛡️ 输入护栏检查</text>
+  <text x="190" y="910" text-anchor="middle" fill="#6b7280" font-size="9">设备类型(A2/A3/A5) · DP/TP/PP</text>
+
+  <!-- === SKILL ENGINE LANE === -->
+
+  <!-- S1: Gen Skill -->
+  <rect x="638" y="870" width="240" height="50" rx="8" fill="#fff" stroke="#d8b4fe" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="758" y="892" text-anchor="middle" fill="#7c3aed" font-size="11" font-weight="bold">⚡ training-mesh-gen-skill</text>
+  <text x="758" y="910" text-anchor="middle" fill="#6b7280" font-size="9">输入参数 → 结构化 JSON 组网</text>
+
+  <!-- S2: Guard check in skill -->
+  <rect x="920" y="870" width="220" height="50" rx="8" fill="#fff" stroke="#d8b4fe" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="1030" y="892" text-anchor="middle" fill="#7c3aed" font-size="11" font-weight="bold">📋 输出护栏校验</text>
+  <text x="1030" y="910" text-anchor="middle" fill="#6b7280" font-size="9">JSON 结构完整性 · 合规检查</text>
+
+  <!-- Cross-lane connections -->
+  <!-- U input → Frontend → Agent → Guards -->
+  <path d="M 590 122 L 590 145 L 200 145 L 200 180" stroke="#a5b4fc" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 900 122 L 900 145 L 200 145" stroke="#a5b4fc" stroke-width="1.5" fill="none"/>
+
+  <line x1="200" y1="240" x2="200" y2="480" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Frontend → Agent gen skill -->
+  <path d="M 200 515 L 200 870 L 185 870" stroke="#60a5fa" stroke-width="1.5" fill="none"/>
+  <!-- Agent gen scheduling → input guard -->
+  <path d="M 380 515 L 300 515 L 300 870 L 305 870" stroke="#60a5fa" stroke-width="1.5" fill="none"/>
+
+  <!-- === MCP / SIMULATION LANE === -->
+
+  <!-- M1: MCP connect -->
+  <rect x="60" y="990" width="200" height="45" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="160" y="1012" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">🔌 MCP Client 连接</text>
+  <text x="160" y="1028" text-anchor="middle" fill="#6b7280" font-size="9">JSON-RPC 握手 · 工具列表协商</text>
+
+  <!-- M2: Execute task -->
+  <rect x="330" y="990" width="200" height="45" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="430" y="1012" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">🚀 execute_task (原)</text>
+  <text x="430" y="1028" text-anchor="middle" fill="#6b7280" font-size="9">下发原始组网仿真任务</text>
+
+  <rect x="580" y="990" width="200" height="45" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="680" y="1012" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">🚀 execute_task (等效)</text>
+  <text x="680" y="1028" text-anchor="middle" fill="#6b7280" font-size="9">下发等效组网仿真任务</text>
+
+  <!-- M3: Report status -->
+  <rect x="830" y="990" width="200" height="45" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="930" y="1012" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">📡 report_status</text>
+  <text x="930" y="1028" text-anchor="middle" fill="#6b7280" font-size="9">任务进度 · 运行状态回传</text>
+
+  <!-- Arrows M1→M2→M3 -->
+  <line x1="260" y1="1012" x2="320" y2="1012" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="530" y1="1012" x2="570" y2="1012" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="780" y1="1012" x2="820" y2="1012" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Simulation Engine box -->
+  <rect x="60" y="1070" width="1100" height="120" rx="10" fill="#fff1f2" stroke="#fda4af" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="610" y="1095" text-anchor="middle" fill="#9f1239" font-size="14" font-weight="bold">🧮 Python 仿真引擎 — 核心计算</text>
+
+  <rect x="90" y="1110" width="250" height="65" rx="6" fill="#fff" stroke="#fecaca" stroke-width="1"/>
+  <text x="215" y="1130" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="bold">集群拓扑构建</text>
+  <text x="215" y="1148" text-anchor="middle" fill="#6b7280" font-size="8">A2/A3/A5计算节点</text>
+  <text x="215" y="1164" text-anchor="middle" fill="#6b7280" font-size="8">基于DP/TP/PP组建通信域</text>
+
+  <rect x="380" y="1110" width="250" height="65" rx="6" fill="#fff" stroke="#fecaca" stroke-width="1"/>
+  <text x="505" y="1130" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="bold">分布式训练模拟</text>
+  <text x="505" y="1148" text-anchor="middle" fill="#6b7280" font-size="8">模型参数分片</text>
+  <text x="505" y="1164" text-anchor="middle" fill="#6b7280" font-size="8">前向/反向计算 · 梯度聚合</text>
+
+  <rect x="670" y="1110" width="250" height="65" rx="6" fill="#fff" stroke="#fecaca" stroke-width="1"/>
+  <text x="795" y="1130" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="bold">通信模式生成</text>
+  <text x="795" y="1148" text-anchor="middle" fill="#6b7280" font-size="8">AllReduce · AllGather</text>
+  <text x="795" y="1164" text-anchor="middle" fill="#6b7280" font-size="8">P2P · ReduceScatter</text>
+
+  <rect x="960" y="1110" width="175" height="65" rx="6" fill="#fff" stroke="#fecaca" stroke-width="1"/>
+  <text x="1047" y="1130" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="bold">资源消耗计算</text>
+  <text x="1047" y="1148" text-anchor="middle" fill="#6b7280" font-size="8">TFLOPS / GB / GB/s</text>
+  <text x="1047" y="1164" text-anchor="middle" fill="#6b7280" font-size="8">逐卡统计 · 汇总输出</text>
+
+  <!-- M4: Result callbacks -->
+  <rect x="60" y="1230" width="200" height="45" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="160" y="1252" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">📊 get_result (原始)</text>
+  <text x="160" y="1268" text-anchor="middle" fill="#6b7280" font-size="9">计算强度 · 内存 · 通信</text>
+
+  <rect x="320" y="1230" width="200" height="45" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="420" y="1252" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">📊 get_result (等效)</text>
+  <text x="420" y="1268" text-anchor="middle" fill="#6b7280" font-size="9">计算强度 · 内存 · 通信</text>
+
+  <rect x="600" y="1230" width="200" height="45" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="700" y="1252" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">🖥️ card_detail</text>
+  <text x="700" y="1268" text-anchor="middle" fill="#6b7280" font-size="9">单卡详情逐卡拉取</text>
+
+  <rect x="860" y="1230" width="200" height="45" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="960" y="1252" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">📜 sync_logs</text>
+  <text x="960" y="1268" text-anchor="middle" fill="#6b7280" font-size="9">仿真运行日志同步</text>
+
+  <!-- Arrows M3→Engine→Results -->
+  <line x1="430" y1="1035" x2="430" y2="1060" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="680" y1="1035" x2="680" y2="1060" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <line x1="430" y1="1190" x2="430" y2="1220" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="680" y1="1190" x2="680" y2="1220" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- === ANALYSIS / OUTPUT LANE === -->
+
+  <!-- AN1: Profiler skill call original -->
+  <rect x="80" y="1590" width="230" height="60" rx="8" fill="#fff" stroke="#c4b5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="195" y="1612" text-anchor="middle" fill="#5b21b6" font-size="11" font-weight="bold">🔬 profiler-skill (原始)</text>
+  <text x="195" y="1632" text-anchor="middle" fill="#6b7280" font-size="9">拉取原始组网仿真结果</text>
+  <text x="195" y="1646" text-anchor="middle" fill="#6b7280" font-size="9">计算强度·内存·通信流量</text>
+
+  <!-- AN2: Profiler skill call equivalent -->
+  <rect x="930" y="1590" width="230" height="60" rx="8" fill="#fff" stroke="#c4b5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="1045" y="1612" text-anchor="middle" fill="#5b21b6" font-size="11" font-weight="bold">🔬 profiler-skill (等效)</text>
+  <text x="1045" y="1632" text-anchor="middle" fill="#6b7280" font-size="9">拉取等效组网仿真结果</text>
+  <text x="1045" y="1646" text-anchor="middle" fill="#6b7280" font-size="9">计算强度·内存·通信流量</text>
+
+  <!-- AN3: Compare analysis -->
+  <rect x="350" y="1700" width="540" height="55" rx="8" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="620" y="1722" text-anchor="middle" fill="#5b21b6" font-size="12" font-weight="bold">⚖️ Agent 智能对比分析</text>
+  <text x="620" y="1740" text-anchor="middle" fill="#6b7280" font-size="10">原始组网 vs 等效组网 · 指标差异率计算 · 与理论值的偏差 · 等效性判定</text>
+
+  <!-- Arrows -->
+  <line x1="160" y1="1275" x2="195" y2="1580" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="420" y1="1275" x2="1045" y2="1580" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <line x1="310" y1="1620" x2="500" y2="1620" stroke="#c4b5fd" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="930" y1="1620" x2="740" y2="1620" stroke="#c4b5fd" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <line x1="195" y1="1650" x2="400" y2="1727" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="1045" y1="1650" x2="840" y2="1727" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- AN4: Decision -->
+  <rect x="450" y="1780" width="340" height="45" rx="20" fill="#10b981" filter="url(#shadow)"/>
+  <text x="620" y="1808" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">✅ 等效性验证通过 / ❌ 不通过</text>
+
+  <line x1="620" y1="1755" x2="620" y2="1770" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ==================== FEEDBACK LOOPS ==================== -->
+
+  <!-- Loop 1: Guard retry (input) -->
+  <path d="M 460 870 L 460 130 L 460 145 L 910 145 L 910 122" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="6,3" fill="none" marker-end="url(#arrowRed)"/>
+  <text x="680" y="855" fill="#ef4444" font-size="9" font-style="italic">输入不合法 → 提示重输</text>
+
+  <!-- Loop 2: Output guard retry (gen skill) -->
+  <path d="M 920 895 L 1140 895 L 1140 920 L 1035 920" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="6,3" fill="none" marker-end="url(#arrowRed)"/>
+  <text x="1050" y="938" fill="#ef4444" font-size="9" font-style="italic">JSON 不合格 → 重新生成</text>
+
+  <!-- Error to frontend -->
+  <path d="M 1140 935 L 1140 350 L 410 350" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="6,3" fill="none" marker-end="url(#arrowRed)"/>
+
+  <!-- ==================== STEP NUMBER LABELS ==================== -->
+  <!-- These overlay circles for step numbers on key nodes -->
+
+  <circle cx="290" cy="93" r="10" fill="#1e3a5f"/>
+  <text x="290" y="97" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">1</text>
+
+  <circle cx="590" cy="93" r="10" fill="#1e3a5f"/>
+  <text x="590" y="97" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">2</text>
+
+  <circle cx="900" cy="93" r="10" fill="#1e3a5f"/>
+  <text x="900" y="97" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">3</text>
+
+  <circle cx="190" cy="883" r="10" fill="#1e3a5f"/>
+  <text x="190" y="887" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">4</text>
+
+  <circle cx="758" cy="883" r="10" fill="#1e3a5f"/>
+  <text x="758" y="887" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">5</text>
+
+  <circle cx="1030" cy="883" r="10" fill="#1e3a5f"/>
+  <text x="1030" y="887" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">6</text>
+
+  <circle cx="530" cy="295" r="10" fill="#1e3a5f"/>
+  <text x="530" y="299" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">7</text>
+
+  <circle cx="910" cy="1193" r="10" fill="#1e3a5f"/>
+  <text x="910" y="1197" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">8</text>
+
+  <circle cx="430" cy="1003" r="10" fill="#1e3a5f"/>
+  <text x="430" y="1007" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">9</text>
+
+  <circle cx="195" cy="1603" r="10" fill="#1e3a5f"/>
+  <text x="195" y="1607" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">10</text>
+
+  <circle cx="620" cy="1722" r="10" fill="#1e3a5f"/>
+  <text x="620" y="1726" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">11</text>
+
+  <!-- Step Legend -->
+  <rect x="20" y="1835" width="1210" height="0" rx="4" fill="#f9fafb"/>
+
+  <!-- Bottom Legend -->
+  <g transform="translate(20, 1810)">
+    <text x="0" y="10" fill="#374151" font-size="9" font-weight="bold">步骤说明：</text>
+    <text x="70" y="10" fill="#6b7280" font-size="8">① 打开Web界面 ② 输入原始组网参数 ③ 输入等效组网参数 ④ 输入护栏校验 ⑤ Skill生成JSON ⑥ 输出护栏校验</text>
+    <text x="70" y="24" fill="#6b7280" font-size="8">⑦ 前端渲染双组网图并对比 ⑧ 测试人员确认·发起仿真 ⑨ MCP下发双任务 ⑩ Profiler分析指标 ⑪ 等效性对比·验证结论</text>
+  </g>
+
+</svg>

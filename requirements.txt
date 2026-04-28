@@ -1,0 +1,8 @@
+flask>=3.0
+flask-cors>=4.0
+flask-sock>=0.7
+openai>=1.30
+pydantic>=2.0
+python-dotenv>=1.0
+uuid7>=0.1
+pyyaml>=6.0
