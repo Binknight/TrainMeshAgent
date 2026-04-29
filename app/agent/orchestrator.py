@@ -84,14 +84,11 @@ _UTILITY_TOOLS = [
         "type": "function",
         "function": {
             "name": "compare_results",
-            "description": "对比原始组网和等效组网仿真结果，输出等效性分析报告",
+            "description": "对比原始组网和等效组网的仿真结果，输出等效性分析报告。无需传入仿真数据，系统会自动从已保存的仿真结果中读取。",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "original_json": {"type": "string", "description": "原始组网仿真结果 JSON"},
-                    "equivalent_json": {"type": "string", "description": "等效组网仿真结果 JSON"},
-                },
-                "required": ["original_json", "equivalent_json"],
+                "properties": {},
+                "required": [],
             },
         },
     },
@@ -118,13 +115,19 @@ def _execute_utility_tool(tool_name: str, arguments: dict, session: SessionState
     elif tool_name == "run_simulation":
         topology_json = json.loads(arguments["topology_json"])
         task_id = mcp_client.execute_task(topology_json)
-        return {"task_id": task_id, "status": "submitted", "topology_name": arguments["topology_name"]}
+        topo_name = arguments.get("topology_name", "")
+        if "原始" in topo_name:
+            session.original_task_id = task_id
+        else:
+            session.equivalent_task_id = task_id
+        return {"task_id": task_id, "status": "submitted", "topology_name": topo_name}
 
     elif tool_name == "compare_results":
-        from app.models.schemas import SimulationResult as SR
-        original = SR.model_validate(json.loads(arguments["original_json"]))
-        equivalent = SR.model_validate(json.loads(arguments["equivalent_json"]))
-        report = _build_comparison_report(original, equivalent)
+        if not session.original_simulation:
+            return {"error": "缺少原始组网仿真结果，请先运行 training-mesh-profiler-skill 获取原始组网仿真数据"}
+        if not session.equivalent_simulation:
+            return {"error": "缺少等效组网仿真结果，请先运行 training-mesh-profiler-skill 获取等效组网仿真数据"}
+        report = _build_comparison_report(session.original_simulation, session.equivalent_simulation)
         session.comparison_report = report
         session.step = "completed"
         return report.model_dump()
@@ -182,6 +185,21 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             session.original_simulation = data
         else:
             session.equivalent_simulation = data
+        session.step = "simulating"
+        # Return lightweight summary — full per-card data available via REST
+        return {
+            "topology_name": data.topology_name,
+            "device_type": data.device_type.value,
+            "total_nodes": data.total_nodes,
+            "cards_count": len(data.cards),
+            "aggregate_flops": data.aggregate_flops,
+            "aggregate_hbm_gb": data.aggregate_hbm_gb,
+            "aggregate_tp_comm_gb_per_micro": data.aggregate_tp_comm_gb_per_micro,
+            "aggregate_pp_comm_mb_per_micro": data.aggregate_pp_comm_mb_per_micro,
+            "aggregate_dp_comm_gb_per_step": data.aggregate_dp_comm_gb_per_step,
+            "session_id": session.session_id,
+            "_type": "profiler_summary",
+        }
 
     elif tool_name == "training-model-gen-skill" and isinstance(data, TrainingModel):
         if arguments.get("is_equivalent"):
@@ -204,35 +222,49 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
 
 def _build_comparison_report(original: SimulationResult, equivalent: SimulationResult) -> ComparisonReport:
     eps = 1e-9
-    oi = original.aggregate_compute_intensity_tflops
-    ei = equivalent.aggregate_compute_intensity_tflops
-    om = original.aggregate_memory_usage_gb
-    em = equivalent.aggregate_memory_usage_gb
-    oc = original.aggregate_communication_traffic_gbps
-    ec = equivalent.aggregate_communication_traffic_gbps
 
-    intensity_diff = abs(oi - ei) / max(abs(oi), eps) * 100
-    memory_diff = abs(om - em) / max(abs(om), eps) * 100
-    comm_diff = abs(oc - ec) / max(abs(oc), eps) * 100
+    def _diff_pct(ov: float, ev: float) -> float:
+        return round(abs(ov - ev) / max(abs(ov), eps) * 100, 2)
+
+    of = original.aggregate_flops
+    ef = equivalent.aggregate_flops
+    oh = original.aggregate_hbm_gb
+    eh = equivalent.aggregate_hbm_gb
+    otp = original.aggregate_tp_comm_gb_per_micro
+    etp = equivalent.aggregate_tp_comm_gb_per_micro
+    opp = original.aggregate_pp_comm_mb_per_micro
+    epp = equivalent.aggregate_pp_comm_mb_per_micro
+    odp = original.aggregate_dp_comm_gb_per_step
+    edp = equivalent.aggregate_dp_comm_gb_per_step
+
+    flops_diff = _diff_pct(of, ef)
+    hbm_diff = _diff_pct(oh, eh)
+    tp_comm_diff = _diff_pct(otp, etp)
+    pp_comm_diff = _diff_pct(opp, epp)
+    dp_comm_diff = _diff_pct(odp, edp)
 
     tolerance = 5.0
     is_equivalent = (
-        intensity_diff <= tolerance
-        and memory_diff <= tolerance
-        and comm_diff <= tolerance
+        flops_diff <= tolerance
+        and hbm_diff <= tolerance
+        and tp_comm_diff <= tolerance
+        and pp_comm_diff <= tolerance
+        and dp_comm_diff <= tolerance
     )
 
     return ComparisonReport(
         original=original,
         equivalent=equivalent,
-        compute_intensity_diff_pct=round(intensity_diff, 2),
-        memory_usage_diff_pct=round(memory_diff, 2),
-        communication_traffic_diff_pct=round(comm_diff, 2),
+        flops_diff_pct=flops_diff,
+        hbm_diff_pct=hbm_diff,
+        tp_comm_diff_pct=tp_comm_diff,
+        pp_comm_diff_pct=pp_comm_diff,
+        dp_comm_diff_pct=dp_comm_diff,
         is_equivalent=is_equivalent,
         error_tolerance_pct=tolerance,
         details={
             "conclusion": "✅ 等效验证通过" if is_equivalent else "❌ 等效验证不通过",
-            "max_diff_pct": round(max(intensity_diff, memory_diff, comm_diff), 2),
+            "max_diff_pct": round(max(flops_diff, hbm_diff, tp_comm_diff, pp_comm_diff, dp_comm_diff), 2),
         }
     )
 
@@ -313,6 +345,14 @@ async def agent_stream(
             tool_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
 
+            # Auto-inject task_id from session if LLM didn't provide one
+            if tool_name == "training-mesh-profiler-skill" and not arguments.get("task_id"):
+                topo_name = arguments.get("topology_name", "")
+                sid = session.original_task_id if "原始" in topo_name else session.equivalent_task_id
+                if sid:
+                    arguments["task_id"] = sid
+                    logger.info(f"[agent_stream] auto-injected task_id={sid} for profiler")
+
             yield AgentEvent(
                 event_type="tool_call",
                 message=f"调用工具: {tool_name}",
@@ -342,6 +382,10 @@ async def agent_stream(
                 result_msg = f"组网 '{result.get('name', '')}' 生成成功"
             elif tool_name == "training-model-gen-skill":
                 result_msg = f"模型结构 'transformer_model' 生成成功, {result.get('layers_count', 0)} 层"
+            elif tool_name == "training-mesh-profiler-skill":
+                agg_flops = result.get('aggregate_flops', 0)
+                agg_hbm = result.get('aggregate_hbm_gb', 0)
+                result_msg = f"仿真分析完成: {result.get('topology_name', '')} — {result.get('total_nodes', 0)} 节点, 聚合FLOPs {agg_flops:.2e}, HBM {agg_hbm:.1f}GB"
             elif tool_name == "run_simulation":
                 result_msg = f"仿真任务已下发: {result.get('task_id', '')}"
             elif tool_name == "compare_results":
