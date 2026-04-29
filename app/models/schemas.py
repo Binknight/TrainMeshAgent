@@ -55,11 +55,11 @@ class CardMetrics(BaseModel):
     """Per-card simulation metrics."""
     card_id: str
     global_rank: int
-    compute_intensity_tflops: float = Field(description="计算强度 (TFLOPS)")
-    memory_usage_gb: float = Field(description="内存占用 (GB)")
-    communication_traffic_gbps: float = Field(description="通信流量 (GB/s)")
-    peak_memory_gb: float = Field(default=0, description="峰值内存 (GB)")
-    communication_volume_gb: float = Field(default=0, description="通信量 (GB)")
+    flops_per_card: float = Field(description="单卡FLOPs")
+    hbm_gb: float = Field(description="HBM占用 (GB)")
+    tp_comm_gb_per_micro: float = Field(description="TP通信量 (GB/micro)")
+    pp_comm_mb_per_micro: float = Field(description="PP通信量 (MB/micro)")
+    dp_comm_gb_per_step: float = Field(description="DP通信量 (GB/step)")
 
 
 class SimulationResult(BaseModel):
@@ -68,18 +68,22 @@ class SimulationResult(BaseModel):
     device_type: DeviceType
     total_nodes: int
     cards: list[CardMetrics]
-    aggregate_compute_intensity_tflops: float
-    aggregate_memory_usage_gb: float
-    aggregate_communication_traffic_gbps: float
+    aggregate_flops: float
+    aggregate_hbm_gb: float
+    aggregate_tp_comm_gb_per_micro: float
+    aggregate_pp_comm_mb_per_micro: float
+    aggregate_dp_comm_gb_per_step: float
 
 
 class ComparisonReport(BaseModel):
     """Comparison report between original and equivalent topology."""
     original: SimulationResult
     equivalent: SimulationResult
-    compute_intensity_diff_pct: float
-    memory_usage_diff_pct: float
-    communication_traffic_diff_pct: float
+    flops_diff_pct: float
+    hbm_diff_pct: float
+    tp_comm_diff_pct: float
+    pp_comm_diff_pct: float
+    dp_comm_diff_pct: float
     is_equivalent: bool
     error_tolerance_pct: float = 5.0
     details: dict[str, Any] = Field(default_factory=dict)
