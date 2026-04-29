@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Parallel View — PP × TP (D3.js)</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden; width: 100vw; height: 100vh;
+  }
+  #container { width: 100%; height: 100%; position: relative; }
+  .config-bar {
+    position: absolute; top: 10px; left: 10px; z-index: 100;
+    background: rgba(22,27,34,0.95); border: 1px solid #30363d;
+    border-radius: 8px; padding: 10px 14px; display: flex; gap: 10px;
+    align-items: center; font-size: 13px; color: #c9d1d9;
+  }
+  .config-bar input {
+    width: 48px; background: #0d1117; border: 1px solid #30363d;
+    color: #f0f6fc; border-radius: 4px; padding: 4px 6px; text-align: center;
+  }
+  .config-bar button {
+    background: #238636; color: #fff; border: none; border-radius: 4px;
+    padding: 5px 12px; cursor: pointer; font-size: 12px;
+  }
+  .config-bar button:hover { background: #2ea043; }
+  svg { width: 100%; height: 100%; display: block; }
+  .dp-shadow { fill: #161b22; stroke: #58a6ff; stroke-width: 2; }
+  .dp-card { fill: #161b22; stroke: #58a6ff; stroke-width: 2; }
+  .dp-header { fill: #21262d; }
+  .pp-card { fill: #0d1117; stroke: #30363d; stroke-width: 1; }
+  .pp-header { fill: #58a6ff; }
+  .tp-rect { fill: #161b22; stroke: #3fb950; stroke-width: 1; }
+  .tp-label { fill: #3fb950; font-size: 10px; font-family: sans-serif; }
+  .rank-label { fill: #c9d1d9; font-size: 12px; font-family: sans-serif; font-weight: 500; }
+  .pp-label { fill: #0d1117; font-size: 13px; font-family: sans-serif; font-weight: bold; }
+  .dp-title { fill: #f0f6fc; font-size: 20px; font-family: sans-serif; font-weight: bold; }
+  .dp-sub { fill: #8b949e; font-size: 11px; font-family: sans-serif; }
+  .arrow-line { stroke: #484f58; stroke-width: 1; stroke-dasharray: 3,3; fill: none; }
+  .arrow-head { fill: #484f58; }
+  .info-bar { fill: #0d1117; stroke: #30363d; stroke-width: 1; }
+  .info-text { fill: #8b949e; font-size: 11px; font-family: sans-serif; }
+  .stack-indicator { fill: #30363d; stroke: #484f58; stroke-width: 1; }
+  .stack-indicator.active { fill: #58a6ff; stroke: #58a6ff; }
+  /* Ellipsis PP */
+  .pp-ellipsis { fill: #161b22; stroke: #484f58; stroke-width: 1; }
+  .pp-ellipsis-text { fill: #8b949e; font-size: 18px; font-family: sans-serif; font-weight: bold; }
+  .pp-ellipsis-dots { fill: #6e7681; font-size: 11px; font-family: sans-serif; }
+</style>
+</head>
+<body>
+<div id="container">
+  <div class="config-bar">
+    <label>TP: <input id="tpInput" type="number" value="8" min="1" max="16"></label>
+    <label>PP: <input id="ppInput" type="number" value="8" min="1" max="32"></label>
+    <label>DP: <input id="dpInput" type="number" value="4" min="1" max="8"></label>
+    <button onclick="rebuild()">Refresh</button>
+    <span id="gpuCount" style="margin-left:8px;color:#58a6ff;"></span>
+  </div>
+</div>
+
+<script>
+// ===== JSON Data Structure =====
+function buildData(tp, pp, dpCount, activeDp) {
+  var ranksPerDp = pp * tp;
+  var dpBase = activeDp * ranksPerDp;
+  return {
+    config: { tpCount: tp, ppCount: pp, dpCount: dpCount, activeDp: activeDp },
+    dp: {
+      id: activeDp,
+      label: "DP " + activeDp,
+      isTop: true,
+      stackCount: dpCount,
+      stackIndex: activeDp
+    },
+    pp: d3.range(pp).map(function(pi) {
+      return {
+        id: pi,
+        label: "PP" + pi,
+        tps: d3.range(tp).map(function(ti) {
+          return {
+            id: ti,
+            label: "TP" + ti,
+            rank: "Rank" + (dpBase + pi * tp + ti)
+          };
+        })
+      };
+    })
+  };
+}
+
+// ===== Layout Constants =====
+var CARD = {
+  dpShadowOffset: [[90,90],[60,60],[30,30]],
+  tpPadX: 16,
+  tpPadY: 16,
+  headerH: 42,
+  ppGap: 12,
+  ppHeaderH: 24,
+  tpW: 82,
+  tpH: 42,
+  tpGap: 14,
+  maxPpDisplay: 8
+};
+
+var width = window.innerWidth;
+var height = window.innerHeight;
+
+// ===== Build Display List (with ellipsis if needed) =====
+function buildDisplayList(ppList) {
+  var total = ppList.length;
+  if (total <= CARD.maxPpDisplay) {
+    return ppList.map(function(p) { return { type: "pp", data: p }; });
+  }
+  // total > 8: show first 3, ellipsis, last 4
+  var result = [];
+  for (var i = 0; i < 3; i++) {
+    result.push({ type: "pp", data: ppList[i] });
+  }
+  result.push({ type: "ellipsis", hiddenStart: 3, hiddenEnd: total - 5, total: total });
+  for (var j = total - 4; j < total; j++) {
+    result.push({ type: "pp", data: ppList[j] });
+  }
+  return result;
+}
+
+// ===== Render Function =====
+function render(data) {
+  var container = d3.select("#container");
+  container.selectAll("svg").remove();
+
+  var svg = container.append("svg")
+    .attr("viewBox", "0 0 " + width + " " + height)
+    .attr("preserveAspectRatio", "xMidYMid meet");
+
+  var cfg = data.config;
+  var dp = data.dp;
+  var ppList = data.pp;
+  var displayList = buildDisplayList(ppList);
+
+  var tpCount = ppList[0].tps.length;
+  var displayCount = displayList.length;
+
+  var ppW = 115;
+  var ppH = CARD.tpPadY * 2 + CARD.ppHeaderH + tpCount * (CARD.tpH + CARD.tpGap) - CARD.tpGap + 20;
+  var ellipsisH = 100; // shorter height for ellipsis card
+  var ppTotalW = displayCount * ppW + (displayCount - 1) * CARD.ppGap;
+  var dpW = ppTotalW + CARD.tpPadX * 2;
+  var dpH = Math.max(ppH, ellipsisH) + CARD.headerH + 80;
+
+  var dpX = (width - dpW) / 2;
+  var dpY = (height - dpH) / 2;
+
+  // ===== DP Stack Shadows =====
+  var shadowGroup = svg.append("g").attr("class", "dp-shadows");
+  CARD.dpShadowOffset.forEach(function(off, i) {
+    shadowGroup.append("rect")
+      .attr("x", dpX + off[0]).attr("y", dpY + off[1])
+      .attr("width", dpW).attr("height", dpH)
+      .attr("rx", 14).attr("ry", 14)
+      .attr("class", "dp-shadow")
+      .attr("opacity", 0.4 + i * 0.15);
+  });
+
+  // ===== Main DP Card =====
+  var dpGroup = svg.append("g").attr("class", "dp-card-group");
+
+  dpGroup.append("rect")
+    .attr("x", dpX).attr("y", dpY)
+    .attr("width", dpW).attr("height", dpH)
+    .attr("rx", 14).attr("ry", 14)
+    .attr("class", "dp-card");
+
+  // DP Header
+  dpGroup.append("rect")
+    .attr("x", dpX).attr("y", dpY)
+    .attr("width", dpW).attr("height", CARD.headerH)
+    .attr("rx", 14).attr("ry", 14)
+    .attr("class", "dp-header");
+  dpGroup.append("rect")
+    .attr("x", dpX).attr("y", dpY + CARD.headerH / 2)
+    .attr("width", dpW).attr("height", CARD.headerH / 2)
+    .attr("class", "dp-header");
+
+  var fo = dpGroup.append("foreignObject")
+    .attr("x", dpX + 20).attr("y", dpY + 6)
+    .attr("width", 200).attr("height", 40);
+  fo.append("xhtml:div")
+    .style("display", "inline-block")
+    .html('<select id="dpSelect" onchange="switchDp(parseInt(this.value))" style="width:120px;min-width:120px;background:#0d1117;color:#58a6ff;border:1px solid #58a6ff;border-radius:4px;padding:3px 8px;font-size:14px;font-family:sans-serif;cursor:pointer;"></select>');
+
+  // Info text in header (right of dropdown)
+  var gpuTotal = cfg.tpCount * cfg.ppCount * cfg.dpCount;
+  var hiddenInfo = cfg.ppCount > CARD.maxPpDisplay ? " (showing 7 + ··· of " + cfg.ppCount + " PP)" : "";
+  var infoText = "TP=" + cfg.tpCount + " × PP=" + cfg.ppCount + " × DP=" + cfg.dpCount +
+    " | " + (cfg.tpCount * cfg.ppCount) + " GPUs per DP | Total " + gpuTotal + " GPUs" + hiddenInfo;
+
+  dpGroup.append("text")
+    .attr("x", dpX + dpW - 20).attr("y", dpY + 25)
+    .attr("text-anchor", "end")
+    .attr("class", "info-text")
+    .text(infoText);
+
+  // ===== PP Cards (or ellipsis) =====
+  var ppStartX = dpX + CARD.tpPadX;
+  var ppStartY = dpY + CARD.headerH + 20;
+
+  displayList.forEach(function(item, di) {
+    var px = ppStartX + di * (ppW + CARD.ppGap);
+    var py = ppStartY;
+
+    if (item.type === "ellipsis") {
+      // Ellipsis card (compact, centered vertically)
+      var ellipsisY = py + (ppH - ellipsisH) / 2;
+      var eGroup = svg.append("g").attr("class", "pp-ellipsis-group");
+
+      eGroup.append("rect")
+        .attr("x", px).attr("y", ellipsisY)
+        .attr("width", ppW).attr("height", ellipsisH)
+        .attr("rx", 8).attr("ry", 8)
+        .attr("class", "pp-ellipsis");
+
+      eGroup.append("text")
+        .attr("x", px + ppW / 2).attr("y", ellipsisY + ellipsisH / 2 + 6)
+        .attr("text-anchor", "middle")
+        .attr("class", "pp-ellipsis-text")
+        .text("···");
+
+      // Tooltip: show hidden range
+      var tip = "PP" + item.hiddenStart + " ~ PP" + item.hiddenEnd;
+      eGroup.append("title").text(tip);
+      return;
+    }
+
+    var pp = item.data;
+    var ppGroup = svg.append("g").attr("class", "pp-group");
+
+    ppGroup.append("rect")
+      .attr("x", px).attr("y", py)
+      .attr("width", ppW).attr("height", ppH)
+      .attr("rx", 8).attr("ry", 8)
+      .attr("class", "pp-card");
+
+    ppGroup.append("rect")
+      .attr("x", px).attr("y", py)
+      .attr("width", ppW).attr("height", CARD.ppHeaderH)
+      .attr("rx", 8).attr("ry", 8)
+      .attr("class", "pp-header");
+    ppGroup.append("rect")
+      .attr("x", px).attr("y", py + CARD.ppHeaderH / 2)
+      .attr("width", ppW).attr("height", CARD.ppHeaderH / 2)
+      .attr("class", "pp-header");
+
+    ppGroup.append("text")
+      .attr("x", px + ppW / 2).attr("y", py + 17)
+      .attr("text-anchor", "middle")
+      .attr("class", "pp-label")
+      .text(pp.label);
+
+    // ===== TP Chips =====
+    var tpX = px + (ppW - CARD.tpW) / 2;
+    var tpY = py + CARD.ppHeaderH + CARD.tpPadY;
+
+    pp.tps.forEach(function(tp, ti) {
+      var ty = tpY + ti * (CARD.tpH + CARD.tpGap);
+
+      ppGroup.append("rect")
+        .attr("x", tpX).attr("y", ty)
+        .attr("width", CARD.tpW).attr("height", CARD.tpH)
+        .attr("rx", 4).attr("ry", 4)
+        .attr("class", "tp-rect");
+
+      ppGroup.append("text")
+        .attr("x", tpX + CARD.tpW - 4).attr("y", ty + 11)
+        .attr("text-anchor", "end")
+        .attr("class", "tp-label")
+        .text(tp.label);
+
+      ppGroup.append("text")
+        .attr("x", tpX + CARD.tpW / 2).attr("y", ty + CARD.tpH / 2 + 4)
+        .attr("text-anchor", "middle")
+        .attr("class", "rank-label")
+        .text(tp.rank);
+    });
+
+    // Arrow to next visible item
+    if (di < displayList.length - 1) {
+      var ax1 = px + ppW + 2;
+      var ax2 = px + ppW + CARD.ppGap - 2;
+      var ay = py + ppH / 2;
+
+      svg.append("line")
+        .attr("x1", ax1).attr("y1", ay)
+        .attr("x2", ax2 - 6).attr("y2", ay)
+        .attr("class", "arrow-line");
+
+      svg.append("polygon")
+        .attr("points", ax2+","+ay+" "+(ax2-5)+","+(ay-3)+" "+(ax2-5)+","+(ay+3))
+        .attr("class", "arrow-head");
+    }
+  });
+
+  document.getElementById("gpuCount").textContent = "Total GPUs: " + gpuTotal;
+}
+
+var currentDp = 0;
+
+function switchDp(dpIndex) {
+  currentDp = dpIndex;
+  rebuild();
+}
+
+var configCache = { tp: 8, pp: 8, dp: 4 };
+var refreshTimer = null;
+
+function fetchConfig(callback) {
+  fetch("config.json?t=" + Date.now())
+    .then(function(r) { return r.json(); })
+    .then(function(cfg) {
+      if (cfg.tp) configCache.tp = cfg.tp;
+      if (cfg.pp) configCache.pp = cfg.pp;
+      if (cfg.dp) configCache.dp = cfg.dp;
+      document.getElementById("tpInput").value = configCache.tp;
+      document.getElementById("ppInput").value = configCache.pp;
+      document.getElementById("dpInput").value = configCache.dp;
+      if (callback) callback();
+    })
+    .catch(function(e) { console.error("Config load failed:", e); if (callback) callback(); });
+}
+
+function rebuild() {
+  var tp = parseInt(document.getElementById("tpInput").value) || configCache.tp;
+  var pp = parseInt(document.getElementById("ppInput").value) || configCache.pp;
+  var dp = parseInt(document.getElementById("dpInput").value) || configCache.dp;
+  configCache.tp = tp; configCache.pp = pp; configCache.dp = dp;
+  if (currentDp >= dp) currentDp = dp - 1;
+  var data = buildData(tp, pp, dp, currentDp);
+  render(data);
+  var sel = document.getElementById("dpSelect");
+  if (sel) {
+    sel.innerHTML = "";
+    for (var i = 0; i < dp; i++) {
+      var opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = "DP " + i;
+      if (i === currentDp) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+}
+
+window.addEventListener("resize", function() {
+  width = window.innerWidth;
+  height = window.innerHeight;
+  rebuild();
+});
+
+fetchConfig(function() {
+  rebuild();
+  refreshTimer = setInterval(function() {
+    fetchConfig(function() { rebuild(); });
+  }, configCache.refreshInterval || 5000);
+});
+</script>
+</body>
+</html>

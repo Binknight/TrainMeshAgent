@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>3D并行组网 TP8-PP2-DP2</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+  h1 { font-size: 26px; margin: 10px 0 4px; background: linear-gradient(90deg, #58a6ff, #3fb950, #d29922); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 10px; }
+  .legend-bar { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; padding: 8px 20px; background: #161b22; border-radius: 8px; margin-bottom: 10px; border: 1px solid #30363d; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .legend-dot { width: 18px; height: 4px; border-radius: 2px; }
+  .legend-dot.circle { width: 12px; height: 12px; border-radius: 50%; }
+  #container { position: relative; width: 1200px; height: 750px; background: #161b22; border-radius: 12px; border: 1px solid #30363d; overflow: hidden; }
+  svg { width: 100%; height: 100%; }
+  .detail-panel { position: absolute; right: 20px; top: 20px; width: 260px; background: #1c2128; border: 1px solid #30363d; border-radius: 8px; padding: 16px; display: none; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+  .detail-panel h3 { font-size: 16px; margin-bottom: 8px; color: #58a6ff; }
+  .detail-panel .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #21262d; }
+  .detail-panel .row:last-child { border: none; }
+  .detail-panel .label { color: #8b949e; }
+  .detail-panel .value { color: #c9d1d9; font-weight: 500; }
+  .detail-panel .close-btn { position: absolute; top: 8px; right: 12px; cursor: pointer; color: #8b949e; font-size: 18px; }
+  .detail-panel .close-btn:hover { color: #f85149; }
+  .tooltip { position: absolute; background: #1c2128; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .controls { display: flex; gap: 12px; margin-top: 10px; }
+  .controls button { padding: 6px 16px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; cursor: pointer; font-size: 13px; }
+  .controls button:hover { background: #30363d; }
+  .stats { display: flex; gap: 24px; margin: 6px 0 8px; font-size: 13px; color: #8b949e; }
+  .stats span { color: #58a6ff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>🧠 3D Parallel: TP=8 · PP=2 · DP=2</h1>
+<div class="subtitle">32 GPU 分布式训练组网拓扑 · 点击节点查看详情</div>
+
+<div class="legend-bar">
+  <div class="legend-item"><div class="legend-dot circle" style="background:#58a6ff"></div> PP Stage 0</div>
+  <div class="legend-item"><div class="legend-dot circle" style="background:#d29922"></div> PP Stage 1</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3fb950;height:3px"></div> PP 流水线 (P2P)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f85149;height:3px"></div> TP 组内 (all-reduce)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a371f7;height:2px;border-top:2px dashed #a371f7"></div> DP 副本 (跨组)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> = GPU 节点</div>
+</div>
+
+<div id="container">
+  <div class="tooltip" id="tooltip"></div>
+  <div class="detail-panel" id="detailPanel">
+    <span class="close-btn" onclick="closeDetail()">✕</span>
+    <h3 id="detailTitle">GPU 详情</h3>
+    <div id="detailBody"></div>
+  </div>
+</div>
+
+<div class="stats">
+  总 GPU: <span>32</span> · 
+  TP 组: <span>4</span> (每组8卡) · 
+  PP Stage: <span>2</span> · 
+  DP 副本: <span>2</span>
+</div>
+
+<div class="controls">
+  <button onclick="resetView()">↺ 重置视图</button>
+  <button onclick="highlightDP()">🔵 高亮 DP 组</button>
+  <button onclick="highlightPP()">🔷 高亮 PP 流水线</button>
+  <button onclick="highlightTP()">🟠 高亮 TP 组</button>
+  <button onclick="clearHighlights()">✕ 清除高亮</button>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ============== 配置 ==============
+const CONFIG = {
+  TP: 8, PP: 2, DP: 2,
+  totalGpus: 32,
+  svgW: 1200, svgH: 750
+};
+
+// 每个节点默认用8卡NVLink节点（但这里按单GPU画方便理解）
+// 实际可以标注 node0/node1 等，但题目是 TP8，我按单GPU画
+
+// ============== 生成节点数据 ==============
+const nodes = [];
+const edges = [];
+
+// 布局参数
+const START_X = 100, START_Y = 60;
+const COL_GAP = 260, ROW_GAP = 72;
+const RADIUS = 24;
+
+// 颜色
+const PP_COLORS = ['#58a6ff', '#d29922'];
+const DP_ALPHA = [0.9, 0.6]; // DP0 实心，DP1 半透明
+
+// 生成32个GPU节点
+let rank = 0;
+for (let dp = 0; dp < CONFIG.DP; dp++) {
+  for (let pp = 0; pp < CONFIG.PP; pp++) {
+    for (let tp = 0; tp < CONFIG.TP; tp++) {
+      // x: DP副本间距 + PP stage间距
+      const x = START_X + dp * (CONFIG.PP * COL_GAP + 40) + pp * COL_GAP;
+      const y = START_Y + tp * ROW_GAP;
+
+      const node = {
+        id: rank,
+        rank: rank,
+        label: `R${rank}`,
+        dpRank: dp,
+        ppStage: pp,
+        tpRank: tp,
+        x: x,
+        y: y,
+        color: PP_COLORS[pp],
+        opacity: DP_ALPHA[dp],
+        group: `dp${dp}_pp${pp}`,
+        details: {
+          '全局 Rank': rank,
+          'DP Rank': dp,
+          'PP Stage': pp,
+          'TP Rank': tp,
+          '节点编号': `Node ${Math.floor(rank / 8)}`,
+          'GPU编号': `GPU ${rank % 8}`,
+          '通信组': `DP${dp}_PP${pp}_TP${tp}`,
+          '并行角色': dp === 0 ? '主副本' : '副副本',
+        }
+      };
+      nodes.push(node);
+      rank++;
+    }
+  }
+}
+
+// ============== 生成边 ==============
+// 1. PP 边：同一dp、同一tp、相邻pp
+for (let dp = 0; dp < CONFIG.DP; dp++) {
+  for (let tp = 0; tp < CONFIG.TP; tp++) {
+    const fromIdx = dp * 16 + 0 * 8 + tp;     // pp=0
+    const toIdx   = dp * 16 + 1 * 8 + tp;     // pp=1
+    edges.push({
+      source: fromIdx, target: toIdx,
+      type: 'PP', color: '#3fb950',
+      width: 2.5, dash: '6,3',
+      label: 'PP→'
+    });
+  }
+}
+
+// 2. TP 边：同一列内相邻tp（形成链）
+for (let dp = 0; dp < CONFIG.DP; dp++) {
+  for (let pp = 0; pp < CONFIG.PP; pp++) {
+    for (let tp = 0; tp < CONFIG.TP - 1; tp++) {
+      const fromIdx = dp * 16 + pp * 8 + tp;
+      const toIdx   = dp * 16 + pp * 8 + (tp + 1);
+      edges.push({
+        source: fromIdx, target: toIdx,
+        type: 'TP', color: '#f85149',
+        width: 1.8, dash: '',
+        label: ''
+      });
+    }
+  }
+}
+
+// 3. DP 边：同一pp、同一tp、不同dp
+for (let pp = 0; pp < CONFIG.PP; pp++) {
+  for (let tp = 0; tp < CONFIG.TP; tp++) {
+    const fromIdx = 0 * 16 + pp * 8 + tp;  // dp=0
+    const toIdx   = 1 * 16 + pp * 8 + tp;  // dp=1
+    edges.push({
+      source: fromIdx, target: toIdx,
+      type: 'DP', color: '#a371f7',
+      width: 1.5, dash: '4,4',
+      label: 'DP'
+    });
+  }
+}
+
+// ============== 渲染 D3 ==============
+const container = document.getElementById('container');
+const svg = d3.select('#container')
+  .append('svg')
+  .attr('width', CONFIG.svgW)
+  .attr('height', CONFIG.svgH);
+
+// 用于缩放/平移
+const g = svg.append('g');
+
+const zoom = d3.zoom()
+  .scaleExtent([0.3, 3])
+  .on('zoom', (event) => {
+    g.attr('transform', event.transform);
+  });
+svg.call(zoom);
+
+// ---- 背景：TP组区域框 ----
+// 每组TP框：同一列
+for (let dp = 0; dp < CONFIG.DP; dp++) {
+  for (let pp = 0; pp < CONFIG.PP; pp++) {
+    const x0 = START_X + dp * (CONFIG.PP * COL_GAP + 40) + pp * COL_GAP - RADIUS - 20;
+    const y0 = START_Y - RADIUS - 30;
+    const w = RADIUS * 2 + 40;
+    const h = CONFIG.TP * ROW_GAP + RADIUS * 2 + 20;
+    g.append('rect')
+      .attr('x', x0)
+      .attr('y', y0)
+      .attr('width', w)
+      .attr('height', h)
+      .attr('rx', 8)
+      .attr('fill', PP_COLORS[pp])
+      .attr('opacity', 0.05)
+      .attr('stroke', PP_COLORS[pp])
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '4,3');
+
+    // Stage标签
+    g.append('text')
+      .attr('x', x0 + w / 2)
+      .attr('y', y0 - 6)
+      .attr('text-anchor', 'middle')
+      .attr('fill', PP_COLORS[pp])
+      .attr('font-size', 12)
+      .attr('font-weight', 'bold')
+      .text(`PP Stage ${pp} ${dp === 0 ? '(主副本)' : '(副副本)'}`);
+  }
+}
+
+// ---- 边 ----
+const linkGroup = g.append('g').attr('class', 'links');
+
+edges.forEach(edge => {
+  const src = nodes[edge.source];
+  const tgt = nodes[edge.target];
+  const dx = tgt.x - src.x;
+  const dy = tgt.y - src.y;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  const ux = dx / len, uy = dy / len;
+
+  // 起点/终点在圆边缘
+  const x1 = src.x + ux * RADIUS;
+  const y1 = src.y + uy * RADIUS;
+  const x2 = tgt.x - ux * RADIUS;
+  const y2 = tgt.y - uy * RADIUS;
+
+  const line = linkGroup.append('line')
+    .attr('x1', x1).attr('y1', y1)
+    .attr('x2', x2).attr('y2', y2)
+    .attr('stroke', edge.color)
+    .attr('stroke-width', edge.width)
+    .attr('stroke-dasharray', edge.dash)
+    .attr('data-type', edge.type)
+    .attr('opacity', 0.5);
+
+  // 箭头 (只用PP边加)
+  if (edge.type === 'PP') {
+    linkGroup.append('defs').append('marker')
+      .attr('id', `arrow-${edge.source}-${edge.target}`)
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 10).attr('refY', 5)
+      .attr('markerWidth', 6).attr('markerHeight', 6)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+      .attr('fill', edge.color);
+    line.attr('marker-end', `url(#arrow-${edge.source}-${edge.target})`);
+  }
+
+  // 边标签 (只显示PP)
+  if (edge.type === 'PP') {
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    linkGroup.append('text')
+      .attr('x', mx + 5).attr('y', my - 5)
+      .attr('fill', edge.color)
+      .attr('font-size', 10)
+      .attr('opacity', 0.7)
+      .text(edge.label);
+  }
+});
+
+// ---- DP 标注文字 ----
+g.append('text')
+  .attr('x', START_X - 20)
+  .attr('y', START_Y + CONFIG.TP * ROW_GAP / 2)
+  .attr('text-anchor', 'middle')
+  .attr('fill', '#a371f7')
+  .attr('font-size', 14)
+  .attr('font-weight', 'bold')
+  .attr('transform', `rotate(-90, ${START_X - 20}, ${START_Y + CONFIG.TP * ROW_GAP / 2})`)
+  .text('DP 主副本');
+
+const dp2X = START_X + CONFIG.PP * COL_GAP + 40 + 0 * COL_GAP + COL_GAP / 2;
+g.append('text')
+  .attr('x', dp2X + CONFIG.PP * COL_GAP / 2)
+  .attr('y', START_Y + CONFIG.TP * ROW_GAP / 2)
+  .attr('text-anchor', 'middle')
+  .attr('fill', '#a371f7')
+  .attr('font-size', 14)
+  .attr('font-weight', 'bold')
+  .attr('transform', `rotate(-90, ${dp2X + CONFIG.PP * COL_GAP / 2}, ${START_Y + CONFIG.TP * ROW_GAP / 2})`)
+  .text('DP 副副本');
+
+// ---- 节点 ----
+const nodeGroup = g.append('g').attr('class', 'nodes');
+
+// 绘制节点
+nodes.forEach(node => {
+  const gNode = nodeGroup.append('g')
+    .attr('class', 'node')
+    .attr('data-rank', node.rank)
+    .attr('transform', `translate(${node.x}, ${node.y})`)
+    .style('cursor', 'pointer');
+
+  // 外圈 glow
+  gNode.append('circle')
+    .attr('r', RADIUS + 3)
+    .attr('fill', 'none')
+    .attr('stroke', node.color)
+    .attr('stroke-width', 2)
+    .attr('opacity', 0.3);
+
+  // 主圆
+  gNode.append('circle')
+    .attr('r', RADIUS)
+    .attr('fill', node.color)
+    .attr('opacity', node.opacity)
+    .attr('stroke', '#fff')
+    .attr('stroke-width', 1.5);
+
+  // TP rank 文字
+  gNode.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dy', 4)
+    .attr('fill', '#fff')
+    .attr('font-size', 12)
+    .attr('font-weight', 'bold')
+    .text(node.label);
+
+  // 小字显示TP rank
+  gNode.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dy', RADIUS + 14)
+    .attr('fill', '#8b949e')
+    .attr('font-size', 10)
+    .text(`TP${node.tpRank}`);
+});
+
+// ---- 交互：点击显示详情 ----
+const tooltip = d3.select('#tooltip');
+const detailPanel = document.getElementById('detailPanel');
+const detailTitle = document.getElementById('detailTitle');
+const detailBody = document.getElementById('detailBody');
+
+let selectedNode = null;
+
+nodeGroup.selectAll('.node')
+  .on('click', function(event, d) {
+    // d是undefined，因为数据绑定时没有绑data
+    const rank = parseInt(d3.select(this).attr('data-rank'));
+    showDetail(rank);
+  })
+  .on('mouseenter', function(event) {
+    if (selectedNode !== null) return;
+    const rank = parseInt(d3.select(this).attr('data-rank'));
+    const node = nodes[rank];
+    tooltip.style('opacity', 1)
+      .html(`<b>R${node.rank}</b> | DP${node.dpRank} PP${node.ppStage} TP${node.tpRank}`)
+      .style('left', (event.offsetX + 12) + 'px')
+      .style('top', (event.offsetY - 10) + 'px');
+    d3.select(this).select('circle:last-child')
+      .attr('stroke', '#fff').attr('stroke-width', 3);
+  })
+  .on('mousemove', function(event) {
+    tooltip.style('left', (event.offsetX + 12) + 'px')
+      .style('top', (event.offsetY - 10) + 'px');
+  })
+  .on('mouseleave', function() {
+    tooltip.style('opacity', 0);
+    if (selectedNode === null || 
+        parseInt(d3.select(this).attr('data-rank')) !== selectedNode) {
+      d3.select(this).select('circle:last-child')
+        .attr('stroke', '#fff').attr('stroke-width', 1.5);
+    }
+  });
+
+function showDetail(rank) {
+  const node = nodes[rank];
+  selectedNode = rank;
+  
+  // 高亮该节点
+  nodeGroup.selectAll('.node').each(function() {
+    const r = parseInt(d3.select(this).attr('data-rank'));
+    const circle = d3.select(this).select('circle:last-child');
+    if (r === rank) {
+      circle.attr('stroke', '#f0883e').attr('stroke-width', 4);
+    } else {
+      circle.attr('stroke', '#fff').attr('stroke-width', 1.5);
+    }
+  });
+
+  detailTitle.textContent = `GPU R${node.rank} 详情`;
+  let html = '';
+  Object.entries(node.details).forEach(([key, val]) => {
+    html += `<div class="row"><span class="label">${key}</span><span class="value">${val}</span></div>`;
+  });
+  // 加一条通信角色描述
+  html += `<div class="row" style="border-top:1px solid #30363d;padding-top:8px;margin-top:4px;color:#8b949e;font-size:12px">
+    <span>🔗 PP: 与同DP同TP的PP1通信</span>
+  </div>`;
+  html += `<div class="row" style="color:#8b949e;font-size:12px">
+    <span>🔗 TP: 与同列相邻TP all-reduce</span>
+  </div>`;
+  html += `<div class="row" style="color:#8b949e;font-size:12px">
+    <span>🔗 DP: 与副/主副本同PP同TP all-reduce梯度</span>
+  </div>`;
+  detailBody.innerHTML = html;
+  detailPanel.style.display = 'block';
+}
+
+function closeDetail() {
+  detailPanel.style.display = 'none';
+  selectedNode = null;
+  // 恢复所有节点边框
+  nodeGroup.selectAll('.node').each(function() {
+    d3.select(this).select('circle:last-child')
+      .attr('stroke', '#fff').attr('stroke-width', 1.5);
+  });
+}
+
+// ---- 按钮功能 ----
+function resetView() {
+  svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+  closeDetail();
+}
+
+function highlightDP() {
+  // 高亮DP边，PP和TP变淡
+  linkGroup.selectAll('line').attr('opacity', function() {
+    return d3.select(this).attr('data-type') === 'DP' ? 0.9 : 0.1;
+  });
+  nodeGroup.selectAll('.node').each(function() {
+    d3.select(this).attr('opacity', 0.3);
+  });
+  closeDetail();
+}
+
+function highlightPP() {
+  linkGroup.selectAll('line').attr('opacity', function() {
+    return d3.select(this).attr('data-type') === 'PP' ? 0.9 : 0.1;
+  });
+  nodeGroup.selectAll('.node').each(function() {
+    d3.select(this).attr('opacity', 0.3);
+  });
+  closeDetail();
+}
+
+function highlightTP() {
+  linkGroup.selectAll('line').attr('opacity', function() {
+    return d3.select(this).attr('data-type') === 'TP' ? 0.9 : 0.1;
+  });
+  nodeGroup.selectAll('.node').each(function() {
+    d3.select(this).attr('opacity', 0.3);
+  });
+  closeDetail();
+}
+
+function clearHighlights() {
+  linkGroup.selectAll('line').attr('opacity', 0.5);
+  nodeGroup.selectAll('.node').attr('opacity', 1.0);
+  closeDetail();
+}
+
+// ---- 初始加载时显示前4个rank概览 ----
+console.log('✅ TP8-PP2-DP2 组网图已加载，共32个GPU节点');
+</script>
+</body>
+</html>

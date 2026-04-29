@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformer Hierarchy — D3.js</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden; width: 100vw; height: 100vh;
+  }
+  #container { width: 100%; height: 100%; position: relative; }
+  .config-bar {
+    position: absolute; top: 10px; left: 10px; z-index: 100;
+    background: rgba(22,27,34,0.95); border: 1px solid #30363d;
+    border-radius: 8px; padding: 10px 14px; display: flex; gap: 10px;
+    align-items: center; font-size: 13px; color: #c9d1d9;
+  }
+  .config-bar input {
+    width: 52px; background: #0d1117; border: 1px solid #30363d;
+    color: #f0f6fc; border-radius: 4px; padding: 4px 6px; text-align: center;
+  }
+  .config-bar button {
+    background: #238636; color: #fff; border: none; border-radius: 4px;
+    padding: 5px 12px; cursor: pointer; font-size: 12px;
+  }
+  .config-bar button:hover { background: #2ea043; }
+  svg { width: 100%; height: 100%; display: block; }
+
+  .model-card  { fill: #161b22; stroke: #58a6ff; stroke-width: 2; }
+  .model-header { fill: #21262d; }
+  .model-title  { fill: #f0f6fc; font-size: 18px; font-family: sans-serif; font-weight: bold; }
+  .model-sub    { fill: #8b949e; font-size: 11px; font-family: sans-serif; }
+
+  .block-card   { fill: #0d1117; stroke: #ff8f40; stroke-width: 1; }
+  .block-header { fill: #ff8f40; }
+  .block-label  { fill: #0d1117; font-size: 13px; font-family: sans-serif; font-weight: bold; }
+
+  .mha-card  { fill: #161b22; stroke: #58a6ff; stroke-width: 1; }
+  .mha-head  { fill: #58a6ff; }
+  .mha-label { fill: #0d1117; font-size: 12px; font-family: sans-serif; font-weight: bold; }
+  .mha-sub   { fill: #8b949e; font-size: 10px; font-family: sans-serif; }
+
+  .ffn-card  { fill: #161b22; stroke: #3fb950; stroke-width: 1; }
+  .ffn-head  { fill: #3fb950; }
+  .ffn-label { fill: #0d1117; font-size: 12px; font-family: sans-serif; font-weight: bold; }
+  .ffn-sub   { fill: #8b949e; font-size: 10px; font-family: sans-serif; }
+
+  .embed-card  { fill: #161b22; stroke: #58a6ff; stroke-width: 1; }
+  .embed-label { fill: #58a6ff; font-size: 13px; font-family: sans-serif; font-weight: bold; }
+  .embed-sub   { fill: #8b949e; font-size: 10px; font-family: sans-serif; }
+
+  .output-card  { fill: #161b22; stroke: #58a6ff; stroke-width: 1; }
+  .output-label { fill: #58a6ff; font-size: 13px; font-family: sans-serif; font-weight: bold; }
+  .output-sub   { fill: #8b949e; font-size: 10px; font-family: sans-serif; }
+
+  .arrow-line { stroke: #484f58; stroke-width: 1; stroke-dasharray: 3,3; fill: none; }
+  .arrow-head { fill: #484f58; }
+
+  .lnorm-card  { fill: #161b22; stroke: #baa1ff; stroke-width: 1; }
+  .lnorm-label { fill: #baa1ff; font-size: 10px; font-family: sans-serif; font-weight: bold; }
+
+  .res-arrow-line { stroke: #484f58; stroke-width: 1; fill: none; }
+  .res-arrow-head { fill: #484f58; }
+
+  .ellipsis-card  { fill: #161b22; stroke: #ff8f40; stroke-width: 1; }
+  .ellipsis-text  { fill: #8b949e; font-size: 18px; font-family: sans-serif; font-weight: bold; }
+  .ellipsis-sub   { fill: #6e7681; font-size: 11px; font-family: sans-serif; }
+</style>
+</head>
+<body>
+<div id="container">
+  <div class="config-bar">
+    <label>L: <input id="LInput" type="number" value="16" min="1" max="128"></label>
+    <label>d_model: <input id="dModelInput" type="number" value="4096" min="128" max="8192" step="128"></label>
+    <label>Heads: <input id="headsInput" type="number" value="32" min="1" max="128"></label>
+    <label>d_ffn: <input id="dFfnInput" type="number" value="11008" min="256" max="32768" step="256"></label>
+    <button onclick="rebuild()">Refresh</button>
+  </div>
+</div>
+
+<script>
+var width = window.innerWidth;
+var height = window.innerHeight;
+
+var LAYOUT = {
+  outerPadX: 48,
+  outerPadY: 24,
+  headerH: 48,
+  modelCardW: 860,
+  blockH: 100,
+  blockHeaderH: 26,
+  blockPadX: 16,
+  blockPadY: 12,
+  embedH: 52,
+  outputH: 52,
+  arrowGap: 20,
+  maxDisplayBlocks: 8,
+  cardRx: 10,
+};
+
+function buildBlockDisplayList(numLayers) {
+  if (numLayers <= LAYOUT.maxDisplayBlocks) {
+    return d3.range(numLayers).map(function(i) { return { type: "block", id: i }; });
+  }
+  var result = [];
+  for (var i = 0; i < 3; i++) result.push({ type: "block", id: i });
+  result.push({ type: "ellipsis", hiddenStart: 3, hiddenEnd: numLayers - 4, total: numLayers });
+  for (var j = numLayers - 3; j < numLayers; j++) result.push({ type: "block", id: j });
+  return result;
+}
+
+function rebuild() {
+  if (typeof d3 === "undefined") return;
+  var L = parseInt(document.getElementById("LInput").value) || 16;
+  var dModel = parseInt(document.getElementById("dModelInput").value) || 4096;
+  var heads = parseInt(document.getElementById("headsInput").value) || 32;
+  var dFfn = parseInt(document.getElementById("dFfnInput").value) || 11008;
+
+  var container = d3.select("#container");
+  container.selectAll("svg").remove();
+
+  var svg = container.append("svg")
+    .attr("viewBox", "0 0 " + width + " " + height)
+    .attr("preserveAspectRatio", "xMidYMid meet");
+
+  var displayList = buildBlockDisplayList(L);
+  var displayCount = displayList.length;
+
+  var blockW = LAYOUT.modelCardW - LAYOUT.outerPadX * 2 - LAYOUT.blockPadX * 2;
+  var embedW = blockW;
+  var outputW = blockW;
+  var ellipsisH = 80;
+
+  var innerW = LAYOUT.modelCardW - LAYOUT.outerPadX * 2;
+  var innerH = LAYOUT.embedH + LAYOUT.arrowGap * 2 +
+    displayCount * LAYOUT.blockH + (displayCount - 1) * LAYOUT.arrowGap +
+    LAYOUT.outputH;
+
+  var modelW = LAYOUT.modelCardW;
+  var modelH = LAYOUT.headerH + LAYOUT.outerPadY * 2 + innerH;
+
+  var scale = Math.min(1, width * 0.85 / modelW, height * 0.85 / modelH);
+  var mx = (width - modelW * scale) / 2;
+  var my = (height - modelH * scale) / 2;
+
+  var g = svg.append("g").attr("transform", "translate(" + mx + "," + my + ") scale(" + scale + ")");
+
+  // ===== Outer Model Card =====
+  g.append("rect")
+    .attr("x", 0).attr("y", 0)
+    .attr("width", modelW).attr("height", modelH)
+    .attr("rx", LAYOUT.cardRx).attr("ry", LAYOUT.cardRx)
+    .attr("class", "model-card");
+
+  g.append("rect")
+    .attr("x", 0).attr("y", 0)
+    .attr("width", modelW).attr("height", LAYOUT.headerH)
+    .attr("rx", LAYOUT.cardRx).attr("ry", LAYOUT.cardRx)
+    .attr("class", "model-header");
+  g.append("rect")
+    .attr("x", 0).attr("y", LAYOUT.headerH / 2)
+    .attr("width", modelW).attr("height", LAYOUT.headerH / 2)
+    .attr("class", "model-header");
+
+  g.append("text")
+    .attr("x", 24).attr("y", 30)
+    .attr("class", "model-title")
+    .text("Transformer Model");
+
+  var headDim = Math.round(dModel / heads);
+  var totalParams = (2 * dModel * dModel * 4 + dModel * dFfn * 3) * L / 1e9;
+  g.append("text")
+    .attr("x", modelW - 24).attr("y", 30)
+    .attr("text-anchor", "end")
+    .attr("class", "model-sub")
+    .text("L=" + L + "  d=" + dModel + "  h=" + heads + " (" + headDim + "d)  d_ffn=" + dFfn + "  ~" + totalParams.toFixed(1) + "B params");
+
+  var contentX = LAYOUT.outerPadX;
+  var contentY = LAYOUT.headerH + LAYOUT.outerPadY;
+
+  // ===== Embedding =====
+  var embedY = contentY;
+  var embedG = g.append("g");
+  embedG.append("rect")
+    .attr("x", contentX).attr("y", embedY)
+    .attr("width", embedW).attr("height", LAYOUT.embedH)
+    .attr("rx", 8).attr("ry", 8)
+    .attr("class", "embed-card");
+  embedG.append("text")
+    .attr("x", contentX + embedW / 2).attr("y", embedY + 21)
+    .attr("text-anchor", "middle")
+    .attr("class", "embed-label")
+    .text("Input Embedding");
+  embedG.append("text")
+    .attr("x", contentX + embedW / 2).attr("y", embedY + 37)
+    .attr("text-anchor", "middle")
+    .attr("class", "embed-sub")
+    .text("vocab_size × d_model  +  Positional Encoding");
+
+  var cy = embedY + LAYOUT.embedH;
+  var sectionBounds = [{ top: embedY, bottom: cy, midX: contentX + embedW / 2 }];
+
+  var gap = 8;
+  var lnW = 24;
+  var innerW = embedW - LAYOUT.blockPadX * 2;
+  var subW = (innerW - gap * 2 - lnW) / 2;
+
+  // ===== Transformer Blocks =====
+  displayList.forEach(function(item, di) {
+    var by = cy + LAYOUT.arrowGap;
+
+    if (item.type === "ellipsis") {
+      var ey = by + (LAYOUT.blockH - ellipsisH) / 2;
+      var eG = g.append("g");
+      eG.append("rect")
+        .attr("x", contentX).attr("y", ey)
+        .attr("width", embedW).attr("height", ellipsisH)
+        .attr("rx", 8).attr("ry", 8)
+        .attr("class", "ellipsis-card");
+      eG.append("text")
+        .attr("x", contentX + embedW / 2).attr("y", ey + ellipsisH / 2 + 6)
+        .attr("text-anchor", "middle")
+        .attr("class", "ellipsis-text")
+        .text("···");
+      eG.append("text")
+        .attr("x", contentX + embedW / 2).attr("y", ey + ellipsisH / 2 + 22)
+        .attr("text-anchor", "middle")
+        .attr("class", "ellipsis-sub")
+        .text("Block " + item.hiddenStart + " ~ Block " + item.hiddenEnd);
+      eG.append("title").text("Block " + item.hiddenStart + " ~ Block " + item.hiddenEnd + " (" + (item.hiddenEnd - item.hiddenStart + 1) + " layers hidden)");
+      cy = by + LAYOUT.blockH;
+      sectionBounds.push({ top: by, bottom: cy, midX: contentX + embedW / 2 });
+      return;
+    }
+
+    var blockId = item.id;
+    var bG = g.append("g");
+
+    bG.append("rect")
+      .attr("x", contentX).attr("y", by)
+      .attr("width", embedW).attr("height", LAYOUT.blockH)
+      .attr("rx", 8).attr("ry", 8)
+      .attr("class", "block-card");
+
+    bG.append("rect")
+      .attr("x", contentX).attr("y", by)
+      .attr("width", embedW).attr("height", LAYOUT.blockHeaderH)
+      .attr("rx", 8).attr("ry", 8)
+      .attr("class", "block-header");
+    bG.append("rect")
+      .attr("x", contentX).attr("y", by + LAYOUT.blockHeaderH / 2)
+      .attr("width", embedW).attr("height", LAYOUT.blockHeaderH / 2)
+      .attr("class", "block-header");
+    bG.append("text")
+      .attr("x", contentX + embedW / 2).attr("y", by + 18)
+      .attr("text-anchor", "middle")
+      .attr("class", "block-label")
+      .text("Block " + blockId);
+
+    var subY = by + LAYOUT.blockHeaderH + LAYOUT.blockPadY;
+    var subH = LAYOUT.blockH - LAYOUT.blockHeaderH - LAYOUT.blockPadY * 2;
+
+    // ---- MHA Sub-card ----
+    var mhaX = contentX + LAYOUT.blockPadX;
+    bG.append("rect")
+      .attr("x", mhaX).attr("y", subY)
+      .attr("width", subW).attr("height", subH)
+      .attr("rx", 6).attr("ry", 6)
+      .attr("class", "mha-card");
+    bG.append("rect")
+      .attr("x", mhaX).attr("y", subY)
+      .attr("width", subW).attr("height", 20)
+      .attr("rx", 6).attr("ry", 6)
+      .attr("class", "mha-head");
+    bG.append("rect")
+      .attr("x", mhaX).attr("y", subY + 10)
+      .attr("width", subW).attr("height", 10)
+      .attr("class", "mha-head");
+    bG.append("text")
+      .attr("x", mhaX + subW / 2).attr("y", subY + 14)
+      .attr("text-anchor", "middle")
+      .attr("class", "mha-label")
+      .text("Multi-Head Attention");
+    bG.append("text")
+      .attr("x", mhaX + subW / 2).attr("y", subY + subH / 2 + 7)
+      .attr("text-anchor", "middle")
+      .attr("class", "mha-sub")
+      .text("Q·K·V Proj  |  " + heads + " heads × " + headDim + "d");
+
+    // ---- LN between MHA and FFN ----
+    var lnX = mhaX + subW + gap;
+    bG.append("rect")
+      .attr("x", lnX).attr("y", subY + subH / 2 - 12)
+      .attr("width", lnW).attr("height", 24)
+      .attr("rx", 4).attr("ry", 4)
+      .attr("class", "lnorm-card");
+    bG.append("text")
+      .attr("x", lnX + lnW / 2).attr("y", subY + subH / 2 + 4)
+      .attr("text-anchor", "middle")
+      .attr("class", "lnorm-label")
+      .text("LN");
+
+    // ---- FFN Sub-card ----
+    var ffnX = lnX + lnW + gap;
+    bG.append("rect")
+      .attr("x", ffnX).attr("y", subY)
+      .attr("width", subW).attr("height", subH)
+      .attr("rx", 6).attr("ry", 6)
+      .attr("class", "ffn-card");
+    bG.append("rect")
+      .attr("x", ffnX).attr("y", subY)
+      .attr("width", subW).attr("height", 20)
+      .attr("rx", 6).attr("ry", 6)
+      .attr("class", "ffn-head");
+    bG.append("rect")
+      .attr("x", ffnX).attr("y", subY + 10)
+      .attr("width", subW).attr("height", 10)
+      .attr("class", "ffn-head");
+    bG.append("text")
+      .attr("x", ffnX + subW / 2).attr("y", subY + 14)
+      .attr("text-anchor", "middle")
+      .attr("class", "ffn-label")
+      .text("Feed-Forward Network");
+    bG.append("text")
+      .attr("x", ffnX + subW / 2).attr("y", subY + subH / 2 + 7)
+      .attr("text-anchor", "middle")
+      .attr("class", "ffn-sub")
+      .text("Linear → GELU → Linear  |  " + dFfn + "d");
+
+    // ---- Residual arrows (skip connections) ----
+    var sx = contentX + embedW;
+    var sy1 = by + LAYOUT.blockHeaderH;
+    var sy2 = by + LAYOUT.blockH;
+    g.append("line")
+      .attr("x1", sx + 4).attr("y1", sy1)
+      .attr("x2", sx + 4).attr("y2", sy2)
+      .attr("class", "res-arrow-line");
+    g.append("polygon")
+      .attr("points", (sx+4) + "," + sy2 + " " + (sx) + "," + (sy2-5) + " " + (sx+8) + "," + (sy2-5))
+      .attr("class", "res-arrow-head");
+    g.append("text")
+      .attr("x", sx + 12).attr("y", (sy1 + sy2) / 2 + 5)
+      .attr("fill", "#484f58").attr("font-size", "8px").attr("font-family", "sans-serif")
+      .text("Res");
+
+    cy = by + LAYOUT.blockH;
+    sectionBounds.push({ top: by, bottom: cy, midX: contentX + embedW / 2 });
+  });
+
+  // ===== Output Layer =====
+  var outY = cy + LAYOUT.arrowGap;
+  var outG = g.append("g");
+  outG.append("rect")
+    .attr("x", contentX).attr("y", outY)
+    .attr("width", outputW).attr("height", LAYOUT.outputH)
+    .attr("rx", 8).attr("ry", 8)
+    .attr("class", "output-card");
+  outG.append("text")
+    .attr("x", contentX + outputW / 2).attr("y", outY + 21)
+    .attr("text-anchor", "middle")
+    .attr("class", "output-label")
+    .text("Output Layer");
+  outG.append("text")
+    .attr("x", contentX + outputW / 2).attr("y", outY + 37)
+    .attr("text-anchor", "middle")
+    .attr("class", "output-sub")
+    .text("LayerNorm  →  Linear (d_model → vocab_size)");
+
+  sectionBounds.push({ top: outY, bottom: outY + LAYOUT.outputH, midX: contentX + outputW / 2 });
+
+  // ===== Draw arrows between sections =====
+  for (var si = 0; si < sectionBounds.length - 1; si++) {
+    var from = sectionBounds[si];
+    var to = sectionBounds[si + 1];
+    var arrowTop = from.bottom;
+    var arrowBot = to.top;
+    g.append("line")
+      .attr("x1", from.midX).attr("y1", arrowTop)
+      .attr("x2", to.midX).attr("y2", arrowBot - 7)
+      .attr("class", "arrow-line");
+    g.append("polygon")
+      .attr("points", to.midX + "," + arrowBot + " " + (to.midX-4) + "," + (arrowBot-6) + " " + (to.midX+4) + "," + (arrowBot-6))
+      .attr("class", "arrow-head");
+  }
+}
+
+window.addEventListener("resize", function() {
+  if (typeof d3 === "undefined") return;
+  width = window.innerWidth;
+  height = window.innerHeight;
+  rebuild();
+});
+
+document.addEventListener("DOMContentLoaded", function() { rebuild(); });
+</script>
+</body>
+</html>
