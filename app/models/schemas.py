@@ -75,6 +75,45 @@ class SimulationResult(BaseModel):
     aggregate_dp_comm_gb_per_step: float
 
 
+class OperatorTrace(BaseModel):
+    """Single operator execution trace record."""
+    op_name: str = Field(description="算子名称, e.g. 'MHA_QKV_Proj', 'FFN_FC1', 'AllReduce'")
+    op_type: str = Field(description="算子类型: computation | communication | collective")
+    category: str = Field(description="算子分类: fwd | bwd | optimizer")
+    start_us: float = Field(description="开始时间 (微秒)")
+    duration_us: float = Field(description="持续时间 (微秒)")
+    flops: float = Field(default=0, description="计算量 (FLOPs)")
+    comm_bytes: float = Field(default=0, description="通信量 (bytes)")
+    parent_op: str = Field(default="", description="父算子名称，用于tracing层次")
+    depth: int = Field(default=0, description="tracing层次深度")
+    details: dict[str, str] = Field(default_factory=dict, description="额外信息")
+
+
+class TimelineSummary(BaseModel):
+    """Operator timeline summary statistics."""
+    total_time_ms: float
+    compute_time_ms: float
+    comm_time_ms: float
+    compute_pct: float
+    comm_pct: float
+    total_flops: float
+    total_comm_gb: float
+
+
+class DeviceSimulationDetail(BaseModel):
+    """Per-device simulation detail with operator timeline and tracing."""
+    card_id: str
+    global_rank: int
+    task_id: str
+    topology_name: str
+    device_type: str
+    dp_rank: int = 0
+    tp_rank: int = 0
+    pp_rank: int = 0
+    operators: list[OperatorTrace] = Field(default_factory=list)
+    timeline: TimelineSummary | None = None
+
+
 class ComparisonReport(BaseModel):
     """Comparison report between original and equivalent topology."""
     original: SimulationResult
