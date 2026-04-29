@@ -170,5 +170,7 @@ class SessionState(BaseModel):
     comparison_report: ComparisonReport | None = None
     original_training_model: TrainingModel | None = None
     equivalent_training_model: TrainingModel | None = None
+    original_task_id: str | None = None
+    equivalent_task_id: str | None = None
     step: str = "idle"  # idle | params_collected | topology_generated | simulating | completed
     history: list[dict[str, Any]] = Field(default_factory=list)
