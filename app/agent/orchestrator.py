@@ -84,14 +84,11 @@ _UTILITY_TOOLS = [
         "type": "function",
         "function": {
             "name": "compare_results",
-            "description": "对比原始组网和等效组网仿真结果，输出等效性分析报告",
+            "description": "对比原始组网和等效组网的仿真结果，输出等效性分析报告。无需传入仿真数据，系统会自动从已保存的仿真结果中读取。",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "original_json": {"type": "string", "description": "原始组网仿真结果 JSON"},
-                    "equivalent_json": {"type": "string", "description": "等效组网仿真结果 JSON"},
-                },
-                "required": ["original_json", "equivalent_json"],
+                "properties": {},
+                "required": [],
             },
         },
     },
@@ -118,13 +115,19 @@ def _execute_utility_tool(tool_name: str, arguments: dict, session: SessionState
     elif tool_name == "run_simulation":
         topology_json = json.loads(arguments["topology_json"])
         task_id = mcp_client.execute_task(topology_json)
-        return {"task_id": task_id, "status": "submitted", "topology_name": arguments["topology_name"]}
+        topo_name = arguments.get("topology_name", "")
+        if "原始" in topo_name:
+            session.original_task_id = task_id
+        else:
+            session.equivalent_task_id = task_id
+        return {"task_id": task_id, "status": "submitted", "topology_name": topo_name}
 
     elif tool_name == "compare_results":
-        from app.models.schemas import SimulationResult as SR
-        original = SR.model_validate(json.loads(arguments["original_json"]))
-        equivalent = SR.model_validate(json.loads(arguments["equivalent_json"]))
-        report = _build_comparison_report(original, equivalent)
+        if not session.original_simulation:
+            return {"error": "缺少原始组网仿真结果，请先运行 training-mesh-profiler-skill 获取原始组网仿真数据"}
+        if not session.equivalent_simulation:
+            return {"error": "缺少等效组网仿真结果，请先运行 training-mesh-profiler-skill 获取等效组网仿真数据"}
+        report = _build_comparison_report(session.original_simulation, session.equivalent_simulation)
         session.comparison_report = report
         session.step = "completed"
         return report.model_dump()
@@ -182,6 +185,19 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             session.original_simulation = data
         else:
             session.equivalent_simulation = data
+        session.step = "simulating"
+        # Return lightweight summary — full per-card data available via REST
+        return {
+            "topology_name": data.topology_name,
+            "device_type": data.device_type.value,
+            "total_nodes": data.total_nodes,
+            "cards_count": len(data.cards),
+            "aggregate_compute_intensity_tflops": data.aggregate_compute_intensity_tflops,
+            "aggregate_memory_usage_gb": data.aggregate_memory_usage_gb,
+            "aggregate_communication_traffic_gbps": data.aggregate_communication_traffic_gbps,
+            "session_id": session.session_id,
+            "_type": "profiler_summary",
+        }
 
     elif tool_name == "training-model-gen-skill" and isinstance(data, TrainingModel):
         if arguments.get("is_equivalent"):
@@ -313,6 +329,14 @@ async def agent_stream(
             tool_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
 
+            # Auto-inject task_id from session if LLM didn't provide one
+            if tool_name == "training-mesh-profiler-skill" and not arguments.get("task_id"):
+                topo_name = arguments.get("topology_name", "")
+                sid = session.original_task_id if "原始" in topo_name else session.equivalent_task_id
+                if sid:
+                    arguments["task_id"] = sid
+                    logger.info(f"[agent_stream] auto-injected task_id={sid} for profiler")
+
             yield AgentEvent(
                 event_type="tool_call",
                 message=f"调用工具: {tool_name}",
@@ -342,6 +366,8 @@ async def agent_stream(
                 result_msg = f"组网 '{result.get('name', '')}' 生成成功"
             elif tool_name == "training-model-gen-skill":
                 result_msg = f"模型结构 'transformer_model' 生成成功, {result.get('layers_count', 0)} 层"
+            elif tool_name == "training-mesh-profiler-skill":
+                result_msg = f"仿真分析完成: {result.get('topology_name', '')} — {result.get('total_nodes', 0)} 节点, 聚合算力 {result.get('aggregate_compute_intensity_tflops', 0)} TFLOPS"
             elif tool_name == "run_simulation":
                 result_msg = f"仿真任务已下发: {result.get('task_id', '')}"
             elif tool_name == "compare_results":
