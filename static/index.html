@@ -492,6 +492,50 @@ body {
 .fade-in { animation: fade-in 0.25s ease; }
 
 /* ── D3 Mesh Visualization ── */
+.tp-rect.has-data { stroke: #39bae6; }
+.tp-rect.has-data:hover { stroke: #39bae6; stroke-width: 2; fill: #162430; }
+/* ── Rank Tooltip ── */
+#rank-tooltip {
+  position: fixed; pointer-events: none; z-index: 2000;
+  background: var(--bg-panel); border: 1px solid var(--border-active);
+  border-radius: 10px; padding: 0; min-width: 200px; max-width: 340px;
+  font-family: var(--font-mono); font-size: 11px;
+  box-shadow: 0 6px 28px rgba(0,0,0,0.55);
+  opacity: 0; transition: opacity 0.15s; line-height: 1.4;
+}
+#rank-tooltip.visible { opacity: 1; }
+#rank-tooltip.pinned { pointer-events: auto; }
+.tooltip-header {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  font-weight: 600; font-size: 12px; color: var(--text-primary);
+  display: flex; align-items: center; gap: 8px;
+}
+.tooltip-device {
+  margin-left: auto; font-size: 10px;
+  background: rgba(57,186,230,0.15); color: var(--cyan);
+  padding: 1px 8px; border-radius: 8px;
+}
+.tooltip-body { padding: 8px 12px 10px; }
+.tooltip-section-label {
+  font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 6px;
+}
+.tooltip-table { width: 100%; border-collapse: collapse; }
+.tooltip-table td { padding: 3px 6px; vertical-align: middle; }
+.tooltip-table .metric-label { color: var(--text-secondary); text-align: left; font-size: 10px; }
+.tooltip-table .metric-val { text-align: right; font-size: 11px; color: var(--text-primary); font-weight: 500; white-space: nowrap; }
+.tooltip-table .metric-val.actual { color: var(--teal); }
+.tooltip-table .metric-delta { text-align: right; font-size: 10px; white-space: nowrap; }
+.tooltip-table .metric-delta.positive { color: var(--green); }
+.tooltip-table .metric-delta.negative { color: var(--red); }
+.tooltip-table .col-header { font-size: 9px; color: var(--text-muted); text-align: right; padding: 2px 6px 4px; }
+.tooltip-table .col-header.left { text-align: left; }
+.tooltip-empty { color: var(--text-muted); font-size: 10px; text-align: center; padding: 6px 0; }
+.tooltip-pin-hint {
+  font-size: 9px; color: var(--text-muted); text-align: center;
+  padding: 4px 0 0; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 6px;
+}
+.tp-rect.pinned { stroke: var(--yellow) !important; stroke-width: 2.5 !important; }
 .mesh-config-toolbar { display: none; align-items: center; gap: 10px; font-size: 13px; }
 .mesh-config-toolbar label { color: var(--text-secondary); }
 .mesh-config-toolbar input {
@@ -566,6 +610,7 @@ body {
       </span>
     </div>
     <div class="canvas-svg-wrap" id="canvas-svg-wrap">
+      <div id="rank-tooltip"></div>
       <div id="mesh-container"></div>
       <div class="canvas-placeholder" id="canvas-placeholder">
         <svg width="120" height="100" viewBox="0 0 120 100"><rect width="120" height="100" rx="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/><text x="60" y="48" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="11" opacity="0.6">Canvas</text><text x="60" y="66" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="9" opacity="0.35">生成组网后自动渲染</text></svg>
@@ -860,6 +905,7 @@ function handleSSEEvent(type, data) {
         _pendingMeshList.forEach(function (d) { loadMeshData(d); });
         _pendingMeshList = [];
       }
+      fetchSimulationData();
       break;
     case 'error':
       setStatus('error');

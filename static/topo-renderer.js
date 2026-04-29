@@ -1,24 +1,84 @@
 /**
  * Topology Renderer — D3-based mesh topology visualization module.
  *
+ * Merges: incremental DP switch, D3 zoom, batch SSE rendering, debounced resize,
+ * tooltip system, estimation engine, simulation data fetch, text overflow fix.
+ *
  * Public API (also attached to window for inline onclick handlers):
  *   loadMeshData(topoData)   — ingest topology JSON from SSE / API
  *   meshRebuild()            — re-render the current topology
  *   meshSwitchDp(idx)        — single-view DP selector
  *   meshSwitchDpOrig(idx)    — compare-view original DP selector
  *   meshSwitchDpEq(idx)      — compare-view equivalent DP selector
+ *   fetchSimulationData()    — pull simulation results from REST and re-render
  */
 
+// ── Model config & estimation engine ──
+
+var _MODEL_CFG = {
+  'A2': { model_params: 7e9, hidden_dim: 4096, num_layers: 32 },
+  'A3': { model_params: 20e9, hidden_dim: 6144, num_layers: 48 },
+  'A5': { model_params: 70e9, hidden_dim: 8192, num_layers: 64 }
+};
+var _SEQ_LEN = 4096;
+var _MICRO_BATCH = 1;
+var _BYTES_PER_PARAM = 2;
+
+function estimateCardMetrics(deviceType, totalNodes, dp, tp, pp) {
+  var cfg = _MODEL_CFG[deviceType] || _MODEL_CFG['A3'];
+  var p = cfg.model_params;
+
+  var flops = 6 * p * _SEQ_LEN * _MICRO_BATCH / (dp * tp * pp);
+
+  var param_mem = p * _BYTES_PER_PARAM / tp;
+  var optim_mem = 2 * p * _BYTES_PER_PARAM / dp;
+  var act_mem = cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM * cfg.num_layers / pp;
+  var hbm = (param_mem + optim_mem + act_mem) / 1e9;
+
+  var tp_comm = tp > 1 ? cfg.num_layers * 2 * cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM * (tp - 1) / tp / 1e9 : 0;
+  var pp_comm = pp > 1 ? 2 * (pp - 1) / pp * cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM / 1e6 : 0;
+  var dp_comm = dp > 1 ? 2 * p * _BYTES_PER_PARAM * (dp - 1) / dp / 1e9 : 0;
+
+  return {
+    flops_per_card: flops,
+    hbm_gb: hbm,
+    tp_comm_gb_per_micro: tp_comm,
+    pp_comm_mb_per_micro: pp_comm,
+    dp_comm_gb_per_step: dp_comm
+  };
+}
+
+function formatFlops(value) {
+  if (value == null) return '—';
+  if (value === 0) return '0';
+  var exp = Math.floor(Math.log10(Math.abs(value)));
+  var mantissa = value / Math.pow(10, exp);
+  return mantissa.toFixed(2) + '×10^' + exp;
+}
+
+function computeAllEstimates(deviceType, totalNodes, dp, tp, pp) {
+  var est = {};
+  for (var r = 0; r < totalNodes; r++) {
+    est[r] = estimateCardMetrics(deviceType, totalNodes, dp, tp, pp);
+  }
+  return est;
+}
+
 // ── State ──
-var meshOriginal = null;
+
+var meshOriginal = null;       // { name, device_type, tp, pp, dp, total_nodes }
 var meshEquivalent = null;
 var meshOrigDp = 0;
 var meshEqDp = 0;
+var meshEstimateOrig = {};     // { global_rank: { flops_per_card, hbm_gb, ... } }
+var meshEstimateEq = {};
+var meshActualOrig = {};       // { global_rank: CardMetrics } from REST simulation data
+var meshActualEq = {};
+var meshPinnedRank = null;     // { side: "orig"|"eq", globalRank: number }
 
-// Tracks the last rendered configuration so we can skip full rebuilds
-// when only the active DP index changed (or only the viewport resized).
+// Tracks the last rendered configuration for fast DP-switch path
 var _renderState = {
-  mode: null,       // "single" | "compare" | null
+  mode: null,
   orig: { tp: 0, pp: 0, dp: 0, activeDp: -1 },
   eq: { tp: 0, pp: 0, dp: 0, activeDp: -1 },
   width: 0,
@@ -26,6 +86,7 @@ var _renderState = {
 };
 
 // ── Layout constants ──
+
 var MESH_CARD = {
   dpShadowOffset: [[90, 90], [60, 60], [30, 30]],
   tpPadX: 16,
@@ -73,7 +134,8 @@ function meshBuildData(tp, pp, dpCount, activeDp) {
         id: pi,
         label: "PP" + pi,
         tps: d3.range(tp).map(function (ti) {
-          return { id: ti, label: "TP" + ti, rank: "Rank" + (dpBase + pi * tp + ti) };
+          var gr = dpBase + pi * tp + ti;
+          return { id: ti, label: "TP" + ti, rank: "Rank" + gr, globalRank: gr };
         }),
       };
     }),
@@ -96,7 +158,168 @@ function _meshCalcDims(tp, pp) {
   return { dpW: dpW, dpH: dpH };
 }
 
-function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW, viewH, sharedScale) {
+// ── Tooltip system ──
+
+function _getMetrics(globalRank, isOrig) {
+  var estimate = isOrig ? meshEstimateOrig[globalRank] : meshEstimateEq[globalRank];
+  var actual = isOrig ? meshActualOrig[globalRank] : meshActualEq[globalRank];
+  var deviceType = isOrig ? (meshOriginal || {}).device_type : (meshEquivalent || {}).device_type;
+  return { estimate: estimate, actual: actual, deviceType: deviceType };
+}
+
+function _hasActualData(side) {
+  var map = side === 'orig' ? meshActualOrig : meshActualEq;
+  return Object.keys(map).length > 0;
+}
+
+function _buildTooltipHTML(globalRank, metrics) {
+  var deviceType = metrics.deviceType || '';
+  var estimate = metrics.estimate;
+  var actual = metrics.actual;
+
+  var html = '<div class="tooltip-header">Rank ' + globalRank;
+  if (deviceType) html += ' <span class="tooltip-device">' + deviceType + '</span>';
+  html += '</div><div class="tooltip-body">';
+
+  if (!estimate && !actual) {
+    html += '<div class="tooltip-empty">暂无性能数据</div>';
+  } else if (!actual || Object.keys(actual).length === 0) {
+    html += '<div class="tooltip-section-label">📊 理论估算</div>';
+    html += _buildSingleTable(estimate);
+  } else {
+    html += '<table class="tooltip-table">';
+    html += '<tr><th class="col-header left">指标</th><th class="col-header">理论估算值</th><th class="col-header">仿真验证值</th></tr>';
+    html += _buildCompareRow('单卡FLOPs', '', estimate, actual, 'flops_per_card', formatFlops);
+    html += _buildCompareRow('HBM', 'GB', estimate, actual, 'hbm_gb');
+    html += _buildCompareRow('TP通信', 'GB/micro', estimate, actual, 'tp_comm_gb_per_micro');
+    html += _buildCompareRow('PP通信', 'MB/micro', estimate, actual, 'pp_comm_mb_per_micro');
+    html += _buildCompareRow('DP通信', 'GB/step', estimate, actual, 'dp_comm_gb_per_step');
+    html += '</table>';
+  }
+
+  html += '<div class="tooltip-pin-hint">🖱 点击固定 · 再点取消</div>';
+  html += '</div>';
+  return html;
+}
+
+function _buildSingleTable(metrics) {
+  if (!metrics) return '<div class="tooltip-empty">无数据</div>';
+  var html = '<table class="tooltip-table">';
+  html += _buildMetricRow('单卡FLOPs', formatFlops(metrics.flops_per_card), '');
+  html += _buildMetricRow('HBM', metrics.hbm_gb != null ? Number(metrics.hbm_gb).toFixed(2) : '—', 'GB');
+  html += _buildMetricRow('TP通信', metrics.tp_comm_gb_per_micro != null ? Number(metrics.tp_comm_gb_per_micro).toFixed(2) : '—', 'GB/micro');
+  html += _buildMetricRow('PP通信', metrics.pp_comm_mb_per_micro != null ? Number(metrics.pp_comm_mb_per_micro).toFixed(2) : '—', 'MB/micro');
+  html += _buildMetricRow('DP通信', metrics.dp_comm_gb_per_step != null ? Number(metrics.dp_comm_gb_per_step).toFixed(2) : '—', 'GB/step');
+  html += '</table>';
+  return html;
+}
+
+function _buildMetricRow(label, value, unit) {
+  var v;
+  if (value == null) { v = '—'; }
+  else if (typeof value === 'string') { v = value; }
+  else { v = Number(value).toFixed(2); }
+  var uv = unit ? ' ' + unit : '';
+  return '<tr><td class="metric-label">' + label + '</td><td class="metric-val">' + v + uv + '</td></tr>';
+}
+
+function _buildCompareRow(label, unit, estimate, actual, key, fmt) {
+  fmt = fmt || function (v) { return v != null ? Number(v).toFixed(2) : '—'; };
+  var ev = estimate && estimate[key] != null ? fmt(estimate[key]) : '—';
+  var av = actual && actual[key] != null ? fmt(actual[key]) : '—';
+  var delta = '';
+  var deltaClass = '';
+  if (estimate && actual && estimate[key] != null && actual[key] != null) {
+    var diff = actual[key] - estimate[key];
+    var pct = estimate[key] !== 0 ? (diff / estimate[key] * 100) : 0;
+    var sign = diff >= 0 ? '+' : '';
+    delta = sign + Number(pct).toFixed(1) + '%';
+    deltaClass = Math.abs(pct) <= 5 ? 'positive' : 'negative';
+  }
+  var uv = unit ? ' ' + unit : '';
+  return '<tr><td class="metric-label">' + label + '</td>' +
+    '<td class="metric-val">' + ev + uv + '</td>' +
+    '<td class="metric-val actual">' + av + uv + '</td>' +
+    '<td class="metric-delta ' + deltaClass + '">' + delta + '</td></tr>';
+}
+
+function showTooltip(event, globalRank, isOrig) {
+  var tip = document.getElementById('rank-tooltip');
+  var metrics = _getMetrics(globalRank, isOrig);
+  tip.innerHTML = _buildTooltipHTML(globalRank, metrics);
+  tip.classList.add('visible');
+  _positionTooltip(event, tip);
+}
+
+function _positionTooltip(event, tip) {
+  var x = event.clientX + 16;
+  var y = event.clientY - 10;
+  var tw = tip.offsetWidth;
+  var th = tip.offsetHeight;
+  if (x + tw > window.innerWidth - 8) x = event.clientX - tw - 16;
+  if (y + th > window.innerHeight - 8) y = event.clientY - th - 10;
+  if (x < 8) x = 8;
+  if (y < 8) y = 8;
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
+
+function moveTooltip(event) {
+  var tip = document.getElementById('rank-tooltip');
+  if (!tip.classList.contains('pinned')) {
+    _positionTooltip(event, tip);
+  }
+}
+
+function hideTooltip() {
+  var tip = document.getElementById('rank-tooltip');
+  if (!tip.classList.contains('pinned')) {
+    tip.classList.remove('visible');
+    tip.innerHTML = '';
+    d3.selectAll('.tp-rect.pinned').classed('pinned', false);
+    meshPinnedRank = null;
+  }
+}
+
+// ── Fetch simulation data from REST ──
+
+function fetchSimulationData() {
+  if (!sessionId) return;
+  try {
+    fetch(API + '/session/' + sessionId + '/simulation').then(function (resp) {
+      if (!resp.ok) return;
+      return resp.json().then(function (data) {
+        var changed = false;
+        if (data.original_simulation && data.original_simulation.cards) {
+          meshActualOrig = {};
+          data.original_simulation.cards.forEach(function (c) {
+            meshActualOrig[c.global_rank] = c;
+          });
+          changed = true;
+        }
+        if (data.equivalent_simulation && data.equivalent_simulation.cards) {
+          meshActualEq = {};
+          data.equivalent_simulation.cards.forEach(function (c) {
+            meshActualEq[c.global_rank] = c;
+          });
+          changed = true;
+        }
+        if (changed && (meshOriginal || meshEquivalent)) {
+          meshRebuild();
+        }
+      });
+    }).catch(function (e) {
+      console.warn('Failed to fetch simulation data:', e);
+    });
+  } catch (e) {
+    console.warn('Failed to fetch simulation data:', e);
+  }
+}
+
+// ── Rendering ──
+
+function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW, viewH, sharedScale, isOrig) {
+  if (isOrig === undefined) isOrig = !!meshOriginal;
   var cfg = data.config;
   var ppList = data.pp;
   var displayList = meshBuildDisplayList(ppList);
@@ -190,8 +413,8 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
         ';color:#58a6ff;border:1px solid #58a6ff;border-radius:4px;padding:2px 6px;font-family:sans-serif;cursor:pointer;overflow:hidden;text-overflow:ellipsis;"></select>'
     );
 
-  // Info text — available width between dropdown right edge and card right edge
-  var infoMaxWidth = dpW * scale - (20 + 200 + 30) * scale;  // dropdown left(20) + dropdown width(200) + right padding(30)
+  // Info text — textLength to prevent overflow
+  var infoMaxWidth = dpW * scale - (20 + 200 + 30) * scale;
   if (infoMaxWidth < 60 * scale) infoMaxWidth = 60 * scale;
   var npuTotal = cfg.tpCount * cfg.ppCount * cfg.dpCount;
   var infoText = "TP" + cfg.tpCount + "×PP" + cfg.ppCount + "×DP" + cfg.dpCount + " | " + npuTotal + " NPUs";
@@ -281,6 +504,9 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
     var tpY = py + MESH_CARD.ppHeaderH * scale + MESH_CARD.tpPadY * scale;
     pp.tps.forEach(function (tp, ti) {
       var ty = tpY + ti * (MESH_CARD.tpH + MESH_CARD.tpGap) * scale;
+      var side = isOrig ? 'orig' : 'eq';
+      var hasActual = _hasActualData(side);
+      var rectClass = 'tp-rect' + (hasActual ? ' has-data' : '');
       ppG
         .append("rect")
         .attr("x", tpX)
@@ -289,7 +515,40 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
         .attr("height", MESH_CARD.tpH * scale)
         .attr("rx", 4 * scale)
         .attr("ry", 4 * scale)
-        .attr("class", "tp-rect");
+        .attr("class", rectClass)
+        .attr("data-rank", tp.globalRank)
+        .attr("data-side", side)
+        .on("mouseover", function (event) {
+          if (meshPinnedRank) return;
+          d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
+          showTooltip(event, tp.globalRank, isOrig);
+        })
+        .on("mousemove", function (event) {
+          moveTooltip(event);
+        })
+        .on("mouseout", function () {
+          if (meshPinnedRank) return;
+          d3.select(this).attr("stroke", null).attr("stroke-width", null);
+          hideTooltip();
+        })
+        .on("click", function (event) {
+          event.stopPropagation();
+          var alreadyPinned = meshPinnedRank && meshPinnedRank.globalRank === tp.globalRank && meshPinnedRank.side === side;
+          d3.selectAll('.tp-rect.pinned').classed('pinned', false);
+          if (alreadyPinned) {
+            hideTooltip();
+            document.getElementById('rank-tooltip').classList.remove('pinned');
+            meshPinnedRank = null;
+          } else {
+            d3.select(this).classed('pinned', true);
+            var metrics = _getMetrics(tp.globalRank, isOrig);
+            var tip = document.getElementById('rank-tooltip');
+            tip.innerHTML = _buildTooltipHTML(tp.globalRank, metrics);
+            tip.classList.add('visible', 'pinned');
+            _positionTooltip(event, tip);
+            meshPinnedRank = { side: side, globalRank: tp.globalRank };
+          }
+        });
       ppG
         .append("text")
         .attr("x", tpX + MESH_CARD.tpW * scale - 4 * scale)
@@ -397,6 +656,12 @@ function meshSwitchDpEq(dpIndex) {
 
 function meshRebuild() {
   var container = d3.select("#mesh-container");
+  // Dismiss pinned tooltip on rebuild
+  var tip = document.getElementById('rank-tooltip');
+  tip.classList.remove('visible', 'pinned');
+  tip.innerHTML = '';
+  meshPinnedRank = null;
+  container.selectAll("svg").remove();
   meshUpdateSize();
 
   if (!meshOriginal && !meshEquivalent) return;
@@ -423,7 +688,6 @@ function meshRebuild() {
         return;
       }
     } else {
-      // Compare mode — check each side independently
       var origSameShape =
         meshOriginal.tp === _renderState.orig.tp &&
         meshOriginal.pp === _renderState.orig.pp &&
@@ -456,7 +720,6 @@ function meshRebuild() {
   }
 
   // ── Full rebuild ──
-  container.selectAll("svg").remove();
 
   if (meshOriginal && meshEquivalent) {
     // ── Compare Mode ──
@@ -530,7 +793,8 @@ function meshRebuild() {
       titleH,
       origW,
       contentH,
-      sharedScale
+      sharedScale,
+      true
     );
     _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
@@ -543,11 +807,11 @@ function meshRebuild() {
       titleH,
       eqW,
       contentH,
-      sharedScale
+      sharedScale,
+      false
     );
     _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
-    // Update render state
     _renderState.mode = "compare";
     _renderState.orig.tp = meshOriginal.tp;
     _renderState.orig.pp = meshOriginal.pp;
@@ -597,7 +861,6 @@ function meshRebuild() {
     _meshBuildView(zoomLayer, data, "mesh-dp-select", "meshSwitchDp", 0, 0, meshWidth, meshHeight);
     _populateDpSelect("mesh-dp-select", entry.dp, meshOrigDp);
 
-    // Update render state
     _renderState.mode = "single";
     _renderState.orig.tp = entry.tp;
     _renderState.orig.pp = entry.pp;
@@ -615,6 +878,8 @@ function loadMeshData(topoData) {
   var tp = topoData.tp_size || topoData.tp || 4;
   var pp = topoData.pp_size || topoData.pp || 4;
   var dp = topoData.dp_size || topoData.dp || 4;
+  var totalNodes = topoData.total_nodes || (dp * tp * pp);
+  var deviceType = topoData.device_type || '';
   var rawName = topoData.name || "";
   var name =
     rawName.indexOf("原始") !== -1
@@ -624,18 +889,21 @@ function loadMeshData(topoData) {
       : rawName;
   var entry = {
     name: name,
-    device_type: topoData.device_type || "",
+    device_type: deviceType,
     tp: tp,
     pp: pp,
     dp: dp,
+    total_nodes: totalNodes,
   };
 
   if (name.indexOf("原始") !== -1) {
     meshOriginal = entry;
     meshOrigDp = 0;
+    meshEstimateOrig = computeAllEstimates(deviceType, totalNodes, dp, tp, pp);
   } else {
     meshEquivalent = entry;
     meshEqDp = 0;
+    meshEstimateEq = computeAllEstimates(deviceType, totalNodes, dp, tp, pp);
   }
   meshRebuild();
 }
@@ -647,6 +915,7 @@ window.meshRebuild = meshRebuild;
 window.meshSwitchDp = meshSwitchDp;
 window.meshSwitchDpOrig = meshSwitchDpOrig;
 window.meshSwitchDpEq = meshSwitchDpEq;
+window.fetchSimulationData = fetchSimulationData;
 
 // ── Resize handler (debounced) ──
 
@@ -658,4 +927,28 @@ window.addEventListener("resize", function () {
     _resizeTimer = null;
     meshRebuild();
   }, 200);
+});
+
+// ── Canvas background click dismisses pinned tooltip ──
+
+document.getElementById('mesh-container').addEventListener('click', function (e) {
+  if (e.target.tagName === 'svg' || e.target.id === 'mesh-container') {
+    var tip = document.getElementById('rank-tooltip');
+    tip.classList.remove('visible', 'pinned');
+    tip.innerHTML = '';
+    d3.selectAll('.tp-rect.pinned').classed('pinned', false);
+    meshPinnedRank = null;
+  }
+});
+
+// ── Escape key dismisses pinned tooltip ──
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && meshPinnedRank) {
+    var tip = document.getElementById('rank-tooltip');
+    tip.classList.remove('visible', 'pinned');
+    tip.innerHTML = '';
+    d3.selectAll('.tp-rect.pinned').classed('pinned', false);
+    meshPinnedRank = null;
+  }
 });
