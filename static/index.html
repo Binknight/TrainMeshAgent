@@ -899,7 +899,7 @@ var meshOriginal = null;    // { name, device_type, tp, pp, dp, total_nodes }
 var meshEquivalent = null;
 var meshOrigDp = 0;
 var meshEqDp = 0;
-var meshEstimateOrig = {};  // { global_rank: { compute_intensity_tflops, memory_usage_gb, ... } }
+var meshEstimateOrig = {};  // { global_rank: { flops_per_card, hbm_gb, tp_comm_gb_per_micro, ... } }
 var meshEstimateEq = {};
 var meshActualOrig = {};    // { global_rank: CardMetrics } from REST simulation data
 var meshActualEq = {};
@@ -923,34 +923,53 @@ function meshBuildData(tp, pp, dpCount, activeDp) {
   };
 }
 
-// ── Per-rank estimation (mirrors training-mesh-profiler-skill formulas) ──
+// ── Per-rank estimation (mirrors training-mesh-profiler-skill physics formulas) ──
+
+var _MODEL_CFG = {
+  'A2': { model_params: 7e9, hidden_dim: 4096, num_layers: 32 },
+  'A3': { model_params: 20e9, hidden_dim: 6144, num_layers: 48 },
+  'A5': { model_params: 70e9, hidden_dim: 8192, num_layers: 64 }
+};
+var _SEQ_LEN = 4096;
+var _MICRO_BATCH = 1;
+var _BYTES_PER_PARAM = 2;
 
 function estimateCardMetrics(deviceType, totalNodes, dp, tp, pp) {
-  var ci = { 'A2': 312.0, 'A3': 624.0, 'A5': 1248.0 };
-  var computeIntensity = ci[deviceType] || 100.0;
+  var cfg = _MODEL_CFG[deviceType] || _MODEL_CFG['A3'];
+  var p = cfg.model_params;
 
-  var bm = { 'A2': 40.0, 'A3': 80.0, 'A5': 80.0 };
-  var baseMem = bm[deviceType] || 40.0;
-  var memoryUsage = Math.round(baseMem * (1.0 + 1.0 / Math.max(totalNodes, 1)) * 100) / 100;
+  var flops = 6 * p * _SEQ_LEN * _MICRO_BATCH / (dp * tp * pp);
 
-  var bb = { 'A2': 200.0, 'A3': 400.0, 'A5': 800.0 };
-  var baseBw = bb[deviceType] || 200.0;
-  var scale = 1.0 + 0.1 * (dp - 1) + 0.2 * (tp - 1) + 0.3 * (pp - 1);
-  var commTraffic = Math.round(baseBw * scale * 100) / 100;
+  var param_mem = p * _BYTES_PER_PARAM / tp;
+  var optim_mem = 2 * p * _BYTES_PER_PARAM / dp;
+  var act_mem = cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM * cfg.num_layers / pp;
+  var hbm = (param_mem + optim_mem + act_mem) / 1e9;
+
+  var tp_comm = tp > 1 ? cfg.num_layers * 2 * cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM * (tp - 1) / tp / 1e9 : 0;
+  var pp_comm = pp > 1 ? 2 * (pp - 1) / pp * cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM / 1e6 : 0;
+  var dp_comm = dp > 1 ? 2 * p * _BYTES_PER_PARAM * (dp - 1) / dp / 1e9 : 0;
 
   return {
-    compute_intensity_tflops: computeIntensity,
-    memory_usage_gb: memoryUsage,
-    communication_traffic_gbps: commTraffic,
-    peak_memory_gb: Math.round((memoryUsage + 10) * 100) / 100,
-    communication_volume_gb: Math.round(commTraffic * 0.01 * 100) / 100
+    flops_per_card: flops,
+    hbm_gb: hbm,
+    tp_comm_gb_per_micro: tp_comm,
+    pp_comm_mb_per_micro: pp_comm,
+    dp_comm_gb_per_step: dp_comm
   };
+}
+
+function formatFlops(value) {
+  if (value == null) return '—';
+  if (value === 0) return '0';
+  var exp = Math.floor(Math.log10(Math.abs(value)));
+  var mantissa = value / Math.pow(10, exp);
+  return mantissa.toFixed(2) + '×10^' + exp;
 }
 
 function computeAllEstimates(deviceType, totalNodes, dp, tp, pp) {
   var est = {};
   for (var r = 0; r < totalNodes; r++) {
-    est[r] = estimateCardMetrics(deviceType, totalNodes, dp, tp, pp, r);
+    est[r] = estimateCardMetrics(deviceType, totalNodes, dp, tp, pp);
   }
   return est;
 }
@@ -1182,12 +1201,12 @@ function _buildTooltipHTML(globalRank, metrics) {
   } else {
     // Phase 2: side-by-side
     html += '<table class="tooltip-table">';
-    html += '<tr><th class="col-header left">指标</th><th class="col-header">理论值</th><th class="col-header">实测值</th></tr>';
-    html += _buildCompareRow('计算强度', 'TFLOPS', estimate, actual, 'compute_intensity_tflops');
-    html += _buildCompareRow('内存占用', 'GB', estimate, actual, 'memory_usage_gb');
-    html += _buildCompareRow('通信流量', 'GB/s', estimate, actual, 'communication_traffic_gbps');
-    html += _buildCompareRow('峰值内存', 'GB', estimate, actual, 'peak_memory_gb');
-    html += _buildCompareRow('通信量', 'GB', estimate, actual, 'communication_volume_gb');
+    html += '<tr><th class="col-header left">指标</th><th class="col-header">理论估算值</th><th class="col-header">仿真验证值</th></tr>';
+    html += _buildCompareRow('单卡FLOPs', '', estimate, actual, 'flops_per_card', formatFlops);
+    html += _buildCompareRow('HBM', 'GB', estimate, actual, 'hbm_gb');
+    html += _buildCompareRow('TP通信', 'GB/micro', estimate, actual, 'tp_comm_gb_per_micro');
+    html += _buildCompareRow('PP通信', 'MB/micro', estimate, actual, 'pp_comm_mb_per_micro');
+    html += _buildCompareRow('DP通信', 'GB/step', estimate, actual, 'dp_comm_gb_per_step');
     html += '</table>';
   }
 
@@ -1199,23 +1218,32 @@ function _buildTooltipHTML(globalRank, metrics) {
 function _buildSingleTable(metrics) {
   if (!metrics) return '<div class="tooltip-empty">无数据</div>';
   var html = '<table class="tooltip-table">';
-  html += _buildMetricRow('计算强度', metrics.compute_intensity_tflops, 'TFLOPS');
-  html += _buildMetricRow('内存占用', metrics.memory_usage_gb, 'GB');
-  html += _buildMetricRow('通信流量', metrics.communication_traffic_gbps, 'GB/s');
-  html += _buildMetricRow('峰值内存', metrics.peak_memory_gb, 'GB');
-  html += _buildMetricRow('通信量', metrics.communication_volume_gb, 'GB');
+  html += _buildMetricRow('单卡FLOPs', formatFlops(metrics.flops_per_card), '');
+  html += _buildMetricRow('HBM', metrics.hbm_gb != null ? Number(metrics.hbm_gb).toFixed(2) : '—', 'GB');
+  html += _buildMetricRow('TP通信', metrics.tp_comm_gb_per_micro != null ? Number(metrics.tp_comm_gb_per_micro).toFixed(2) : '—', 'GB/micro');
+  html += _buildMetricRow('PP通信', metrics.pp_comm_mb_per_micro != null ? Number(metrics.pp_comm_mb_per_micro).toFixed(2) : '—', 'MB/micro');
+  html += _buildMetricRow('DP通信', metrics.dp_comm_gb_per_step != null ? Number(metrics.dp_comm_gb_per_step).toFixed(2) : '—', 'GB/step');
   html += '</table>';
   return html;
 }
 
 function _buildMetricRow(label, value, unit) {
-  var v = value != null ? Number(value).toFixed(2) : '—';
-  return '<tr><td class="metric-label">' + label + '</td><td class="metric-val">' + v + ' ' + unit + '</td></tr>';
+  var v;
+  if (value == null) {
+    v = '—';
+  } else if (typeof value === 'string') {
+    v = value;
+  } else {
+    v = Number(value).toFixed(2);
+  }
+  var uv = unit ? ' ' + unit : '';
+  return '<tr><td class="metric-label">' + label + '</td><td class="metric-val">' + v + uv + '</td></tr>';
 }
 
-function _buildCompareRow(label, unit, estimate, actual, key) {
-  var ev = estimate && estimate[key] != null ? Number(estimate[key]).toFixed(2) : '—';
-  var av = actual && actual[key] != null ? Number(actual[key]).toFixed(2) : '—';
+function _buildCompareRow(label, unit, estimate, actual, key, fmt) {
+  fmt = fmt || function(v) { return v != null ? Number(v).toFixed(2) : '—'; };
+  var ev = estimate && estimate[key] != null ? fmt(estimate[key]) : '—';
+  var av = actual && actual[key] != null ? fmt(actual[key]) : '—';
   var delta = '';
   var deltaClass = '';
   if (estimate && actual && estimate[key] != null && actual[key] != null) {
@@ -1225,9 +1253,10 @@ function _buildCompareRow(label, unit, estimate, actual, key) {
     delta = sign + Number(pct).toFixed(1) + '%';
     deltaClass = Math.abs(pct) <= 5 ? 'positive' : 'negative';
   }
+  var uv = unit ? ' ' + unit : '';
   return '<tr><td class="metric-label">' + label + '</td>' +
-    '<td class="metric-val">' + ev + ' ' + unit + '</td>' +
-    '<td class="metric-val actual">' + av + ' ' + unit + '</td>' +
+    '<td class="metric-val">' + ev + uv + '</td>' +
+    '<td class="metric-val actual">' + av + uv + '</td>' +
     '<td class="metric-delta ' + deltaClass + '">' + delta + '</td></tr>';
 }
 
