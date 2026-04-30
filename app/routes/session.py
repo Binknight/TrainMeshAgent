@@ -94,11 +94,18 @@ def estimate_metrics():
 
     _est = importlib.import_module("app.skills.training-mesh-profiler-skill")
 
-    flops = _est._estimate_flops(device_type, dp, tp, pp)
-    hbm = _est._estimate_hbm_gb(device_type, dp, tp, pp)
-    tp_comm = _est._estimate_tp_comm_gb(device_type, tp)
-    pp_comm = _est._estimate_pp_comm_mb(device_type, pp)
-    dp_comm = _est._estimate_dp_comm_gb(device_type, dp)
+    cfg = _est._MODEL_CONFIG[device_type]
+    L = cfg["num_layers"]
+    H = cfg["hidden_dim"]
+    S = int(data.get("seq_len", _est._SEQ_LEN))
+    B = int(data.get("total_batch", _est._TOTAL_BATCH))
+    a = float(data.get("quant_coeff", _est._QUANT_COEFF))
+
+    flops = _est._estimate_flops(L, H, S, B, dp, tp, pp)
+    hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
+    tp_comm = _est._estimate_tp_comm_gb(L, H, dp)
+    pp_comm = _est._estimate_pp_comm_mb(L, H, S, B, tp)
+    dp_comm = _est._estimate_dp_comm_gb(H, S, B)
 
     cards = []
     for rank in range(total_nodes):
