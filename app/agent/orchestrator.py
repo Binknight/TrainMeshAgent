@@ -130,7 +130,7 @@ def _execute_utility_tool(tool_name: str, arguments: dict, session: SessionState
         report = _build_comparison_report(session.original_simulation, session.equivalent_simulation)
         session.comparison_report = report
         session.step = "completed"
-        return report.model_dump()
+        return report.model_dump(exclude={"original", "equivalent"})
 
     return {"error": f"Unknown utility tool: {tool_name}"}
 
@@ -405,6 +405,36 @@ async def agent_stream(
                 "tool_call_id": tool_call.id,
                 "content": tool_content,
             })
+
+    # Auto-profiling: if topologies have task_ids but no simulation data, run profiler now
+    for label, topo, task_id in [
+        ("original", session.original_topology, session.original_task_id),
+        ("equivalent", session.equivalent_topology, session.equivalent_task_id),
+    ]:
+        sim = session.original_simulation if label == "original" else session.equivalent_simulation
+        if topo and task_id and not sim:
+            logger.info(f"[agent_stream] auto-profiling {label} topology (task_id={task_id})")
+            try:
+                _execute_skill_tool("training-mesh-profiler-skill", {
+                    "topology_name": topo.name,
+                    "device_type": topo.device_type.value,
+                    "total_nodes": topo.total_nodes,
+                    "dp": topo.dp_size,
+                    "tp": topo.tp_size,
+                    "pp": topo.pp_size,
+                    "task_id": task_id,
+                }, session)
+            except Exception as e:
+                logger.exception(f"[agent_stream] auto-profiling {label} failed: {e}")
+
+    # Push simulation results via SSE so the frontend doesn't need a separate HTTP request
+    sim_payload = {}
+    if session.original_simulation:
+        sim_payload["original"] = session.original_simulation.model_dump()
+    if session.equivalent_simulation:
+        sim_payload["equivalent"] = session.equivalent_simulation.model_dump()
+    if sim_payload:
+        yield AgentEvent(event_type="sim_data", data=sim_payload, message="仿真数据")
 
     session.history.append({"role": "user", "content": user_message})
     yield AgentEvent(event_type="done", message="处理完成")
