@@ -1,11 +1,13 @@
 """REST endpoints for session management."""
+import importlib
 import math
 import random
 from flask import Blueprint, request, jsonify
 
 from app.agent.session import session_manager
 from app.models.schemas import (
-    SessionState, OperatorTrace, TimelineSummary, DeviceSimulationDetail,
+    CardMetrics, DeviceType, DeviceSimulationDetail,
+    OperatorTrace, SessionState, TimelineSummary,
 )
 
 session_bp = Blueprint("session", __name__, url_prefix="/api/session")
@@ -71,6 +73,52 @@ def get_simulation(session_id: str):
         "equivalent_simulation": session.equivalent_simulation.model_dump() if session.equivalent_simulation else None,
         "comparison_report": session.comparison_report.model_dump() if session.comparison_report else None,
         "step": session.step,
+    })
+
+
+@session_bp.route("/estimate", methods=["POST"])
+def estimate_metrics():
+    """Compute per-card metrics using the Python estimation formulas."""
+    data = request.get_json()
+    if not data:
+        return {"error": "request body is required"}, 400
+
+    try:
+        device_type = DeviceType(data["device_type"].upper())
+        total_nodes = int(data["total_nodes"])
+        dp = int(data["dp"])
+        tp = int(data["tp"])
+        pp = int(data["pp"])
+    except (KeyError, ValueError) as e:
+        return {"error": f"invalid or missing parameter: {e}"}, 400
+
+    _est = importlib.import_module("app.skills.training-mesh-profiler-skill")
+
+    flops = _est._estimate_flops(device_type, dp, tp, pp)
+    hbm = _est._estimate_hbm_gb(device_type, dp, tp, pp)
+    tp_comm = _est._estimate_tp_comm_gb(device_type, tp)
+    pp_comm = _est._estimate_pp_comm_mb(device_type, pp)
+    dp_comm = _est._estimate_dp_comm_gb(device_type, dp)
+
+    cards = []
+    for rank in range(total_nodes):
+        cards.append(CardMetrics(
+            card_id=f"card_{rank}",
+            global_rank=rank,
+            flops_per_card=flops,
+            hbm_gb=hbm,
+            tp_comm_gb_per_micro=tp_comm,
+            pp_comm_mb_per_micro=pp_comm,
+            dp_comm_gb_per_step=dp_comm,
+        ))
+
+    return jsonify({
+        "device_type": data["device_type"].upper(),
+        "total_nodes": total_nodes,
+        "dp": dp,
+        "tp": tp,
+        "pp": pp,
+        "cards": [c.model_dump() for c in cards],
     })
 
 
