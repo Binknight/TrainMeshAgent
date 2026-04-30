@@ -7,56 +7,48 @@ from app.mcp.client import MCPClient
 
 # ── Reference model parameters per device type ──
 _MODEL_CONFIG = {
-    DeviceType.A2: {"model_params": 7e9, "hidden_dim": 4096, "num_layers": 32},
-    DeviceType.A3: {"model_params": 20e9, "hidden_dim": 6144, "num_layers": 48},
-    DeviceType.A5: {"model_params": 70e9, "hidden_dim": 8192, "num_layers": 64},
+    DeviceType.A2: {"hidden_dim": 4096, "num_layers": 32},
+    DeviceType.A3: {"hidden_dim": 6144, "num_layers": 48},
+    DeviceType.A5: {"hidden_dim": 8192, "num_layers": 64},
 }
 
-# ── Fixed simulation parameters ──
-_SEQ_LEN = 4096
-_MICRO_BATCH = 1
-_BYTES_PER_PARAM = 2  # bf16
+# ── Default estimation parameters ──
+_SEQ_LEN = 2048
+_TOTAL_BATCH = 32
+_QUANT_COEFF = 1
 
 
-def _estimate_flops(device_type: DeviceType, dp: int, tp: int, pp: int) -> float:
-    """FLOPs = 6 × model_params × seq_len × micro_batch / (dp × tp × pp)"""
-    cfg = _MODEL_CONFIG[device_type]
-    return 6 * cfg["model_params"] * _SEQ_LEN * _MICRO_BATCH / (dp * tp * pp)
+def _estimate_flops(L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int) -> float:
+    """FLOPs = [(72*B*S*H^2 + 12*B*S^2*H) / (DP*TP)] * L/PP"""
+    return ((72 * B * S * H ** 2 + 12 * B * S ** 2 * H) / (dp * tp)) * L / pp
 
 
-def _estimate_hbm_gb(device_type: DeviceType, dp: int, tp: int, pp: int) -> float:
-    """HBM = (params×2/tp + 2×params×2/dp + hidden×seq×micro×2×layers/pp) / 1e9"""
-    cfg = _MODEL_CONFIG[device_type]
-    params = cfg["model_params"]
-    # ZeRO-2: optimizer states sharded across DP, params+grads kept. TP shards weights.
-    param_mem = params * _BYTES_PER_PARAM / tp
-    optim_mem = 2 * params * _BYTES_PER_PARAM / dp  # optimizer states
-    act_mem = cfg["hidden_dim"] * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM * cfg["num_layers"] / pp
-    return (param_mem + optim_mem + act_mem) / 1e9
+def _estimate_hbm_gb(L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int, a: float = 1) -> float:
+    """HBM = [L*(12*H^2+4H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4H)/(DP*TP*PP)] * a / 1e9"""
+    param_term = L * (12 * H ** 2 + 4 * H)
+    term1 = param_term / (tp * pp)
+    term2 = B * S * H * L / pp
+    term3 = param_term / (dp * tp * pp)
+    return (term1 + term2 + term3) * a / 1e9
 
 
-def _estimate_tp_comm_gb(device_type: DeviceType, tp: int) -> float:
-    """TP comm = num_layers × 2 × hidden_dim × seq_len × micro_batch × 2 × (tp-1)/tp / 1e9"""
-    cfg = _MODEL_CONFIG[device_type]
-    if tp <= 1:
-        return 0.0
-    return cfg["num_layers"] * 2 * cfg["hidden_dim"] * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM * (tp - 1) / tp / 1e9
-
-
-def _estimate_pp_comm_mb(device_type: DeviceType, pp: int) -> float:
-    """PP comm = 2 × (pp-1)/pp × hidden_dim × seq_len × micro_batch × 2 / 1e6"""
-    cfg = _MODEL_CONFIG[device_type]
-    if pp <= 1:
-        return 0.0
-    return 2 * (pp - 1) / pp * cfg["hidden_dim"] * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM / 1e6
-
-
-def _estimate_dp_comm_gb(device_type: DeviceType, dp: int) -> float:
-    """DP comm = 2 × model_params × 2 × (dp-1)/dp / 1e9"""
-    cfg = _MODEL_CONFIG[device_type]
+def _estimate_tp_comm_gb(L: int, H: int, dp: int) -> float:
+    """TP comm = 2*(DP-1)/DP * 12*L*H^2 / 1e9"""
     if dp <= 1:
         return 0.0
-    return 2 * cfg["model_params"] * _BYTES_PER_PARAM * (dp - 1) / dp / 1e9
+    return 2 * (dp - 1) / dp * 12 * L * H ** 2 / 1e9
+
+
+def _estimate_pp_comm_mb(L: int, H: int, S: int, B: int, tp: int) -> float:
+    """PP comm = 8*(TP-1)/TP * B*S*H*L / 1e6"""
+    if tp <= 1:
+        return 0.0
+    return 8 * (tp - 1) / tp * B * S * H * L / 1e6
+
+
+def _estimate_dp_comm_gb(H: int, S: int, B: int) -> float:
+    """DP comm = 4*B*S*H / 1e9"""
+    return 4 * B * S * H / 1e9
 
 
 class MeshProfilerSkill(BaseSkill):
@@ -95,6 +87,18 @@ class MeshProfilerSkill(BaseSkill):
                         "dp": {"type": "integer", "description": "数据并行度"},
                         "tp": {"type": "integer", "description": "张量并行度"},
                         "pp": {"type": "integer", "description": "流水线并行度"},
+                        "seq_len": {
+                            "type": "integer",
+                            "description": f"序列长度，默认 {_SEQ_LEN}",
+                        },
+                        "total_batch": {
+                            "type": "integer",
+                            "description": f"总批次大小，默认 {_TOTAL_BATCH}",
+                        },
+                        "quant_coeff": {
+                            "type": "number",
+                            "description": f"量化系数，默认 {_QUANT_COEFF}",
+                        },
                     },
                     "required": ["topology_name", "device_type", "total_nodes", "dp", "tp", "pp"],
                 },
@@ -135,11 +139,18 @@ class MeshProfilerSkill(BaseSkill):
                 ))
 
         if not cards:
-            flops = _estimate_flops(device_type, dp, tp, pp)
-            hbm = _estimate_hbm_gb(device_type, dp, tp, pp)
-            tp_comm = _estimate_tp_comm_gb(device_type, tp)
-            pp_comm = _estimate_pp_comm_mb(device_type, pp)
-            dp_comm = _estimate_dp_comm_gb(device_type, dp)
+            cfg = _MODEL_CONFIG[device_type]
+            L = cfg["num_layers"]
+            H = cfg["hidden_dim"]
+            S = int(arguments.get("seq_len", _SEQ_LEN))
+            B = int(arguments.get("total_batch", _TOTAL_BATCH))
+            a = float(arguments.get("quant_coeff", _QUANT_COEFF))
+
+            flops = _estimate_flops(L, H, S, B, dp, tp, pp)
+            hbm = _estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
+            tp_comm = _estimate_tp_comm_gb(L, H, dp)
+            pp_comm = _estimate_pp_comm_mb(L, H, S, B, tp)
+            dp_comm = _estimate_dp_comm_gb(H, S, B)
             for rank in range(total_nodes):
                 cards.append(CardMetrics(
                     card_id=f"card_{rank}",
