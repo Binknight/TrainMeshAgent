@@ -13,39 +13,44 @@
  *   fetchSimulationData()    — pull simulation results from REST and re-render
  */
 
-// ── Model config & estimation engine ──
+// ── Estimation engine — fetched from backend ──
 
-var _MODEL_CFG = {
-  'A2': { model_params: 7e9, hidden_dim: 4096, num_layers: 32 },
-  'A3': { model_params: 20e9, hidden_dim: 6144, num_layers: 48 },
-  'A5': { model_params: 70e9, hidden_dim: 8192, num_layers: 64 }
-};
-var _SEQ_LEN = 4096;
-var _MICRO_BATCH = 1;
-var _BYTES_PER_PARAM = 2;
+var _estimateFetchAbort = {};  // track abort controllers per side to cancel stale requests
 
-function estimateCardMetrics(deviceType, totalNodes, dp, tp, pp) {
-  var cfg = _MODEL_CFG[deviceType] || _MODEL_CFG['A3'];
-  var p = cfg.model_params;
+async function fetchEstimates(deviceType, totalNodes, dp, tp, pp, side) {
+  // Cancel any in-flight request for this side
+  if (_estimateFetchAbort[side]) {
+    _estimateFetchAbort[side].abort();
+  }
+  var ctrl = new AbortController();
+  _estimateFetchAbort[side] = ctrl;
+  var timeout = setTimeout(function () { ctrl.abort(); }, 10000);
 
-  var flops = 6 * p * _SEQ_LEN * _MICRO_BATCH / (dp * tp * pp);
-
-  var param_mem = p * _BYTES_PER_PARAM / tp;
-  var optim_mem = 2 * p * _BYTES_PER_PARAM / dp;
-  var act_mem = cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM * cfg.num_layers / pp;
-  var hbm = (param_mem + optim_mem + act_mem) / 1e9;
-
-  var tp_comm = tp > 1 ? cfg.num_layers * 2 * cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM * (tp - 1) / tp / 1e9 : 0;
-  var pp_comm = pp > 1 ? 2 * (pp - 1) / pp * cfg.hidden_dim * _SEQ_LEN * _MICRO_BATCH * _BYTES_PER_PARAM / 1e6 : 0;
-  var dp_comm = dp > 1 ? 2 * p * _BYTES_PER_PARAM * (dp - 1) / dp / 1e9 : 0;
-
-  return {
-    flops_per_card: flops,
-    hbm_gb: hbm,
-    tp_comm_gb_per_micro: tp_comm,
-    pp_comm_mb_per_micro: pp_comm,
-    dp_comm_gb_per_step: dp_comm
-  };
+  try {
+    var resp = await fetch(API + '/session/estimate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_type: deviceType,
+        total_nodes: totalNodes,
+        dp: dp, tp: tp, pp: pp
+      }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) throw new Error('Estimate API returned ' + resp.status);
+    var data = await resp.json();
+    var est = {};
+    data.cards.forEach(function (c) {
+      est[c.global_rank] = c;
+    });
+    return est;
+  } finally {
+    clearTimeout(timeout);
+    if (_estimateFetchAbort[side] === ctrl) {
+      delete _estimateFetchAbort[side];
+    }
+  }
 }
 
 function formatFlops(value) {
@@ -54,14 +59,6 @@ function formatFlops(value) {
   var exp = Math.floor(Math.log10(Math.abs(value)));
   var mantissa = value / Math.pow(10, exp);
   return mantissa.toFixed(2) + '×10^' + exp;
-}
-
-function computeAllEstimates(deviceType, totalNodes, dp, tp, pp) {
-  var est = {};
-  for (var r = 0; r < totalNodes; r++) {
-    est[r] = estimateCardMetrics(deviceType, totalNodes, dp, tp, pp);
-  }
-  return est;
 }
 
 // ── State ──
@@ -877,7 +874,7 @@ function meshRebuild() {
 
 // ── Public API ──
 
-function loadMeshData(topoData) {
+async function loadMeshData(topoData) {
   var tp = topoData.tp_size || topoData.tp || 4;
   var pp = topoData.pp_size || topoData.pp || 4;
   var dp = topoData.dp_size || topoData.dp || 4;
@@ -899,15 +896,36 @@ function loadMeshData(topoData) {
     total_nodes: totalNodes,
   };
 
-  if (name.indexOf("原始") !== -1) {
+  var isOrig = name.indexOf("原始") !== -1;
+  var side = isOrig ? 'orig' : 'eq';
+  if (isOrig) {
     meshOriginal = entry;
     meshOrigDp = 0;
-    meshEstimateOrig = computeAllEstimates(deviceType, totalNodes, dp, tp, pp);
   } else {
     meshEquivalent = entry;
     meshEqDp = 0;
-    meshEstimateEq = computeAllEstimates(deviceType, totalNodes, dp, tp, pp);
   }
+
+  // Skip estimate fetch if already populated (prevent duplicate calls on re-entry)
+  var existing = isOrig ? meshEstimateOrig : meshEstimateEq;
+  if (Object.keys(existing).length === 0 || existing[0] == null) {
+    try {
+      var estimates = await fetchEstimates(deviceType, totalNodes, dp, tp, pp, side);
+      if (isOrig) {
+        meshEstimateOrig = estimates;
+      } else {
+        meshEstimateEq = estimates;
+      }
+    } catch (e) {
+      console.warn('Estimate fetch failed, using empty estimates:', e);
+      if (isOrig) {
+        meshEstimateOrig = {};
+      } else {
+        meshEstimateEq = {};
+      }
+    }
+  }
+
   meshRebuild();
 }
 

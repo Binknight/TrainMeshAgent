@@ -27,6 +27,7 @@ def chat_stream():
       - tool_call: executing a tool
       - guard_check: input/output validation result
       - mesh_json: topology JSON generated
+      - sim_data: simulation results (cards pushed via SSE)
       - message: text from agent
       - error: error occurred
       - done: processing complete
