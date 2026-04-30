@@ -133,7 +133,8 @@ class MeshProfilerSkill(BaseSkill):
                     pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
                     dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
                 ))
-        else:
+
+        if not cards:
             flops = _estimate_flops(device_type, dp, tp, pp)
             hbm = _estimate_hbm_gb(device_type, dp, tp, pp)
             tp_comm = _estimate_tp_comm_gb(device_type, tp)

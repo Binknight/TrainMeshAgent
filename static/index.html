@@ -813,8 +813,8 @@ async function restoreSession(id) {
     localStorage.setItem('mesh_session_id', sessionId);
 
     // Restore topology data — batch into pending list, flush immediately
-    if (data.original_topology) loadMeshData(data.original_topology);
-    if (data.equivalent_topology) loadMeshData(data.equivalent_topology);
+    if (data.original_topology) await loadMeshData(data.original_topology);
+    if (data.equivalent_topology) await loadMeshData(data.equivalent_topology);
 
     // Restore chat message for topology summaries
     if (data.original_topology || data.equivalent_topology) {
@@ -951,7 +951,7 @@ async function sendMessage(text) {
           if (!dataStr) continue;
           try {
             const data = JSON.parse(dataStr);
-            handleSSEEvent(eventType, data);
+            await handleSSEEvent(eventType, data);
           } catch (e) {
             console.warn('SSE parse error:', e, dataStr);
           }
@@ -969,7 +969,7 @@ async function sendMessage(text) {
   }
 }
 
-function handleSSEEvent(type, data) {
+async function handleSSEEvent(type, data) {
   removeThinking();
   switch (type) {
     case 'thinking':
@@ -1003,10 +1003,24 @@ function handleSSEEvent(type, data) {
       setStatus('responding');
       addMessage('agent', data.message || '');
       break;
+    case 'sim_data':
+      const simPayload = data.data || data;
+      if (simPayload.original && simPayload.original.cards) {
+        meshActualOrig = {};
+        simPayload.original.cards.forEach(function (c) { meshActualOrig[c.global_rank] = c; });
+      }
+      if (simPayload.equivalent && simPayload.equivalent.cards) {
+        meshActualEq = {};
+        simPayload.equivalent.cards.forEach(function (c) { meshActualEq[c.global_rank] = c; });
+      }
+      if ((simPayload.original || simPayload.equivalent) && (meshOriginal || meshEquivalent)) {
+        meshRebuild();
+      }
+      break;
     case 'done':
       setStatus('idle');
       if (_pendingMeshList.length) {
-        _pendingMeshList.forEach(function (d) { loadMeshData(d); });
+        await Promise.all(_pendingMeshList.map(function (d) { return loadMeshData(d); }));
         _pendingMeshList = [];
       }
       fetchSimulationData();
