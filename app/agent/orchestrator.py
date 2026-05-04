@@ -213,6 +213,7 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             "computed": data.computed.model_dump(),
             "layers_count": len(data.layers),
             "layer_types": [l.type for l in data.layers],
+            "layers": [l.model_dump() for l in data.layers],
             "output_layer": data.output_layer.model_dump(),
             "is_equivalent": is_equiv,
             "session_id": session.session_id,
