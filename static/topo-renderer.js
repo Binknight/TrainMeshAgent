@@ -869,6 +869,7 @@ function meshRebuild() {
     svg.call(
       d3.zoom()
         .scaleExtent([0.3, 3])
+        .filter(function (event) { return event.type !== 'dblclick'; })
         .on("zoom", function (event) {
           zoomLayer.attr("transform", event.transform);
         })
@@ -965,6 +966,7 @@ function meshRebuild() {
     svg.call(
       d3.zoom()
         .scaleExtent([0.3, 3])
+        .filter(function (event) { return event.type !== 'dblclick'; })
         .on("zoom", function (event) {
           zoomLayer.attr("transform", event.transform);
         })
