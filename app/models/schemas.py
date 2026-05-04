@@ -114,6 +114,26 @@ class DeviceSimulationDetail(BaseModel):
     timeline: TimelineSummary | None = None
 
 
+class HbmDetail(BaseModel):
+    """HBM usage breakdown by component."""
+    global_rank: int
+    weights_gb: float = Field(description="权重占用 (GB)")
+    gradients_gb: float = Field(description="梯度占用 (GB)")
+    optimizer_gb: float = Field(description="优化器状态占用 (GB)")
+    activations_gb: float = Field(description="激活值占用 (GB)")
+    total_hbm_gb: float = Field(description="HBM总占用 (GB)")
+
+
+class CommDetail(BaseModel):
+    """Communication detail for TP/PP/DP."""
+    global_rank: int
+    comm_type: str = Field(description="通信类型: tp | pp | dp")
+    comm_count: int = Field(description="每 step 通信次数")
+    comm_cards: int = Field(description="参与通信的卡数")
+    comm_size_per_time_gb: float = Field(description="单次通信量 (GB)")
+    total_comm_gb: float = Field(description="总通信量 (GB)")
+
+
 class ComparisonReport(BaseModel):
     """Comparison report between original and equivalent topology."""
     original: SimulationResult
