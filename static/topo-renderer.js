@@ -940,6 +940,7 @@ async function loadMeshData(topoData) {
     meshEquivalent = entry;
     meshEqDp = 0;
   }
+  if (typeof checkSimReady === 'function') checkSimReady();
 
   // Skip estimate fetch if already populated (prevent duplicate calls on re-entry)
   var existing = isOrig ? meshEstimateOrig : meshEstimateEq;
@@ -1462,6 +1463,7 @@ function loadModelData(modelData, role) {
   } else {
     modelEquivalent = entry;
   }
+  if (typeof checkSimReady === 'function') checkSimReady();
 }
 
 // Render one model horizontally — blocks left-to-right like mesh PP stages.
@@ -1676,11 +1678,6 @@ function modelRebuild() {
           zoomLayer.attr('transform', event.transform);
         })
     );
-
-    // Divider line
-    zoomLayer.append('line')
-      .attr('x1', W / 2).attr('y1', 8).attr('x2', W / 2).attr('y2', totalH)
-      .attr('stroke', 'var(--border)').attr('stroke-width', 1).attr('stroke-dasharray', '6 4');
 
     // Section titles
     zoomLayer.append('text')
