@@ -847,6 +847,10 @@ function newSession() {
   meshEquivalent = null;
   meshOrigDp = 0;
   meshEqDp = 0;
+  meshModelOrig = {};
+  meshModelEq = {};
+  meshEstimateOrig = {};
+  meshEstimateEq = {};
   _renderState.mode = null;
   d3.select("#mesh-container").selectAll("svg").remove();
   document.getElementById("mesh-config-toolbar").classList.remove("visible");
@@ -998,6 +1002,16 @@ async function handleSSEEvent(type, data) {
       const summary = `📦 ${topoData.name || ''}\n节点数: ${topoData.total_nodes || 0}  |  DP×TP×PP = ${topoData.dp_size || 0}×${topoData.tp_size || 0}×${topoData.pp_size || 0}\n通信域: dp=${topoData.comm_dp_groups ?? (topoData.communication_groups?.dp || []).length}  tp=${topoData.comm_tp_groups ?? (topoData.communication_groups?.tp || []).length}  pp=${topoData.comm_pp_groups ?? (topoData.communication_groups?.pp || []).length}`;
       addMessage('mesh', summary, 'mesh');
       _pendingMeshList.push(topoData);
+      break;
+    case 'model_json':
+      var modelData = data.data || data;
+      var config = modelData.config || {};
+      var modelInfo = { num_layers: config.num_layers, hidden_dim: config.d_model };
+      if (modelData.is_equivalent) {
+        meshModelEq = modelInfo;
+      } else {
+        meshModelOrig = modelInfo;
+      }
       break;
     case 'message':
       setStatus('responding');

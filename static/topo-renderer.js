@@ -17,7 +17,7 @@
 
 var _estimateFetchAbort = {};  // track abort controllers per side to cancel stale requests
 
-async function fetchEstimates(deviceType, totalNodes, dp, tp, pp, side) {
+async function fetchEstimates(deviceType, totalNodes, dp, tp, pp, side, numLayers) {
   // Cancel any in-flight request for this side
   if (_estimateFetchAbort[side]) {
     _estimateFetchAbort[side].abort();
@@ -27,14 +27,17 @@ async function fetchEstimates(deviceType, totalNodes, dp, tp, pp, side) {
   var timeout = setTimeout(function () { ctrl.abort(); }, 10000);
 
   try {
+    var body = {
+      device_type: deviceType,
+      total_nodes: totalNodes,
+      dp: dp, tp: tp, pp: pp
+    };
+    if (numLayers != null) body.num_layers = numLayers;
+
     var resp = await fetch(API + '/session/estimate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        device_type: deviceType,
-        total_nodes: totalNodes,
-        dp: dp, tp: tp, pp: pp
-      }),
+      body: JSON.stringify(body),
       signal: ctrl.signal
     });
     clearTimeout(timeout);
@@ -67,6 +70,8 @@ var meshOriginal = null;       // { name, device_type, tp, pp, dp, total_nodes }
 var meshEquivalent = null;
 var meshOrigDp = 0;
 var meshEqDp = 0;
+var meshModelOrig = {};        // { num_layers, hidden_dim } — filled by model_json SSE or REST
+var meshModelEq = {};
 var meshEstimateOrig = {};     // { global_rank: { flops_per_card, hbm_gb, ... } }
 var meshEstimateEq = {};
 var meshActualOrig = {};       // { global_rank: CardMetrics } from REST simulation data
@@ -898,6 +903,16 @@ async function loadMeshData(topoData) {
 
   var isOrig = name.indexOf("原始") !== -1;
   var side = isOrig ? 'orig' : 'eq';
+
+  // Store model config from topoData if provided (e.g. from REST restore)
+  if (topoData.num_layers != null) {
+    if (isOrig) {
+      meshModelOrig = { num_layers: topoData.num_layers, hidden_dim: topoData.hidden_dim };
+    } else {
+      meshModelEq = { num_layers: topoData.num_layers, hidden_dim: topoData.hidden_dim };
+    }
+  }
+
   if (isOrig) {
     meshOriginal = entry;
     meshOrigDp = 0;
@@ -910,7 +925,8 @@ async function loadMeshData(topoData) {
   var existing = isOrig ? meshEstimateOrig : meshEstimateEq;
   if (Object.keys(existing).length === 0 || existing[0] == null) {
     try {
-      var estimates = await fetchEstimates(deviceType, totalNodes, dp, tp, pp, side);
+      var numLayers = topoData.num_layers != null ? topoData.num_layers : (isOrig ? meshModelOrig : meshModelEq).num_layers;
+      var estimates = await fetchEstimates(deviceType, totalNodes, dp, tp, pp, side, numLayers);
       if (isOrig) {
         meshEstimateOrig = estimates;
       } else {
