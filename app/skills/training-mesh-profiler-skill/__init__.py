@@ -1,9 +1,15 @@
 """
 training-mesh-profiler-skill: Fetch simulation results and compute per-card metrics.
 """
-from app.skills.base import BaseSkill, SkillContext, SkillResult
-from app.models.schemas import CardMetrics, DeviceType, GuardrailResult, SimulationResult
+
 from app.mcp.client import MCPClient
+from app.models.schemas import (
+    CardMetrics,
+    DeviceType,
+    GuardrailResult,
+    SimulationResult,
+)
+from app.skills.base import BaseSkill, SkillContext, SkillResult
 
 # ── Reference model parameters per device type ──
 _MODEL_CONFIG = {
@@ -20,12 +26,14 @@ _QUANT_COEFF = 1
 
 def _estimate_flops(L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int) -> float:
     """FLOPs = [(72*B*S*H^2 + 12*B*S^2*H) / (DP*TP)] * L/PP"""
-    return ((72 * B * S * H ** 2 + 12 * B * S ** 2 * H) / (dp * tp)) * L / pp
+    return ((72 * B * S * H**2 + 12 * B * S**2 * H) / (dp * tp)) * L / pp
 
 
-def _estimate_hbm_gb(L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int, a: float = 1) -> float:
+def _estimate_hbm_gb(
+    L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int, a: float = 1
+) -> float:
     """HBM = [L*(12*H^2+4H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4H)/(DP*TP*PP)] * a / 1e9"""
-    param_term = L * (12 * H ** 2 + 4 * H)
+    param_term = L * (12 * H**2 + 4 * H)
     term1 = param_term / (tp * pp)
     term2 = B * S * H * L / pp
     term3 = param_term / (dp * tp * pp)
@@ -36,7 +44,7 @@ def _estimate_tp_comm_gb(L: int, H: int, dp: int) -> float:
     """TP comm = 2*(DP-1)/DP * 12*L*H^2 / 1e9"""
     if dp <= 1:
         return 0.0
-    return 2 * (dp - 1) / dp * 12 * L * H ** 2 / 1e9
+    return 2 * (dp - 1) / dp * 12 * L * H**2 / 1e9
 
 
 def _estimate_pp_comm_mb(L: int, H: int, S: int, B: int, tp: int) -> float:
@@ -99,8 +107,23 @@ class MeshProfilerSkill(BaseSkill):
                             "type": "number",
                             "description": f"量化系数，默认 {_QUANT_COEFF}",
                         },
+                        "num_layers": {
+                            "type": "integer",
+                            "description": "模型层数，默认使用设备类型对应的配置值",
+                        },
+                        "hidden_dim": {
+                            "type": "integer",
+                            "description": "隐藏维度，默认使用设备类型对应的配置值",
+                        },
                     },
-                    "required": ["topology_name", "device_type", "total_nodes", "dp", "tp", "pp"],
+                    "required": [
+                        "topology_name",
+                        "device_type",
+                        "total_nodes",
+                        "dp",
+                        "tp",
+                        "pp",
+                    ],
                 },
             },
         }
@@ -128,20 +151,22 @@ class MeshProfilerSkill(BaseSkill):
         if task_id and mcp:
             card_details = mcp.get_card_details(task_id)
             for detail in card_details:
-                cards.append(CardMetrics(
-                    card_id=detail.get("card_id", ""),
-                    global_rank=detail.get("global_rank", 0),
-                    flops_per_card=detail.get("flops_per_card", 0),
-                    hbm_gb=detail.get("hbm_gb", 0),
-                    tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
-                    pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
-                    dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
-                ))
+                cards.append(
+                    CardMetrics(
+                        card_id=detail.get("card_id", ""),
+                        global_rank=detail.get("global_rank", 0),
+                        flops_per_card=detail.get("flops_per_card", 0),
+                        hbm_gb=detail.get("hbm_gb", 0),
+                        tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
+                        pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
+                        dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
+                    )
+                )
 
         if not cards:
             cfg = _MODEL_CONFIG[device_type]
-            L = cfg["num_layers"]
-            H = cfg["hidden_dim"]
+            L = int(arguments.get("num_layers", cfg["num_layers"]))
+            H = int(arguments.get("hidden_dim", cfg["hidden_dim"]))
             S = int(arguments.get("seq_len", _SEQ_LEN))
             B = int(arguments.get("total_batch", _TOTAL_BATCH))
             a = float(arguments.get("quant_coeff", _QUANT_COEFF))
@@ -152,15 +177,17 @@ class MeshProfilerSkill(BaseSkill):
             pp_comm = _estimate_pp_comm_mb(L, H, S, B, tp)
             dp_comm = _estimate_dp_comm_gb(H, S, B)
             for rank in range(total_nodes):
-                cards.append(CardMetrics(
-                    card_id=f"card_{rank}",
-                    global_rank=rank,
-                    flops_per_card=flops,
-                    hbm_gb=hbm,
-                    tp_comm_gb_per_micro=tp_comm,
-                    pp_comm_mb_per_micro=pp_comm,
-                    dp_comm_gb_per_step=dp_comm,
-                ))
+                cards.append(
+                    CardMetrics(
+                        card_id=f"card_{rank}",
+                        global_rank=rank,
+                        flops_per_card=flops,
+                        hbm_gb=hbm,
+                        tp_comm_gb_per_micro=tp_comm,
+                        pp_comm_mb_per_micro=pp_comm,
+                        dp_comm_gb_per_step=dp_comm,
+                    )
+                )
 
         result = SimulationResult(
             topology_name=arguments["topology_name"],
