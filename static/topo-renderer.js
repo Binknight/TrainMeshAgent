@@ -146,6 +146,38 @@ function meshBuildData(tp, pp, dpCount, activeDp) {
   };
 }
 
+function _mapRankToOtherSide(side, globalRank) {
+  var srcTopo = side === 'orig' ? meshOriginal : meshEquivalent;
+  var dstTopo = side === 'orig' ? meshEquivalent : meshOriginal;
+  if (!srcTopo || !dstTopo) return null;
+
+  var srcTp = srcTopo.tp, srcPp = srcTopo.pp;
+  var srcRanksPerDp = srcTp * srcPp;
+
+  // Extract structural position (PP index, TP index) regardless of DP copy
+  var rankInDp = globalRank % srcRanksPerDp;
+  if (rankInDp < 0) rankInDp += srcRanksPerDp;
+  var srcPpIdx = Math.floor(rankInDp / srcTp);
+  var tpIdx = rankInDp % srcTp;
+
+  var dstTp = dstTopo.tp, dstPp = dstTopo.pp;
+  var dstPpIdx;
+  if (srcPpIdx === 0) {
+    dstPpIdx = 0;
+  } else if (srcPpIdx === srcPp - 1) {
+    dstPpIdx = dstPp - 1;
+  } else {
+    dstPpIdx = Math.min(1, dstPp - 1);
+  }
+
+  var dstTpIdx = Math.min(tpIdx, dstTp - 1);
+
+  // Map result into the target side's currently viewed DP (always visible)
+  var dstDp = side === 'orig' ? meshEqDp : meshOrigDp;
+  var dstRanksPerDp = dstTp * dstPp;
+  return dstDp * dstRanksPerDp + dstPpIdx * dstTp + dstTpIdx;
+}
+
 function _meshCalcDims(tp, pp) {
   var displayCount = Math.min(MESH_CARD.maxPpDisplay, pp);
   var ppW = 115;
@@ -176,14 +208,10 @@ function _hasActualData(side) {
   return Object.keys(map).length > 0;
 }
 
-function _buildTooltipHTML(globalRank, metrics, isOrig) {
-  var deviceType = metrics.deviceType || '';
+function _buildTooltipBody(globalRank, metrics, isOrig, showHint) {
   var estimate = metrics.estimate;
   var actual = metrics.actual;
-
-  var html = '<div class="tooltip-header">Rank ' + globalRank;
-  if (deviceType) html += ' <span class="tooltip-device">' + deviceType + '</span>';
-  html += '</div><div class="tooltip-body">';
+  var html = '';
 
   if (!estimate && !actual) {
     html += '<div class="tooltip-empty">暂无性能数据</div>';
@@ -204,7 +232,18 @@ function _buildTooltipHTML(globalRank, metrics, isOrig) {
   if (actual && Object.keys(actual).length > 0) {
     html += '<button class="tooltip-detail-btn" onclick="event.stopPropagation();openDetailPopup(' + globalRank + ',' + (isOrig ? 'true' : 'false') + ')">📊 仿真详情</button>';
   }
-  html += '<div class="tooltip-pin-hint">🖱 点击固定 · 再点取消</div>';
+  if (showHint !== false) {
+    html += '<div class="tooltip-pin-hint">🖱 点击固定 · 再点取消</div>';
+  }
+  return html;
+}
+
+function _buildTooltipHTML(globalRank, metrics, isOrig) {
+  var deviceType = metrics.deviceType || '';
+  var html = '<div class="tooltip-header">Rank ' + globalRank;
+  if (deviceType) html += ' <span class="tooltip-device">' + deviceType + '</span>';
+  html += '</div><div class="tooltip-body">';
+  html += _buildTooltipBody(globalRank, metrics, isOrig);
   html += '</div>';
   return html;
 }
@@ -262,6 +301,36 @@ function _buildCompareRow(label, unit, estimate, actual, key, fmt, globalRank, i
     '<td class="metric-val actual">' + av + uv + '</td>' +
     '<td class="metric-delta ' + deltaClass + '">' + delta + '</td>' +
     '<td class="metric-val" style="text-align:center">' + linkHtml + '</td></tr>';
+}
+
+function _buildLinkedTooltipHTML(origRank, origMetrics, eqRank, eqMetrics) {
+  var html = '';
+
+  // Original section
+  html += '<div class="tooltip-header linked">';
+  html += '<span class="linked-badge orig">原始组网</span> Rank ' + origRank;
+  var origDevice = origMetrics.deviceType || '';
+  if (origDevice) html += ' <span class="tooltip-device">' + origDevice + '</span>';
+  html += '</div>';
+  html += '<div class="tooltip-body">';
+  html += _buildTooltipBody(origRank, origMetrics, true, false);
+  html += '</div>';
+
+  // Divider
+  html += '<div class="tooltip-linked-divider"></div>';
+
+  // Equivalent section
+  html += '<div class="tooltip-header linked">';
+  html += '<span class="linked-badge eq">等效组网</span> Rank ' + eqRank;
+  var eqDevice = eqMetrics.deviceType || '';
+  if (eqDevice) html += ' <span class="tooltip-device">' + eqDevice + '</span>';
+  html += '</div>';
+  html += '<div class="tooltip-body">';
+  html += _buildTooltipBody(eqRank, eqMetrics, false, false);
+  html += '</div>';
+
+  html += '<div class="tooltip-pin-hint">🖱 点击固定 · 再点取消</div>';
+  return html;
 }
 
 function showTooltip(event, globalRank, isOrig) {
@@ -539,7 +608,7 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
         .on("mouseover", function (event) {
           if (meshPinnedRank) return;
           d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
-          showTooltip(event, tp.globalRank, isOrig);
+          showTooltip(event, parseInt(this.getAttribute("data-rank")), isOrig);
         })
         .on("mousemove", function (event) {
           moveTooltip(event);
@@ -551,20 +620,38 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
         })
         .on("click", function (event) {
           event.stopPropagation();
-          var alreadyPinned = meshPinnedRank && meshPinnedRank.globalRank === tp.globalRank && meshPinnedRank.side === side;
+          var globalRank = parseInt(this.getAttribute("data-rank"));
+          var isCompare = !!(meshOriginal && meshEquivalent);
+          var mappedRank = isCompare ? _mapRankToOtherSide(side, globalRank) : null;
+          var otherSide = side === 'orig' ? 'eq' : 'orig';
+          var alreadyPinned = meshPinnedRank && meshPinnedRank.globalRank === globalRank && meshPinnedRank.side === side;
+
           d3.selectAll('.tp-rect.pinned').classed('pinned', false);
+          var tip = document.getElementById('rank-tooltip');
+
           if (alreadyPinned) {
             hideTooltip();
-            document.getElementById('rank-tooltip').classList.remove('pinned');
+            tip.classList.remove('pinned');
             meshPinnedRank = null;
           } else {
             d3.select(this).classed('pinned', true);
-            var metrics = _getMetrics(tp.globalRank, isOrig);
-            var tip = document.getElementById('rank-tooltip');
-            tip.innerHTML = _buildTooltipHTML(tp.globalRank, metrics, isOrig);
+            if (mappedRank != null) {
+              d3.selectAll('.tp-rect[data-rank="' + mappedRank + '"][data-side="' + otherSide + '"]').classed('pinned', true);
+            }
+
+            if (isCompare && mappedRank != null) {
+              var origRank = side === 'orig' ? globalRank : mappedRank;
+              var eqRank = side === 'orig' ? mappedRank : globalRank;
+              var origMetrics = _getMetrics(origRank, true);
+              var eqMetrics = _getMetrics(eqRank, false);
+              tip.innerHTML = _buildLinkedTooltipHTML(origRank, origMetrics, eqRank, eqMetrics);
+            } else {
+              var metrics = _getMetrics(globalRank, isOrig);
+              tip.innerHTML = _buildTooltipHTML(globalRank, metrics, isOrig);
+            }
             tip.classList.add('visible', 'pinned');
             _positionTooltip(event, tip);
-            meshPinnedRank = { side: side, globalRank: tp.globalRank };
+            meshPinnedRank = { side: side, globalRank: globalRank, mappedRank: mappedRank };
           }
         });
       ppG
@@ -634,6 +721,10 @@ function _meshNpuTotal(entry) {
 function _meshUpdateRanks(parentG, tp, pp, oldDp, newDp) {
   var delta = (newDp - oldDp) * pp * tp;
   if (delta === 0) return;
+  parentG.selectAll(".tp-rect").each(function () {
+    var currentRank = parseInt(this.getAttribute("data-rank"));
+    this.setAttribute("data-rank", currentRank + delta);
+  });
   parentG.selectAll(".rank-label").each(function () {
     var currentRank = parseInt(this.textContent.replace("Rank", ""));
     this.textContent = "Rank" + (currentRank + delta);
