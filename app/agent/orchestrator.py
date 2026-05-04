@@ -202,7 +202,8 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
         }
 
     elif tool_name == "training-model-gen-skill" and isinstance(data, TrainingModel):
-        if arguments.get("is_equivalent"):
+        is_equiv = arguments.get("is_equivalent", False)
+        if is_equiv:
             session.equivalent_training_model = data
         else:
             session.original_training_model = data
@@ -213,6 +214,7 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             "layers_count": len(data.layers),
             "layer_types": [l.type for l in data.layers],
             "output_layer": data.output_layer.model_dump(),
+            "is_equivalent": is_equiv,
             "session_id": session.session_id,
             "_type": "training_model_summary",
         }
