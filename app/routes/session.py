@@ -6,8 +6,8 @@ from flask import Blueprint, request, jsonify
 
 from app.agent.session import session_manager
 from app.models.schemas import (
-    CardMetrics, DeviceType, DeviceSimulationDetail,
-    OperatorTrace, SessionState, TimelineSummary,
+    CardMetrics, CommDetail, DeviceType, DeviceSimulationDetail,
+    HbmDetail, OperatorTrace, SessionState, TimelineSummary,
 )
 
 session_bp = Blueprint("session", __name__, url_prefix="/api/session")
@@ -401,4 +401,110 @@ def get_device_detail(session_id: str, side: str, global_rank: int):
         timeline=timeline,
     )
 
+    return jsonify(detail.model_dump())
+
+
+# ── Metric detail mock data generators ──
+
+def _generate_mock_hbm_detail(global_rank: int) -> HbmDetail:
+    """Generate mock HBM breakdown: weights, gradients, optimizer, activations."""
+    rng = random.Random(global_rank * 137 + 42)
+    weights = round(rng.uniform(1.0, 3.0), 2)
+    gradients = round(rng.uniform(1.0, 3.0), 2)
+    optimizer = round(rng.uniform(2.0, 6.0), 2)
+    activations = round(rng.uniform(5.0, 15.0), 2)
+    return HbmDetail(
+        global_rank=global_rank,
+        weights_gb=weights,
+        gradients_gb=gradients,
+        optimizer_gb=optimizer,
+        activations_gb=activations,
+        total_hbm_gb=round(weights + gradients + optimizer + activations, 2),
+    )
+
+
+def _generate_mock_comm_detail(global_rank: int, comm_type: str, tp: int, pp: int, dp: int) -> CommDetail:
+    """Generate mock communication detail for TP/PP/DP."""
+    rng = random.Random(global_rank * 137 + hash(comm_type) * 31 + tp * 7 + pp * 13 + dp * 3)
+    if comm_type == "tp":
+        comm_cards = tp
+        comm_count = rng.randint(24, 96)
+        size_per_time = round(rng.uniform(0.01, 0.05), 4)
+    elif comm_type == "pp":
+        comm_cards = pp
+        comm_count = rng.randint(2, 16)
+        size_per_time = round(rng.uniform(0.005, 0.03), 4)
+    else:  # dp
+        comm_cards = dp
+        comm_count = rng.randint(1, 8)
+        size_per_time = round(rng.uniform(0.05, 0.2), 4)
+    return CommDetail(
+        global_rank=global_rank,
+        comm_type=comm_type,
+        comm_count=comm_count,
+        comm_cards=comm_cards,
+        comm_size_per_time_gb=size_per_time,
+        total_comm_gb=round(comm_count * size_per_time, 4),
+    )
+
+
+# ── Metric detail endpoints ──
+
+@session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/hbm-detail", methods=["GET"])
+def get_hbm_detail(session_id: str, side: str, global_rank: int):
+    """Get HBM usage breakdown for a device (mock data)."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    if side not in ("original", "equivalent"):
+        return {"error": "side must be 'original' or 'equivalent'"}, 400
+    detail = _generate_mock_hbm_detail(global_rank)
+    return jsonify(detail.model_dump())
+
+
+@session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/tp-comm-detail", methods=["GET"])
+def get_tp_comm_detail(session_id: str, side: str, global_rank: int):
+    """Get TP communication detail for a device (mock data)."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    if side not in ("original", "equivalent"):
+        return {"error": "side must be 'original' or 'equivalent'"}, 400
+    topo = session.original_topology if side == "original" else session.equivalent_topology
+    tp = topo.tp_size if topo else 4
+    pp = topo.pp_size if topo else 4
+    dp = topo.dp_size if topo else 4
+    detail = _generate_mock_comm_detail(global_rank, "tp", tp, pp, dp)
+    return jsonify(detail.model_dump())
+
+
+@session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/pp-comm-detail", methods=["GET"])
+def get_pp_comm_detail(session_id: str, side: str, global_rank: int):
+    """Get PP communication detail for a device (mock data)."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    if side not in ("original", "equivalent"):
+        return {"error": "side must be 'original' or 'equivalent'"}, 400
+    topo = session.original_topology if side == "original" else session.equivalent_topology
+    tp = topo.tp_size if topo else 4
+    pp = topo.pp_size if topo else 4
+    dp = topo.dp_size if topo else 4
+    detail = _generate_mock_comm_detail(global_rank, "pp", tp, pp, dp)
+    return jsonify(detail.model_dump())
+
+
+@session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/dp-comm-detail", methods=["GET"])
+def get_dp_comm_detail(session_id: str, side: str, global_rank: int):
+    """Get DP communication detail for a device (mock data)."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    if side not in ("original", "equivalent"):
+        return {"error": "side must be 'original' or 'equivalent'"}, 400
+    topo = session.original_topology if side == "original" else session.equivalent_topology
+    tp = topo.tp_size if topo else 4
+    pp = topo.pp_size if topo else 4
+    dp = topo.dp_size if topo else 4
+    detail = _generate_mock_comm_detail(global_rank, "dp", tp, pp, dp)
     return jsonify(detail.model_dump())
