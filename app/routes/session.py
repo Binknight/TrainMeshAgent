@@ -45,6 +45,17 @@ def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
+def _topo_with_model(topo, training_model):
+    """Attach num_layers / hidden_dim from a training model onto a topology dict."""
+    if topo is None:
+        return None
+    d = topo.model_dump()
+    if training_model:
+        d["num_layers"] = training_model.config.num_layers
+        d["hidden_dim"] = training_model.config.d_model
+    return d
+
+
 @session_bp.route("/<session_id>/topology", methods=["GET"])
 def get_topology(session_id: str):
     """Get the mesh topology data for a session."""
@@ -54,8 +65,8 @@ def get_topology(session_id: str):
 
     return jsonify({
         "session_id": session_id,
-        "original_topology": session.original_topology.model_dump() if session.original_topology else None,
-        "equivalent_topology": session.equivalent_topology.model_dump() if session.equivalent_topology else None,
+        "original_topology": _topo_with_model(session.original_topology, session.original_training_model),
+        "equivalent_topology": _topo_with_model(session.equivalent_topology, session.equivalent_training_model),
         "step": session.step,
     })
 
@@ -95,8 +106,8 @@ def estimate_metrics():
     _est = importlib.import_module("app.skills.training-mesh-profiler-skill")
 
     cfg = _est._MODEL_CONFIG[device_type]
-    L = cfg["num_layers"]
-    H = cfg["hidden_dim"]
+    L = int(data.get("num_layers", cfg["num_layers"]))
+    H = int(data.get("hidden_dim", cfg["hidden_dim"]))
     S = int(data.get("seq_len", _est._SEQ_LEN))
     B = int(data.get("total_batch", _est._TOTAL_BATCH))
     a = float(data.get("quant_coeff", _est._QUANT_COEFF))
