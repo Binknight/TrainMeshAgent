@@ -588,6 +588,26 @@ body {
 }
 .tp-rect.pinned { stroke: var(--yellow) !important; stroke-width: 2.5 !important; }
 
+/* ── Linked tooltip (two-sided compare mode) ── */
+.tooltip-header.linked {
+  padding: 6px 10px; font-size: 11px; gap: 6px;
+}
+.linked-badge {
+  font-size: 9px; padding: 1px 6px; border-radius: 6px;
+  font-weight: 600; letter-spacing: 0.3px;
+}
+.linked-badge.orig {
+  background: rgba(57,186,230,0.18); color: var(--cyan);
+}
+.linked-badge.eq {
+  background: rgba(59,206,180,0.18); color: var(--teal);
+}
+.tooltip-linked-divider {
+  height: 1px; margin: 0 10px;
+  background: linear-gradient(90deg, var(--cyan), var(--teal));
+  opacity: 0.4;
+}
+
 /* ── Tooltip Detail Button ── */
 .tooltip-detail-btn {
   display: block; width: 100%; margin-top: 8px; padding: 7px 0;
