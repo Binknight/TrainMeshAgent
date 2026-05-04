@@ -1411,7 +1411,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader) {
       .text((model.type || 'TRANSFORMER_MODEL').toUpperCase() + '  ·  ' + cfg.num_layers + ' layers  ·  ' + cfgText);
   }
 
-  var rowY = topY + (showHeader ? 44 : 12);
+  var rowY = topY + (showHeader ? 54 : 12);
   var hdrH = 22;
   var subPadX = 6;
   var subGap = 4;
