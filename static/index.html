@@ -223,7 +223,24 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.canvas-toolbar-right { margin-left: auto; display: flex; gap: 4px; }
+.canvas-toolbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.btn-sim {
+  padding: 5px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--bg-surface); color: var(--text-muted);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  cursor: not-allowed; transition: all var(--transition); white-space: nowrap;
+  user-select: none; letter-spacing: 0.5px;
+}
+.btn-sim:disabled { opacity: 0.4; }
+.btn-sim:not(:disabled) {
+  cursor: pointer; color: #fff; border-color: var(--cyan);
+  background: linear-gradient(135deg, rgba(57,186,230,0.25), rgba(59,206,180,0.15));
+  box-shadow: 0 0 12px rgba(57,186,230,0.12);
+}
+.btn-sim:not(:disabled):hover {
+  background: linear-gradient(135deg, rgba(57,186,230,0.4), rgba(59,206,180,0.25));
+  box-shadow: 0 0 18px rgba(57,186,230,0.25);
+}
 .toggle-btn {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -265,6 +282,87 @@ body {
   color: var(--text-muted); font-family: var(--font-mono); font-size: 13px;
   letter-spacing: 1px;
 }
+
+/* ── Results Tab ── */
+.results-wrap {
+  flex: 1; overflow-y: auto; padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.results-wrap::-webkit-scrollbar { width: 4px; }
+.results-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.result-section {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: visible;
+}
+.result-section-header { border-radius: var(--radius) var(--radius) 0 0; }
+.result-section-header {
+  padding: 10px 16px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: 12px;
+}
+.result-section-title {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--text-primary); white-space: nowrap;
+}
+.result-section-sub {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.result-chart {
+  padding: 12px 8px 8px; overflow-x: auto; position: relative;
+}
+.result-chart svg { display: block; }
+.result-chart::-webkit-scrollbar { width: 4px; height: 4px; }
+.result-chart::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* operator spec table */
+.result-table-wrap {
+  padding: 0; overflow-x: auto; max-height: 420px; overflow-y: auto;
+}
+.result-table-wrap::-webkit-scrollbar { width: 4px; height: 4px; }
+.result-table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.result-op-table {
+  width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 10px;
+}
+.result-op-table thead { position: sticky; top: 0; z-index: 2; }
+.result-op-table th {
+  background: #1a1f29; color: var(--text-muted); font-weight: 600;
+  padding: 7px 10px; text-align: left; white-space: nowrap;
+  border-bottom: 2px solid var(--border); font-size: 9px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.result-op-table td {
+  padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: var(--text-secondary); white-space: nowrap; max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.result-op-table tbody tr:hover td { background: rgba(57,186,230,0.04); color: var(--text-primary); }
+.result-op-table .cell-shape { color: var(--teal); }
+.result-op-table .cell-flops { color: var(--cyan); text-align: right; }
+.result-op-table .cell-hbm { color: var(--purple); text-align: right; }
+.result-op-table .cell-comm { color: var(--orange); text-align: right; }
+.result-op-table .cell-stage { text-align: center; }
+.result-op-table .cell-phase { text-align: center; }
+.phase-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 9px;
+  font-weight: 600; letter-spacing: 0.5px;
+}
+.phase-badge.fwd { background: rgba(57,186,230,0.18); color: var(--cyan); }
+.phase-badge.bwd { background: rgba(59,206,180,0.18); color: var(--teal); }
+.phase-badge.opt { background: rgba(255,180,84,0.18); color: var(--yellow); }
+.phase-badge.comm { background: rgba(255,143,64,0.18); color: var(--orange); }
+
+/* load-sequence chart tooltips */
+.result-tooltip {
+  position: fixed; pointer-events: none; z-index: 5000;
+  background: var(--bg-panel); border: 1px solid var(--border-active);
+  border-radius: 6px; padding: 8px 12px; font-family: var(--font-mono);
+  font-size: 10px; color: var(--text-primary); opacity: 0;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5); white-space: nowrap;
+  transition: opacity 0.12s; max-width: 380px;
+}
+.result-tooltip.show { opacity: 1; }
 .canvas-svg-wrap {
   flex: 1;
   position: relative;
@@ -804,6 +902,7 @@ body {
     <div class="canvas-toolbar" id="canvas-toolbar">
       <span class="canvas-label" id="canvas-label">等待组网数据...</span>
       <span class="canvas-toolbar-right">
+        <button class="btn-sim" id="btn-start-sim" disabled onclick="startSimulation()">开始仿真</button>
         <span class="mesh-config-toolbar" id="mesh-config-toolbar">
           <label>TP: <input id="mesh-tpInput" type="number" value="4" min="1" max="16"></label>
           <label>PP: <input id="mesh-ppInput" type="number" value="4" min="1" max="32"></label>
@@ -836,10 +935,30 @@ body {
     </div>
     <!-- Tab: Results Data -->
     <div class="canvas-tab-panel" id="tab-panel-results">
-      <div class="canvas-results-placeholder">
-        <div style="text-align:center">
-          <p>仿真结果数据</p>
-          <span style="font-size:11px;opacity:0.5;display:block;margin-top:4px;">完成仿真分析后将在此展示结果数据</span>
+      <div class="results-wrap" id="results-wrap">
+        <!-- Section 1: 负载序列记录 -->
+        <div class="result-section">
+          <div class="result-section-header">
+            <span class="result-section-title">负载序列记录</span>
+            <span class="result-section-sub">Pipeline Load Sequence — 各阶段计算·显存·通信负载分布</span>
+          </div>
+          <div class="result-chart" id="chart-load-sequence"></div>
+        </div>
+        <!-- Section 2: 带时间估计的负载序列 -->
+        <div class="result-section">
+          <div class="result-section-header">
+            <span class="result-section-title">带时间估计的负载序列</span>
+            <span class="result-section-sub">Timeline View — 各阶段 FWD / BWD / COMM 耗时预估</span>
+          </div>
+          <div class="result-chart" id="chart-timeline"></div>
+        </div>
+        <!-- Section 3: 负载描述文件 -->
+        <div class="result-section">
+          <div class="result-section-header">
+            <span class="result-section-title">负载描述文件</span>
+            <span class="result-section-sub">Operator Spec — 详细算子 Shape · Stage · Phase 描述</span>
+          </div>
+          <div class="result-table-wrap" id="table-operator-spec"></div>
         </div>
       </div>
     </div>
@@ -1015,6 +1134,13 @@ function newSession() {
   document.getElementById("mesh-config-toolbar").classList.remove("visible");
   document.getElementById("canvas-placeholder").classList.remove("hidden");
   document.getElementById("canvas-label").textContent = '等待组网数据...';
+  // Reset simulation button
+  if (typeof checkSimReady === 'function') checkSimReady();
+  // Switch back to topo tab and show chat
+  switchCanvasTab('topo');
+  var rightPanel = document.querySelector('.panel-right');
+  if (rightPanel) rightPanel.style.display = '';
+  _resultsRendered = false;
   ensureSession();
 }
 
@@ -1229,6 +1355,441 @@ function switchCanvasTab(tabName) {
   document.querySelectorAll('.canvas-tab-panel').forEach(function(p) {
     p.classList.toggle('active', p.id === 'tab-panel-' + tabName);
   });
+  // Toggle right chat panel: visible on topo tab, hidden on results tab
+  var rightPanel = document.querySelector('.panel-right');
+  if (rightPanel) rightPanel.style.display = tabName === 'results' ? 'none' : '';
+  if (tabName === 'results') renderResultsData();
+}
+
+function checkSimReady() {
+  var btn = document.getElementById('btn-start-sim');
+  if (!btn) return;
+  var hasOriginal = !!(meshOriginal && modelOriginal);
+  var hasEquivalent = !!(meshEquivalent && modelEquivalent);
+  var ready = hasOriginal || hasEquivalent;
+  btn.disabled = !ready;
+}
+
+function startSimulation() {
+  var btn = document.getElementById('btn-start-sim');
+  if (!btn || btn.disabled) return;
+  var parts = [];
+  if (meshOriginal && modelOriginal) parts.push('原始组网');
+  if (meshEquivalent && modelEquivalent) parts.push('等效组网');
+  var msg = parts.join('和') + ' 数据已就绪，请开始仿真';
+  document.getElementById('chat-input').value = msg;
+  sendMessage();
+}
+
+// ═══════════════════════════════════════════
+// Results Data — Mock Workload & Rendering
+// ═══════════════════════════════════════════
+
+var _resultsRendered = false;
+
+// ── Color map by comm_type ──
+var TYPE_COLORS = {
+  computation:   '#39bae6',
+  all_reduce:    '#ff8f40',
+  all_gather:    '#baa1ff',
+  reduce_scatter:'#ffb454',
+  broadcast:     '#7fd962',
+  send:          '#f26d78',
+  recv:          '#f26d78',
+  barrier:       '#4a5568'
+};
+var TYPE_LABELS = {
+  computation:'Compute', all_reduce:'AllReduce', all_gather:'AllGather',
+  reduce_scatter:'ReduceScatter', broadcast:'Broadcast', send:'Send', recv:'Recv', barrier:'Barrier'
+};
+
+// Generate a realistic mock workload trace matching CSV/JSON field specs
+function genMockWorkload() {
+  var ops = [];         // flat op list (timeline + table)
+  var t = 0;           // current time in microseconds
+
+  var B = 8, S = 4096, d_model = 4096, d_ffn = 14336, num_heads = 32, d_head = 128, V = 128256;
+  var num_layers = 2;
+  var tp_size = 2, dp_size = 2, pp_size = 2;
+
+  function fmtShape(arr) { return '[' + arr.join(',') + ']'; }
+
+  // helpers to add ops with realistic durations
+  function addCompute(name, stage, shapeIn, shapeOut, dtype, flopsG, additional) {
+    var dur = Math.round(flopsG * 5.2 + Math.random() * flopsG * 0.6); // ~5.2 us per GFLOP
+    ops.push({
+      operator_name: name, comm_type: 'computation', stage: stage,
+      data_shape: fmtShape(shapeIn) + ' → ' + fmtShape(shapeOut),
+      data_type: dtype, data_size: null,
+      comm_group: null, comm_group_size: null, comm_name: null, algo_name: null,
+      dst: null, src: null, additional: additional || 'matmul',
+      nonblock: 0, start_time: t, end_time: t + dur, duration: dur,
+      _elapsed_time: dur
+    });
+    t += dur;
+    return dur;
+  }
+
+  function addComm(commType, stage, commGroup, groupSize, msgBytes, additional, algo) {
+    // realistic comm time: ~0.5 us/byte for small msgs, improving with size
+    var baseLatency = commType === 'broadcast' ? 8 : commType === 'all_reduce' ? 18 : 12;
+    var bwUsPerByte = 0.00035;
+    var dur = Math.round(baseLatency + msgBytes * bwUsPerByte + Math.random() * 5);
+    ops.push({
+      operator_name: commType, comm_type: commType, stage: stage,
+      data_shape: null, data_type: null,
+      data_size: msgBytes, comm_group: commGroup, comm_group_size: groupSize,
+      comm_name: commType, algo_name: algo || 'ring',
+      dst: null, src: null,
+      additional: additional || (algo || 'ring'),
+      nonblock: commType === 'all_reduce' ? 0 : 1, // all_reduce often blocking
+      start_time: t, end_time: t + dur, duration: dur,
+      _elapsed_time: dur
+    });
+    t += dur;
+    return dur;
+  }
+
+  // ═══ init stage ═══
+  addComm('all_gather', 'init', 'tp_group', tp_size, d_model * d_model * 2, 'weight-gather', 'ring');
+  addComm('broadcast', 'init', 'dp_group', dp_size, 128, 'seed-sync', null);
+
+  // ═══ forward layers ═══
+  for (var li = 0; li < num_layers; li++) {
+    var stageFwd = 'forward/layer' + li;
+
+    // ATTN block
+    addCompute('qkv_projection', stageFwd, [B,S,d_model], [B,S,3*d_model], 'bf16', 75.5, 'linear');
+    addComm('all_reduce', stageFwd, 'tp_group', tp_size, B * S * 3 * d_model * 2, 'qkv-sync', 'ring');
+    addCompute('attention_scores', stageFwd, [B,num_heads,S,d_head], [B,num_heads,S,d_head], 'bf16', 50.3, 'bmm');
+    addCompute('attention_softmax', stageFwd, [B,num_heads,S,S], [B,num_heads,S,S], 'fp32', 8.4, 'softmax');
+    addCompute('attention_context', stageFwd, [B,num_heads,S,d_head], [B,S,d_model], 'bf16', 50.3, 'bmm');
+    addComm('reduce_scatter', stageFwd, 'tp_group', tp_size, B * S * d_model * 2, 'attn-out-sync', 'ring');
+    addCompute('output_projection', stageFwd, [B,S,d_model], [B,S,d_model], 'bf16', 25.2, 'linear');
+
+    // FFN block
+    addCompute('ffn_gate_proj', stageFwd, [B,S,d_model], [B,S,d_ffn], 'bf16', 100.7, 'linear');
+    addCompute('ffn_up_proj', stageFwd, [B,S,d_model], [B,S,d_ffn], 'bf16', 100.7, 'linear');
+    addCompute('ffn_activation', stageFwd, [B,S,d_ffn], [B,S,d_ffn], 'fp32', 6.2, 'silu');
+    addComm('all_reduce', stageFwd, 'tp_group', tp_size, B * S * d_ffn * 2 * 2, 'ffn-sync', 'ring');
+    addCompute('ffn_down_proj', stageFwd, [B,S,d_ffn], [B,S,d_model], 'bf16', 100.7, 'linear');
+
+    // inter-layer dp gradient sync (simulated during forward pass for overlap)
+    if (li < num_layers - 1) {
+      addComm('all_reduce', stageFwd, 'dp_group', dp_size, d_model * d_model * 2 * 6, 'grad-prefetch', 'ring');
+    }
+  }
+
+  // ── forward/output ──
+  addCompute('final_layer_norm', 'forward/output', [B,S,d_model], [B,S,d_model], 'fp32', 1.5, 'rms_norm');
+  addCompute('lm_head', 'forward/output', [B,S,d_model], [B,S,V], 'bf16', 105.4, 'linear');
+  addCompute('cross_entropy_loss', 'forward/output', [B,S,V], [1], 'fp32', 0.8, 'loss');
+
+  // ═══ backward layers (reverse order) ═══
+  for (var li = num_layers - 1; li >= 0; li--) {
+    var stageBwd = 'backward/layer' + li;
+
+    addCompute('loss_grad', stageBwd, [1], [B,S,V], 'fp32', 1.6, 'grad');
+    addCompute('lm_head_grad', stageBwd, [B,S,V], [B,S,d_model], 'bf16', 210.8, 'linear-grad');
+
+    // FFN grad
+    addComm('all_reduce', stageBwd, 'tp_group', tp_size, B * S * d_model * 2, 'ffn-grad-input-sync', 'ring');
+    addCompute('ffn_down_grad', stageBwd, [B,S,d_model], [B,S,d_ffn], 'bf16', 201.4, 'linear-grad');
+    addCompute('ffn_activation_grad', stageBwd, [B,S,d_ffn], [B,S,d_ffn], 'fp32', 12.4, 'silu-grad');
+    addCompute('ffn_up_grad', stageBwd, [B,S,d_ffn], [B,S,d_model], 'bf16', 201.4, 'linear-grad');
+    addCompute('ffn_gate_grad', stageBwd, [B,S,d_ffn], [B,S,d_model], 'bf16', 201.4, 'linear-grad');
+
+    // ATTN grad
+    addComm('reduce_scatter', stageBwd, 'tp_group', tp_size, B * S * d_model * 2, 'attn-grad-sync', 'ring');
+    addCompute('out_proj_grad', stageBwd, [B,S,d_model], [B,S,d_model], 'bf16', 50.4, 'linear-grad');
+    addCompute('attention_context_grad', stageBwd, [B,S,d_model], [B,num_heads,S,d_head], 'bf16', 100.6, 'bmm-grad');
+    addCompute('attention_softmax_grad', stageBwd, [B,num_heads,S,S], [B,num_heads,S,S], 'fp32', 16.8, 'softmax-grad');
+    addCompute('attention_scores_grad', stageBwd, [B,num_heads,S,d_head], [B,num_heads,S,d_head], 'bf16', 100.6, 'bmm-grad');
+    addComm('all_reduce', stageBwd, 'tp_group', tp_size, B * S * d_model * 2 * 3, 'qkv-grad-sync', 'ring');
+    addCompute('qkv_proj_grad', stageBwd, [B,S,3*d_model], [B,S,d_model], 'bf16', 151.0, 'linear-grad');
+  }
+
+  // ── backward/output ──
+  addCompute('final_ln_grad', 'backward/output', [B,S,d_model], [B,S,d_model], 'fp32', 3.0, 'rms_norm-grad');
+
+  // ═══ step ═══
+  addComm('all_reduce', 'step', 'dp_group', dp_size, d_model * d_model * 2 * 6 * num_layers, 'grad-avg', 'ring');
+  addCompute('optimizer_step', 'step', [d_model,d_model], [d_model,d_model], 'fp32', 12.8, 'adamw');
+
+  // Build per-stage summary for the load-sequence chart
+  var stageMap = {};
+  ops.forEach(function(o) {
+    var key = o.stage;
+    if (!stageMap[key]) stageMap[key] = {stage:key, compute_us:0, comm_us:0, commBreakdown:{}};
+    if (o.comm_type === 'computation') stageMap[key].compute_us += o.duration;
+    else {
+      stageMap[key].comm_us += o.duration;
+      var ct = o.comm_type;
+      stageMap[key].commBreakdown[ct] = (stageMap[key].commBreakdown[ct] || 0) + o.duration;
+    }
+  });
+
+  var loadSeq = [];
+  var stageOrder = [];
+  ops.forEach(function(o) { if (stageOrder.indexOf(o.stage) < 0) stageOrder.push(o.stage); });
+  stageOrder.forEach(function(s) { loadSeq.push(stageMap[s]); });
+
+  return { ops: ops, loadSeq: loadSeq, totalUs: t };
+}
+
+function renderResultsData() {
+  if (_resultsRendered) return;
+  _resultsRendered = true;
+
+  var data = genMockWorkload();
+
+  // ═══ Section 1: 负载序列记录 — stacked bar chart (compute vs comm per stage) ═══
+  (function() {
+    var container = document.getElementById('chart-load-sequence');
+    if (!container) return;
+    var W = container.clientWidth - 16;
+    var stages = data.loadSeq;
+    var N = stages.length;
+    var barW = Math.max(40, Math.min(70, (W - 80) / N - 6));
+    var chartW = Math.max(W, N * (barW + 6) + 100);
+    var H = 280, topM = 16, botM = 72, leftM = 58, rightM = 20;
+    var plotH = H - topM - botM;
+    var plotW = chartW - leftM - rightM;
+
+    // find max total time for scaling
+    var maxTotal = 0;
+    stages.forEach(function(s) { var sum = s.compute_us + s.comm_us; if (sum > maxTotal) maxTotal = sum; });
+
+    container.innerHTML = '';
+    var svg = d3.select(container).append('svg').attr('width', chartW).attr('height', H);
+
+    var g = svg.append('g').attr('transform','translate('+leftM+','+topM+')');
+
+    // grid lines
+    for (var i = 0; i <= 4; i++) {
+      g.append('line').attr('x1',0).attr('x2',plotW).attr('y1',plotH*i/4).attr('y2',plotH*i/4)
+        .attr('stroke','#1e2a36').attr('stroke-width',0.5);
+    }
+
+    var tooltip = d3.select(container).append('div').attr('class','result-tooltip');
+
+    stages.forEach(function(s, idx) {
+      var x = idx * (barW + 6);
+      var hComp = Math.max(1, (s.compute_us / maxTotal) * plotH);
+      var hComm = Math.max(0, (s.comm_us / maxTotal) * plotH);
+
+      // compute bar (top)
+      g.append('rect').attr('x',x).attr('y',plotH - hComp - hComm).attr('width',barW).attr('height',hComp)
+        .attr('fill','#39bae6').attr('rx',2).attr('ry',2).attr('opacity', 0.9);
+      // comm bar (bottom, stacked below compute)
+      if (hComm > 0.5) {
+        g.append('rect').attr('x',x).attr('y',plotH - hComm).attr('width',barW).attr('height',hComm)
+          .attr('fill','#ff8f40').attr('rx',2).attr('ry',2).attr('opacity', 0.85);
+        // comm sub-segments (thin colored slices)
+        var commKeys = Object.keys(s.commBreakdown);
+        var yOff = plotH;
+        commKeys.forEach(function(ck) {
+          var segH = Math.max(1, (s.commBreakdown[ck] / maxTotal) * plotH);
+          g.append('rect').attr('x',x+2).attr('y',yOff - segH).attr('width',barW-4).attr('height',Math.max(0.6, segH))
+            .attr('fill', TYPE_COLORS[ck] || '#7b8ca3').attr('rx',0.5).attr('ry',0.5).attr('opacity',0.7);
+          yOff -= segH;
+        });
+      }
+
+      // hover overlay
+      var totalUs = s.compute_us + s.comm_us;
+      g.append('rect').attr('x',x).attr('y',0).attr('width',barW).attr('height',plotH)
+        .attr('fill','transparent')
+        .on('mouseover',function(ev) {
+          var html = '<div style="font-weight:600;margin-bottom:4px;color:var(--cyan)">'+s.stage+'</div>';
+          html += '<div>总耗时: <b>'+formatUs(totalUs)+'</b></div>';
+          html += '<div style="color:#39bae6">Compute: <b>'+formatUs(s.compute_us)+'</b> ('+(totalUs>0?(s.compute_us/totalUs*100).toFixed(0):0)+'%)</div>';
+          html += '<div style="color:#ff8f40">Comm: <b>'+formatUs(s.comm_us)+'</b> ('+(totalUs>0?(s.comm_us/totalUs*100).toFixed(0):0)+'%)</div>';
+          var commKeys = Object.keys(s.commBreakdown);
+          if (commKeys.length) {
+            html += '<div style="margin-top:3px;border-top:1px solid var(--border);padding-top:3px">';
+            commKeys.forEach(function(ck) {
+              html += '<div>&nbsp;&nbsp;'+ck+': <b>'+formatUs(s.commBreakdown[ck])+'</b></div>';
+            });
+            html += '</div>';
+          }
+          tooltip.classed('show',true).html(html);
+        })
+        .on('mousemove',function(ev) {
+          tooltip.style('left',(ev.clientX+14)+'px').style('top',(ev.clientY-70)+'px');
+        })
+        .on('mouseout',function() { tooltip.classed('show',false); });
+    });
+
+    // x-axis labels
+    stages.forEach(function(s, idx) {
+      var x = idx * (barW + 6) + barW/2;
+      g.append('text').attr('x',x).attr('y',plotH+14)
+        .attr('text-anchor','start').attr('transform','rotate(-32,'+x+','+(plotH+14)+')')
+        .attr('fill','#7b8ca3').attr('font-size','9px').attr('font-family','JetBrains Mono,monospace')
+        .text(s.stage);
+    });
+
+    // y-axis labels
+    for (var i = 0; i <= 4; i++) {
+      var v = maxTotal * i / 4;
+      g.append('text').attr('x',-8).attr('y',plotH-plotH*i/4+4)
+        .attr('text-anchor','end').attr('fill','#4a5568').attr('font-size','9px').attr('font-family','JetBrains Mono,monospace')
+        .text(formatUs(v));
+    }
+
+    // legend
+    var legY = H - 16;
+    [{l:'Compute',c:'#39bae6'},{l:'Comm Total',c:'#ff8f40'},{l:'AllReduce',c:'#ff8f40'},{l:'AllGather',c:'#baa1ff'},{l:'RedScatter',c:'#ffb454'},{l:'Broadcast',c:'#7fd962'}].forEach(function(d,i){
+      var lx = leftM + i*110;
+      svg.append('rect').attr('x',lx).attr('y',legY-8).attr('width',10).attr('height',10).attr('fill',d.c).attr('rx',2);
+      svg.append('text').attr('x',lx+14).attr('y',legY).attr('fill','#7b8ca3').attr('font-size','9px').attr('font-family','JetBrains Mono,monospace').text(d.l);
+    });
+  })();
+
+  // ═══ Section 2: 执行时间线 — Gantt chart by stage rows ═══
+  (function() {
+    var container = document.getElementById('chart-timeline');
+    if (!container) return;
+    var ops = data.ops;
+    var totalUs = data.totalUs;
+
+    // compute unique stages in order
+    var stages = [];
+    var seen = {};
+    ops.forEach(function(o) { if (!seen[o.stage]) { seen[o.stage]=true; stages.push(o.stage); } });
+
+    var rowH = 24, topM = 10, botM = 38, leftM = 124, rightM = 20;
+    var W = container.clientWidth - 16;
+    var minChartW = 900;
+    var chartW = Math.max(W, minChartW);
+    var plotW = chartW - leftM - rightM;
+    var H = topM + stages.length * rowH + botM;
+
+    container.innerHTML = '';
+    var svg = d3.select(container).append('svg').attr('width', chartW).attr('height', H);
+    var g = svg.append('g').attr('transform','translate('+leftM+','+topM+')');
+
+    // stage background bands
+    stages.forEach(function(s, si) {
+      if (si % 2 === 0) {
+        g.append('rect').attr('x',0).attr('y',si*rowH).attr('width',plotW).attr('height',rowH)
+          .attr('fill','rgba(255,255,255,0.015)');
+      }
+    });
+
+    // vertical grid lines
+    var nTicks = 10;
+    for (var i = 0; i <= nTicks; i++) {
+      var gx = (i/nTicks)*plotW;
+      g.append('line').attr('x1',gx).attr('x2',gx).attr('y1',0).attr('y2',stages.length*rowH)
+        .attr('stroke','#1e2a36').attr('stroke-width',i%5===0?0.6:0.3);
+    }
+
+    // time axis labels
+    for (var i = 0; i <= nTicks; i++) {
+      var tv = totalUs * i / nTicks;
+      g.append('text').attr('x',(i/nTicks)*plotW).attr('y',stages.length*rowH+16)
+        .attr('text-anchor','middle').attr('fill','#4a5568').attr('font-size','9px')
+        .attr('font-family','JetBrains Mono,monospace').text(formatUs(tv));
+    }
+
+    var tooltip = d3.select(container).append('div').attr('class','result-tooltip');
+
+    ops.forEach(function(o) {
+      var si = stages.indexOf(o.stage);
+      if (si < 0) return;
+      var rx = (o.start_time / totalUs) * plotW;
+      var rw = Math.max(2, (o.duration / totalUs) * plotW);
+      var ry = si * rowH + 3;
+      var rh = rowH - 6;
+      var color = TYPE_COLORS[o.comm_type] || '#7b8ca3';
+      var label = TYPE_LABELS[o.comm_type] || o.comm_type;
+
+      var rect = g.append('rect')
+        .attr('x',rx).attr('y',ry).attr('width',rw).attr('height',rh)
+        .attr('fill',color).attr('rx',3).attr('ry',3).attr('opacity',0.88);
+
+      rect.on('mouseover',function(ev) {
+        var h = '<div style="font-weight:600;margin-bottom:4px">'+o.stage+'</div>';
+        h += '<div><b>'+o.operator_name+'</b> · <span style="color:'+color+'">'+label+'</span>';
+        if (o.algo_name) h += ' ('+o.algo_name+')';
+        h += '</div>';
+        if (o.data_shape) h += '<div>Shape: '+o.data_shape+'</div>';
+        if (o.data_type) h += '<div>dtype: '+o.data_type+'</div>';
+        if (o.data_size != null) h += '<div>Msg size: '+formatBytes(o.data_size)+'</div>';
+        if (o.comm_group) h += '<div>Group: '+o.comm_group+' &nbsp; size='+o.comm_group_size+'</div>';
+        if (o.additional) h += '<div>Info: '+o.additional+'</div>';
+        h += '<div>Duration: <b>'+formatUs(o.duration)+'</b></div>';
+        h += '<div style="color:var(--text-muted)">'+formatUs(o.start_time)+' → '+formatUs(o.end_time)+'</div>';
+        tooltip.classed('show',true).html(h);
+      })
+      .on('mousemove',function(ev) {
+        tooltip.style('left',(ev.clientX+14)+'px').style('top',(Math.min(ev.clientY-90, ev.clientY-10))+'px');
+      })
+      .on('mouseout',function() { tooltip.classed('show',false); });
+    });
+
+    // stage labels
+    stages.forEach(function(s, si) {
+      g.append('text').attr('x',-8).attr('y',si*rowH+rowH/2+4)
+        .attr('text-anchor','end').attr('fill','#7b8ca3')
+        .attr('font-size','9px').attr('font-family','JetBrains Mono,monospace')
+        .text(s);
+    });
+
+    // legend
+    var types = ['computation','all_reduce','all_gather','reduce_scatter','broadcast'];
+    var legY = H - 11;
+    types.forEach(function(ct,i) {
+      var lx = leftM + i*120;
+      svg.append('rect').attr('x',lx).attr('y',legY-8).attr('width',10).attr('height',10)
+        .attr('fill',TYPE_COLORS[ct]).attr('rx',2);
+      svg.append('text').attr('x',lx+14).attr('y',legY).attr('fill','#7b8ca3')
+        .attr('font-size','9px').attr('font-family','JetBrains Mono,monospace').text(TYPE_LABELS[ct]);
+    });
+  })();
+
+  // ═══ Section 3: 负载描述文件 — full detail table ═══
+  (function() {
+    var container = document.getElementById('table-operator-spec');
+    if (!container) return;
+    var rows = data.ops;
+    var html = '<table class="result-op-table"><thead><tr>';
+    html += '<th>操作名称</th><th>通信类型</th><th>Stage</th><th>通信组</th><th>组大小</th><th>数据形状/大小</th><th>数据类型</th><th>耗时</th><th>附加信息</th><th>非阻塞</th>';
+    html += '</tr></thead><tbody>';
+    rows.forEach(function(r) {
+      var ctColor = TYPE_COLORS[r.comm_type] || '#7b8ca3';
+      var ctLabel = TYPE_LABELS[r.comm_type] || r.comm_type;
+      html += '<tr>';
+      html += '<td style="color:#c9d1d9">' + r.operator_name + '</td>';
+      html += '<td><span class="phase-badge" style="background:'+ctColor+'22;color:'+ctColor+'">' + ctLabel + '</span></td>';
+      html += '<td class="cell-stage">' + r.stage + '</td>';
+      html += '<td style="color:#baa1ff">' + (r.comm_group || '—') + '</td>';
+      html += '<td style="text-align:center">' + (r.comm_group_size != null ? r.comm_group_size : '—') + '</td>';
+      html += '<td class="cell-shape">' + (r.data_shape || (r.data_size != null ? formatBytes(r.data_size) : '—')) + '</td>';
+      html += '<td style="text-align:center">' + (r.data_type || '—') + '</td>';
+      html += '<td class="cell-flops">' + formatUs(r.duration) + '</td>';
+      html += '<td style="color:var(--text-muted);max-width:140px;overflow:hidden;text-overflow:ellipsis">' + (r.additional || '—') + '</td>';
+      html += '<td style="text-align:center">' + (r.nonblock ? '是' : '否') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  })();
+}
+
+// ── Utility formatters ──
+function formatUs(us) {
+  if (us >= 1e6) return (us/1e6).toFixed(2) + ' s';
+  if (us >= 1e3) return (us/1e3).toFixed(1) + ' ms';
+  return us.toFixed(1) + ' μs';
+}
+function formatBytes(bytes) {
+  if (bytes >= 1e9) return (bytes/1e9).toFixed(2) + ' GB';
+  if (bytes >= 1e6) return (bytes/1e6).toFixed(1) + ' MB';
+  if (bytes >= 1e3) return (bytes/1e3).toFixed(1) + ' KB';
+  return bytes + ' B';
 }
 
 function handleKeyDown(e) {
