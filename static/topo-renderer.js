@@ -1335,10 +1335,7 @@ var MODEL_COLORS = {
 
 function loadModelData(modelData, role) {
   role = role || (modelData._role || ((modelOriginal ? 'equivalent' : 'original')));
-  console.log('[loadModelData] role=' + role + ' hasLayers=' + !!(modelData.layers && modelData.layers.length) + ' layersCount=' + (modelData.layers ? modelData.layers.length : 'N/A') + ' keys=' + Object.keys(modelData).join(','));
-  if (modelData.layers && modelData.layers.length) {
-    console.log('[loadModelData] first layer:', JSON.stringify(modelData.layers[0]));
-  }
+
   var entry = {
     type: modelData.type,
     config: modelData.config,
@@ -1351,7 +1348,6 @@ function loadModelData(modelData, role) {
   } else {
     modelEquivalent = entry;
   }
-  console.log('[loadModelData] modelOriginal=' + !!modelOriginal + ' modelEquivalent=' + !!modelEquivalent);
 }
 
 // Render one model horizontally — blocks left-to-right like mesh PP stages.
@@ -1360,21 +1356,18 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader) {
   var cfg = model.config || {};
   var comp = model.computed || {};
 
-  // ── Build horizontal display list ──
-  var leadBlocks = [];  // input_embedding, transformer_block, ellipsis
-  model.layers.forEach(function (l) {
-    if (l.type === 'input_embedding') leadBlocks.unshift(l);  // embed always first
-    else leadBlocks.push(l);
-  });
+  // ── Build horizontal display list (transformer blocks + ellipsis only) ──
   var all = [];
-  leadBlocks.forEach(function (b) { all.push(b); });
-  if (model.output_layer) all.push({ type: 'output', desc: model.output_layer.desc || 'Output' });
+  model.layers.forEach(function (l) {
+    if (l.type === 'input_embedding' || l.type === 'output') return;
+    all.push(l);
+  });
 
   // ── Layout constants ──
-  var gap = 4;
-  var blockH = 72;
-  var baseW = 52;   // transformer block width
-  var thinW = 34;    // embed / ellipsis / output width
+  var gap = 8;
+  var blockH = 120;
+  var baseW = 80;   // transformer block width
+  var thinW = 50;    // ellipsis width
   var totalN = all.length;
   // Count types
   var normalCt = 0, thinCt = 0;
@@ -1402,10 +1395,10 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader) {
       .text((model.type || 'TRANSFORMER_MODEL').toUpperCase() + '  ·  ' + cfg.num_layers + ' layers  ·  ' + cfgText);
   }
 
-  var rowY = topY + (showHeader ? 30 : 6);
-  var hdrH = 18;
-  var subPadX = 4;
-  var subGap = 3;
+  var rowY = topY + (showHeader ? 44 : 12);
+  var hdrH = 22;
+  var subPadX = 6;
+  var subGap = 4;
 
   all.forEach(function (block, i) {
     var bw = block.type === 'transformer_block' ? useW : useThin;
@@ -1420,12 +1413,12 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader) {
         .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
         .attr('rx', 6).attr('fill', MODEL_COLORS.ellipsis.fill).attr('stroke', MODEL_COLORS.ellipsis.stroke).attr('stroke-width', 1.5);
       g.append('text')
-        .attr('x', bx + bw / 2).attr('y', rowY + 38).attr('text-anchor', 'middle')
-        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(10, Math.min(16, bw / 5)) + 'px')
+        .attr('x', bx + bw / 2).attr('y', rowY + 50).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(12, Math.min(18, bw / 4)) + 'px')
         .text('⋮');
       g.append('text')
-        .attr('x', bx + bw / 2).attr('y', rowY + 62).attr('text-anchor', 'middle')
-        .attr('fill', 'var(--text-muted)').attr('font-size', Math.max(8, Math.min(11, bw / 7)) + 'px')
+        .attr('x', bx + bw / 2).attr('y', rowY + 78).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-muted)').attr('font-size', Math.max(9, Math.min(12, bw / 6)) + 'px')
         .text(block.desc || '');
       return;
     }
@@ -1532,10 +1525,7 @@ function modelRebuild() {
   var modelSection = document.getElementById('canvas-model-section');
   var divider = document.getElementById('canvas-section-divider');
   var model = modelOriginal || modelEquivalent;
-  console.log('[modelRebuild] model=' + !!model + ' modelOrig=' + !!modelOriginal + ' modelEq=' + !!modelEquivalent);
-  if (model) console.log('[modelRebuild] layers=' + (model.layers ? model.layers.length : 'N/A') + ' config=' + JSON.stringify(model.config));
   if (!model || !model.layers || !model.layers.length) {
-    console.log('[modelRebuild] NO MODEL DATA, hiding section');
     modelSection.style.display = 'none';
     divider.style.display = 'none';
     return;
@@ -1556,7 +1546,7 @@ function modelRebuild() {
     var modelW = halfW - 16;
     var xLeft = Math.max(0, (halfW - modelW) / 2);
     var xRight = W - halfW + Math.max(0, (halfW - modelW) / 2);
-    totalH = 240;
+    totalH = 280;
 
     svg = container.append('svg')
       .attr('viewBox', '0 0 ' + W + ' ' + totalH)
@@ -1606,7 +1596,7 @@ function modelRebuild() {
     _renderOneModel(zoomLayer, modelEquivalent, xRight, 10, modelW, false);
   } else {
     var modelW = W - 32;
-    totalH = 240;
+    totalH = 280;
 
     svg = container.append('svg')
       .attr('viewBox', '0 0 ' + W + ' ' + totalH)

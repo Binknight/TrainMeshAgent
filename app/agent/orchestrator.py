@@ -202,6 +202,7 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
         }
 
     elif tool_name == "training-model-gen-skill" and isinstance(data, TrainingModel):
+        role = "equivalent" if arguments.get("is_equivalent") else "original"
         if arguments.get("is_equivalent"):
             session.equivalent_training_model = data
         else:
@@ -216,8 +217,8 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             "output_layer": data.output_layer.model_dump(),
             "session_id": session.session_id,
             "_type": "training_model_summary",
+            "_role": role,
         }
-
     return data.model_dump() if hasattr(data, "model_dump") else data
 
 
