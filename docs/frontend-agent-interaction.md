@@ -66,7 +66,7 @@
 | **WebSocket** | `WS /ws/simulation/<id>` | 双向 | 仿真任务状态实时轮询推送 |
 | **REST** | `/api/session/*` | 请求-响应 | 会话 CRUD、拓扑数据获取、仿真结果查询 |
 
-### SSE 事件类型（7种）
+### SSE 事件类型（9种）
 
 ```
 thinking    → Agent 正在分析
@@ -74,6 +74,7 @@ tool_call   → 调用某个工具（携带工具名+参数）
 guard_check → 护栏校验结果（通过/失败+告警）
 mesh_json   → 组网拓扑生成完毕（触发画布渲染）
 model_json  → 训练模型结构生成完毕
+sim_data    → 仿真数据推送（task_id + 状态）
 message     → Agent 文本回复 / 仿真结果 / 对比报告
 error       → 异常信息
 done        → 处理完成
@@ -209,6 +210,14 @@ elif tool_name == "training-mesh-profiler-skill":
         session.original_simulation = data     # 存储原始组网仿真结果
     else:
         session.equivalent_simulation = data   # 存储等效组网仿真结果
+    session.step = "simulating"
+
+elif tool_name == "run_simulation":
+    if "原始" in data.get("topology_name", ""):
+        session.original_task_id = data["task_id"]   # 存储原始组网 MCP 任务 ID
+    else:
+        session.equivalent_task_id = data["task_id"]  # 存储等效组网 MCP 任务 ID
+    # task_id 用于 profiler-skill 自动注入仿真查询参数
 
 elif tool_name == "training-model-gen-skill":
     if is_equivalent:
@@ -227,23 +236,29 @@ elif tool_name == "compare_results":
 # orchestrator.py: _build_comparison_report()
 
 def _build_comparison_report(original, equivalent):
-    # 计算原始与等效的差异百分比
-    intensity_diff = |orig - equiv| / max(|orig|, 1e-9) * 100   # 计算强度差异
-    memory_diff    = |orig - equiv| / max(|orig|, 1e-9) * 100   # 内存差异
-    comm_diff      = |orig - equiv| / max(|orig|, 1e-9) * 100   # 通信差异
+    # 计算原始与等效的 5 项差异百分比
+    flops_diff_pct  = abs(orig - equiv) / max(abs(orig), eps) * 100   # 计算强度差异
+    hbm_diff_pct    = abs(orig - equiv) / max(abs(orig), eps) * 100   # HBM 内存差异
+    tp_comm_diff_pct = abs(orig - equiv) / max(abs(orig), eps) * 100  # TP 通信差异
+    pp_comm_diff_pct = abs(orig - equiv) / max(abs(orig), eps) * 100  # PP 通信差异
+    dp_comm_diff_pct = abs(orig - equiv) / max(abs(orig), eps) * 100  # DP 通信差异
 
     tolerance = 5.0   # 容忍度 5%
 
     is_equivalent = (
-        intensity_diff <= tolerance
-        and memory_diff <= tolerance
-        and comm_diff <= tolerance
+        flops_diff_pct <= tolerance
+        and hbm_diff_pct <= tolerance
+        and tp_comm_diff_pct <= tolerance
+        and pp_comm_diff_pct <= tolerance
+        and dp_comm_diff_pct <= tolerance
     )
 
     return ComparisonReport(
-        compute_intensity_diff_pct,
-        memory_usage_diff_pct,
-        communication_traffic_diff_pct,
+        flops_diff_pct,
+        hbm_diff_pct,
+        tp_comm_diff_pct,
+        pp_comm_diff_pct,
+        dp_comm_diff_pct,
         is_equivalent,
         conclusion: "✅ 等效验证通过" or "❌ 等效验证不通过"
     )
@@ -257,7 +272,7 @@ def _build_comparison_report(original, equivalent):
 
 ```python
 class SessionState(BaseModel):
-    session_id: str                      # 8位 UUID
+    session_id: str                      # UUID4 前8位
     original_params: TopologyParams      # 原始组网参数 (device_type, dp, tp, pp)
     equivalent_params: TopologyParams    # 等效组网参数
     original_topology: MeshTopology      # 原始组网拓扑（含节点列表+通信域）
@@ -267,6 +282,8 @@ class SessionState(BaseModel):
     comparison_report: ComparisonReport     # 等效性对比报告
     original_training_model: TrainingModel  # 原始训练模型结构
     equivalent_training_model: TrainingModel # 等效训练模型结构
+    original_task_id: str | None = None     # 原始组网 MCP 仿真任务 ID
+    equivalent_task_id: str | None = None   # 等效组网 MCP 仿真任务 ID
     step: str = "idle"                  # 状态机步骤
     history: list[dict]                 # 完整对话历史
 ```
@@ -274,8 +291,10 @@ class SessionState(BaseModel):
 ### 4.2 状态机
 
 ```
-idle ──→ params_collected ──→ topology_generated ──→ simulating ──→ completed
+idle ──→ topology_generated ──→ simulating ──→ completed
 ```
+
+注：`params_collected` 状态在 `SessionState.step` 类型中已定义，但 orchestrator 中无代码路径设置该状态，实际不经过此中间态。
 
 ### 4.3 SessionManager
 
@@ -457,13 +476,17 @@ function handleSSEEvent(type, data) {
             → addMessage('mesh', summary)  // 拓扑摘要
             → loadMeshData(topoData)       // 触发 D3 渲染
         case 'model_json':
-            → (类似 mesh_json 处理，当前代码中 event_type 映射为 model_json
-               但前端 switch 暂未显式处理，会 fallback 到 message)
+            → setStatus('generated')       // 设置状态
+            → addMessage('agent', summary, 'model')  // 显示模型摘要
+            → _pendingModelList.push(data)  // 暂存，等 done 事件批量加载
+        case 'sim_data':
+            → addMessage('system', `仿真任务 ${task_id}: ${status}`)  // 仿真状态
         case 'message':
             → addMessage('agent', marked.parse(content)) // Markdown 渲染
         case 'error':
             → addMessage('error', message)
         case 'done':
+            → loadModelData(_pendingModelList)  // 批量加载模型数据
             → setStatus('idle')
     }
 }
@@ -544,7 +567,9 @@ function loadMeshData(topoData) {
 │ event: message     data: {"message":"请在前端检查并确认"}   │
 │ event: tool_call   data: {"tool_name":"run_simulation",...}
 │ event: message     data: {"task_id":"task_xxx","status":"submitted"}
+│ event: sim_data    data: {"task_id":"task_xxx","status":"running",...}     │
 │ event: tool_call   data: {"tool_name":"training-mesh-profiler-skill",...}
+│ event: sim_data    data: {"task_id":"task_xxx","status":"completed",...}   │
 │ event: message     data: {"aggregate_compute_intensity_tflops":...}
 │ event: tool_call   data: {"tool_name":"compare_results",...}
 │ event: message     data: {"is_equivalent":true,"details":{"conclusion":"✅ 等效验证通过"}}
@@ -572,7 +597,8 @@ function loadMeshData(topoData) {
 
 - **会话无持久化**：`SessionManager` 使用内存字典，重启后所有会话丢失
 - **无身份认证**：CORS 开放所有来源，无用户身份校验
-- **前端 model_json 事件未处理**：`orchestrator.py` 中 `training-model-gen-skill` 映射为 `model_json` 事件，但前端 `handleSSEEvent` 的 switch 中未显式 case，会 fallback 到 default（无操作）
+- **state 机 `params_collected` 为死状态**：`SessionState.step` 类型注释中定义了该状态，但 orchestrator 中无任何代码路径设置它，实际直接从 `idle` 跳到 `topology_generated`
 - **MCP 无重试机制**：网络异常时直接返回 error dict，无自动重试
 - **WebSocket 轮询而非推送**：仿真状态通过前端订阅+后端轮询 MCP 实现，非真正的事件驱动
 - **单文件前端**：`index.html` 约 1100 行，CSS/JS/HTML 混合，无模块化
+- **SSE 事件类型声明不一致**：`app/main.py` 的 `api_info()` 端点声明遗漏了 `model_json` 和 `sim_data` 两种事件
