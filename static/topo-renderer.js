@@ -97,7 +97,7 @@ var MESH_CARD = {
   tpPadY: 16,
   headerH: 42,
   ppGap: 12,
-  ppHeaderH: 24,
+  ppHeaderH: 35,
   tpW: 82,
   tpH: 42,
   tpGap: 14,
@@ -396,44 +396,41 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
     .attr("class", "dp-header");
 
   // DP select dropdown
-  var fo = dpG
+  var selectW = Math.max(64, 80 * scale);
+  var foY = dpY + 6 * scale;
+  var foH = hdrH - 6 * scale;
+  var selectH = Math.min(foH - 6, Math.max(22, 30 * scale));
+  var foW = selectW + 8;
+  dpG
     .append("foreignObject")
     .attr("x", dpX + 20 * scale)
-    .attr("y", dpY + 6 * scale)
-    .attr("width", 200 * scale)
-    .attr("height", 40 * scale);
-  fo.append("xhtml:div")
-    .style("display", "inline-block")
-    .html(
-      '<select id="' +
-        dpSelectId +
-        '" onchange="' +
-        switchFn +
-        '(parseInt(this.value))" style="font-size:' +
-        14 * scale +
-        "px;min-width:" +
-        Math.max(100, 120 * scale) +
-        "px;max-width:" +
-        200 * scale +
-        "px;background:" +
-        (scale < 0.7 ? "#11161d" : "#0d1117") +
-        ';color:#58a6ff;border:1px solid #58a6ff;border-radius:4px;padding:2px 6px;font-family:sans-serif;cursor:pointer;overflow:hidden;text-overflow:ellipsis;"></select>'
-    );
+    .attr("y", foY)
+    .attr("width", foW)
+    .attr("height", foH)
+    .append("xhtml:div")
+    .style("width", "100%")
+    .style("height", "100%")
+    .html((function () {
+      var opts = '';
+      for (var oi = 0; oi < cfg.dpCount; oi++) {
+        opts += '<option value="' + oi + '"' + (oi === cfg.activeDp ? ' selected' : '') + '>DP ' + oi + '</option>';
+      }
+      var ff = Math.max(12, 13 * scale);
+      return '<div class="dp-select-wrap" style="width:100%;height:100%;display:flex;align-items:center;">' +
+        '<select id="' + dpSelectId + '" class="dp-select" onchange="' + switchFn + '(parseInt(this.value))" style="' +
+        'font-size:' + ff + 'px;width:100%;">' + opts + '</select></div>';
+    })());
 
-  // Info text — textLength to prevent overflow
-  var infoMaxWidth = dpW * scale - (20 + 200 + 30) * scale;
-  if (infoMaxWidth < 60 * scale) infoMaxWidth = 60 * scale;
+  // Info text
   var npuTotal = cfg.tpCount * cfg.ppCount * cfg.dpCount;
   var infoText = "TP" + cfg.tpCount + "×PP" + cfg.ppCount + "×DP" + cfg.dpCount + " | " + npuTotal + " NPUs";
   dpG
     .append("text")
-    .attr("x", dpX + dpW * scale - 20 * scale)
-    .attr("y", dpY + 25 * scale)
+    .attr("x", dpX + dpW * scale - 16 * scale)
+    .attr("y", dpY + 22 * scale)
     .attr("text-anchor", "end")
     .attr("class", "info-text")
-    .attr("font-size", Math.max(8, 11 * scale) + "px")
-    .attr("textLength", infoMaxWidth)
-    .attr("lengthAdjust", "spacingAndGlyphs")
+    .attr("font-size", Math.max(11, 12 * scale) + "px")
     .text(infoText)
     .append("title").text(infoText);
 
@@ -496,15 +493,15 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
       .attr("width", ppW * scale)
       .attr("height", (MESH_CARD.ppHeaderH * scale) / 2)
       .attr("class", "pp-header");
+    var ppLabelSize = Math.max(10, 13 * scale);
+    var ppLabelY = py + (MESH_CARD.ppHeaderH * scale) / 2 + ppLabelSize * 0.35;
     ppG
       .append("text")
       .attr("x", px + (ppW * scale) / 2)
-      .attr("y", py + 17 * scale)
+      .attr("y", ppLabelY)
       .attr("text-anchor", "middle")
       .attr("class", "pp-label")
-      .attr("font-size", Math.max(9, 13 * scale) + "px")
-      .attr("textLength", ppW * scale - 12 * scale)
-      .attr("lengthAdjust", "spacingAndGlyphs")
+      .attr("font-size", ppLabelSize + "px")
       .text(pp.label);
 
     var tpX = px + ((ppW - MESH_CARD.tpW) * scale) / 2;
@@ -558,23 +555,21 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
         });
       ppG
         .append("text")
-        .attr("x", tpX + MESH_CARD.tpW * scale - 4 * scale)
-        .attr("y", ty + 11 * scale)
-        .attr("text-anchor", "end")
+        .attr("x", tpX + 6 * scale)
+        .attr("y", ty + 14 * scale)
+        .attr("text-anchor", "start")
         .attr("class", "tp-label")
-        .attr("font-size", Math.max(7, 10 * scale) + "px")
-        .attr("textLength", MESH_CARD.tpW * scale * 0.4)
-        .attr("lengthAdjust", "spacingAndGlyphs")
+        .attr("font-size", Math.max(7, 9 * scale) + "px")
+        .attr("pointer-events", "none")
         .text(tp.label);
       ppG
         .append("text")
-        .attr("x", tpX + (MESH_CARD.tpW * scale) / 2)
-        .attr("y", ty + (MESH_CARD.tpH * scale) / 2 + 4 * scale)
-        .attr("text-anchor", "middle")
+        .attr("x", tpX + 6 * scale)
+        .attr("y", ty + 30 * scale)
+        .attr("text-anchor", "start")
         .attr("class", "rank-label")
-        .attr("font-size", Math.max(8, 12 * scale) + "px")
-        .attr("textLength", MESH_CARD.tpW * scale - 8 * scale)
-        .attr("lengthAdjust", "spacingAndGlyphs")
+        .attr("font-size", "10px")
+        .attr("pointer-events", "none")
         .text(tp.rank);
     });
 
@@ -614,14 +609,8 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
 function _populateDpSelect(selId, dpCount, activeDp) {
   var sel = document.getElementById(selId);
   if (!sel) return;
-  sel.innerHTML = "";
-  for (var i = 0; i < dpCount; i++) {
-    var opt = document.createElement("option");
-    opt.value = i;
-    opt.textContent = "DP " + i;
-    if (i === activeDp) opt.selected = true;
-    sel.appendChild(opt);
-  }
+  // Options already generated; just update selected index
+  sel.value = activeDp;
 }
 
 function _meshNpuTotal(entry) {
