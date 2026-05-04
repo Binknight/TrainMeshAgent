@@ -72,6 +72,8 @@ var meshEstimateEq = {};
 var meshActualOrig = {};       // { global_rank: CardMetrics } from REST simulation data
 var meshActualEq = {};
 var meshPinnedRank = null;     // { side: "orig"|"eq", globalRank: number }
+var modelOriginal = null;    // TrainingModel from SSE model_json
+var modelEquivalent = null;
 
 // Tracks the last rendered configuration for fast DP-switch path
 var _renderState = {
@@ -105,7 +107,7 @@ var meshHeight = 400;
 function meshUpdateSize() {
   var wrap = document.getElementById("canvas-svg-wrap");
   meshWidth = wrap.clientWidth || 600;
-  meshHeight = wrap.clientHeight || 400;
+  meshHeight = Math.max(420, Math.min(wrap.clientHeight * 0.52, 620));
 }
 
 function meshBuildDisplayList(ppList) {
@@ -655,24 +657,30 @@ function meshSwitchDpEq(dpIndex) {
 // ── Main render ──
 
 function meshRebuild() {
-  var container = d3.select("#mesh-container");
   // Dismiss pinned tooltip on rebuild
   var tip = document.getElementById('rank-tooltip');
   tip.classList.remove('visible', 'pinned');
   tip.innerHTML = '';
   meshPinnedRank = null;
-  container.selectAll("svg").remove();
   meshUpdateSize();
 
-  if (!meshOriginal && !meshEquivalent) return;
+  var topoSection = document.getElementById('canvas-topo-section');
+
+  if (!meshOriginal && !meshEquivalent) {
+    topoSection.style.display = 'none';
+    return;
+  }
+  topoSection.style.display = '';
 
   var toolbar = document.getElementById("mesh-config-toolbar");
   toolbar.classList.add("visible");
   document.getElementById("canvas-placeholder").classList.add("hidden");
 
   var newMode = meshOriginal && meshEquivalent ? "compare" : "single";
+  var container = d3.select("#canvas-topo-section");
 
   // ── Fast path: DP-only switch (same mode, same tp/pp/dp counts) ──
+  // Must run BEFORE removing SVG; only modifies existing DOM elements.
   if (_renderState.mode === newMode) {
     if (newMode === "single") {
       var entry = meshOriginal || meshEquivalent;
@@ -682,10 +690,13 @@ function meshRebuild() {
         entry.dp === _renderState.orig.dp &&
         meshOrigDp !== _renderState.orig.activeDp
       ) {
-        _meshUpdateRanks(container.select("svg"), entry.tp, entry.pp, _renderState.orig.activeDp, meshOrigDp);
-        _updateDpSelect("mesh-dp-select", meshOrigDp);
-        _renderState.orig.activeDp = meshOrigDp;
-        return;
+        var svgRoot = container.select("svg");
+        if (!svgRoot.empty()) {
+          _meshUpdateRanks(svgRoot, entry.tp, entry.pp, _renderState.orig.activeDp, meshOrigDp);
+          _updateDpSelect("mesh-dp-select", meshOrigDp);
+          _renderState.orig.activeDp = meshOrigDp;
+          return;
+        }
       }
     } else {
       var origSameShape =
@@ -714,12 +725,13 @@ function meshRebuild() {
           _updateDpSelect("mesh-dp-sel-eq", meshEqDp);
           _renderState.eq.activeDp = meshEqDp;
         }
-        return;
+        if (origDpChanged || eqDpChanged) return;
       }
     }
   }
 
   // ── Full rebuild ──
+  container.selectAll("svg").remove();
 
   if (meshOriginal && meshEquivalent) {
     // ── Compare Mode ──
@@ -728,9 +740,9 @@ function meshRebuild() {
     document.getElementById("mesh-dpInput").parentElement.style.display = "none";
     toolbar.querySelector("button").style.display = "none";
     document.getElementById("mesh-npu-count").textContent =
-      "原始模型 " + _meshNpuTotal(meshOriginal) + " NPUs  |  最小等效模型 " + _meshNpuTotal(meshEquivalent) + " NPUs";
+      "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  最小等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs";
     document.getElementById("canvas-label").textContent =
-      (meshOriginal.name || "原始模型") + "  vs  " + (meshEquivalent.name || "最小等效模型");
+      (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "最小等效组网");
 
     var titleH = 26;
     var gap = 24;
@@ -782,7 +794,7 @@ function meshRebuild() {
       .attr("font-family", "sans-serif")
       .attr("font-size", "13px")
       .attr("font-weight", "bold")
-      .text(meshEquivalent.name || "最小等效模型");
+      .text(meshEquivalent.name || "最小等效组网");
 
     _meshBuildView(
       zoomLayer.append("g"),
@@ -874,6 +886,11 @@ function meshRebuild() {
 
 // ── Public API ──
 
+function canvasRebuild() {
+  meshRebuild();
+  modelRebuild();
+}
+
 async function loadMeshData(topoData) {
   var tp = topoData.tp_size || topoData.tp || 4;
   var pp = topoData.pp_size || topoData.pp || 4;
@@ -883,9 +900,9 @@ async function loadMeshData(topoData) {
   var rawName = topoData.name || "";
   var name =
     rawName.indexOf("原始") !== -1
-      ? "原始模型"
+      ? "原始组网"
       : rawName.indexOf("等效") !== -1
-      ? "最小等效模型"
+      ? "最小等效组网"
       : rawName;
   var entry = {
     name: name,
@@ -926,34 +943,37 @@ async function loadMeshData(topoData) {
     }
   }
 
-  meshRebuild();
+  canvasRebuild();
 }
 
 // ── Attach to window for inline onclick / onchange handlers ──
 
 window.loadMeshData = loadMeshData;
 window.meshRebuild = meshRebuild;
+window.canvasRebuild = canvasRebuild;
 window.meshSwitchDp = meshSwitchDp;
 window.meshSwitchDpOrig = meshSwitchDpOrig;
 window.meshSwitchDpEq = meshSwitchDpEq;
 window.fetchSimulationData = fetchSimulationData;
+window.loadModelData = loadModelData;
+window.modelRebuild = modelRebuild;
 
 // ── Resize handler (debounced) ──
 
 var _resizeTimer = null;
 window.addEventListener("resize", function () {
-  if (!meshOriginal && !meshEquivalent) return;
+  if (!meshOriginal && !meshEquivalent && !modelOriginal && !modelEquivalent) return;
   if (_resizeTimer) clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(function () {
     _resizeTimer = null;
-    meshRebuild();
+    canvasRebuild();
   }, 200);
 });
 
 // ── Canvas background click dismisses pinned tooltip ──
 
-document.getElementById('mesh-container').addEventListener('click', function (e) {
-  if (e.target.tagName === 'svg' || e.target.id === 'mesh-container') {
+document.getElementById('canvas-svg-wrap').addEventListener('click', function (e) {
+  if (e.target.tagName === 'svg' || e.target.id === 'canvas-svg-wrap') {
     var tip = document.getElementById('rank-tooltip');
     tip.classList.remove('visible', 'pinned');
     tip.innerHTML = '';
@@ -1295,4 +1315,325 @@ function _renderTracing(operators, timeline, container) {
   svg.append('text').attr('x', marginLeft).attr('y', svgH - 2)
     .attr('fill', 'var(--text-muted)').attr('font-size', '9px')
     .text('火焰图: 横轴=时间占比, 每个色块=一个算子组 (Forward/Backward/Optimizer)');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Model visualization — Transformer training model structure diagram
+// ═══════════════════════════════════════════════════════════════════
+
+var MODEL_COLORS = {
+  input_embedding:  { fill: 'rgba(59,206,180,0.12)', stroke: 'var(--teal)', label: 'Input Embedding' },
+  transformer_block:{ fill: 'rgba(57,186,230,0.08)', stroke: 'var(--cyan)', label: 'Transformer Block' },
+  layer_norm:       { fill: 'rgba(108,122,158,0.1)', stroke: 'var(--text-secondary)', label: 'LayerNorm' },
+  mha:              { fill: 'rgba(91,155,213,0.12)', stroke: 'var(--cyan)', label: 'Multi-Head Attention' },
+  ffn:              { fill: 'rgba(186,161,255,0.12)', stroke: 'var(--purple)', label: 'Feed-Forward Network' },
+  ellipsis:         { fill: 'var(--bg-surface)', stroke: 'var(--text-muted)', label: '...' },
+  output:           { fill: 'rgba(242,109,120,0.1)', stroke: 'var(--red)', label: 'Output Projection' },
+  skip:             { stroke: 'var(--green)', fill: 'none' },
+  data_flow:        { stroke: 'var(--text-muted)', fill: 'none' },
+};
+
+function loadModelData(modelData, role) {
+  role = role || (modelData._role || ((modelOriginal ? 'equivalent' : 'original')));
+  console.log('[loadModelData] role=' + role + ' hasLayers=' + !!(modelData.layers && modelData.layers.length) + ' layersCount=' + (modelData.layers ? modelData.layers.length : 'N/A') + ' keys=' + Object.keys(modelData).join(','));
+  if (modelData.layers && modelData.layers.length) {
+    console.log('[loadModelData] first layer:', JSON.stringify(modelData.layers[0]));
+  }
+  var entry = {
+    type: modelData.type,
+    config: modelData.config,
+    computed: modelData.computed,
+    layers: modelData.layers || [],
+    output_layer: modelData.output_layer,
+  };
+  if (role === 'original') {
+    modelOriginal = entry;
+  } else {
+    modelEquivalent = entry;
+  }
+  console.log('[loadModelData] modelOriginal=' + !!modelOriginal + ' modelEquivalent=' + !!modelEquivalent);
+}
+
+// Render one model horizontally — blocks left-to-right like mesh PP stages.
+// showHeader: prepend a config-header line above the row.
+function _renderOneModel(g, model, x0, topY, areaW, showHeader) {
+  var cfg = model.config || {};
+  var comp = model.computed || {};
+
+  // ── Build horizontal display list ──
+  var leadBlocks = [];  // input_embedding, transformer_block, ellipsis
+  model.layers.forEach(function (l) {
+    if (l.type === 'input_embedding') leadBlocks.unshift(l);  // embed always first
+    else leadBlocks.push(l);
+  });
+  var all = [];
+  leadBlocks.forEach(function (b) { all.push(b); });
+  if (model.output_layer) all.push({ type: 'output', desc: model.output_layer.desc || 'Output' });
+
+  // ── Layout constants ──
+  var gap = 4;
+  var blockH = 72;
+  var baseW = 52;   // transformer block width
+  var thinW = 34;    // embed / ellipsis / output width
+  var totalN = all.length;
+  // Count types
+  var normalCt = 0, thinCt = 0;
+  all.forEach(function (b) {
+    if (b.type === 'transformer_block') normalCt++;
+    else thinCt++;
+  });
+  var needW = normalCt * baseW + thinCt * thinW + (totalN - 1) * gap;
+  var padX = 12;
+  var scale = Math.min(1, (areaW - padX * 2) / needW);
+  var useW = Math.floor(baseW * scale);
+  var useThin = Math.floor(thinW * scale);
+  var useGap = Math.max(3, Math.floor(gap * scale));
+  var rowW = normalCt * useW + thinCt * useThin + (totalN - 1) * useGap;
+  var sx = x0 + Math.max(0, (areaW - rowW) / 2);
+
+  // ── Config header ──
+  if (showHeader) {
+    var cfgText = 'd_model=' + cfg.d_model + '  num_heads=' + cfg.num_heads + '  d_ffn=' + cfg.d_ffn
+      + '  d_head=' + comp.d_head + '  params=' + (comp.total_params_billions || '—');
+    g.append('text')
+      .attr('x', x0 + areaW / 2).attr('y', 16)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-secondary)').attr('font-size', '11px').attr('font-family', 'JetBrains Mono, monospace')
+      .text((model.type || 'TRANSFORMER_MODEL').toUpperCase() + '  ·  ' + cfg.num_layers + ' layers  ·  ' + cfgText);
+  }
+
+  var rowY = topY + (showHeader ? 30 : 6);
+  var hdrH = 18;
+  var subPadX = 4;
+  var subGap = 3;
+
+  all.forEach(function (block, i) {
+    var bw = block.type === 'transformer_block' ? useW : useThin;
+    var bx = sx;
+    for (var j = 0; j < i; j++) {
+      bx += (all[j].type === 'transformer_block' ? useW : useThin) + useGap;
+    }
+
+    // ── Ellipsis ──
+    if (block.type === 'ellipsis') {
+      g.append('rect')
+        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
+        .attr('rx', 6).attr('fill', MODEL_COLORS.ellipsis.fill).attr('stroke', MODEL_COLORS.ellipsis.stroke).attr('stroke-width', 1.5);
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 38).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(10, Math.min(16, bw / 5)) + 'px')
+        .text('⋮');
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 62).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-muted)').attr('font-size', Math.max(8, Math.min(11, bw / 7)) + 'px')
+        .text(block.desc || '');
+      return;
+    }
+
+    // ── Input Embedding ──
+    if (block.type === 'input_embedding') {
+      var ieColors = MODEL_COLORS.input_embedding;
+      g.append('rect')
+        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
+        .attr('rx', 6).attr('fill', ieColors.fill).attr('stroke', ieColors.stroke).attr('stroke-width', 1.5);
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 34).attr('text-anchor', 'middle')
+        .attr('fill', ieColors.stroke).attr('font-size', Math.max(8, Math.min(12, bw / 7)) + 'px').attr('font-weight', 500)
+        .text('Input');
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 54).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(7, Math.min(10, bw / 9)) + 'px')
+        .text('Embedding');
+      return;
+    }
+
+    // ── Output ──
+    if (block.type === 'output') {
+      var outColors = MODEL_COLORS.output;
+      g.append('rect')
+        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
+        .attr('rx', 6).attr('fill', outColors.fill).attr('stroke', outColors.stroke).attr('stroke-width', 1.5);
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 34).attr('text-anchor', 'middle')
+        .attr('fill', outColors.stroke).attr('font-size', Math.max(8, Math.min(12, bw / 7)) + 'px').attr('font-weight', 500)
+        .text('Output');
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 54).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(7, Math.min(10, bw / 9)) + 'px')
+        .text('Proj');
+      return;
+    }
+
+    // ── Transformer Block ──
+    var tbColors = MODEL_COLORS.transformer_block;
+    g.append('rect')
+      .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
+      .attr('rx', 6).attr('fill', tbColors.fill).attr('stroke', tbColors.stroke).attr('stroke-width', 1.5);
+
+    // Layer label
+    g.append('text')
+      .attr('x', bx + bw / 2).attr('y', rowY + hdrH - 4)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(9, Math.min(12, bw / 9)) + 'px')
+      .attr('font-weight', 500)
+      .text('Layer ' + block.id);
+
+    // ATTN + FFN sub-blocks (stacked vertically)
+    var subW = bw - subPadX * 2;
+    var subH = Math.floor((blockH - hdrH - subGap - 8) / 2);
+    var subX = bx + subPadX;
+    var attnY = rowY + hdrH + 3;
+    var ffnY = attnY + subH + subGap;
+
+    var mhaColors = MODEL_COLORS.mha;
+    g.append('rect')
+      .attr('x', subX).attr('y', attnY).attr('width', subW).attr('height', subH)
+      .attr('rx', 3).attr('fill', mhaColors.fill).attr('stroke', mhaColors.stroke).attr('stroke-width', 1);
+    g.append('text')
+      .attr('x', bx + bw / 2).attr('y', attnY + subH / 2 + 4)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(7, Math.min(11, subW / 12)) + 'px')
+      .text('ATTN');
+
+    var ffnColors = MODEL_COLORS.ffn;
+    g.append('rect')
+      .attr('x', subX).attr('y', ffnY).attr('width', subW).attr('height', subH)
+      .attr('rx', 3).attr('fill', ffnColors.fill).attr('stroke', ffnColors.stroke).attr('stroke-width', 1);
+    g.append('text')
+      .attr('x', bx + bw / 2).attr('y', ffnY + subH / 2 + 4)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(7, Math.min(11, subW / 12)) + 'px')
+      .text('FFN');
+
+    // Skip indicator — small curved line on top-left
+    if (block.skip_connection) {
+      g.append('path')
+        .attr('d', 'M' + (bx + 2) + ',' + (rowY + 4) + ' Q' + (bx - 2) + ',' + (rowY + 4) + ' ' + (bx - 2) + ',' + (rowY + 10))
+        .attr('fill', 'none').attr('stroke', 'var(--green)').attr('stroke-width', 1).attr('opacity', 0.5);
+    }
+
+    // Data-flow arrow to next block
+    if (i < all.length - 1) {
+      var ax1 = bx + bw + 1;
+      var ax2 = bx + bw + useGap - 2;
+      g.append('line')
+        .attr('x1', ax1).attr('y1', rowY + blockH / 2)
+        .attr('x2', ax2).attr('y2', rowY + blockH / 2)
+        .attr('stroke', 'var(--text-muted)').attr('stroke-width', 1).attr('opacity', 0.5)
+        .attr('marker-end', 'url(#arrow-dataflow)');
+    }
+  });
+}
+
+function modelRebuild() {
+  var container = d3.select('#canvas-model-section');
+  container.selectAll('svg').remove();
+
+  var modelSection = document.getElementById('canvas-model-section');
+  var divider = document.getElementById('canvas-section-divider');
+  var model = modelOriginal || modelEquivalent;
+  console.log('[modelRebuild] model=' + !!model + ' modelOrig=' + !!modelOriginal + ' modelEq=' + !!modelEquivalent);
+  if (model) console.log('[modelRebuild] layers=' + (model.layers ? model.layers.length : 'N/A') + ' config=' + JSON.stringify(model.config));
+  if (!model || !model.layers || !model.layers.length) {
+    console.log('[modelRebuild] NO MODEL DATA, hiding section');
+    modelSection.style.display = 'none';
+    divider.style.display = 'none';
+    return;
+  }
+  modelSection.style.display = '';
+  if (meshOriginal || meshEquivalent) divider.style.display = '';
+  document.getElementById("canvas-placeholder").classList.add("hidden");
+
+  var wrap = document.getElementById('canvas-svg-wrap');
+  var W = wrap.clientWidth || 800;
+
+  var hasBoth = !!(modelOriginal && modelOriginal.layers && modelOriginal.layers.length
+    && modelEquivalent && modelEquivalent.layers && modelEquivalent.layers.length);
+  var totalH, svg, zoomLayer;
+
+  if (hasBoth) {
+    var halfW = Math.floor((W - 40) / 2);
+    var modelW = halfW - 16;
+    var xLeft = Math.max(0, (halfW - modelW) / 2);
+    var xRight = W - halfW + Math.max(0, (halfW - modelW) / 2);
+    totalH = 240;
+
+    svg = container.append('svg')
+      .attr('viewBox', '0 0 ' + W + ' ' + totalH)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    zoomLayer = svg.append('g').attr('class', 'zoom-layer');
+
+    svg.call(
+      d3.zoom()
+        .scaleExtent([0.3, 3])
+        .filter(function (event) { return event.type !== 'dblclick'; })
+        .on('zoom', function (event) {
+          zoomLayer.attr('transform', event.transform);
+        })
+    );
+
+    // Divider line
+    zoomLayer.append('line')
+      .attr('x1', W / 2).attr('y1', 8).attr('x2', W / 2).attr('y2', totalH)
+      .attr('stroke', 'var(--border)').attr('stroke-width', 1).attr('stroke-dasharray', '6 4');
+
+    // Section titles
+    zoomLayer.append('text')
+      .attr('x', halfW / 2).attr('y', 18)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--cyan)').attr('font-size', '13px').attr('font-family', 'var(--font-sans)')
+      .attr('font-weight', 600).text('原始模型');
+
+    zoomLayer.append('text')
+      .attr('x', W - halfW / 2).attr('y', 18)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--teal)').attr('font-size', '13px').attr('font-family', 'var(--font-sans)')
+      .attr('font-weight', 600).text('最小等效模型');
+
+    // Arrow marker def — must be in outer SVG scope for both models
+    svg.append('defs').append('marker')
+      .attr('id', 'arrow-dataflow')
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 5).attr('refY', 5)
+      .attr('markerWidth', 6).attr('markerHeight', 6)
+      .attr('orient', 'auto-start-reverse')
+      .append('path')
+      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+      .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
+
+    _renderOneModel(zoomLayer, modelOriginal, xLeft, 10, modelW, false);
+    _renderOneModel(zoomLayer, modelEquivalent, xRight, 10, modelW, false);
+  } else {
+    var modelW = W - 32;
+    totalH = 240;
+
+    svg = container.append('svg')
+      .attr('viewBox', '0 0 ' + W + ' ' + totalH)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    zoomLayer = svg.append('g').attr('class', 'zoom-layer');
+
+    svg.call(
+      d3.zoom()
+        .scaleExtent([0.3, 3])
+        .filter(function (event) { return event.type !== 'dblclick'; })
+        .on('zoom', function (event) {
+          zoomLayer.attr('transform', event.transform);
+        })
+    );
+
+    svg.append('defs').append('marker')
+      .attr('id', 'arrow-dataflow')
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 5).attr('refY', 5)
+      .attr('markerWidth', 6).attr('markerHeight', 6)
+      .attr('orient', 'auto-start-reverse')
+      .append('path')
+      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+      .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
+
+    var x0 = Math.max(0, (W - modelW) / 2);
+    _renderOneModel(zoomLayer, model, x0, 0, modelW, true);
+  }
 }

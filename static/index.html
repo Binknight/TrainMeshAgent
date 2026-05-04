@@ -241,13 +241,30 @@ body {
 .canvas-svg-wrap {
   flex: 1;
   position: relative;
-  overflow: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .canvas-svg-wrap::-webkit-scrollbar { width: 4px; height: 4px; }
 .canvas-svg-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.canvas-section { width: 100%; position: relative; }
+.canvas-section-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 8px 16px 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.canvas-section svg { width: 100%; display: block; }
+.canvas-section-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+  margin: 8px 0;
+}
 .canvas-placeholder {
   text-align: center;
   color: var(--text-muted);
@@ -408,6 +425,13 @@ body {
   white-space: pre-wrap;
   max-height: 280px;
   overflow-y: auto;
+}
+.msg-bubble.model {
+  background: rgba(63,188,239,0.05);
+  border: 1px solid rgba(63,188,239,0.18);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border-left: 3px solid var(--cyan);
 }
 
 /* thinking animation */
@@ -635,8 +659,10 @@ body {
 .mesh-config-toolbar button:hover { background: #2ea043; }
 .mesh-config-toolbar.visible { display: flex; }
 #mesh-npu-count { margin-left: 8px; color: #58a6ff; }
-#mesh-container { width: 100%; height: 100%; overflow: hidden; position: relative; }
-#mesh-container svg { width: 100%; height: 100%; display: block; }
+#canvas-topo-section { min-height: 200px; }
+#canvas-topo-section svg { min-height: 200px; }
+#canvas-model-section { min-height: 100px; }
+#canvas-model-section svg { min-height: 100px; }
 .dp-shadow { fill: #161b22; stroke: #58a6ff; stroke-width: 2; }
 .dp-card { fill: #161b22; stroke: #58a6ff; stroke-width: 2; }
 .dp-header { fill: #21262d; }
@@ -690,14 +716,20 @@ body {
           <label>TP: <input id="mesh-tpInput" type="number" value="4" min="1" max="16"></label>
           <label>PP: <input id="mesh-ppInput" type="number" value="4" min="1" max="32"></label>
           <label>DP: <input id="mesh-dpInput" type="number" value="4" min="1" max="8"></label>
-          <button onclick="meshRebuild()">Refresh</button>
+          <button onclick="canvasRebuild()">Refresh</button>
           <span id="mesh-npu-count"></span>
         </span>
       </span>
     </div>
     <div class="canvas-svg-wrap" id="canvas-svg-wrap">
       <div id="rank-tooltip"></div>
-      <div id="mesh-container"></div>
+      <div class="canvas-section" id="canvas-topo-section">
+        <div class="canvas-section-label">组网拓扑</div>
+      </div>
+      <div class="canvas-section-divider" id="canvas-section-divider" style="display:none"></div>
+      <div class="canvas-section" id="canvas-model-section" style="display:none">
+        <div class="canvas-section-label">模型结构</div>
+      </div>
       <div class="canvas-placeholder" id="canvas-placeholder">
         <svg width="120" height="100" viewBox="0 0 120 100"><rect width="120" height="100" rx="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/><text x="60" y="48" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="11" opacity="0.6">Canvas</text><text x="60" y="66" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="9" opacity="0.35">生成组网后自动渲染</text></svg>
         <p>组网拓扑画布</p>
@@ -714,9 +746,9 @@ body {
     </div>
 
     <div class="quick-actions" id="quick-actions">
-      <span class="quick-chip" onclick="sendQuick('请帮我生成原始模型: 设备类型A3, DP=8, TP=4, PP=2')">A3 DP8 TP4 PP2</span>
-      <span class="quick-chip" onclick="sendQuick('请帮我生成最小等效模型: 设备类型A5, DP=4, TP=4, PP=4')">A5 DP4 TP4 PP4</span>
-      <span class="quick-chip" onclick="sendQuick('请对比分析原始模型和最小等效模型的仿真结果')">对比分析</span>
+      <span class="quick-chip" onclick="sendQuick('请帮我生成原始组网: 设备类型A3, DP=8, TP=4, PP=2')">A3 DP8 TP4 PP2</span>
+      <span class="quick-chip" onclick="sendQuick('请帮我生成最小等效组网: 设备类型A5, DP=4, TP=4, PP=4')">A5 DP4 TP4 PP4</span>
+      <span class="quick-chip" onclick="sendQuick('请对比分析原始组网和最小等效组网的仿真结果')">对比分析</span>
     </div>
 
     <div class="chat-messages" id="chat-messages">
@@ -763,7 +795,8 @@ body {
 const API = '/api';
 let sessionId = '';
 let isStreaming = false;
-let _pendingMeshList = [];  // batch mesh_json events until "done"
+let _pendingMeshList = [];   // batch mesh_json events until "done"
+let _pendingModelList = [];  // batch model_json events until "done"
 
 // ── Mock history ──
 const mockHistory = [
@@ -819,8 +852,8 @@ async function restoreSession(id) {
     // Restore chat message for topology summaries
     if (data.original_topology || data.equivalent_topology) {
       const parts = [];
-      if (data.original_topology) parts.push('原始模型: ' + (data.original_topology.name || '') + ' 已恢复');
-      if (data.equivalent_topology) parts.push('等效模型: ' + (data.equivalent_topology.name || '') + ' 已恢复');
+      if (data.original_topology) parts.push('原始组网: ' + (data.original_topology.name || '') + ' 已恢复');
+      if (data.equivalent_topology) parts.push('等效组网: ' + (data.equivalent_topology.name || '') + ' 已恢复');
       addMessage('system', '🔄 会话 ' + id + ' 已恢复\n' + parts.join('\n'));
     }
 
@@ -835,6 +868,7 @@ async function restoreSession(id) {
 function newSession() {
   sessionId = '';
   _pendingMeshList = [];
+  _pendingModelList = [];
   localStorage.removeItem('mesh_session_id');
   document.getElementById('session-id-display').textContent = '—';
   document.getElementById('chat-messages').innerHTML = `
@@ -845,10 +879,16 @@ function newSession() {
   // Clear topology state
   meshOriginal = null;
   meshEquivalent = null;
+  modelOriginal = null;
+  modelEquivalent = null;
   meshOrigDp = 0;
   meshEqDp = 0;
   _renderState.mode = null;
-  d3.select("#mesh-container").selectAll("svg").remove();
+  d3.select("#canvas-topo-section").selectAll("svg").remove();
+  d3.select("#canvas-model-section").selectAll("svg").remove();
+  document.getElementById("canvas-topo-section").style.display = 'none';
+  document.getElementById("canvas-model-section").style.display = 'none';
+  document.getElementById("canvas-section-divider").style.display = 'none';
   document.getElementById("mesh-config-toolbar").classList.remove("visible");
   document.getElementById("canvas-placeholder").classList.remove("hidden");
   document.getElementById("canvas-label").textContent = '等待组网数据...';
@@ -995,9 +1035,27 @@ async function handleSSEEvent(type, data) {
     case 'mesh_json':
       setStatus('generated');
       const topoData = data.data || data;
-      const summary = `📦 ${topoData.name || ''}\n节点数: ${topoData.total_nodes || 0}  |  DP×TP×PP = ${topoData.dp_size || 0}×${topoData.tp_size || 0}×${topoData.pp_size || 0}\n通信域: dp=${topoData.comm_dp_groups ?? (topoData.communication_groups?.dp || []).length}  tp=${topoData.comm_tp_groups ?? (topoData.communication_groups?.tp || []).length}  pp=${topoData.comm_pp_groups ?? (topoData.communication_groups?.pp || []).length}`;
-      addMessage('mesh', summary, 'mesh');
+      const topoSummary = `📦 ${topoData.name || ''}\n节点数: ${topoData.total_nodes || 0}  |  DP×TP×PP = ${topoData.dp_size || 0}×${topoData.tp_size || 0}×${topoData.pp_size || 0}\n通信域: dp=${topoData.comm_dp_groups ?? (topoData.communication_groups?.dp || []).length}  tp=${topoData.comm_tp_groups ?? (topoData.communication_groups?.tp || []).length}  pp=${topoData.comm_pp_groups ?? (topoData.communication_groups?.pp || []).length}`;
+      addMessage('mesh', topoSummary, 'mesh');
       _pendingMeshList.push(topoData);
+      break;
+    case 'model_json':
+      setStatus('generated');
+      const modelPayload = data.data || data;
+      if (!modelPayload._role) {
+        var modelName = (modelPayload.name || '').toLowerCase();
+        if (modelName.indexOf('原始') !== -1 || modelName.indexOf('original') !== -1) {
+          modelPayload._role = 'original';
+        } else if (modelName.indexOf('等效') !== -1 || modelName.indexOf('equivalent') !== -1) {
+          modelPayload._role = 'equivalent';
+        }
+      }
+      const cfg = modelPayload.config || {};
+      const comp = modelPayload.computed || {};
+      const modelSummary = '🧠 ' + (modelPayload.type || 'transformer_model') + '  ·  ' + (modelPayload.layers_count || 0) + ' 层\n' +
+        'd_model=' + (cfg.d_model || '—') + '  heads=' + (cfg.num_heads || '—') + '  d_ffn=' + (cfg.d_ffn || '—') + '  params=' + (comp.total_params_billions || '—');
+      addMessage('agent', modelSummary, 'model');
+      _pendingModelList.push(modelPayload);
       break;
     case 'message':
       setStatus('responding');
@@ -1023,6 +1081,13 @@ async function handleSSEEvent(type, data) {
         await Promise.all(_pendingMeshList.map(function (d) { return loadMeshData(d); }));
         _pendingMeshList = [];
       }
+      if (_pendingModelList.length) {
+        _pendingModelList.forEach(function (d) { loadModelData(d, d._role); });
+        _pendingModelList = [];
+      }
+      if (meshOriginal || meshEquivalent || modelOriginal || modelEquivalent) {
+        canvasRebuild();
+      }
       fetchSimulationData();
       break;
     case 'error':
@@ -1033,7 +1098,6 @@ async function handleSSEEvent(type, data) {
 }
 
 // ── D3 Mesh Topology Rendering — see static/topo-renderer.js ──
-
 
 function handleKeyDown(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
