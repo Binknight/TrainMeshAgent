@@ -190,12 +190,12 @@ function _buildTooltipHTML(globalRank, metrics, isOrig) {
     html += _buildSingleTable(estimate);
   } else {
     html += '<table class="tooltip-table">';
-    html += '<tr><th class="col-header left">指标</th><th class="col-header">理论估算值</th><th class="col-header">仿真验证值</th></tr>';
-    html += _buildCompareRow('单卡FLOPs', '', estimate, actual, 'flops_per_card', formatFlops);
-    html += _buildCompareRow('HBM', 'GB', estimate, actual, 'hbm_gb');
-    html += _buildCompareRow('TP通信', 'GB/micro', estimate, actual, 'tp_comm_gb_per_micro');
-    html += _buildCompareRow('PP通信', 'MB/micro', estimate, actual, 'pp_comm_mb_per_micro');
-    html += _buildCompareRow('DP通信', 'GB/step', estimate, actual, 'dp_comm_gb_per_step');
+    html += '<tr><th class="col-header left">指标</th><th class="col-header">理论估算值</th><th class="col-header">仿真验证值</th><th class="col-header">差异</th><th class="col-header metric-link-col">详情</th></tr>';
+    html += _buildCompareRow('单卡FLOPs', '', estimate, actual, 'flops_per_card', formatFlops, globalRank, isOrig);
+    html += _buildCompareRow('HBM', 'GB', estimate, actual, 'hbm_gb', null, globalRank, isOrig);
+    html += _buildCompareRow('TP通信', 'GB/micro', estimate, actual, 'tp_comm_gb_per_micro', null, globalRank, isOrig);
+    html += _buildCompareRow('PP通信', 'MB/micro', estimate, actual, 'pp_comm_mb_per_micro', null, globalRank, isOrig);
+    html += _buildCompareRow('DP通信', 'GB/step', estimate, actual, 'dp_comm_gb_per_step', null, globalRank, isOrig);
     html += '</table>';
   }
 
@@ -228,7 +228,7 @@ function _buildMetricRow(label, value, unit) {
   return '<tr><td class="metric-label">' + label + '</td><td class="metric-val">' + v + uv + '</td></tr>';
 }
 
-function _buildCompareRow(label, unit, estimate, actual, key, fmt) {
+function _buildCompareRow(label, unit, estimate, actual, key, fmt, globalRank, isOrig) {
   fmt = fmt || function (v) { return v != null ? Number(v).toFixed(2) : '—'; };
   var ev = estimate && estimate[key] != null ? fmt(estimate[key]) : '—';
   var av = actual && actual[key] != null ? fmt(actual[key]) : '—';
@@ -242,10 +242,24 @@ function _buildCompareRow(label, unit, estimate, actual, key, fmt) {
     deltaClass = Math.abs(pct) <= 5 ? 'positive' : 'negative';
   }
   var uv = unit ? ' ' + unit : '';
+
+  var linkHtml = '';
+  if (key === 'flops_per_card') {
+    linkHtml = '<span class="metric-link-na">查看</span>';
+  } else {
+    var linkType = key.replace(/_per_micro|_per_step|_gb|_mb/g, '');
+    if (key === 'hbm_gb') linkType = 'hbm';
+    else if (key === 'tp_comm_gb_per_micro') linkType = 'tp-comm';
+    else if (key === 'pp_comm_mb_per_micro') linkType = 'pp-comm';
+    else if (key === 'dp_comm_gb_per_step') linkType = 'dp-comm';
+    linkHtml = '<a class="metric-link" href="javascript:void(0)" onclick="event.stopPropagation();openMetricDetail(' + globalRank + ',' + (isOrig ? 'true' : 'false') + ',\'' + linkType + '\')">查看</a>';
+  }
+
   return '<tr><td class="metric-label">' + label + '</td>' +
     '<td class="metric-val">' + ev + uv + '</td>' +
     '<td class="metric-val actual">' + av + uv + '</td>' +
-    '<td class="metric-delta ' + deltaClass + '">' + delta + '</td></tr>';
+    '<td class="metric-delta ' + deltaClass + '">' + delta + '</td>' +
+    '<td class="metric-val" style="text-align:center">' + linkHtml + '</td></tr>';
 }
 
 function showTooltip(event, globalRank, isOrig) {
@@ -953,6 +967,8 @@ window.meshSwitchDp = meshSwitchDp;
 window.meshSwitchDpOrig = meshSwitchDpOrig;
 window.meshSwitchDpEq = meshSwitchDpEq;
 window.fetchSimulationData = fetchSimulationData;
+window.openMetricDetail = openMetricDetail;
+window.closeMetricDetailPopup = closeMetricDetailPopup;
 
 // ── Resize handler (debounced) ──
 
@@ -1312,3 +1328,97 @@ function _renderTracing(operators, timeline, container) {
     .attr('fill', 'var(--text-muted)').attr('font-size', '9px')
     .text('火焰图: 横轴=时间占比, 每个色块=一个算子组 (Forward/Backward/Optimizer)');
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Metric Detail Popup (HBM, TP/PP/DP Comm breakdown)
+// ═══════════════════════════════════════════════════════════════════
+
+var metricDetailData = null;
+var metricDetailType = '';
+
+function _metricTypeLabel(type) {
+  var map = { 'hbm': 'HBM 占用详情', 'tp-comm': 'TP通信详情', 'pp-comm': 'PP通信详情', 'dp-comm': 'DP通信详情' };
+  return map[type] || '指标详情';
+}
+
+async function openMetricDetail(globalRank, isOrig, metricType) {
+  if (metricType === 'flops') return;
+  var side = isOrig ? 'original' : 'equivalent';
+  try {
+    var resp = await fetch(API + '/session/' + sessionId + '/simulation/' + side + '/' + globalRank + '/' + metricType + '-detail');
+    if (!resp.ok) { alert('获取详情失败'); return; }
+    metricDetailData = await resp.json();
+    metricDetailType = metricType;
+    _showMetricDetailPopup(globalRank);
+  } catch (e) {
+    console.error('Fetch metric detail error:', e);
+    alert('获取详情异常: ' + e.message);
+  }
+}
+
+function _showMetricDetailPopup(globalRank) {
+  var overlay = document.getElementById('metric-detail-overlay');
+  var title = document.getElementById('metric-detail-title');
+  var body = document.getElementById('metric-detail-body');
+
+  title.textContent = 'Rank ' + globalRank + ' | ' + _metricTypeLabel(metricDetailType);
+
+  if (metricDetailType === 'hbm') {
+    _renderHbmDetail(body);
+  } else {
+    _renderCommDetail(body);
+  }
+
+  overlay.style.display = 'flex';
+}
+
+function _renderHbmDetail(container) {
+  var d = metricDetailData;
+  var html = '<table class="metric-detail-table">';
+  html += '<tr><th>参数</th><th>占用 (GB)</th><th>占比</th></tr>';
+  var items = [
+    { label: '权重', value: d.weights_gb },
+    { label: '梯度', value: d.gradients_gb },
+    { label: '优化器', value: d.optimizer_gb },
+    { label: '激活', value: d.activations_gb }
+  ];
+  var total = d.total_hbm_gb || 1;
+  items.forEach(function(item) {
+    html += '<tr><td class="metric-detail-label">' + item.label + '</td><td>' + item.value.toFixed(2) + '</td><td>' + (item.value / total * 100).toFixed(1) + '%</td></tr>';
+  });
+  html += '<tr class="total-row"><td class="metric-detail-label">总计</td><td>' + d.total_hbm_gb.toFixed(2) + '</td><td>100%</td></tr>';
+  html += '</table>';
+  container.innerHTML = html;
+}
+
+function _renderCommDetail(container) {
+  var d = metricDetailData;
+  var typeName = { 'tp': 'TP', 'pp': 'PP', 'dp': 'DP' }[d.comm_type] || d.comm_type.toUpperCase();
+  var html = '<table class="metric-detail-table">';
+  html += '<tr><th>参数</th><th>值</th></tr>';
+  html += '<tr><td class="metric-detail-label">通信类型</td><td>' + typeName + ' 通信</td></tr>';
+  html += '<tr><td class="metric-detail-label">通信次数</td><td>' + d.comm_count + ' 次/step</td></tr>';
+  html += '<tr><td class="metric-detail-label">通信卡数</td><td>' + d.comm_cards + ' 张</td></tr>';
+  html += '<tr><td class="metric-detail-label">单次通信量</td><td>' + d.comm_size_per_time_gb.toFixed(4) + ' GB</td></tr>';
+  html += '<tr class="total-row"><td class="metric-detail-label">总通信量</td><td>' + d.total_comm_gb.toFixed(4) + ' GB</td></tr>';
+  html += '</table>';
+  container.innerHTML = html;
+}
+
+function closeMetricDetailPopup() {
+  document.getElementById('metric-detail-overlay').style.display = 'none';
+  metricDetailData = null;
+  metricDetailType = '';
+}
+
+// Close metric popup on overlay click
+document.getElementById('metric-detail-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeMetricDetailPopup();
+});
+
+// Close metric popup on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && metricDetailData) {
+    closeMetricDetailPopup();
+  }
+});
