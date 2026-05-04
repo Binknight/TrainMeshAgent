@@ -77,6 +77,8 @@ var meshEstimateEq = {};
 var meshActualOrig = {};       // { global_rank: CardMetrics } from REST simulation data
 var meshActualEq = {};
 var meshPinnedRank = null;     // { side: "orig"|"eq", globalRank: number }
+var modelOriginal = null;    // TrainingModel from SSE model_json
+var modelEquivalent = null;
 
 // Tracks the last rendered configuration for fast DP-switch path
 var _renderState = {
@@ -95,7 +97,7 @@ var MESH_CARD = {
   tpPadY: 16,
   headerH: 42,
   ppGap: 12,
-  ppHeaderH: 24,
+  ppHeaderH: 35,
   tpW: 82,
   tpH: 42,
   tpGap: 14,
@@ -110,7 +112,7 @@ var meshHeight = 400;
 function meshUpdateSize() {
   var wrap = document.getElementById("canvas-svg-wrap");
   meshWidth = wrap.clientWidth || 600;
-  meshHeight = wrap.clientHeight || 400;
+  meshHeight = Math.max(420, Math.min(wrap.clientHeight * 0.52, 620));
 }
 
 function meshBuildDisplayList(ppList) {
@@ -408,44 +410,41 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
     .attr("class", "dp-header");
 
   // DP select dropdown
-  var fo = dpG
+  var selectW = Math.max(64, 80 * scale);
+  var foY = dpY + 6 * scale;
+  var foH = hdrH - 6 * scale;
+  var selectH = Math.min(foH - 6, Math.max(22, 30 * scale));
+  var foW = selectW + 8;
+  dpG
     .append("foreignObject")
     .attr("x", dpX + 20 * scale)
-    .attr("y", dpY + 6 * scale)
-    .attr("width", 200 * scale)
-    .attr("height", 40 * scale);
-  fo.append("xhtml:div")
-    .style("display", "inline-block")
-    .html(
-      '<select id="' +
-        dpSelectId +
-        '" onchange="' +
-        switchFn +
-        '(parseInt(this.value))" style="font-size:' +
-        14 * scale +
-        "px;min-width:" +
-        Math.max(100, 120 * scale) +
-        "px;max-width:" +
-        200 * scale +
-        "px;background:" +
-        (scale < 0.7 ? "#11161d" : "#0d1117") +
-        ';color:#58a6ff;border:1px solid #58a6ff;border-radius:4px;padding:2px 6px;font-family:sans-serif;cursor:pointer;overflow:hidden;text-overflow:ellipsis;"></select>'
-    );
+    .attr("y", foY)
+    .attr("width", foW)
+    .attr("height", foH)
+    .append("xhtml:div")
+    .style("width", "100%")
+    .style("height", "100%")
+    .html((function () {
+      var opts = '';
+      for (var oi = 0; oi < cfg.dpCount; oi++) {
+        opts += '<option value="' + oi + '"' + (oi === cfg.activeDp ? ' selected' : '') + '>DP ' + oi + '</option>';
+      }
+      var ff = Math.max(12, 13 * scale);
+      return '<div class="dp-select-wrap" style="width:100%;height:100%;display:flex;align-items:center;">' +
+        '<select id="' + dpSelectId + '" class="dp-select" onchange="' + switchFn + '(parseInt(this.value))" style="' +
+        'font-size:' + ff + 'px;width:100%;">' + opts + '</select></div>';
+    })());
 
-  // Info text — textLength to prevent overflow
-  var infoMaxWidth = dpW * scale - (20 + 200 + 30) * scale;
-  if (infoMaxWidth < 60 * scale) infoMaxWidth = 60 * scale;
+  // Info text
   var npuTotal = cfg.tpCount * cfg.ppCount * cfg.dpCount;
   var infoText = "TP" + cfg.tpCount + "×PP" + cfg.ppCount + "×DP" + cfg.dpCount + " | " + npuTotal + " NPUs";
   dpG
     .append("text")
-    .attr("x", dpX + dpW * scale - 20 * scale)
-    .attr("y", dpY + 25 * scale)
+    .attr("x", dpX + dpW * scale - 16 * scale)
+    .attr("y", dpY + 22 * scale)
     .attr("text-anchor", "end")
     .attr("class", "info-text")
-    .attr("font-size", Math.max(8, 11 * scale) + "px")
-    .attr("textLength", infoMaxWidth)
-    .attr("lengthAdjust", "spacingAndGlyphs")
+    .attr("font-size", Math.max(11, 12 * scale) + "px")
     .text(infoText)
     .append("title").text(infoText);
 
@@ -508,15 +507,15 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
       .attr("width", ppW * scale)
       .attr("height", (MESH_CARD.ppHeaderH * scale) / 2)
       .attr("class", "pp-header");
+    var ppLabelSize = Math.max(10, 13 * scale);
+    var ppLabelY = py + (MESH_CARD.ppHeaderH * scale) / 2 + ppLabelSize * 0.35;
     ppG
       .append("text")
       .attr("x", px + (ppW * scale) / 2)
-      .attr("y", py + 17 * scale)
+      .attr("y", ppLabelY)
       .attr("text-anchor", "middle")
       .attr("class", "pp-label")
-      .attr("font-size", Math.max(9, 13 * scale) + "px")
-      .attr("textLength", ppW * scale - 12 * scale)
-      .attr("lengthAdjust", "spacingAndGlyphs")
+      .attr("font-size", ppLabelSize + "px")
       .text(pp.label);
 
     var tpX = px + ((ppW - MESH_CARD.tpW) * scale) / 2;
@@ -570,23 +569,21 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
         });
       ppG
         .append("text")
-        .attr("x", tpX + MESH_CARD.tpW * scale - 4 * scale)
-        .attr("y", ty + 11 * scale)
-        .attr("text-anchor", "end")
+        .attr("x", tpX + 6 * scale)
+        .attr("y", ty + 14 * scale)
+        .attr("text-anchor", "start")
         .attr("class", "tp-label")
-        .attr("font-size", Math.max(7, 10 * scale) + "px")
-        .attr("textLength", MESH_CARD.tpW * scale * 0.4)
-        .attr("lengthAdjust", "spacingAndGlyphs")
+        .attr("font-size", Math.max(7, 9 * scale) + "px")
+        .attr("pointer-events", "none")
         .text(tp.label);
       ppG
         .append("text")
-        .attr("x", tpX + (MESH_CARD.tpW * scale) / 2)
-        .attr("y", ty + (MESH_CARD.tpH * scale) / 2 + 4 * scale)
-        .attr("text-anchor", "middle")
+        .attr("x", tpX + 6 * scale)
+        .attr("y", ty + 30 * scale)
+        .attr("text-anchor", "start")
         .attr("class", "rank-label")
-        .attr("font-size", Math.max(8, 12 * scale) + "px")
-        .attr("textLength", MESH_CARD.tpW * scale - 8 * scale)
-        .attr("lengthAdjust", "spacingAndGlyphs")
+        .attr("font-size", "10px")
+        .attr("pointer-events", "none")
         .text(tp.rank);
     });
 
@@ -626,14 +623,8 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
 function _populateDpSelect(selId, dpCount, activeDp) {
   var sel = document.getElementById(selId);
   if (!sel) return;
-  sel.innerHTML = "";
-  for (var i = 0; i < dpCount; i++) {
-    var opt = document.createElement("option");
-    opt.value = i;
-    opt.textContent = "DP " + i;
-    if (i === activeDp) opt.selected = true;
-    sel.appendChild(opt);
-  }
+  // Options already generated; just update selected index
+  sel.value = activeDp;
 }
 
 function _meshNpuTotal(entry) {
@@ -674,24 +665,30 @@ function meshSwitchDpEq(dpIndex) {
 // ── Main render ──
 
 function meshRebuild() {
-  var container = d3.select("#mesh-container");
   // Dismiss pinned tooltip on rebuild
   var tip = document.getElementById('rank-tooltip');
   tip.classList.remove('visible', 'pinned');
   tip.innerHTML = '';
   meshPinnedRank = null;
-  container.selectAll("svg").remove();
   meshUpdateSize();
 
-  if (!meshOriginal && !meshEquivalent) return;
+  var topoSection = document.getElementById('canvas-topo-section');
+
+  if (!meshOriginal && !meshEquivalent) {
+    topoSection.style.display = 'none';
+    return;
+  }
+  topoSection.style.display = '';
 
   var toolbar = document.getElementById("mesh-config-toolbar");
   toolbar.classList.add("visible");
   document.getElementById("canvas-placeholder").classList.add("hidden");
 
   var newMode = meshOriginal && meshEquivalent ? "compare" : "single";
+  var container = d3.select("#canvas-topo-section");
 
   // ── Fast path: DP-only switch (same mode, same tp/pp/dp counts) ──
+  // Must run BEFORE removing SVG; only modifies existing DOM elements.
   if (_renderState.mode === newMode) {
     if (newMode === "single") {
       var entry = meshOriginal || meshEquivalent;
@@ -701,10 +698,13 @@ function meshRebuild() {
         entry.dp === _renderState.orig.dp &&
         meshOrigDp !== _renderState.orig.activeDp
       ) {
-        _meshUpdateRanks(container.select("svg"), entry.tp, entry.pp, _renderState.orig.activeDp, meshOrigDp);
-        _updateDpSelect("mesh-dp-select", meshOrigDp);
-        _renderState.orig.activeDp = meshOrigDp;
-        return;
+        var svgRoot = container.select("svg");
+        if (!svgRoot.empty()) {
+          _meshUpdateRanks(svgRoot, entry.tp, entry.pp, _renderState.orig.activeDp, meshOrigDp);
+          _updateDpSelect("mesh-dp-select", meshOrigDp);
+          _renderState.orig.activeDp = meshOrigDp;
+          return;
+        }
       }
     } else {
       var origSameShape =
@@ -733,12 +733,13 @@ function meshRebuild() {
           _updateDpSelect("mesh-dp-sel-eq", meshEqDp);
           _renderState.eq.activeDp = meshEqDp;
         }
-        return;
+        if (origDpChanged || eqDpChanged) return;
       }
     }
   }
 
   // ── Full rebuild ──
+  container.selectAll("svg").remove();
 
   if (meshOriginal && meshEquivalent) {
     // ── Compare Mode ──
@@ -747,9 +748,9 @@ function meshRebuild() {
     document.getElementById("mesh-dpInput").parentElement.style.display = "none";
     toolbar.querySelector("button").style.display = "none";
     document.getElementById("mesh-npu-count").textContent =
-      "原始模型 " + _meshNpuTotal(meshOriginal) + " NPUs  |  最小等效模型 " + _meshNpuTotal(meshEquivalent) + " NPUs";
+      "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  最小等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs";
     document.getElementById("canvas-label").textContent =
-      (meshOriginal.name || "原始模型") + "  vs  " + (meshEquivalent.name || "最小等效模型");
+      (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "最小等效组网");
 
     var titleH = 26;
     var gap = 24;
@@ -801,7 +802,7 @@ function meshRebuild() {
       .attr("font-family", "sans-serif")
       .attr("font-size", "13px")
       .attr("font-weight", "bold")
-      .text(meshEquivalent.name || "最小等效模型");
+      .text(meshEquivalent.name || "最小等效组网");
 
     _meshBuildView(
       zoomLayer.append("g"),
@@ -893,6 +894,11 @@ function meshRebuild() {
 
 // ── Public API ──
 
+function canvasRebuild() {
+  meshRebuild();
+  modelRebuild();
+}
+
 async function loadMeshData(topoData) {
   var tp = topoData.tp_size || topoData.tp || 4;
   var pp = topoData.pp_size || topoData.pp || 4;
@@ -902,9 +908,9 @@ async function loadMeshData(topoData) {
   var rawName = topoData.name || "";
   var name =
     rawName.indexOf("原始") !== -1
-      ? "原始模型"
+      ? "原始组网"
       : rawName.indexOf("等效") !== -1
-      ? "最小等效模型"
+      ? "最小等效组网"
       : rawName;
   var entry = {
     name: name,
@@ -956,36 +962,39 @@ async function loadMeshData(topoData) {
     }
   }
 
-  meshRebuild();
+  canvasRebuild();
 }
 
 // ── Attach to window for inline onclick / onchange handlers ──
 
 window.loadMeshData = loadMeshData;
 window.meshRebuild = meshRebuild;
+window.canvasRebuild = canvasRebuild;
 window.meshSwitchDp = meshSwitchDp;
 window.meshSwitchDpOrig = meshSwitchDpOrig;
 window.meshSwitchDpEq = meshSwitchDpEq;
 window.fetchSimulationData = fetchSimulationData;
 window.openMetricDetail = openMetricDetail;
 window.closeMetricDetailPopup = closeMetricDetailPopup;
+window.loadModelData = loadModelData;
+window.modelRebuild = modelRebuild;
 
 // ── Resize handler (debounced) ──
 
 var _resizeTimer = null;
 window.addEventListener("resize", function () {
-  if (!meshOriginal && !meshEquivalent) return;
+  if (!meshOriginal && !meshEquivalent && !modelOriginal && !modelEquivalent) return;
   if (_resizeTimer) clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(function () {
     _resizeTimer = null;
-    meshRebuild();
+    canvasRebuild();
   }, 200);
 });
 
 // ── Canvas background click dismisses pinned tooltip ──
 
-document.getElementById('mesh-container').addEventListener('click', function (e) {
-  if (e.target.tagName === 'svg' || e.target.id === 'mesh-container') {
+document.getElementById('canvas-svg-wrap').addEventListener('click', function (e) {
+  if (e.target.tagName === 'svg' || e.target.id === 'canvas-svg-wrap') {
     var tip = document.getElementById('rank-tooltip');
     tip.classList.remove('visible', 'pinned');
     tip.innerHTML = '';
@@ -1422,3 +1431,313 @@ document.addEventListener('keydown', function(e) {
     closeMetricDetailPopup();
   }
 });
+
+// Model visualization — Transformer training model structure diagram
+// ═══════════════════════════════════════════════════════════════════
+
+var MODEL_COLORS = {
+  input_embedding:  { fill: 'rgba(59,206,180,0.12)', stroke: 'var(--teal)', label: 'Input Embedding' },
+  transformer_block:{ fill: 'rgba(57,186,230,0.08)', stroke: 'var(--cyan)', label: 'Transformer Block' },
+  layer_norm:       { fill: 'rgba(108,122,158,0.1)', stroke: 'var(--text-secondary)', label: 'LayerNorm' },
+  mha:              { fill: 'rgba(91,155,213,0.12)', stroke: 'var(--cyan)', label: 'Multi-Head Attention' },
+  ffn:              { fill: 'rgba(186,161,255,0.12)', stroke: 'var(--purple)', label: 'Feed-Forward Network' },
+  ellipsis:         { fill: 'var(--bg-surface)', stroke: 'var(--text-muted)', label: '...' },
+  output:           { fill: 'rgba(242,109,120,0.1)', stroke: 'var(--red)', label: 'Output Projection' },
+  skip:             { stroke: 'var(--green)', fill: 'none' },
+  data_flow:        { stroke: 'var(--text-muted)', fill: 'none' },
+};
+
+function loadModelData(modelData, role) {
+  role = role || (modelData._role || ((modelOriginal ? 'equivalent' : 'original')));
+
+  var entry = {
+    type: modelData.type,
+    config: modelData.config,
+    computed: modelData.computed,
+    layers: modelData.layers || [],
+    output_layer: modelData.output_layer,
+  };
+  if (role === 'original') {
+    modelOriginal = entry;
+  } else {
+    modelEquivalent = entry;
+  }
+}
+
+// Render one model horizontally — blocks left-to-right like mesh PP stages.
+// showHeader: prepend a config-header line above the row.
+function _renderOneModel(g, model, x0, topY, areaW, showHeader) {
+  var cfg = model.config || {};
+  var comp = model.computed || {};
+
+  // ── Build horizontal display list (transformer blocks + ellipsis only) ──
+  var all = [];
+  model.layers.forEach(function (l) {
+    if (l.type === 'input_embedding' || l.type === 'output') return;
+    all.push(l);
+  });
+
+  // ── Layout constants ──
+  var gap = 8;
+  var blockH = 120;
+  var baseW = 80;   // transformer block width
+  var thinW = 50;    // ellipsis width
+  var totalN = all.length;
+  // Count types
+  var normalCt = 0, thinCt = 0;
+  all.forEach(function (b) {
+    if (b.type === 'transformer_block') normalCt++;
+    else thinCt++;
+  });
+  var needW = normalCt * baseW + thinCt * thinW + (totalN - 1) * gap;
+  var padX = 12;
+  var scale = Math.min(1, (areaW - padX * 2) / needW);
+  var useW = Math.floor(baseW * scale);
+  var useThin = Math.floor(thinW * scale);
+  var useGap = Math.max(3, Math.floor(gap * scale));
+  var rowW = normalCt * useW + thinCt * useThin + (totalN - 1) * useGap;
+  var sx = x0 + Math.max(0, (areaW - rowW) / 2);
+
+  // ── Config header ──
+  if (showHeader) {
+    var cfgText = 'd_model=' + cfg.d_model + '  num_heads=' + cfg.num_heads + '  d_ffn=' + cfg.d_ffn
+      + '  d_head=' + comp.d_head + '  params=' + (comp.total_params_billions || '—');
+    g.append('text')
+      .attr('x', x0 + areaW / 2).attr('y', 16)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-secondary)').attr('font-size', '11px').attr('font-family', 'JetBrains Mono, monospace')
+      .text((model.type || 'TRANSFORMER_MODEL').toUpperCase() + '  ·  ' + cfg.num_layers + ' layers  ·  ' + cfgText);
+  }
+
+  var rowY = topY + (showHeader ? 54 : 12);
+  var hdrH = 22;
+  var subPadX = 6;
+  var subGap = 4;
+
+  all.forEach(function (block, i) {
+    var bw = block.type === 'transformer_block' ? useW : useThin;
+    var bx = sx;
+    for (var j = 0; j < i; j++) {
+      bx += (all[j].type === 'transformer_block' ? useW : useThin) + useGap;
+    }
+
+    // ── Ellipsis ──
+    if (block.type === 'ellipsis') {
+      g.append('rect')
+        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
+        .attr('rx', 6).attr('fill', MODEL_COLORS.ellipsis.fill).attr('stroke', MODEL_COLORS.ellipsis.stroke).attr('stroke-width', 1.5);
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 50).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(12, Math.min(18, bw / 4)) + 'px')
+        .text('⋮');
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 78).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-muted)').attr('font-size', Math.max(9, Math.min(12, bw / 6)) + 'px')
+        .text(block.desc || '');
+      return;
+    }
+
+    // ── Input Embedding ──
+    if (block.type === 'input_embedding') {
+      var ieColors = MODEL_COLORS.input_embedding;
+      g.append('rect')
+        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
+        .attr('rx', 6).attr('fill', ieColors.fill).attr('stroke', ieColors.stroke).attr('stroke-width', 1.5);
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 34).attr('text-anchor', 'middle')
+        .attr('fill', ieColors.stroke).attr('font-size', Math.max(8, Math.min(12, bw / 7)) + 'px').attr('font-weight', 500)
+        .text('Input');
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 54).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(7, Math.min(10, bw / 9)) + 'px')
+        .text('Embedding');
+      return;
+    }
+
+    // ── Output ──
+    if (block.type === 'output') {
+      var outColors = MODEL_COLORS.output;
+      g.append('rect')
+        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
+        .attr('rx', 6).attr('fill', outColors.fill).attr('stroke', outColors.stroke).attr('stroke-width', 1.5);
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 34).attr('text-anchor', 'middle')
+        .attr('fill', outColors.stroke).attr('font-size', Math.max(8, Math.min(12, bw / 7)) + 'px').attr('font-weight', 500)
+        .text('Output');
+      g.append('text')
+        .attr('x', bx + bw / 2).attr('y', rowY + 54).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(7, Math.min(10, bw / 9)) + 'px')
+        .text('Proj');
+      return;
+    }
+
+    // ── Transformer Block ──
+    var tbColors = MODEL_COLORS.transformer_block;
+    g.append('rect')
+      .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
+      .attr('rx', 6).attr('fill', tbColors.fill).attr('stroke', tbColors.stroke).attr('stroke-width', 1.5);
+
+    // Layer label
+    g.append('text')
+      .attr('x', bx + bw / 2).attr('y', rowY + hdrH - 4)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(9, Math.min(12, bw / 9)) + 'px')
+      .attr('font-weight', 500)
+      .text('Layer ' + block.id);
+
+    // ATTN + FFN sub-blocks (stacked vertically)
+    var subW = bw - subPadX * 2;
+    var subH = Math.floor((blockH - hdrH - subGap - 8) / 2);
+    var subX = bx + subPadX;
+    var attnY = rowY + hdrH + 3;
+    var ffnY = attnY + subH + subGap;
+
+    var mhaColors = MODEL_COLORS.mha;
+    g.append('rect')
+      .attr('x', subX).attr('y', attnY).attr('width', subW).attr('height', subH)
+      .attr('rx', 3).attr('fill', mhaColors.fill).attr('stroke', mhaColors.stroke).attr('stroke-width', 1);
+    g.append('text')
+      .attr('x', bx + bw / 2).attr('y', attnY + subH / 2 + 4)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(7, Math.min(11, subW / 12)) + 'px')
+      .text('ATTN');
+
+    var ffnColors = MODEL_COLORS.ffn;
+    g.append('rect')
+      .attr('x', subX).attr('y', ffnY).attr('width', subW).attr('height', subH)
+      .attr('rx', 3).attr('fill', ffnColors.fill).attr('stroke', ffnColors.stroke).attr('stroke-width', 1);
+    g.append('text')
+      .attr('x', bx + bw / 2).attr('y', ffnY + subH / 2 + 4)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(7, Math.min(11, subW / 12)) + 'px')
+      .text('FFN');
+
+    // Skip indicator — small curved line on top-left
+    if (block.skip_connection) {
+      g.append('path')
+        .attr('d', 'M' + (bx + 2) + ',' + (rowY + 4) + ' Q' + (bx - 2) + ',' + (rowY + 4) + ' ' + (bx - 2) + ',' + (rowY + 10))
+        .attr('fill', 'none').attr('stroke', 'var(--green)').attr('stroke-width', 1).attr('opacity', 0.5);
+    }
+
+    // Data-flow arrow to next block
+    if (i < all.length - 1) {
+      var ax1 = bx + bw + 1;
+      var ax2 = bx + bw + useGap - 2;
+      g.append('line')
+        .attr('x1', ax1).attr('y1', rowY + blockH / 2)
+        .attr('x2', ax2).attr('y2', rowY + blockH / 2)
+        .attr('stroke', 'var(--text-muted)').attr('stroke-width', 1).attr('opacity', 0.5)
+        .attr('marker-end', 'url(#arrow-dataflow)');
+    }
+  });
+}
+
+function modelRebuild() {
+  var container = d3.select('#canvas-model-section');
+  container.selectAll('svg').remove();
+
+  var modelSection = document.getElementById('canvas-model-section');
+  var divider = document.getElementById('canvas-section-divider');
+  var model = modelOriginal || modelEquivalent;
+  if (!model || !model.layers || !model.layers.length) {
+    modelSection.style.display = 'none';
+    divider.style.display = 'none';
+    return;
+  }
+  modelSection.style.display = '';
+  if (meshOriginal || meshEquivalent) divider.style.display = '';
+  document.getElementById("canvas-placeholder").classList.add("hidden");
+
+  var wrap = document.getElementById('canvas-svg-wrap');
+  var W = wrap.clientWidth || 800;
+
+  var hasBoth = !!(modelOriginal && modelOriginal.layers && modelOriginal.layers.length
+    && modelEquivalent && modelEquivalent.layers && modelEquivalent.layers.length);
+  var totalH, svg, zoomLayer;
+
+  if (hasBoth) {
+    var halfW = Math.floor((W - 40) / 2);
+    var modelW = halfW - 16;
+    var xLeft = Math.max(0, (halfW - modelW) / 2);
+    var xRight = W - halfW + Math.max(0, (halfW - modelW) / 2);
+    totalH = 280;
+
+    svg = container.append('svg')
+      .attr('viewBox', '0 0 ' + W + ' ' + totalH)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    zoomLayer = svg.append('g').attr('class', 'zoom-layer');
+
+    svg.call(
+      d3.zoom()
+        .scaleExtent([0.3, 3])
+        .filter(function (event) { return event.type !== 'dblclick'; })
+        .on('zoom', function (event) {
+          zoomLayer.attr('transform', event.transform);
+        })
+    );
+
+    // Divider line
+    zoomLayer.append('line')
+      .attr('x1', W / 2).attr('y1', 8).attr('x2', W / 2).attr('y2', totalH)
+      .attr('stroke', 'var(--border)').attr('stroke-width', 1).attr('stroke-dasharray', '6 4');
+
+    // Section titles
+    zoomLayer.append('text')
+      .attr('x', halfW / 2).attr('y', 18)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--cyan)').attr('font-size', '13px').attr('font-family', 'var(--font-sans)')
+      .attr('font-weight', 600).text('原始模型');
+
+    zoomLayer.append('text')
+      .attr('x', W - halfW / 2).attr('y', 18)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--teal)').attr('font-size', '13px').attr('font-family', 'var(--font-sans)')
+      .attr('font-weight', 600).text('最小等效模型');
+
+    // Arrow marker def — must be in outer SVG scope for both models
+    svg.append('defs').append('marker')
+      .attr('id', 'arrow-dataflow')
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 5).attr('refY', 5)
+      .attr('markerWidth', 6).attr('markerHeight', 6)
+      .attr('orient', 'auto-start-reverse')
+      .append('path')
+      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+      .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
+
+    _renderOneModel(zoomLayer, modelOriginal, xLeft, 10, modelW, false);
+    _renderOneModel(zoomLayer, modelEquivalent, xRight, 10, modelW, false);
+  } else {
+    var modelW = W - 32;
+    totalH = 280;
+
+    svg = container.append('svg')
+      .attr('viewBox', '0 0 ' + W + ' ' + totalH)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    zoomLayer = svg.append('g').attr('class', 'zoom-layer');
+
+    svg.call(
+      d3.zoom()
+        .scaleExtent([0.3, 3])
+        .filter(function (event) { return event.type !== 'dblclick'; })
+        .on('zoom', function (event) {
+          zoomLayer.attr('transform', event.transform);
+        })
+    );
+
+    svg.append('defs').append('marker')
+      .attr('id', 'arrow-dataflow')
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 5).attr('refY', 5)
+      .attr('markerWidth', 6).attr('markerHeight', 6)
+      .attr('orient', 'auto-start-reverse')
+      .append('path')
+      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+      .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
+
+    var x0 = Math.max(0, (W - modelW) / 2);
+    _renderOneModel(zoomLayer, model, x0, 0, modelW, true);
+  }
+}
