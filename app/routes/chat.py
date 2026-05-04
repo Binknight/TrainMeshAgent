@@ -47,7 +47,6 @@ def chat_stream():
 
     def generate():
         loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
             async def stream():
                 async for event in agent_stream(session, message):

@@ -549,7 +549,7 @@ body {
 #rank-tooltip {
   position: fixed; pointer-events: none; z-index: 2000;
   background: var(--bg-panel); border: 1px solid var(--border-active);
-  border-radius: 10px; padding: 0; min-width: 200px; max-width: 340px;
+  border-radius: 10px; padding: 0; min-width: 200px; max-width: 450px;
   font-family: var(--font-mono); font-size: 11px;
   box-shadow: 0 6px 28px rgba(0,0,0,0.55);
   opacity: 0; transition: opacity 0.15s; line-height: 1.4;
@@ -566,20 +566,20 @@ body {
   background: rgba(57,186,230,0.15); color: var(--cyan);
   padding: 1px 8px; border-radius: 8px;
 }
-.tooltip-body { padding: 8px 12px 10px; }
+.tooltip-body { padding: 6px 10px 8px; }
 .tooltip-section-label {
   font-size: 10px; color: var(--text-muted); text-transform: uppercase;
   letter-spacing: 0.5px; margin-bottom: 6px;
 }
 .tooltip-table { width: 100%; border-collapse: collapse; }
-.tooltip-table td { padding: 3px 6px; vertical-align: middle; }
-.tooltip-table .metric-label { color: var(--text-secondary); text-align: left; font-size: 10px; }
-.tooltip-table .metric-val { text-align: right; font-size: 11px; color: var(--text-primary); font-weight: 500; white-space: nowrap; }
+.tooltip-table td { padding: 2px 4px; vertical-align: middle; }
+.tooltip-table .metric-label { color: var(--text-secondary); text-align: left; font-size: 9px; }
+.tooltip-table .metric-val { text-align: right; font-size: 10px; color: var(--text-primary); font-weight: 500; white-space: nowrap; }
 .tooltip-table .metric-val.actual { color: var(--teal); }
-.tooltip-table .metric-delta { text-align: right; font-size: 10px; white-space: nowrap; }
+.tooltip-table .metric-delta { text-align: right; font-size: 9px; white-space: nowrap; }
 .tooltip-table .metric-delta.positive { color: var(--green); }
 .tooltip-table .metric-delta.negative { color: var(--red); }
-.tooltip-table .col-header { font-size: 9px; color: var(--text-muted); text-align: right; padding: 2px 6px 4px; }
+.tooltip-table .col-header { font-size: 8px; color: var(--text-muted); text-align: right; padding: 2px 4px 4px; }
 .tooltip-table .col-header.left { text-align: left; }
 .tooltip-empty { color: var(--text-muted); font-size: 10px; text-align: center; padding: 6px 0; }
 .tooltip-pin-hint {
@@ -599,6 +599,68 @@ body {
 .tooltip-detail-btn:hover {
   background: linear-gradient(135deg, rgba(57,186,230,0.28), rgba(59,206,180,0.22));
   border-color: var(--cyan); color: #fff;
+}
+
+/* ── Metric detail link inside tooltip ── */
+.metric-link {
+  font-size: 8px; color: var(--cyan); cursor: pointer;
+  margin-left: 2px; text-decoration: none;
+  transition: color var(--transition);
+}
+.metric-link:hover { color: var(--teal); text-decoration: underline; }
+.metric-link-na {
+  font-size: 8px; color: var(--text-muted); margin-left: 2px;
+  cursor: default; opacity: 0.5;
+}
+.tooltip-table .col-header.metric-link-col { text-align: center; font-size: 9px; color: var(--text-muted); padding: 2px 4px 4px; }
+
+/* ── Metric Detail Popup ── */
+#metric-detail-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 3500;
+  display: flex; align-items: center; justify-content: center;
+}
+#metric-detail-popup {
+  position: relative; width: 420px; max-width: 94vw; max-height: 80vh;
+  background: var(--bg-panel); border: 1px solid var(--border-active);
+  border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.55);
+  display: flex; flex-direction: column; overflow: hidden;
+  font-family: var(--font-mono); font-size: 11px;
+}
+.metric-detail-header {
+  display: flex; align-items: center; padding: 10px 14px;
+  background: var(--bg-surface); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.metric-detail-title {
+  font-weight: 600; font-size: 12px; color: var(--text-primary);
+}
+.metric-detail-close {
+  margin-left: auto; background: none; border: none; color: var(--text-muted);
+  font-size: 18px; cursor: pointer; padding: 2px 8px; border-radius: 4px;
+  transition: all var(--transition);
+}
+.metric-detail-close:hover { color: var(--red); background: rgba(242,109,120,0.1); }
+.metric-detail-body {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px;
+}
+.metric-detail-table {
+  width: 100%; border-collapse: collapse;
+}
+.metric-detail-table th {
+  text-align: center; font-size: 10px; color: var(--text-muted);
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+.metric-detail-table td {
+  text-align: center; padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 12px; color: var(--text-primary);
+}
+.metric-detail-table td.metric-detail-label {
+  text-align: left; color: var(--text-secondary); font-size: 11px;
+}
+.metric-detail-table tr.total-row td {
+  font-weight: 600; border-top: 1px solid var(--border);
+  color: var(--teal);
 }
 
 /* ── Detail Popup Panel ── */
@@ -818,6 +880,17 @@ body {
 
 </div>
 
+<!-- Metric Detail Popup -->
+<div id="metric-detail-overlay" style="display:none;">
+  <div id="metric-detail-popup">
+    <div class="metric-detail-header">
+      <span class="metric-detail-title" id="metric-detail-title"></span>
+      <button class="metric-detail-close" onclick="closeMetricDetailPopup()">&times;</button>
+    </div>
+    <div class="metric-detail-body" id="metric-detail-body"></div>
+  </div>
+</div>
+
 <!-- Device Simulation Detail Popup -->
 <div id="detail-popup-overlay" style="display:none;">
   <div id="detail-popup">
@@ -903,6 +976,7 @@ async function restoreSession(id) {
     }
 
     addMessage('system', '会话已恢复: ' + data.step);
+    fetchSimulationData();
     return true;
   } catch (e) {
     localStorage.removeItem('mesh_session_id');
@@ -1126,6 +1200,7 @@ async function handleSSEEvent(type, data) {
       break;
     case 'done':
       setStatus('idle');
+      fetchSimulationData();
       if (_pendingMeshList.length) {
         await Promise.all(_pendingMeshList.map(function (d) { return loadMeshData(d); }));
         _pendingMeshList = [];
@@ -1137,7 +1212,6 @@ async function handleSSEEvent(type, data) {
       if (meshOriginal || meshEquivalent || modelOriginal || modelEquivalent) {
         canvasRebuild();
       }
-      fetchSimulationData();
       break;
     case 'error':
       setStatus('error');
