@@ -395,6 +395,11 @@ function fetchSimulationData() {
           });
           changed = true;
         }
+        // Mark simulation as completed if results exist
+        if (data.original_simulation || data.equivalent_simulation) {
+          window._simCompleted = true;
+          if (typeof checkSimReady === 'function') checkSimReady();
+        }
         if (changed && (meshOriginal || meshEquivalent)) {
           meshRebuild();
         }
