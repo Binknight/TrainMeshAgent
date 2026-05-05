@@ -272,6 +272,7 @@ body {
 }
 .canvas-tab:hover { color: var(--text-primary); }
 .canvas-tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+.canvas-tab:disabled { color: var(--text-muted); opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
 /* ── Canvas Tab Panels ── */
 .canvas-tab-panel { display: none; flex: 1; min-height: 0; }
@@ -685,6 +686,17 @@ body {
   padding: 4px 0 0; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 6px;
 }
 .tp-rect.pinned { stroke: var(--yellow) !important; stroke-width: 2.5 !important; }
+.tooltip-detail-btn {
+  display: block; width: 100%; margin-top: 6px; padding: 6px 0;
+  background: linear-gradient(135deg, rgba(57,186,230,0.2), rgba(59,206,180,0.12));
+  border: 1px solid var(--cyan); border-radius: 6px;
+  color: var(--cyan); font-size: 11px; cursor: pointer;
+  transition: all 0.2s;
+}
+.tooltip-detail-btn:hover {
+  background: linear-gradient(135deg, rgba(57,186,230,0.35), rgba(59,206,180,0.2));
+  box-shadow: 0 0 8px rgba(57,186,230,0.2);
+}
 
 /* ── Linked tooltip (two-sided compare mode) ── */
 .tooltip-header.linked {
@@ -704,19 +716,6 @@ body {
   height: 1px; margin: 0 10px;
   background: linear-gradient(90deg, var(--cyan), var(--teal));
   opacity: 0.4;
-}
-
-/* ── Tooltip Detail Button ── */
-.tooltip-detail-btn {
-  display: block; width: 100%; margin-top: 8px; padding: 7px 0;
-  background: linear-gradient(135deg, rgba(57,186,230,0.15), rgba(59,206,180,0.12));
-  border: 1px solid var(--border-active); border-radius: 6px;
-  color: var(--cyan); font-family: var(--font-mono); font-size: 11px;
-  cursor: pointer; transition: all var(--transition); pointer-events: auto;
-}
-.tooltip-detail-btn:hover {
-  background: linear-gradient(135deg, rgba(57,186,230,0.28), rgba(59,206,180,0.22));
-  border-color: var(--cyan); color: #fff;
 }
 
 /* ── Metric detail link inside tooltip ── */
@@ -781,77 +780,6 @@ body {
   color: var(--teal);
 }
 
-/* ── Detail Popup Panel ── */
-#detail-popup-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 3000;
-  display: flex; align-items: center; justify-content: center;
-}
-#detail-popup {
-  position: relative; width: 960px; max-width: 96vw; max-height: 90vh;
-  background: var(--bg-panel); border: 1px solid var(--border-active);
-  border-radius: 12px; box-shadow: 0 12px 48px rgba(0,0,0,0.6);
-  display: flex; flex-direction: column; overflow: hidden;
-  font-family: var(--font-mono); font-size: 11px;
-}
-.detail-popup-header {
-  display: flex; align-items: center; padding: 10px 16px;
-  background: var(--bg-surface); border-bottom: 1px solid var(--border);
-  cursor: move; user-select: none; flex-shrink: 0;
-}
-.detail-popup-title { font-weight: 600; font-size: 12px; color: var(--text-primary); }
-.detail-popup-subtitle { margin-left: 12px; font-size: 10px; color: var(--text-secondary); }
-.detail-popup-close {
-  margin-left: auto; background: none; border: none; color: var(--text-muted);
-  font-size: 18px; cursor: pointer; padding: 2px 8px; border-radius: 4px;
-  transition: all var(--transition);
-}
-.detail-popup-close:hover { color: var(--red); background: rgba(242,109,120,0.1); }
-.detail-popup-summary {
-  display: flex; gap: 12px; padding: 8px 16px; background: var(--bg-deep);
-  border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap;
-}
-.detail-summary-chip {
-  font-size: 10px; padding: 3px 10px; background: var(--bg-hover);
-  border-radius: 12px; color: var(--text-secondary); white-space: nowrap;
-}
-.detail-summary-chip strong { color: var(--text-primary); }
-.detail-popup-tabs {
-  display: flex; gap: 0; padding: 0 16px; background: var(--bg-surface);
-  border-bottom: 1px solid var(--border); flex-shrink: 0;
-}
-.detail-tab {
-  padding: 8px 16px; font-size: 11px; color: var(--text-muted); cursor: pointer;
-  border-bottom: 2px solid transparent; transition: all var(--transition);
-  background: none; border-top: none; border-left: none; border-right: none;
-  font-family: var(--font-sans);
-}
-.detail-tab:hover { color: var(--text-primary); }
-.detail-tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
-.detail-popup-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px; }
-.detail-popup-body svg { display: block; }
-.detail-timeline-wrap { overflow-x: auto; }
-.timeline-row { cursor: default; }
-.timeline-bar { rx: 3; ry: 3; opacity: 0.85; }
-.timeline-bar.computation { fill: var(--cyan); }
-.timeline-bar.communication { fill: var(--orange); }
-.timeline-bar.collective { fill: var(--purple); }
-.timeline-axis line, .timeline-axis path { stroke: var(--border); }
-.timeline-axis text { fill: var(--text-muted); font-size: 9px; }
-.traffic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.traffic-chart-title { font-size: 11px; color: var(--text-secondary); text-align: center; margin-bottom: 6px; }
-.detail-stat-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-.detail-stat-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 10px; }
-.detail-stat-table .stat-label { color: var(--text-muted); }
-.detail-stat-table .stat-val { text-align: right; color: var(--text-primary); }
-.trace-tree { font-size: 11px; }
-.trace-node { cursor: default; }
-.trace-node-label { fill: var(--text-primary); }
-.trace-node-duration { fill: var(--text-muted); font-size: 9px; }
-.trace-connector { stroke: var(--border); stroke-width: 1; fill: none; }
-.trace-bar-bg { fill: var(--bg-hover); rx: 2; ry: 2; }
-.trace-bar-fill.computation { fill: var(--cyan); opacity: 0.6; }
-.trace-bar-fill.communication { fill: var(--orange); opacity: 0.6; }
-.trace-bar-fill.collective { fill: var(--purple); opacity: 0.6; }
 
 .mesh-config-toolbar { display: none; align-items: center; gap: 10px; font-size: 13px; }
 .mesh-config-toolbar label { color: var(--text-secondary); }
@@ -934,7 +862,7 @@ body {
     </div>
     <div class="canvas-tabs" id="canvas-tabs">
       <button class="canvas-tab active" data-tab="topo" onclick="switchCanvasTab('topo')">组网数据</button>
-      <button class="canvas-tab" data-tab="results" onclick="switchCanvasTab('results')">结果数据</button>
+      <button class="canvas-tab" data-tab="results" id="tab-btn-results" disabled>结果数据</button>
     </div>
     <div class="canvas-tab-panel active" id="tab-panel-topo">
       <div class="canvas-svg-wrap" id="canvas-svg-wrap">
@@ -1030,23 +958,6 @@ body {
   </div>
 </div>
 
-<!-- Device Simulation Detail Popup -->
-<div id="detail-popup-overlay" style="display:none;">
-  <div id="detail-popup">
-    <div class="detail-popup-header" id="detail-popup-header">
-      <span class="detail-popup-title" id="detail-popup-title">仿真详情</span>
-      <span class="detail-popup-subtitle" id="detail-popup-subtitle"></span>
-      <button class="detail-popup-close" onclick="closeDetailPopup()">&times;</button>
-    </div>
-    <div class="detail-popup-summary" id="detail-popup-summary"></div>
-    <div class="detail-popup-tabs">
-      <button class="detail-tab active" data-tab="timeline" onclick="switchDetailTab('timeline')">⏱ 执行时序</button>
-      <button class="detail-tab" data-tab="traffic" onclick="switchDetailTab('traffic')">📊 流量统计</button>
-      <button class="detail-tab" data-tab="tracing" onclick="switchDetailTab('tracing')">🔍 算子追踪</button>
-    </div>
-    <div class="detail-popup-body" id="detail-popup-body"></div>
-  </div>
-</div>
 
 <script>
 const API = '/api';
@@ -1102,19 +1013,30 @@ async function restoreSession(id) {
     document.getElementById('session-id-display').textContent = sessionId;
     localStorage.setItem('mesh_session_id', sessionId);
 
-    // Restore topology data — batch into pending list, flush immediately
+    // Restore training model data first (synchronous), so canvasRebuild sees them
+    if (data.original_training_model) {
+      data.original_training_model._role = 'original';
+      loadModelData(data.original_training_model, 'original');
+    }
+    if (data.equivalent_training_model) {
+      data.equivalent_training_model._role = 'equivalent';
+      loadModelData(data.equivalent_training_model, 'equivalent');
+    }
+
+    // Restore topology data (async — estimate fetch, triggers canvasRebuild)
     if (data.original_topology) await loadMeshData(data.original_topology);
     if (data.equivalent_topology) await loadMeshData(data.equivalent_topology);
 
     // Restore chat message for topology summaries
-    if (data.original_topology || data.equivalent_topology) {
-      const parts = [];
-      if (data.original_topology) parts.push('原始组网: ' + (data.original_topology.name || '') + ' 已恢复');
-      if (data.equivalent_topology) parts.push('等效组网: ' + (data.equivalent_topology.name || '') + ' 已恢复');
+    const parts = [];
+    if (data.original_topology) parts.push('原始组网: ' + (data.original_topology.name || '') + ' 已恢复');
+    if (data.equivalent_topology) parts.push('等效组网: ' + (data.equivalent_topology.name || '') + ' 已恢复');
+    if (data.original_training_model) parts.push('原始模型: ' + (data.original_training_model.layers_count || data.original_training_model.layers?.length || 0) + ' 层 已恢复');
+    if (data.equivalent_training_model) parts.push('等效模型: ' + (data.equivalent_training_model.layers_count || data.equivalent_training_model.layers?.length || 0) + ' 层 已恢复');
+    if (parts.length > 0) {
       addMessage('system', '🔄 会话 ' + id + ' 已恢复\n' + parts.join('\n'));
     }
 
-    addMessage('system', '会话已恢复: ' + data.step);
     fetchSimulationData();
     return true;
   } catch (e) {
@@ -1139,6 +1061,7 @@ function newSession() {
   meshEquivalent = null;
   modelOriginal = null;
   modelEquivalent = null;
+  meshPinnedRank = null;
   meshOrigDp = 0;
   meshEqDp = 0;
   meshModelOrig = {};
@@ -1369,6 +1292,8 @@ async function handleSSEEvent(type, data) {
 // ── D3 Mesh Topology Rendering — see static/topo-renderer.js ──
 
 function switchCanvasTab(tabName) {
+  // Results tab can only be reached via 仿真详情 button, requires pinned rank
+  if (tabName === 'results' && !meshPinnedRank) return;
   document.querySelectorAll('.canvas-tab').forEach(function(t) {
     t.classList.toggle('active', t.getAttribute('data-tab') === tabName);
   });
