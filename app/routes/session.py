@@ -5,9 +5,11 @@ import random
 from flask import Blueprint, request, jsonify
 
 from app.agent.session import session_manager
+from app.mcp.client import mcp_client
 from app.models.schemas import (
     CardMetrics, CommDetail, DeviceType, DeviceSimulationDetail,
     HbmDetail, OperatorTrace, SessionState, TimelineSummary,
+    SimulationResult, ComparisonReport,
 )
 
 session_bp = Blueprint("session", __name__, url_prefix="/api/session")
@@ -139,6 +141,139 @@ def estimate_metrics():
         "tp": tp,
         "pp": pp,
         "cards": [c.model_dump() for c in cards],
+    })
+
+
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str) -> tuple[str | None, SimulationResult | None]:
+    """Submit MCP task + run estimation profiler for a single topology. Returns (task_id, SimulationResult)."""
+    if not topo:
+        return task_id_in, None
+    _est = importlib.import_module("app.skills.training-mesh-profiler-skill")
+    device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
+    cfg = _est._MODEL_CONFIG[device_type]
+    L = training_model.config.num_layers if training_model else cfg["num_layers"]
+    H = training_model.config.d_model if training_model else cfg["hidden_dim"]
+    S = int(_est._SEQ_LEN)
+    B = int(_est._TOTAL_BATCH)
+    a = float(_est._QUANT_COEFF)
+    dp, tp, pp = topo.dp_size, topo.tp_size, topo.pp_size
+    total_nodes = dp * tp * pp
+
+    # Submit MCP task (fire-and-forget)
+    task_id = task_id_in
+    if not task_id:
+        try:
+            task_id = mcp_client.execute_task(topo.model_dump())
+        except Exception:
+            task_id = ""
+
+    # Run estimation formulas
+    flops = _est._estimate_flops(L, H, S, B, dp, tp, pp)
+    hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
+    tp_comm = _est._estimate_tp_comm_gb(L, H, dp)
+    pp_comm = _est._estimate_pp_comm_mb(L, H, S, B, tp)
+    dp_comm = _est._estimate_dp_comm_gb(H, S, B)
+
+    cards = []
+    for rank in range(total_nodes):
+        cards.append(CardMetrics(
+            card_id=f"card_{rank}",
+            global_rank=rank,
+            flops_per_card=flops,
+            hbm_gb=hbm,
+            tp_comm_gb_per_micro=tp_comm,
+            pp_comm_mb_per_micro=pp_comm,
+            dp_comm_gb_per_step=dp_comm,
+        ))
+
+    result = SimulationResult(
+        topology_name=topo.name,
+        device_type=device_type,
+        total_nodes=total_nodes,
+        cards=cards,
+        aggregate_flops=sum(c.flops_per_card for c in cards),
+        aggregate_hbm_gb=sum(c.hbm_gb for c in cards),
+        aggregate_tp_comm_gb_per_micro=sum(c.tp_comm_gb_per_micro for c in cards),
+        aggregate_pp_comm_mb_per_micro=sum(c.pp_comm_mb_per_micro for c in cards),
+        aggregate_dp_comm_gb_per_step=sum(c.dp_comm_gb_per_step for c in cards),
+    )
+    return task_id, result
+
+
+def _build_comparison(original: SimulationResult, equivalent: SimulationResult) -> ComparisonReport:
+    eps = 1e-9
+
+    def _diff_pct(ov, ev):
+        return round(abs(ov - ev) / max(abs(ov), eps) * 100, 2)
+
+    flops_diff = _diff_pct(original.aggregate_flops, equivalent.aggregate_flops)
+    hbm_diff = _diff_pct(original.aggregate_hbm_gb, equivalent.aggregate_hbm_gb)
+    tp_diff = _diff_pct(original.aggregate_tp_comm_gb_per_micro, equivalent.aggregate_tp_comm_gb_per_micro)
+    pp_diff = _diff_pct(original.aggregate_pp_comm_mb_per_micro, equivalent.aggregate_pp_comm_mb_per_micro)
+    dp_diff = _diff_pct(original.aggregate_dp_comm_gb_per_step, equivalent.aggregate_dp_comm_gb_per_step)
+
+    tolerance = 5.0
+    is_eq = all(d <= tolerance for d in [flops_diff, hbm_diff, tp_diff, pp_diff, dp_diff])
+
+    return ComparisonReport(
+        original=original,
+        equivalent=equivalent,
+        flops_diff_pct=flops_diff,
+        hbm_diff_pct=hbm_diff,
+        tp_comm_diff_pct=tp_diff,
+        pp_comm_diff_pct=pp_diff,
+        dp_comm_diff_pct=dp_diff,
+        is_equivalent=is_eq,
+        error_tolerance_pct=tolerance,
+        details={
+            "conclusion": "✅ 等效验证通过" if is_eq else "❌ 等效验证不通过",
+            "max_diff_pct": round(max(flops_diff, hbm_diff, tp_diff, pp_diff, dp_diff), 2),
+        }
+    )
+
+
+@session_bp.route("/<session_id>/run-simulation", methods=["POST"])
+def run_simulation(session_id: str):
+    """Directly run simulations for both topologies and return results (no agent/SSE)."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+
+    results = {}
+
+    # ── Original topology ──
+    orig_tid, orig_sim = _run_simulation_for_topology(
+        session.original_topology, session.original_training_model,
+        session.original_task_id, "original"
+    )
+    if orig_sim:
+        session.original_simulation = orig_sim
+        session.original_task_id = orig_tid or session.original_task_id
+        results["original"] = orig_sim.model_dump()
+
+    # ── Equivalent topology ──
+    eq_tid, eq_sim = _run_simulation_for_topology(
+        session.equivalent_topology, session.equivalent_training_model,
+        session.equivalent_task_id, "equivalent"
+    )
+    if eq_sim:
+        session.equivalent_simulation = eq_sim
+        session.equivalent_task_id = eq_tid or session.equivalent_task_id
+        results["equivalent"] = eq_sim.model_dump()
+
+    # ── Comparison ──
+    report = None
+    if session.original_simulation and session.equivalent_simulation:
+        report = _build_comparison(session.original_simulation, session.equivalent_simulation)
+        session.comparison_report = report
+        session.step = "completed"
+        results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
+
+    session.step = "simulating"
+    return jsonify({
+        "session_id": session_id,
+        "results": results,
+        "step": session.step,
     })
 
 
