@@ -67,6 +67,8 @@ def get_topology(session_id: str):
         "session_id": session_id,
         "original_topology": _topo_with_model(session.original_topology, session.original_training_model),
         "equivalent_topology": _topo_with_model(session.equivalent_topology, session.equivalent_training_model),
+        "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
+        "equivalent_training_model": session.equivalent_training_model.model_dump() if session.equivalent_training_model else None,
         "step": session.step,
     })
 
