@@ -232,6 +232,11 @@ body {
   user-select: none; letter-spacing: 0.5px;
 }
 .btn-sim:disabled { opacity: 0.4; }
+.btn-sim.sim-done {
+  cursor: default; opacity: 0.65;
+  border-color: var(--teal); color: var(--teal);
+  background: linear-gradient(135deg, rgba(59,206,180,0.15), rgba(59,206,180,0.05));
+}
 .btn-sim:not(:disabled) {
   cursor: pointer; color: #fff; border-color: var(--cyan);
   background: linear-gradient(135deg, rgba(57,186,230,0.25), rgba(59,206,180,0.15));
@@ -1557,6 +1562,8 @@ function newSession() {
   var chatPanel = document.querySelector('.chat-panel');
   if (chatPanel) chatPanel.style.display = '';
   _resultsRendered = false;
+  _simCompleted = false;
+  checkSimReady();
   initWorkflow();
   ensureSession();
 }
@@ -1836,10 +1843,19 @@ function switchCanvasTab(tabName) {
 function checkSimReady() {
   var btn = document.getElementById('btn-start-sim');
   if (!btn) return;
+  // Already completed — show done state
+  if (_simCompleted) {
+    btn.disabled = true;
+    btn.textContent = '仿真已完成';
+    btn.classList.add('sim-done');
+    return;
+  }
   var hasOriginal = !!(meshOriginal && modelOriginal);
   var hasEquivalent = !!(meshEquivalent && modelEquivalent);
   var ready = hasOriginal || hasEquivalent;
   btn.disabled = !ready;
+  btn.textContent = '开始仿真';
+  btn.classList.remove('sim-done');
 }
 
 async function startSimulation() {
@@ -1887,9 +1903,9 @@ async function startSimulation() {
       updateWorkflowNode('comparison', 'active');
     }
 
+    _simCompleted = true;
+    checkSimReady();
     setStatus('idle');
-    btn.textContent = '开始仿真';
-    btn.disabled = false;
     addMessage('agent', '仿真完成。' + (results.comparison ? results.comparison.details.conclusion : ''));
   } catch (e) {
     setStatus('error');
@@ -1905,6 +1921,7 @@ async function startSimulation() {
 // ═══════════════════════════════════════════
 
 var _resultsRendered = false;
+var _simCompleted = false;   // true when simulation results exist (survives refresh)
 
 // ── Color map by comm_type ──
 var TYPE_COLORS = {

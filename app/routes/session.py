@@ -71,6 +71,9 @@ def get_topology(session_id: str):
         "equivalent_topology": _topo_with_model(session.equivalent_topology, session.equivalent_training_model),
         "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
         "equivalent_training_model": session.equivalent_training_model.model_dump() if session.equivalent_training_model else None,
+        "original_simulation": session.original_simulation is not None,
+        "equivalent_simulation": session.equivalent_simulation is not None,
+        "comparison_report": session.comparison_report is not None,
         "step": session.step,
     })
 
