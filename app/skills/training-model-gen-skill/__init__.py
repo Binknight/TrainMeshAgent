@@ -37,54 +37,10 @@ def _build_layers(num_layers: int, num_heads: int, d_head: int, d_ffn: int, acti
         desc="vocab_size × d_model + Positional Encoding",
     ))
 
-    if num_layers <= 8:
-        for i in range(num_layers):
-            layers.append(TrainingModelLayer(
-                type="transformer_block",
-                id=i,
-                sub_layers=[
-                    ModelSubLayer(
-                        type="multi_head_attention",
-                        proj=["Q", "K", "V"],
-                        heads=num_heads,
-                        d_head=d_head,
-                    ),
-                    ModelSubLayer(type="layer_norm"),
-                    ModelSubLayer(
-                        type="feed_forward_network",
-                        activation=activation,
-                        d_ffn=d_ffn,
-                    ),
-                ],
-                skip_connection=True,
-            ))
-    else:
+    for i in range(num_layers):
         layers.append(TrainingModelLayer(
             type="transformer_block",
-            id=0,
-            sub_layers=[
-                ModelSubLayer(
-                    type="multi_head_attention",
-                    proj=["Q", "K", "V"],
-                    heads=num_heads,
-                    d_head=d_head,
-                ),
-                ModelSubLayer(type="layer_norm"),
-                ModelSubLayer(
-                    type="feed_forward_network",
-                    activation=activation,
-                    d_ffn=d_ffn,
-                ),
-            ],
-            skip_connection=True,
-        ))
-        layers.append(TrainingModelLayer(
-            type="ellipsis",
-            desc=f"{num_layers - 2} layers identical to block 0",
-        ))
-        layers.append(TrainingModelLayer(
-            type="transformer_block",
-            id=num_layers - 1,
+            id=i,
             sub_layers=[
                 ModelSubLayer(
                     type="multi_head_attention",
@@ -188,18 +144,11 @@ class TrainingModelGenSkill(BaseSkill):
             errors.append("num_layers must be > 0")
         if result.computed.d_head <= 0:
             errors.append("d_head must be > 0")
-        expected_layers = result.config.num_layers + 1
-        if result.config.num_layers > 8:
-            actual_layers = sum(1 for l in result.layers if l.type == "transformer_block") + sum(
-                1 for l in result.layers if l.type == "ellipsis"
-            ) + result.config.num_layers
-            pass
-        else:
-            block_count = sum(1 for l in result.layers if l.type == "transformer_block")
-            if block_count != result.config.num_layers:
-                errors.append(
-                    f"transformer_block count ({block_count}) != num_layers ({result.config.num_layers})"
-                )
+        block_count = sum(1 for l in result.layers if l.type == "transformer_block")
+        if block_count != result.config.num_layers:
+            errors.append(
+                f"transformer_block count ({block_count}) != num_layers ({result.config.num_layers})"
+            )
         if result.layers and result.layers[0].type != "input_embedding":
             errors.append("First layer must be input_embedding")
         return GuardrailResult(passed=len(errors) == 0, errors=errors)
