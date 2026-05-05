@@ -530,8 +530,18 @@ body {
   justify-content: center;
   padding-top: 40px;
 }
+.wf-param-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.wf-param-col {
+  min-width: 0;
+}
 .workflow-param-card {
-  width: 300px;
+  width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border-active);
   border-radius: var(--radius);
@@ -553,22 +563,39 @@ body {
   margin-bottom: 10px;
   gap: 12px;
 }
+.workflow-param-section {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cyan);
+  margin-top: 14px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.workflow-param-section:first-of-type {
+  margin-top: 0;
+}
 .workflow-param-row label {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
-  min-width: 56px;
+  min-width: 28px;
+  flex-shrink: 0;
 }
 .workflow-param-row select,
 .workflow-param-row input {
   flex: 1;
+  min-width: 0;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 6px 10px;
+  font-size: 11px;
+  padding: 5px 6px;
   outline: none;
   transition: border-color 0.18s;
 }
@@ -1091,27 +1118,125 @@ body {
       <!-- Parameter Input Overlay -->
       <div class="workflow-param-overlay" id="workflow-param-overlay" style="display:none;">
         <div class="workflow-param-card">
-          <div class="workflow-param-title">等效参数输入</div>
+          <div class="workflow-param-title">Step 1 — 参数输入</div>
           <div class="workflow-param-row">
-            <label>设备类型</label>
-            <select id="wf-device-type">
-              <option value="A3">A3</option>
-              <option value="A2">A2</option>
-              <option value="A5">A5</option>
+            <label>模型名称</label>
+            <select id="wf-orig-model-name">
+              <option value="Llama-3.1-8B">Llama-3.1-8B</option>
+              <option value="Llama-3.1-70B">Llama-3.1-70B</option>
+              <option value="Llama-3.1-405B">Llama-3.1-405B</option>
+              <option value="Llama-3-8B">Llama-3-8B</option>
+              <option value="Llama-3-70B">Llama-3-70B</option>
+              <option value="Llama-2-7B">Llama-2-7B</option>
+              <option value="Llama-2-13B">Llama-2-13B</option>
+              <option value="Llama-2-70B">Llama-2-70B</option>
+              <option value="Qwen-2.5-7B">Qwen-2.5-7B</option>
+              <option value="Qwen-2.5-14B">Qwen-2.5-14B</option>
+              <option value="Qwen-2.5-32B">Qwen-2.5-32B</option>
+              <option value="Qwen-2.5-72B">Qwen-2.5-72B</option>
+              <option value="GPT-3-175B">GPT-3-175B</option>
+              <option value="GPT-3.5-175B">GPT-3.5-175B</option>
             </select>
           </div>
-          <div class="workflow-param-row">
-            <label>DP</label>
-            <input id="wf-dp" type="number" value="8" min="1" max="1024">
+          <div class="wf-param-columns">
+            <div class="wf-param-col">
+              <div class="workflow-param-section">原始组网参数</div>
+              <div class="workflow-param-row">
+                <label>设备类型</label>
+                <select id="wf-orig-device" onchange="onOrigDeviceChange()">
+                  <option value="A3">A3</option>
+                  <option value="A2">A2</option>
+                  <option value="A5">A5</option>
+                </select>
+              </div>
+              <div class="workflow-param-row">
+                <label>DP</label>
+                <input id="wf-orig-dp" type="number" value="8" min="1" max="1024">
+              </div>
+              <div class="workflow-param-row">
+                <label>TP</label>
+                <select id="wf-orig-tp">
+                  <option value="16">16</option>
+                </select>
+              </div>
+              <div class="workflow-param-row">
+                <label>PP</label>
+                <input id="wf-orig-pp" type="number" value="8" min="1" max="128">
+              </div>
+
+              <div class="workflow-param-section">原始模型参数</div>
+              <div class="workflow-param-row">
+                <label>L</label>
+                <input id="wf-orig-model-l" type="number" value="64" min="1" max="512">
+              </div>
+              <div class="workflow-param-row">
+                <label>H</label>
+                <input id="wf-orig-model-h" type="number" value="4096" min="128" max="32768" step="64">
+              </div>
+              <div class="workflow-param-row">
+                <label>A</label>
+                <input id="wf-orig-model-a" type="number" value="32" min="1" max="256">
+              </div>
+              <div class="workflow-param-row">
+                <label>S</label>
+                <input id="wf-orig-model-s" type="number" value="2048" min="1" max="131072">
+              </div>
+              <div class="workflow-param-row">
+                <label>B</label>
+                <input id="wf-orig-model-b" type="number" value="32" min="1" max="1048576">
+              </div>
+            </div>
+
+            <!-- ── 右列：等效 ── -->
+            <div class="wf-param-col">
+              <div class="workflow-param-section">等效组网参数</div>
+              <div class="workflow-param-row">
+                <label>设备类型</label>
+                <select id="wf-equiv-device" onchange="onEquivDeviceChange()">
+                  <option value="A3">A3</option>
+                  <option value="A2">A2</option>
+                  <option value="A5">A5</option>
+                </select>
+              </div>
+              <div class="workflow-param-row">
+                <label>DP</label>
+                <input id="wf-equiv-dp" type="number" value="2" min="1" max="1024">
+              </div>
+              <div class="workflow-param-row">
+                <label>TP</label>
+                <select id="wf-equiv-tp">
+                  <option value="16">16</option>
+                </select>
+              </div>
+              <div class="workflow-param-row">
+                <label>PP</label>
+                <input id="wf-equiv-pp" type="number" value="3" min="1" max="128">
+              </div>
+
+              <div class="workflow-param-section">等效模型参数</div>
+              <div class="workflow-param-row">
+                <label>L</label>
+                <input id="wf-equiv-model-l" type="number" value="24" min="1" max="512">
+              </div>
+              <div class="workflow-param-row">
+                <label>H</label>
+                <input id="wf-equiv-model-h" type="number" value="4096" min="128" max="32768" step="64">
+              </div>
+              <div class="workflow-param-row">
+                <label>A</label>
+                <input id="wf-equiv-model-a" type="number" value="32" min="1" max="256">
+              </div>
+              <div class="workflow-param-row">
+                <label>S</label>
+                <input id="wf-equiv-model-s" type="number" value="2048" min="1" max="131072">
+              </div>
+              <div class="workflow-param-row">
+                <label>B</label>
+                <input id="wf-equiv-model-b" type="number" value="32" min="1" max="1048576">
+              </div>
+            </div>
           </div>
-          <div class="workflow-param-row">
-            <label>TP</label>
-            <input id="wf-tp" type="number" value="4" min="1" max="32">
-          </div>
-          <div class="workflow-param-row">
-            <label>PP</label>
-            <input id="wf-pp" type="number" value="2" min="1" max="128">
-          </div>
+
           <div class="workflow-param-actions">
             <button class="btn-wf-cancel" onclick="closeWorkflowParams()">取消</button>
             <button class="btn-wf-submit" onclick="submitWorkflowParams()">确认提交</button>
@@ -1247,20 +1372,6 @@ function renderWorkflow() {
   var svg = d3.select(container).append('svg')
     .attr('width', W).attr('height', svgH);
 
-  // arrow marker definitions
-  var defs = svg.append('defs');
-  ['green', 'cyan', 'border'].forEach(function(c) {
-    var color = c === 'green' ? '#7fd962' : c === 'cyan' ? '#39bae6' : '#1e2a36';
-    defs.append('marker')
-      .attr('id', 'arrow-' + c)
-      .attr('markerWidth', 7).attr('markerHeight', 6)
-      .attr('refX', 3.5).attr('refY', 3)
-      .attr('orient', 'auto')
-      .append('path')
-      .attr('d', 'M0,0 L7,3 L0,6 Z')
-      .attr('fill', color);
-  });
-
   var g = svg.append('g').attr('transform', 'translate(' + leftPad + ',' + topPad + ')');
 
   allVisible.forEach(function(step, i) {
@@ -1269,17 +1380,19 @@ function renderWorkflow() {
     var isPrevCompleted = i > 0 && (workflowNodeStates[allVisible[i-1].id] === 'completed');
     var isCurCompleted = state === 'completed';
 
-    // connecting line from previous node
+    // arrow image between steps
     if (i > 0) {
       var prevY = (i-1) * (nodeH + gapH) + nodeH;
-      var lineColor = (isCurCompleted || isPrevCompleted) ? 'var(--green)' : 'var(--border)';
-      var arrowId = (isCurCompleted || isPrevCompleted) ? 'url(#arrow-green)' : 'url(#arrow-border)';
-      g.append('line')
-        .attr('x1', nodeW/2).attr('y1', prevY)
-        .attr('x2', nodeW/2).attr('y2', y)
-        .attr('stroke', lineColor)
-        .attr('stroke-width', 1.5)
-        .attr('marker-end', arrowId);
+      var arrowH = 16, arrowW = 12;
+      var arrowSrc = (isCurCompleted || isPrevCompleted)
+        ? '/static/assets/down_arrow_green.png'
+        : '/static/assets/down_arrow_grey.png';
+      g.append('image')
+        .attr('x', nodeW/2 - arrowW/2)
+        .attr('y', prevY + (gapH - arrowH)/2)
+        .attr('width', arrowW)
+        .attr('height', arrowH)
+        .attr('href', arrowSrc);
     }
 
     // node rect
@@ -1423,9 +1536,41 @@ function syncWorkflowFromSession(sessionData) {
 
 // ── Workflow Parameter Panel ──
 
+// TP options per device type
+var TP_OPTIONS = { A2: [8], A3: [16], A5: [16] };
+
+function syncTP(deviceSelectId, tpSelectId) {
+  var device = document.getElementById(deviceSelectId).value;
+  var tpSelect = document.getElementById(tpSelectId);
+  var options = TP_OPTIONS[device] || [8];
+  tpSelect.innerHTML = '';
+  options.forEach(function(v) {
+    var opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    tpSelect.appendChild(opt);
+  });
+}
+
+function onOrigDeviceChange() {
+  var v = document.getElementById('wf-orig-device').value;
+  document.getElementById('wf-equiv-device').value = v;
+  syncTP('wf-orig-device', 'wf-orig-tp');
+  syncTP('wf-equiv-device', 'wf-equiv-tp');
+}
+
+function onEquivDeviceChange() {
+  var v = document.getElementById('wf-equiv-device').value;
+  document.getElementById('wf-orig-device').value = v;
+  syncTP('wf-orig-device', 'wf-orig-tp');
+  syncTP('wf-equiv-device', 'wf-equiv-tp');
+}
+
 function openWorkflowParams() {
   var overlay = document.getElementById('workflow-param-overlay');
   if (overlay) overlay.style.display = 'flex';
+  syncTP('wf-orig-device', 'wf-orig-tp');
+  syncTP('wf-equiv-device', 'wf-equiv-tp');
 }
 
 function closeWorkflowParams() {
@@ -1434,13 +1579,37 @@ function closeWorkflowParams() {
 }
 
 function submitWorkflowParams() {
-  var deviceType = document.getElementById('wf-device-type').value;
-  var dp = document.getElementById('wf-dp').value;
-  var tp = document.getElementById('wf-tp').value;
-  var pp = document.getElementById('wf-pp').value;
+  var origDevice = document.getElementById('wf-orig-device').value;
+  var origDp = document.getElementById('wf-orig-dp').value;
+  var origTp = document.getElementById('wf-orig-tp').value;
+  var origPp = document.getElementById('wf-orig-pp').value;
+  var origModelName = document.getElementById('wf-orig-model-name').value;
+  var origL = document.getElementById('wf-orig-model-l').value;
+  var origH = document.getElementById('wf-orig-model-h').value;
+  var origA = document.getElementById('wf-orig-model-a').value;
+  var origS = document.getElementById('wf-orig-model-s').value;
+  var origB = document.getElementById('wf-orig-model-b').value;
+  var equivDevice = document.getElementById('wf-equiv-device').value;
+  var equivDp = document.getElementById('wf-equiv-dp').value;
+  var equivTp = document.getElementById('wf-equiv-tp').value;
+  var equivPp = document.getElementById('wf-equiv-pp').value;
+  var equivL = document.getElementById('wf-equiv-model-l').value;
+  var equivH = document.getElementById('wf-equiv-model-h').value;
+  var equivA = document.getElementById('wf-equiv-model-a').value;
+  var equivS = document.getElementById('wf-equiv-model-s').value;
+  var equivB = document.getElementById('wf-equiv-model-b').value;
   closeWorkflowParams();
   updateWorkflowNode('params', 'completed');
-  var msg = '请帮我生成最小等效组网: 设备类型' + deviceType + ', DP=' + dp + ', TP=' + tp + ', PP=' + pp;
+  var msg =
+    '原始组网: 设备类型' + origDevice +
+    ', DP=' + origDp + ', TP=' + origTp + ', PP=' + origPp +
+    ', 模型名称=' + origModelName +
+    ', L=' + origL + ', H=' + origH + ', A=' + origA +
+    ', S=' + origS + ', B=' + origB + ' | ' +
+    '等效组网: 设备类型' + equivDevice +
+    ', DP=' + equivDp + ', TP=' + equivTp + ', PP=' + equivPp +
+    ', L=' + equivL + ', H=' + equivH + ', A=' + equivA +
+    ', S=' + equivS + ', B=' + equivB;
   sendMessage(msg);
 }
 
