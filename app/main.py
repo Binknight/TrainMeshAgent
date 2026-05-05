@@ -60,7 +60,8 @@ def create_app() -> Flask:
             },
             "sse_event_types": [
                 "thinking", "tool_call", "guard_check",
-                "mesh_json", "message", "error", "done"
+                "mesh_json", "model_json", "message",
+                "sim_data", "workflow_state", "error", "done"
             ]
         })
 

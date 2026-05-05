@@ -409,7 +409,7 @@ body {
 }
 .canvas-placeholder.hidden { display: none; }
 
-/* ── Right Panel: Chat ── */
+/* ── Right Panel: Workflow + Chat ── */
 .panel-right {
   width: 440px;
   min-width: 380px;
@@ -419,9 +419,6 @@ body {
   flex-direction: column;
   flex-shrink: 0;
 }
-.panel-right .panel-header {
-  justify-content: space-between;
-}
 .session-id {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -430,6 +427,197 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Workflow Panel ── */
+.workflow-panel {
+  height: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.workflow-panel .panel-header {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.workflow-svg-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px;
+  position: relative;
+}
+.workflow-svg-wrap::-webkit-scrollbar { width: 3px; }
+.workflow-svg-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Chat Panel (wraps existing chat area) ── */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.chat-panel .panel-header {
+  justify-content: space-between;
+}
+
+/* ── Workflow Node SVG styles ── */
+.wf-node-rect {
+  transition: all 0.25s ease;
+  cursor: pointer;
+}
+.wf-node-rect.pending {
+  fill: var(--bg-surface);
+  stroke: var(--border);
+  stroke-dasharray: 4 3;
+}
+.wf-node-rect.active {
+  fill: rgba(57,186,230,0.08);
+  stroke: var(--cyan);
+  stroke-width: 1.8;
+  animation: wf-pulse 2s ease-in-out infinite;
+}
+.wf-node-rect.completed {
+  fill: rgba(127,217,98,0.06);
+  stroke: var(--green);
+}
+.wf-node-rect.failed {
+  fill: rgba(242,109,120,0.06);
+  stroke: var(--red);
+}
+.wf-node-rect.waiting_input {
+  fill: rgba(255,180,84,0.08);
+  stroke: var(--yellow);
+  animation: wf-pulse-yellow 1.5s ease-in-out infinite;
+}
+.wf-node-rect.disabled {
+  fill: var(--bg-surface);
+  stroke: var(--border);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+@keyframes wf-pulse {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.4; }
+}
+@keyframes wf-pulse-yellow {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.35; }
+}
+
+/* Workflow confirm button on active node */
+.wf-confirm-btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--cyan);
+  background: rgba(57,186,230,0.15);
+  color: var(--cyan);
+  cursor: pointer;
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+.wf-confirm-btn:hover {
+  background: rgba(57,186,230,0.3);
+  color: #fff;
+}
+
+/* ── Parameter Input Overlay ── */
+.workflow-param-overlay {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(10,14,20,0.85);
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 40px;
+}
+.workflow-param-card {
+  width: 300px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.workflow-param-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cyan);
+  margin-bottom: 14px;
+  text-align: center;
+}
+.workflow-param-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+.workflow-param-row label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 56px;
+}
+.workflow-param-row select,
+.workflow-param-row input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.18s;
+}
+.workflow-param-row select:focus,
+.workflow-param-row input:focus {
+  border-color: var(--border-active);
+}
+.workflow-param-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+.btn-wf-cancel {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.btn-wf-cancel:hover { border-color: var(--text-muted); color: var(--text-secondary); }
+.btn-wf-submit {
+  padding: 6px 18px;
+  background: linear-gradient(135deg, rgba(57,186,230,0.25), rgba(59,206,180,0.15));
+  border: 1px solid var(--cyan);
+  border-radius: 4px;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.btn-wf-submit:hover {
+  background: linear-gradient(135deg, rgba(57,186,230,0.4), rgba(59,206,180,0.25));
+  box-shadow: 0 0 12px rgba(57,186,230,0.2);
 }
 .chat-messages {
   flex: 1;
@@ -984,36 +1172,75 @@ body {
     </div>
   </main>
 
-  <!-- RIGHT: Chat -->
+  <!-- RIGHT: Workflow + Chat -->
   <aside class="panel-right">
-    <div class="panel-header">
-      <span>💬 Agent 交互</span>
-      <span class="session-id" id="session-id-display">—</span>
+    <!-- ── Workflow Panel (Top) ── -->
+    <div class="workflow-panel">
+      <div class="panel-header">🔄 执行流程</div>
+      <div class="workflow-svg-wrap" id="workflow-svg-wrap"></div>
+      <!-- Parameter Input Overlay -->
+      <div class="workflow-param-overlay" id="workflow-param-overlay" style="display:none;">
+        <div class="workflow-param-card">
+          <div class="workflow-param-title">等效参数输入</div>
+          <div class="workflow-param-row">
+            <label>设备类型</label>
+            <select id="wf-device-type">
+              <option value="A3">A3</option>
+              <option value="A2">A2</option>
+              <option value="A5">A5</option>
+            </select>
+          </div>
+          <div class="workflow-param-row">
+            <label>DP</label>
+            <input id="wf-dp" type="number" value="8" min="1" max="1024">
+          </div>
+          <div class="workflow-param-row">
+            <label>TP</label>
+            <input id="wf-tp" type="number" value="4" min="1" max="32">
+          </div>
+          <div class="workflow-param-row">
+            <label>PP</label>
+            <input id="wf-pp" type="number" value="2" min="1" max="128">
+          </div>
+          <div class="workflow-param-actions">
+            <button class="btn-wf-cancel" onclick="closeWorkflowParams()">取消</button>
+            <button class="btn-wf-submit" onclick="submitWorkflowParams()">确认提交</button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="quick-actions" id="quick-actions">
-      <span class="quick-chip" onclick="sendQuick('请帮我生成原始组网: 设备类型A3, DP=8, TP=4, PP=2')">A3 DP8 TP4 PP2</span>
-      <span class="quick-chip" onclick="sendQuick('请帮我生成最小等效组网: 设备类型A5, DP=4, TP=4, PP=4')">A5 DP4 TP4 PP4</span>
-      <span class="quick-chip" onclick="sendQuick('请对比分析原始组网和最小等效组网的仿真结果')">对比分析</span>
-    </div>
-
-    <div class="chat-messages" id="chat-messages">
-      <div class="msg-group fade-in">
-        <span class="msg-label agent">TrainMesh Agent</span>
-        <div class="msg-bubble agent">欢迎使用 TrainMesh Agent。输入组网参数开始仿真测试。</div>
+    <!-- ── Chat Panel (Bottom) ── -->
+    <div class="chat-panel">
+      <div class="panel-header">
+        <span>💬 Agent 交互</span>
+        <span class="session-id" id="session-id-display">—</span>
       </div>
 
-      <div class="msg-group fade-in">
-        <span class="msg-label system">建议</span>
-        <div class="msg-bubble system">试试下方的快捷操作，或直接输入组网参数（设备类型 + DP/TP/PP）</div>
+      <div class="quick-actions" id="quick-actions">
+        <span class="quick-chip" onclick="sendQuick('请帮我生成原始组网: 设备类型A3, DP=8, TP=4, PP=2')">A3 DP8 TP4 PP2</span>
+        <span class="quick-chip" onclick="sendQuick('请帮我生成最小等效组网: 设备类型A5, DP=4, TP=4, PP=4')">A5 DP4 TP4 PP4</span>
+        <span class="quick-chip" onclick="sendQuick('请对比分析原始组网和最小等效组网的仿真结果')">对比分析</span>
       </div>
-    </div>
 
-    <div class="chat-input-area">
-      <textarea class="chat-input" id="chat-input" placeholder="输入消息..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
-      <button class="btn-send" id="btn-send" onclick="sendMessage()">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6L8 14l-2-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <div class="chat-messages" id="chat-messages">
+        <div class="msg-group fade-in">
+          <span class="msg-label agent">TrainMesh Agent</span>
+          <div class="msg-bubble agent">欢迎使用 TrainMesh Agent。输入组网参数开始仿真测试。</div>
+        </div>
+
+        <div class="msg-group fade-in">
+          <span class="msg-label system">建议</span>
+          <div class="msg-bubble system">试试下方的快捷操作，或直接输入组网参数（设备类型 + DP/TP/PP）</div>
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <textarea class="chat-input" id="chat-input" placeholder="输入消息..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
+        <button class="btn-send" id="btn-send" onclick="sendMessage()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6L8 14l-2-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
     </div>
   </aside>
 
@@ -1054,6 +1281,275 @@ let sessionId = '';
 let isStreaming = false;
 let _pendingMeshList = [];   // batch mesh_json events until "done"
 let _pendingModelList = [];  // batch model_json events until "done"
+
+// ═══════════════════════════════════════════
+// Workflow State Machine
+// ═══════════════════════════════════════════
+
+const WORKFLOW_STEPS = [
+  { id: 'params',       label: '等效参数输入', icon: '\u{1F4DD}', requiresInput: true,  requiresConfirm: false },
+  { id: 'guard',        label: '护栏校验',     icon: '\u{1F6E1}', requiresInput: false, requiresConfirm: false },
+  { id: 'topology',     label: '组网拓扑生成', icon: '\u{1F578}', requiresInput: false, requiresConfirm: true  },
+  { id: 'model',        label: '模型结构生成', icon: '\u{1F9E0}', requiresInput: false, requiresConfirm: true  },
+  { id: 'simulation',   label: '仿真验证',     icon: '\u{1F52C}', requiresInput: false, requiresConfirm: true  },
+  { id: 'comparison',   label: '等效对比',     icon: '\u{1F4CA}', requiresInput: false, requiresConfirm: false },
+  { id: 'virtual_real', label: '虚实结合',     icon: '\u{1F517}', requiresInput: false, requiresConfirm: true,  disabled: true },
+];
+
+var workflowNodeStates = {};  // { stepId: 'pending' | 'active' | 'completed' | 'failed' | 'waiting_input' | 'disabled' }
+var workflowHighestCompleted = -1;  // index of the furthest completed step
+
+function initWorkflow() {
+  workflowNodeStates = {};
+  workflowHighestCompleted = -1;
+  WORKFLOW_STEPS.forEach(function(step, i) {
+    if (step.disabled) {
+      workflowNodeStates[step.id] = 'disabled';
+    } else if (i === 0) {
+      workflowNodeStates[step.id] = 'waiting_input';
+    } else {
+      workflowNodeStates[step.id] = 'pending';
+    }
+  });
+  renderWorkflow();
+}
+
+function getNodeStateClass(stepId) {
+  var state = workflowNodeStates[stepId] || 'pending';
+  return 'wf-node-rect ' + state;
+}
+
+function getStatusColor(state) {
+  switch (state) {
+    case 'completed': return 'var(--green)';
+    case 'active':    return 'var(--cyan)';
+    case 'failed':    return 'var(--red)';
+    case 'waiting_input': return 'var(--yellow)';
+    case 'disabled':  return 'var(--text-muted)';
+    default:          return 'var(--border)';
+  }
+}
+
+function getConfirmLabel(stepId) {
+  switch (stepId) {
+    case 'topology':   return '确认组网';
+    case 'model':      return '确认模型';
+    case 'simulation': return '开始仿真';
+    default:           return '确认执行';
+  }
+}
+
+function renderWorkflow() {
+  var container = document.getElementById('workflow-svg-wrap');
+  if (!container) return;
+  var W = container.clientWidth - 16;
+  if (W < 200) W = 360;
+  var nodeH = 28, gapH = 8, topPad = 10, leftPad = 20;
+  var nodeW = W - leftPad - 10;
+  var allVisible = WORKFLOW_STEPS;
+  var totalH = allVisible.length * (nodeH + gapH) + topPad * 2;
+  var svgH = Math.max(totalH, container.clientHeight - 8);
+
+  container.innerHTML = '';
+  var svg = d3.select(container).append('svg')
+    .attr('width', W).attr('height', svgH);
+
+  // arrow marker definitions
+  var defs = svg.append('defs');
+  ['green', 'cyan', 'border'].forEach(function(c) {
+    var color = c === 'green' ? '#7fd962' : c === 'cyan' ? '#39bae6' : '#1e2a36';
+    defs.append('marker')
+      .attr('id', 'arrow-' + c)
+      .attr('markerWidth', 7).attr('markerHeight', 6)
+      .attr('refX', 3.5).attr('refY', 3)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,0 L7,3 L0,6 Z')
+      .attr('fill', color);
+  });
+
+  var g = svg.append('g').attr('transform', 'translate(' + leftPad + ',' + topPad + ')');
+
+  allVisible.forEach(function(step, i) {
+    var y = i * (nodeH + gapH);
+    var state = workflowNodeStates[step.id] || 'pending';
+    var isPrevCompleted = i > 0 && (workflowNodeStates[allVisible[i-1].id] === 'completed');
+    var isCurCompleted = state === 'completed';
+
+    // connecting line from previous node
+    if (i > 0) {
+      var prevY = (i-1) * (nodeH + gapH) + nodeH;
+      var lineColor = (isCurCompleted || isPrevCompleted) ? 'var(--green)' : 'var(--border)';
+      var arrowId = (isCurCompleted || isPrevCompleted) ? 'url(#arrow-green)' : 'url(#arrow-border)';
+      g.append('line')
+        .attr('x1', nodeW/2).attr('y1', prevY)
+        .attr('x2', nodeW/2).attr('y2', y)
+        .attr('stroke', lineColor)
+        .attr('stroke-width', 1.5)
+        .attr('marker-end', arrowId);
+    }
+
+    // node rect
+    var rect = g.append('rect')
+      .attr('x', 0).attr('y', y)
+      .attr('width', nodeW).attr('height', nodeH)
+      .attr('rx', 6).attr('ry', 6)
+      .attr('class', getNodeStateClass(step.id));
+
+    // status dot
+    g.append('circle')
+      .attr('cx', 16).attr('cy', y + nodeH/2)
+      .attr('r', 5)
+      .attr('fill', getStatusColor(state))
+      .attr('class', 'wf-status-dot');
+
+    // icon + label
+    var labelText = step.icon + ' ' + step.label;
+    if (step.disabled) labelText += ' (暂未开放)';
+    g.append('text')
+      .attr('x', 28).attr('y', y + nodeH/2 + 4)
+      .attr('fill', state === 'disabled' ? 'var(--text-muted)' : 'var(--text-primary)')
+      .attr('font-size', '11px')
+      .attr('font-family', 'var(--font-sans)')
+      .attr('font-weight', state === 'active' ? '600' : '400')
+      .text(labelText);
+
+    // completed checkmark
+    if (state === 'completed') {
+      g.append('text')
+        .attr('x', nodeW - 18).attr('y', y + nodeH/2 + 4)
+        .attr('text-anchor', 'end')
+        .attr('fill', 'var(--green)')
+        .attr('font-size', '12px')
+        .text('\u2713');
+    }
+
+    // click handler
+    if (!step.disabled) {
+      rect.style('cursor', 'pointer')
+        .on('click', function() { handleWorkflowNodeClick(step); });
+    }
+  });
+}
+
+function handleWorkflowNodeClick(step) {
+  if (step.disabled) return;
+
+  var state = workflowNodeStates[step.id] || 'pending';
+
+  if (step.requiresInput && (state === 'waiting_input' || state === 'active')) {
+    openWorkflowParams();
+    return;
+  }
+
+  if (step.requiresConfirm && state === 'active') {
+    confirmWorkflowStep(step);
+    return;
+  }
+}
+
+function confirmWorkflowStep(step) {
+  switch (step.id) {
+    case 'topology':
+      sendMessage('确认组网数据，请继续生成模型结构');
+      break;
+    case 'model':
+      sendMessage('确认模型结构，请准备仿真');
+      break;
+    case 'simulation':
+      var parts = [];
+      if (typeof meshOriginal !== 'undefined' && meshOriginal) parts.push('原始组网');
+      if (typeof meshEquivalent !== 'undefined' && meshEquivalent) parts.push('等效组网');
+      var msg = (parts.length ? parts.join('和') : '组网') + ' 数据已就绪，请开始仿真';
+      sendMessage(msg);
+      break;
+    default:
+      sendMessage('确认执行下一步');
+  }
+  // mark as completed immediately for UI responsiveness
+  updateWorkflowNode(step.id, 'completed');
+}
+
+function updateWorkflowNode(stepId, newState) {
+  workflowNodeStates[stepId] = newState;
+  if (newState === 'completed') {
+    var idx = WORKFLOW_STEPS.findIndex(function(s) { return s.id === stepId; });
+    if (idx > workflowHighestCompleted) workflowHighestCompleted = idx;
+    // auto-advance: mark next node as active if it doesn't require input
+    if (idx >= 0 && idx < WORKFLOW_STEPS.length - 1) {
+      var next = WORKFLOW_STEPS[idx + 1];
+      if (!next.disabled && !next.requiresInput && workflowNodeStates[next.id] === 'pending') {
+        workflowNodeStates[next.id] = 'active';
+      }
+    }
+  }
+  renderWorkflow();
+}
+
+function syncWorkflowFromSession(sessionData) {
+  var hasTopology = !!(sessionData.original_topology || sessionData.equivalent_topology);
+  var hasModel = !!(sessionData.original_training_model || sessionData.equivalent_training_model ||
+                     (typeof modelOriginal !== 'undefined' && modelOriginal) ||
+                     (typeof modelEquivalent !== 'undefined' && modelEquivalent));
+  var hasSimulation = !!(sessionData.original_simulation || sessionData.equivalent_simulation);
+  var hasComparison = !!(sessionData.comparison_report);
+  var step = sessionData.step || 'idle';
+
+  if (hasComparison) {
+    updateWorkflowNode('params', 'completed');
+    updateWorkflowNode('guard', 'completed');
+    updateWorkflowNode('topology', 'completed');
+    updateWorkflowNode('model', 'completed');
+    updateWorkflowNode('simulation', 'completed');
+    updateWorkflowNode('comparison', 'completed');
+  } else if (hasSimulation) {
+    updateWorkflowNode('params', 'completed');
+    updateWorkflowNode('guard', 'completed');
+    updateWorkflowNode('topology', 'completed');
+    updateWorkflowNode('model', 'completed');
+    updateWorkflowNode('simulation', 'completed');
+    updateWorkflowNode('comparison', 'active');
+  } else if (hasModel && hasTopology) {
+    updateWorkflowNode('params', 'completed');
+    updateWorkflowNode('guard', 'completed');
+    updateWorkflowNode('topology', 'completed');
+    updateWorkflowNode('model', 'completed');
+    updateWorkflowNode('simulation', 'active');
+  } else if (hasTopology) {
+    updateWorkflowNode('params', 'completed');
+    updateWorkflowNode('guard', 'completed');
+    updateWorkflowNode('topology', 'completed');
+    updateWorkflowNode('model', 'active');
+  } else if (step === 'params_collected' || step === 'topology_generated') {
+    updateWorkflowNode('params', 'completed');
+    updateWorkflowNode('guard', 'completed');
+    if (hasTopology) updateWorkflowNode('topology', 'completed');
+    updateWorkflowNode('model', 'active');
+  }
+}
+
+// ── Workflow Parameter Panel ──
+
+function openWorkflowParams() {
+  var overlay = document.getElementById('workflow-param-overlay');
+  if (overlay) overlay.style.display = 'flex';
+}
+
+function closeWorkflowParams() {
+  var overlay = document.getElementById('workflow-param-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function submitWorkflowParams() {
+  var deviceType = document.getElementById('wf-device-type').value;
+  var dp = document.getElementById('wf-dp').value;
+  var tp = document.getElementById('wf-tp').value;
+  var pp = document.getElementById('wf-pp').value;
+  closeWorkflowParams();
+  updateWorkflowNode('params', 'completed');
+  var msg = '请帮我生成最小等效组网: 设备类型' + deviceType + ', DP=' + dp + ', TP=' + tp + ', PP=' + pp;
+  sendMessage(msg);
+}
 
 // ── Mock history ──
 const mockHistory = [
@@ -1105,6 +1601,9 @@ async function restoreSession(id) {
     // Restore topology data — batch into pending list, flush immediately
     if (data.original_topology) await loadMeshData(data.original_topology);
     if (data.equivalent_topology) await loadMeshData(data.equivalent_topology);
+
+    // Sync workflow from session state
+    syncWorkflowFromSession(data);
 
     // Restore chat message for topology summaries
     if (data.original_topology || data.equivalent_topology) {
@@ -1158,9 +1657,10 @@ function newSession() {
   if (typeof checkSimReady === 'function') checkSimReady();
   // Switch back to topo tab and show chat
   switchCanvasTab('topo');
-  var rightPanel = document.querySelector('.panel-right');
-  if (rightPanel) rightPanel.style.display = '';
+  var chatPanel = document.querySelector('.chat-panel');
+  if (chatPanel) chatPanel.style.display = '';
   _resultsRendered = false;
+  initWorkflow();
   ensureSession();
 }
 
@@ -1300,6 +1800,8 @@ async function handleSSEEvent(type, data) {
         ? '✅ 护栏校验通过'
         : '❌ ' + errs.join('; ');
       addMessage(passed ? 'system' : 'error', guardMsg + (warns.length ? '\n⚠️ ' + warns.join('; ') : ''));
+      if (passed) updateWorkflowNode('guard', 'completed');
+      else updateWorkflowNode('guard', 'failed');
       break;
     case 'mesh_json':
       setStatus('generated');
@@ -1307,6 +1809,10 @@ async function handleSSEEvent(type, data) {
       const topoSummary = `📦 ${topoData.name || ''}\n节点数: ${topoData.total_nodes || 0}  |  DP×TP×PP = ${topoData.dp_size || 0}×${topoData.tp_size || 0}×${topoData.pp_size || 0}\n通信域: dp=${topoData.comm_dp_groups ?? (topoData.communication_groups?.dp || []).length}  tp=${topoData.comm_tp_groups ?? (topoData.communication_groups?.tp || []).length}  pp=${topoData.comm_pp_groups ?? (topoData.communication_groups?.pp || []).length}`;
       addMessage('mesh', topoSummary, 'mesh');
       _pendingMeshList.push(topoData);
+      // if topology node is active (waiting confirm), keep it active; otherwise auto-complete
+      if (workflowNodeStates['topology'] !== 'completed') {
+        updateWorkflowNode('topology', 'completed');
+      }
       break;
     case 'model_json':
       setStatus('generated');
@@ -1325,6 +1831,10 @@ async function handleSSEEvent(type, data) {
         'd_model=' + (cfg.d_model || '—') + '  heads=' + (cfg.num_heads || '—') + '  d_ffn=' + (cfg.d_ffn || '—') + '  params=' + (comp.total_params_billions || '—');
       addMessage('agent', modelSummary, 'model');
       _pendingModelList.push(modelPayload);
+      // auto-complete model node if not already completed
+      if (workflowNodeStates['model'] !== 'completed') {
+        updateWorkflowNode('model', 'completed');
+      }
       break;
     case 'message':
       setStatus('responding');
@@ -1343,6 +1853,8 @@ async function handleSSEEvent(type, data) {
       if ((simPayload.original || simPayload.equivalent) && (meshOriginal || meshEquivalent)) {
         meshRebuild();
       }
+      updateWorkflowNode('simulation', 'completed');
+      updateWorkflowNode('comparison', 'active');
       break;
     case 'done':
       setStatus('idle');
@@ -1358,15 +1870,53 @@ async function handleSSEEvent(type, data) {
       if (meshOriginal || meshEquivalent || modelOriginal || modelEquivalent) {
         canvasRebuild();
       }
+      // sync workflow from loaded data
+      syncWorkflowFromLoadedData();
+      break;
+    case 'workflow_state':
+      if (data.data) syncWorkflowFromSession(data.data);
       break;
     case 'error':
       setStatus('error');
       addMessage('error', data.message || data.data?.error || '未知错误');
+      // mark the current active (non-completed) requiresConfirm node as failed
+      WORKFLOW_STEPS.forEach(function(s) {
+        if (!s.disabled && workflowNodeStates[s.id] === 'active') {
+          updateWorkflowNode(s.id, 'failed');
+        }
+      });
       break;
   }
 }
 
 // ── D3 Mesh Topology Rendering — see static/topo-renderer.js ──
+
+function syncWorkflowFromLoadedData() {
+  var hasTopology = !!(meshOriginal || meshEquivalent);
+  var hasModel = !!(modelOriginal || modelEquivalent);
+  var hasSimulation = !!((typeof meshActualOrig !== 'undefined' && Object.keys(meshActualOrig || {}).length) ||
+                         (typeof meshActualEq !== 'undefined' && Object.keys(meshActualEq || {}).length));
+
+  if (hasSimulation && hasModel && hasTopology) {
+    updateWorkflowNode('params', 'completed');
+    updateWorkflowNode('guard', 'completed');
+    updateWorkflowNode('topology', 'completed');
+    updateWorkflowNode('model', 'completed');
+    updateWorkflowNode('simulation', 'completed');
+    updateWorkflowNode('comparison', 'active');
+  } else if (hasModel && hasTopology) {
+    updateWorkflowNode('params', 'completed');
+    updateWorkflowNode('guard', 'completed');
+    updateWorkflowNode('topology', 'completed');
+    updateWorkflowNode('model', 'completed');
+    updateWorkflowNode('simulation', 'active');
+  } else if (hasTopology) {
+    updateWorkflowNode('params', 'completed');
+    updateWorkflowNode('guard', 'completed');
+    updateWorkflowNode('topology', 'completed');
+    updateWorkflowNode('model', 'active');
+  }
+}
 
 function switchCanvasTab(tabName) {
   document.querySelectorAll('.canvas-tab').forEach(function(t) {
@@ -1376,8 +1926,8 @@ function switchCanvasTab(tabName) {
     p.classList.toggle('active', p.id === 'tab-panel-' + tabName);
   });
   // Toggle right chat panel: visible on topo tab, hidden on results tab
-  var rightPanel = document.querySelector('.panel-right');
-  if (rightPanel) rightPanel.style.display = tabName === 'results' ? 'none' : '';
+  var chatPanel = document.querySelector('.chat-panel');
+  if (chatPanel) chatPanel.style.display = tabName === 'results' ? 'none' : '';
   if (tabName === 'results') renderResultsData();
 }
 
@@ -1834,6 +2384,7 @@ renderHistory();
     return;
   }
   await ensureSession();
+  initWorkflow();
   document.getElementById('chat-input').focus();
 })();
 </script>
