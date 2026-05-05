@@ -56,6 +56,7 @@ def create_app() -> Flask:
                 "delete_session": "DELETE /api/session/<id>",
                 "get_topology": "GET /api/session/<id>/topology",
                 "get_simulation": "GET /api/session/<id>/simulation",
+                "run_simulation": "POST /api/session/<id>/run-simulation",
                 "simulation_ws": "WS /ws/simulation/<session_id>",
             },
             "sse_event_types": [

@@ -1842,15 +1842,62 @@ function checkSimReady() {
   btn.disabled = !ready;
 }
 
-function startSimulation() {
+async function startSimulation() {
   var btn = document.getElementById('btn-start-sim');
   if (!btn || btn.disabled) return;
-  var parts = [];
-  if (meshOriginal && modelOriginal) parts.push('原始组网');
-  if (meshEquivalent && modelEquivalent) parts.push('等效组网');
-  var msg = parts.join('和') + ' 数据已就绪，请开始仿真';
-  document.getElementById('chat-input').value = msg;
-  sendMessage();
+
+  btn.disabled = true;
+  btn.textContent = '仿真中...';
+  setStatus('thinking');
+  updateWorkflowNode('simulation', 'active');
+
+  try {
+    var resp = await fetch(API + '/session/' + sessionId + '/run-simulation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!resp.ok) {
+      addMessage('error', '仿真请求失败: HTTP ' + resp.status);
+      return;
+    }
+
+    var data = await resp.json();
+    var results = data.results || {};
+
+    // Populate per-card metric maps (used by meshRebuild)
+    if (results.original && results.original.cards) {
+      meshActualOrig = {};
+      results.original.cards.forEach(function (c) { meshActualOrig[c.global_rank] = c; });
+    }
+    if (results.equivalent && results.equivalent.cards) {
+      meshActualEq = {};
+      results.equivalent.cards.forEach(function (c) { meshActualEq[c.global_rank] = c; });
+    }
+
+    // Re-render topology with simulation data
+    if (meshOriginal || meshEquivalent) {
+      meshRebuild();
+    }
+
+    updateWorkflowNode('simulation', 'completed');
+    if (results.comparison) {
+      updateWorkflowNode('comparison', 'completed');
+    } else {
+      updateWorkflowNode('comparison', 'active');
+    }
+
+    setStatus('idle');
+    btn.textContent = '开始仿真';
+    btn.disabled = false;
+    addMessage('agent', '仿真完成。' + (results.comparison ? results.comparison.details.conclusion : ''));
+  } catch (e) {
+    setStatus('error');
+    addMessage('error', '仿真异常: ' + e.message);
+    updateWorkflowNode('simulation', 'failed');
+    btn.textContent = '开始仿真';
+    btn.disabled = false;
+  }
 }
 
 // ═══════════════════════════════════════════
