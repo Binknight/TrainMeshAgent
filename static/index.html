@@ -472,7 +472,7 @@ body {
 }
 .wf-node-rect.pending {
   fill: var(--bg-surface);
-  stroke: var(--border);
+  stroke: #8a94a1;
   stroke-dasharray: 4 3;
 }
 .wf-node-rect.active {
@@ -1265,12 +1265,6 @@ body {
         <span class="session-id" id="session-id-display">—</span>
       </div>
 
-      <div class="quick-actions" id="quick-actions">
-        <span class="quick-chip" onclick="sendQuick('请帮我生成原始组网: 设备类型A3, DP=8, TP=4, PP=2')">A3 DP8 TP4 PP2</span>
-        <span class="quick-chip" onclick="sendQuick('请帮我生成最小等效组网: 设备类型A5, DP=4, TP=4, PP=4')">A5 DP4 TP4 PP4</span>
-        <span class="quick-chip" onclick="sendQuick('请对比分析原始组网和最小等效组网的仿真结果')">对比分析</span>
-      </div>
-
       <div class="chat-messages" id="chat-messages">
         <div class="msg-group fade-in">
           <span class="msg-label agent">TrainMesh Agent</span>
@@ -1280,6 +1274,9 @@ body {
         <div class="msg-group fade-in">
           <span class="msg-label system">建议</span>
           <div class="msg-bubble system">试试下方的快捷操作，或直接输入组网参数（设备类型 + DP/TP/PP）</div>
+        </div>
+        <div class="quick-actions" id="quick-actions">
+          <span class="quick-chip" onclick="sendQuick('请帮我生成原始组网: 设备类型A3, DP=8, TP=16, PP=8 | 等效组网: 设备类型A3, DP=2, TP=16, PP=3')">A3 DP8/TP16/PP8 → A3 DP2/TP16/PP3</span>
         </div>
       </div>
 
