@@ -355,6 +355,20 @@ function _positionTooltip(event, tip) {
   tip.style.top = y + 'px';
 }
 
+function _positionTooltipAtElement(tip, el) {
+  var box = el.getBoundingClientRect();
+  var x = box.right + 8;
+  var y = box.top;
+  var tw = tip.offsetWidth;
+  var th = tip.offsetHeight;
+  if (x + tw > window.innerWidth - 8) x = box.left - tw - 8;
+  if (y + th > window.innerHeight - 8) y = window.innerHeight - th - 8;
+  if (x < 8) x = 8;
+  if (y < 8) y = 8;
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
+
 function moveTooltip(event) {
   var tip = document.getElementById('rank-tooltip');
   if (!tip.classList.contains('pinned')) {
@@ -364,12 +378,24 @@ function moveTooltip(event) {
 
 function hideTooltip() {
   var tip = document.getElementById('rank-tooltip');
+  var tipMapped = document.getElementById('rank-tooltip-mapped');
   if (!tip.classList.contains('pinned')) {
     tip.classList.remove('visible');
     tip.innerHTML = '';
+    if (tipMapped) { tipMapped.classList.remove('visible'); tipMapped.innerHTML = ''; }
     d3.selectAll('.tp-rect.pinned').classed('pinned', false);
     meshPinnedRank = null;
   }
+}
+
+function _clearBothTooltips() {
+  var tip = document.getElementById('rank-tooltip');
+  var tipMapped = document.getElementById('rank-tooltip-mapped');
+  tip.classList.remove('visible', 'pinned');
+  tip.innerHTML = '';
+  if (tipMapped) { tipMapped.classList.remove('visible', 'pinned'); tipMapped.innerHTML = ''; }
+  d3.selectAll('.tp-rect.pinned').classed('pinned', false);
+  meshPinnedRank = null;
 }
 
 // ── Fetch simulation data from REST ──
@@ -635,11 +661,10 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
 
           d3.selectAll('.tp-rect.pinned').classed('pinned', false);
           var tip = document.getElementById('rank-tooltip');
+          var tipMapped = document.getElementById('rank-tooltip-mapped');
 
           if (alreadyPinned) {
-            hideTooltip();
-            tip.classList.remove('pinned');
-            meshPinnedRank = null;
+            _clearBothTooltips();
           } else {
             d3.select(this).classed('pinned', true);
             if (mappedRank != null) {
@@ -651,13 +676,31 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
               var eqRank = side === 'orig' ? mappedRank : globalRank;
               var origMetrics = _getMetrics(origRank, true);
               var eqMetrics = _getMetrics(eqRank, false);
-              tip.innerHTML = _buildLinkedTooltipHTML(origRank, origMetrics, eqRank, eqMetrics);
+
+              // Main tooltip: the side the user clicked on
+              var clickedIsOrig = side === 'orig';
+              tip.innerHTML = _buildTooltipHTML(clickedIsOrig ? origRank : eqRank, clickedIsOrig ? origMetrics : eqMetrics, clickedIsOrig);
+              tip.classList.add('visible', 'pinned');
+              _positionTooltip(event, tip);
+
+              // Mapped tooltip: the other side, positioned near its rank rect
+              var otherRank = clickedIsOrig ? eqRank : origRank;
+              var otherIsOrig = !clickedIsOrig;
+              var otherMetrics = _getMetrics(otherRank, otherIsOrig);
+              tipMapped.innerHTML = _buildTooltipHTML(otherRank, otherMetrics, otherIsOrig);
+              tipMapped.classList.add('visible', 'pinned');
+              var mappedRect = document.querySelector('.tp-rect[data-rank="' + mappedRank + '"][data-side="' + otherSide + '"]');
+              if (mappedRect) {
+                _positionTooltipAtElement(tipMapped, mappedRect);
+              } else {
+                _positionTooltip(event, tipMapped);
+              }
             } else {
               var metrics = _getMetrics(globalRank, isOrig);
               tip.innerHTML = _buildTooltipHTML(globalRank, metrics, isOrig);
+              tip.classList.add('visible', 'pinned');
+              _positionTooltip(event, tip);
             }
-            tip.classList.add('visible', 'pinned');
-            _positionTooltip(event, tip);
             meshPinnedRank = { side: side, globalRank: globalRank, mappedRank: mappedRank };
           }
         });
@@ -767,6 +810,8 @@ function meshRebuild() {
   var tip = document.getElementById('rank-tooltip');
   tip.classList.remove('visible', 'pinned');
   tip.innerHTML = '';
+  var tipMapped = document.getElementById('rank-tooltip-mapped');
+  if (tipMapped) { tipMapped.classList.remove('visible', 'pinned'); tipMapped.innerHTML = ''; }
   meshPinnedRank = null;
   meshUpdateSize();
 
@@ -843,6 +888,8 @@ function meshRebuild() {
 function canvasRebuild() {
   var tip = document.getElementById('rank-tooltip');
   if (tip) { tip.classList.remove('visible', 'pinned'); tip.innerHTML = ''; }
+  var tipMapped = document.getElementById('rank-tooltip-mapped');
+  if (tipMapped) { tipMapped.classList.remove('visible', 'pinned'); tipMapped.innerHTML = ''; }
   meshPinnedRank = null;
   meshUpdateSize();
 
@@ -1160,11 +1207,7 @@ window.addEventListener("resize", function () {
 
 document.getElementById('canvas-svg-wrap').addEventListener('click', function (e) {
   if (e.target.tagName === 'svg' || e.target.id === 'canvas-svg-wrap') {
-    var tip = document.getElementById('rank-tooltip');
-    tip.classList.remove('visible', 'pinned');
-    tip.innerHTML = '';
-    d3.selectAll('.tp-rect.pinned').classed('pinned', false);
-    meshPinnedRank = null;
+    _clearBothTooltips();
   }
 });
 
@@ -1172,11 +1215,7 @@ document.getElementById('canvas-svg-wrap').addEventListener('click', function (e
 
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape' && meshPinnedRank) {
-    var tip = document.getElementById('rank-tooltip');
-    tip.classList.remove('visible', 'pinned');
-    tip.innerHTML = '';
-    d3.selectAll('.tp-rect.pinned').classed('pinned', false);
-    meshPinnedRank = null;
+    _clearBothTooltips();
   }
 });
 
