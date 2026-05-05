@@ -422,12 +422,23 @@ body {
 
 /* ── Workflow Panel ── */
 .workflow-panel {
-  height: 360px;
+  height: 460px;
+  min-height: 200px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--border);
   position: relative;
+}
+.wf-resize-handle {
+  height: 6px;
+  background: var(--border);
+  cursor: ns-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.wf-resize-handle:hover,
+.wf-resize-handle.active {
+  background: var(--cyan);
 }
 .workflow-panel .panel-header {
   justify-content: flex-start;
@@ -1245,6 +1256,8 @@ body {
       </div>
     </div>
 
+    <div class="wf-resize-handle" id="wf-resize-handle"></div>
+
     <!-- ── Chat Panel (Bottom) ── -->
     <div class="chat-panel">
       <div class="panel-header">
@@ -1362,8 +1375,10 @@ function renderWorkflow() {
   if (!container) return;
   var W = container.clientWidth - 16;
   if (W < 200) W = 360;
-  var nodeH = 28, gapH = 8, topPad = 10, leftPad = 20;
-  var nodeW = W - leftPad - 10;
+  var nodeH = 32, gapH = 24, topPad = 10;
+  var maxNodeW = Math.min(280, W - 40);
+  var nodeW = maxNodeW;
+  var offsetX = (W - nodeW) / 2;
   var allVisible = WORKFLOW_STEPS;
   var totalH = allVisible.length * (nodeH + gapH) + topPad * 2;
   var svgH = Math.max(totalH, container.clientHeight - 8);
@@ -1372,7 +1387,7 @@ function renderWorkflow() {
   var svg = d3.select(container).append('svg')
     .attr('width', W).attr('height', svgH);
 
-  var g = svg.append('g').attr('transform', 'translate(' + leftPad + ',' + topPad + ')');
+  var g = svg.append('g').attr('transform', 'translate(' + offsetX + ',' + topPad + ')');
 
   allVisible.forEach(function(step, i) {
     var y = i * (nodeH + gapH);
@@ -1413,9 +1428,10 @@ function renderWorkflow() {
     var labelText = step.icon + ' ' + step.label;
     if (step.disabled) labelText += ' (暂未开放)';
     g.append('text')
-      .attr('x', 28).attr('y', y + nodeH/2 + 4)
+      .attr('x', nodeW/2).attr('y', y + nodeH/2 + 5)
+      .attr('text-anchor', 'middle')
       .attr('fill', state === 'disabled' ? 'var(--text-muted)' : 'var(--text-primary)')
-      .attr('font-size', '11px')
+      .attr('font-size', '13px')
       .attr('font-family', 'var(--font-sans)')
       .attr('font-weight', state === 'active' ? '600' : '400')
       .text(labelText);
@@ -1612,6 +1628,52 @@ function submitWorkflowParams() {
     ', S=' + equivS + ', B=' + equivB;
   sendMessage(msg);
 }
+
+// ── Workflow-Chat Resize Handle ──
+(function() {
+  var handle = document.getElementById('wf-resize-handle');
+  var workflow = document.querySelector('.workflow-panel');
+  var rightPanel = document.querySelector('.panel-right');
+  if (!handle || !workflow || !rightPanel) return;
+
+  var startY = 0, startH = 0;
+  var minH = 200;
+  var maxH = function() {
+    var rightRect = rightPanel.getBoundingClientRect();
+    // allow workflow to take up to right panel height minus chat header (40px) minus handle (6px)
+    return rightRect.height - 46;
+  };
+
+  handle.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    startY = e.clientY;
+    startH = workflow.offsetHeight;
+    handle.classList.add('active');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(ev) {
+      var dy = ev.clientY - startY;
+      var newH = startH + dy;
+      if (newH < minH) newH = minH;
+      var max = maxH();
+      if (newH > max) newH = max;
+      workflow.style.height = newH + 'px';
+      renderWorkflow();
+    }
+
+    function onUp() {
+      handle.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+})();
 
 // ── Mock history ──
 const mockHistory = [
