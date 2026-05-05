@@ -285,6 +285,20 @@ _SSE_EVENT_MAP = {
 }
 
 
+def _build_workflow_state(session: SessionState) -> dict:
+    """Build a lightweight workflow state dict for the frontend workflow panel."""
+    return {
+        "step": session.step,
+        "original_topology": session.original_topology is not None,
+        "equivalent_topology": session.equivalent_topology is not None,
+        "original_training_model": session.original_training_model is not None,
+        "equivalent_training_model": session.equivalent_training_model is not None,
+        "original_simulation": session.original_simulation is not None,
+        "equivalent_simulation": session.equivalent_simulation is not None,
+        "comparison_report": session.comparison_report is not None,
+    }
+
+
 async def agent_stream(
     session: SessionState,
     user_message: str,
@@ -437,6 +451,13 @@ async def agent_stream(
         sim_payload["equivalent"] = session.equivalent_simulation.model_dump()
     if sim_payload:
         yield AgentEvent(event_type="sim_data", data=sim_payload, message="仿真数据")
+
+    # Push workflow_state so frontend can sync the flow diagram
+    yield AgentEvent(
+        event_type="workflow_state",
+        message="",
+        data=_build_workflow_state(session),
+    )
 
     session.history.append({"role": "user", "content": user_message})
     yield AgentEvent(event_type="done", message="处理完成")
