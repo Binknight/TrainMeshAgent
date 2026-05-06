@@ -165,8 +165,23 @@ class MeshProfilerSkill(BaseSkill):
 
         if not cards:
             cfg = _MODEL_CONFIG[device_type]
-            L = int(arguments.get("num_layers", cfg["num_layers"]))
-            H = int(arguments.get("hidden_dim", cfg["hidden_dim"]))
+
+            # Try to get L/H from training model in session as fallback
+            training_model = None
+            session = getattr(context, "session", None)
+            if session:
+                name = arguments.get("topology_name", "")
+                if "原始" in name:
+                    training_model = getattr(session, "original_training_model", None)
+                elif "等效" in name:
+                    training_model = getattr(session, "equivalent_training_model", None)
+
+            L = int(arguments.get("num_layers")
+                    or (training_model.config.num_layers if training_model else None)
+                    or cfg["num_layers"])
+            H = int(arguments.get("hidden_dim")
+                    or (training_model.config.d_model if training_model else None)
+                    or cfg["hidden_dim"])
             S = int(arguments.get("seq_len", _SEQ_LEN))
             B = int(arguments.get("total_batch", _TOTAL_BATCH))
             a = float(arguments.get("quant_coeff", _QUANT_COEFF))
