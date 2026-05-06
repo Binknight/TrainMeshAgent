@@ -1222,13 +1222,13 @@ body {
               </div>
               <div class="workflow-param-row">
                 <label>PP</label>
-                <input id="wf-orig-pp" type="number" value="8" min="1" max="128">
+                <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()">
               </div>
 
               <div class="workflow-param-section">原始模型参数</div>
               <div class="workflow-param-row">
                 <label>L</label>
-                <input id="wf-orig-model-l" type="number" value="64" min="1" max="512">
+                <input id="wf-orig-model-l" type="number" value="64" min="1" max="512" onchange="updateEquivalentModelL()">
               </div>
               <div class="workflow-param-row">
                 <label>H</label>
@@ -1629,11 +1629,23 @@ function onEquivDeviceChange() {
   syncTP('wf-equiv-device', 'wf-equiv-tp');
 }
 
+function updateEquivalentModelL() {
+  var origL = parseInt(document.getElementById('wf-orig-model-l').value) || 0;
+  var origPP = parseInt(document.getElementById('wf-orig-pp').value) || 1;
+  var equivLInput = document.getElementById('wf-equiv-model-l');
+  if (origPP <= 3) {
+    equivLInput.value = origL;
+  } else {
+    equivLInput.value = Math.floor(origL / origPP) * 3;
+  }
+}
+
 function openWorkflowParams() {
   var overlay = document.getElementById('workflow-param-overlay');
   if (overlay) overlay.style.display = 'flex';
   syncTP('wf-orig-device', 'wf-orig-tp');
   syncTP('wf-equiv-device', 'wf-equiv-tp');
+  updateEquivalentModelL();
 }
 
 function closeWorkflowParams() {

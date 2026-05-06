@@ -65,7 +65,7 @@ class TrainingModelGenSkill(BaseSkill):
     name = "training-model-gen-skill"
     description = (
         "根据模型配置参数(num_layers)生成结构化Transformer等效训练模型JSON，支持自定义d_model/num_heads/d_ffn等参数。"
-        "传入 is_equivalent=true + pp 时自动按公式缩放等效模型层数: actual_layers = num_layers / pp * 3。"
+        "传入 is_equivalent=true + pp 时自动按公式缩放等效模型层数: pp<=3 时保持不变; pp>3 时 actual_layers = num_layers / pp * 3。"
         "当用户需要生成训练模型、构建模型架构、定义Transformer结构时触发。"
     )
 
@@ -105,7 +105,7 @@ class TrainingModelGenSkill(BaseSkill):
                         },
                         "pp": {
                             "type": "integer",
-                            "description": "原始组网流水线并行度, 用于等效模型层数缩放: actual = num_layers / pp * 3",
+                            "description": "原始组网流水线并行度, 用于等效模型层数缩放。pp<=3 时等效层数等于原始层数; pp>3 时 actual = num_layers / pp * 3",
                         },
                         "is_equivalent": {
                             "type": "boolean",
@@ -158,7 +158,7 @@ class TrainingModelGenSkill(BaseSkill):
         is_equivalent = bool(arguments.get("is_equivalent", False))
         pp = int(arguments.get("pp", 1))
 
-        if is_equivalent and pp > 1:
+        if is_equivalent and pp > 3:
             num_layers = (num_layers_input // pp) * 3
         else:
             num_layers = num_layers_input
