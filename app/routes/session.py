@@ -271,8 +271,8 @@ def run_simulation(session_id: str):
         session.comparison_report = report
         session.step = "completed"
         results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
-
-    session.step = "simulating"
+    else:
+        session.step = "simulating"
     return jsonify({
         "session_id": session_id,
         "results": results,
