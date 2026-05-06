@@ -172,10 +172,16 @@ function _mapRankToOtherSide(side, globalRank) {
 
   var dstTpIdx = Math.min(tpIdx, dstTp - 1);
 
-  // Map result into the target side's currently viewed DP (always visible)
-  var dstDp = side === 'orig' ? meshEqDp : meshOrigDp;
+  // Map result using round-robin DP: source DP → target DP via modulo
+  var srcDp = Math.floor(globalRank / srcRanksPerDp);
+  var dstDp = srcDp % dstTopo.dp;
   var dstRanksPerDp = dstTp * dstPp;
   return dstDp * dstRanksPerDp + dstPpIdx * dstTp + dstTpIdx;
+}
+
+function _getRoundRobinDp(srcDp, dstDpCount) {
+  if (!dstDpCount || dstDpCount <= 0) return 0;
+  return srcDp % dstDpCount;
 }
 
 function _meshCalcDims(tp, pp) {
@@ -796,11 +802,17 @@ function meshSwitchDp(dpIndex) {
 
 function meshSwitchDpOrig(dpIndex) {
   meshOrigDp = dpIndex;
+  if (meshEquivalent && meshEquivalent.dp > 0) {
+    meshEqDp = _getRoundRobinDp(dpIndex, meshEquivalent.dp);
+  }
   meshRebuild();
 }
 
 function meshSwitchDpEq(dpIndex) {
   meshEqDp = dpIndex;
+  if (meshOriginal && meshOriginal.dp > 0) {
+    meshOrigDp = _getRoundRobinDp(dpIndex, meshOriginal.dp);
+  }
   meshRebuild();
 }
 
