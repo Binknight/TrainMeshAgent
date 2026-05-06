@@ -871,6 +871,53 @@ body {
 }
 #rank-tooltip.visible, #rank-tooltip-mapped.visible { opacity: 1; }
 #rank-tooltip.pinned, #rank-tooltip-mapped.pinned { pointer-events: auto; }
+
+/* ── Tooltip Detail Panel (right-side expansion) ── */
+#rank-tooltip-detail, #rank-tooltip-detail-mapped {
+  position: fixed; z-index: 2001; pointer-events: auto;
+  background: var(--bg-panel); border: 1px solid var(--border-active);
+  border-left: 3px solid var(--cyan);
+  border-radius: 10px; padding: 0; width: 300px; max-width: 340px;
+  max-height: 420px; overflow-y: auto;
+  font-family: var(--font-mono); font-size: 11px;
+  box-shadow: 0 6px 28px rgba(0,0,0,0.55);
+  opacity: 0; transition: opacity 0.15s; line-height: 1.4;
+  display: none;
+}
+#rank-tooltip-detail.visible, #rank-tooltip-detail-mapped.visible {
+  display: block; opacity: 1;
+}
+.tooltip-detail-header {
+  display: flex; align-items: center; padding: 8px 12px;
+  background: var(--bg-surface); border-bottom: 1px solid var(--border);
+  border-radius: 0 10px 0 0; flex-shrink: 0;
+}
+.tooltip-detail-title {
+  font-weight: 600; font-size: 11px; color: var(--text-primary);
+}
+.tooltip-detail-close {
+  margin-left: auto; background: none; border: none; color: var(--text-muted);
+  font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+  transition: all var(--transition); line-height: 1;
+}
+.tooltip-detail-close:hover { color: var(--red); background: rgba(242,109,120,0.1); }
+.tooltip-detail-body { padding: 8px 12px 10px; }
+.tooltip-detail-table { width: 100%; border-collapse: collapse; }
+.tooltip-detail-table th {
+  text-align: center; font-size: 10px; color: var(--text-muted);
+  padding: 5px 8px; border-bottom: 1px solid var(--border); font-weight: 500;
+}
+.tooltip-detail-table td {
+  text-align: center; padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 11px; color: var(--text-primary);
+}
+.tooltip-detail-table td.tooltip-detail-label {
+  text-align: left; color: var(--text-secondary); font-size: 10px;
+}
+.tooltip-detail-table tr.total-row td {
+  font-weight: 600; border-top: 1px solid var(--border); color: var(--teal);
+}
+
 .tooltip-header {
   padding: 8px 12px; border-bottom: 1px solid var(--border);
   font-weight: 600; font-size: 12px; color: var(--text-primary);
@@ -1082,6 +1129,8 @@ body {
       <div class="canvas-svg-wrap" id="canvas-svg-wrap">
         <div id="rank-tooltip"></div>
         <div id="rank-tooltip-mapped"></div>
+        <div id="rank-tooltip-detail"></div>
+        <div id="rank-tooltip-detail-mapped"></div>
         <div class="canvas-section" id="canvas-section" style="display:none"></div>
         <div class="canvas-placeholder" id="canvas-placeholder">
           <svg width="120" height="100" viewBox="0 0 120 100"><rect width="120" height="100" rx="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/><text x="60" y="48" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="11" opacity="0.6">Canvas</text><text x="60" y="66" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="9" opacity="0.35">生成组网后自动渲染</text></svg>

@@ -294,7 +294,7 @@ function _buildCompareRow(label, unit, estimate, actual, key, fmt, globalRank, i
     else if (key === 'tp_comm_gb_per_micro') linkType = 'tp-comm';
     else if (key === 'pp_comm_mb_per_micro') linkType = 'pp-comm';
     else if (key === 'dp_comm_gb_per_step') linkType = 'dp-comm';
-    linkHtml = '<a class="metric-link" href="javascript:void(0)" onclick="event.stopPropagation();openMetricDetail(' + globalRank + ',' + (isOrig ? 'true' : 'false') + ',\'' + linkType + '\')">查看</a>';
+    linkHtml = '<a class="metric-link" href="javascript:void(0)" onclick="event.stopPropagation();toggleTooltipDetail(' + globalRank + ',' + (isOrig ? 'true' : 'false') + ',\'' + linkType + '\')">查看</a>';
   }
 
   return '<tr><td class="metric-label">' + label + '</td>' +
@@ -394,6 +394,7 @@ function _clearBothTooltips() {
   tip.classList.remove('visible', 'pinned');
   tip.innerHTML = '';
   if (tipMapped) { tipMapped.classList.remove('visible', 'pinned'); tipMapped.innerHTML = ''; }
+  _closeDetailPanels();
   d3.selectAll('.tp-rect.pinned').classed('pinned', false);
   meshPinnedRank = null;
 }
@@ -812,6 +813,7 @@ function meshRebuild() {
   tip.innerHTML = '';
   var tipMapped = document.getElementById('rank-tooltip-mapped');
   if (tipMapped) { tipMapped.classList.remove('visible', 'pinned'); tipMapped.innerHTML = ''; }
+  _closeDetailPanels();
   meshPinnedRank = null;
   meshUpdateSize();
 
@@ -890,6 +892,7 @@ function canvasRebuild() {
   if (tip) { tip.classList.remove('visible', 'pinned'); tip.innerHTML = ''; }
   var tipMapped = document.getElementById('rank-tooltip-mapped');
   if (tipMapped) { tipMapped.classList.remove('visible', 'pinned'); tipMapped.innerHTML = ''; }
+  _closeDetailPanels();
   meshPinnedRank = null;
   meshUpdateSize();
 
@@ -1186,8 +1189,8 @@ window.meshSwitchDp = meshSwitchDp;
 window.meshSwitchDpOrig = meshSwitchDpOrig;
 window.meshSwitchDpEq = meshSwitchDpEq;
 window.fetchSimulationData = fetchSimulationData;
-window.openMetricDetail = openMetricDetail;
-window.closeMetricDetailPopup = closeMetricDetailPopup;
+window.toggleTooltipDetail = toggleTooltipDetail;
+window._closeDetailPanels = _closeDetailPanels;
 window.loadModelData = loadModelData;
 window.modelRebuild = modelRebuild;
 
@@ -1211,60 +1214,106 @@ document.getElementById('canvas-svg-wrap').addEventListener('click', function (e
   }
 });
 
-// ── Escape key dismisses pinned tooltip ──
+// ── Escape key dismisses detail panels first, then pinned tooltip ──
 
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape' && meshPinnedRank) {
-    _clearBothTooltips();
+  if (e.key === 'Escape') {
+    if (tooltipDetailState) {
+      _closeDetailPanels();
+    } else if (meshPinnedRank) {
+      _clearBothTooltips();
+    }
   }
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// Metric Detail Popup (HBM, TP/PP/DP Comm breakdown)
+// Metric Detail — inline panel attached to tooltip (replaces modal)
 // ═══════════════════════════════════════════════════════════════════
 
-var metricDetailData = null;
-var metricDetailType = '';
+var tooltipDetailState = null; // { metricType, origRank, eqRank }
 
 function _metricTypeLabel(type) {
   var map = { 'hbm': 'HBM 占用详情', 'tp-comm': 'TP通信详情', 'pp-comm': 'PP通信详情', 'dp-comm': 'DP通信详情' };
   return map[type] || '指标详情';
 }
 
-async function openMetricDetail(globalRank, isOrig, metricType) {
+async function toggleTooltipDetail(globalRank, isOrig, metricType) {
   if (metricType === 'flops') return;
-  var side = isOrig ? 'original' : 'equivalent';
+
+  // If same metric type already open, close it (toggle off)
+  if (tooltipDetailState && tooltipDetailState.metricType === metricType) {
+    _closeDetailPanels();
+    return;
+  }
+
+  _closeDetailPanels();
+
+  var pinned = meshPinnedRank;
+  var hasLinked = pinned && pinned.mappedRank != null;
+
+  // Determine ranks for both sides
+  var origRank = hasLinked ? (pinned.side === 'orig' ? pinned.globalRank : pinned.mappedRank) : (isOrig ? globalRank : null);
+  var eqRank = hasLinked ? (pinned.side === 'orig' ? pinned.mappedRank : pinned.globalRank) : (isOrig ? null : globalRank);
+
+  // Fetch both sides in parallel
+  var promises = [];
+  promises.push(origRank != null
+    ? fetch(API + '/session/' + sessionId + '/simulation/original/' + origRank + '/' + metricType + '-detail').then(function(r) { return r.ok ? r.json() : null; })
+    : Promise.resolve(null));
+  promises.push(eqRank != null
+    ? fetch(API + '/session/' + sessionId + '/simulation/equivalent/' + eqRank + '/' + metricType + '-detail').then(function(r) { return r.ok ? r.json() : null; })
+    : Promise.resolve(null));
+
   try {
-    var resp = await fetch(API + '/session/' + sessionId + '/simulation/' + side + '/' + globalRank + '/' + metricType + '-detail');
-    if (!resp.ok) { alert('获取详情失败'); return; }
-    metricDetailData = await resp.json();
-    metricDetailType = metricType;
-    _showMetricDetailPopup(globalRank);
+    var results = await Promise.all(promises);
+    tooltipDetailState = { metricType: metricType, origRank: origRank, eqRank: eqRank };
+
+    var detail = document.getElementById('rank-tooltip-detail');
+    var detailMapped = document.getElementById('rank-tooltip-detail-mapped');
+    var tip = document.getElementById('rank-tooltip');
+    var tipMapped = document.getElementById('rank-tooltip-mapped');
+
+    if (hasLinked) {
+      var mainIsOrig = pinned.side === 'orig';
+      var mainRank = mainIsOrig ? origRank : eqRank;
+      var mainData = mainIsOrig ? results[0] : results[1];
+      var mappedRank = mainIsOrig ? eqRank : origRank;
+      var mappedData = mainIsOrig ? results[1] : results[0];
+
+      if (mainData) _showDetailPanel(detail, tip, mainRank, mainData, metricType);
+      if (mappedData) _showDetailPanel(detailMapped, tipMapped, mappedRank, mappedData, metricType);
+    } else {
+      if (origRank != null && results[0]) {
+        _showDetailPanel(detail, tip, origRank, results[0], metricType);
+      } else if (eqRank != null && results[1]) {
+        _showDetailPanel(detail, tip, eqRank, results[1], metricType);
+      }
+    }
   } catch (e) {
-    console.error('Fetch metric detail error:', e);
-    alert('获取详情异常: ' + e.message);
+    console.error('Fetch detail error:', e);
   }
 }
 
-function _showMetricDetailPopup(globalRank) {
-  var overlay = document.getElementById('metric-detail-overlay');
-  var title = document.getElementById('metric-detail-title');
-  var body = document.getElementById('metric-detail-body');
+function _showDetailPanel(panel, tooltip, globalRank, data, metricType) {
+  var html = '<div class="tooltip-detail-header">';
+  html += '<span class="tooltip-detail-title">Rank ' + globalRank + ' | ' + _metricTypeLabel(metricType) + '</span>';
+  html += '<button class="tooltip-detail-close" onclick="event.stopPropagation();_closeDetailPanels()">&times;</button>';
+  html += '</div><div class="tooltip-detail-body">';
 
-  title.textContent = 'Rank ' + globalRank + ' | ' + _metricTypeLabel(metricDetailType);
-
-  if (metricDetailType === 'hbm') {
-    _renderHbmDetail(body);
+  if (metricType === 'hbm') {
+    html += _renderHbmDetailHtml(data);
   } else {
-    _renderCommDetail(body);
+    html += _renderCommDetailHtml(data);
   }
 
-  overlay.style.display = 'flex';
+  html += '</div>';
+  panel.innerHTML = html;
+  panel.classList.add('visible');
+  _positionDetailPanel(panel, tooltip);
 }
 
-function _renderHbmDetail(container) {
-  var d = metricDetailData;
-  var html = '<table class="metric-detail-table">';
+function _renderHbmDetailHtml(d) {
+  var html = '<table class="tooltip-detail-table">';
   html += '<tr><th>参数</th><th>占用 (GB)</th><th>占比</th></tr>';
   var items = [
     { label: '权重', value: d.weights_gb },
@@ -1274,44 +1323,51 @@ function _renderHbmDetail(container) {
   ];
   var total = d.total_hbm_gb || 1;
   items.forEach(function(item) {
-    html += '<tr><td class="metric-detail-label">' + item.label + '</td><td>' + item.value.toFixed(2) + '</td><td>' + (item.value / total * 100).toFixed(1) + '%</td></tr>';
+    html += '<tr><td class="tooltip-detail-label">' + item.label + '</td><td>' + item.value.toFixed(2) + '</td><td>' + (item.value / total * 100).toFixed(1) + '%</td></tr>';
   });
-  html += '<tr class="total-row"><td class="metric-detail-label">总计</td><td>' + d.total_hbm_gb.toFixed(2) + '</td><td>100%</td></tr>';
+  html += '<tr class="total-row"><td class="tooltip-detail-label">总计</td><td>' + d.total_hbm_gb.toFixed(2) + '</td><td>100%</td></tr>';
   html += '</table>';
-  container.innerHTML = html;
+  return html;
 }
 
-function _renderCommDetail(container) {
-  var d = metricDetailData;
+function _renderCommDetailHtml(d) {
   var typeName = { 'tp': 'TP', 'pp': 'PP', 'dp': 'DP' }[d.comm_type] || d.comm_type.toUpperCase();
-  var html = '<table class="metric-detail-table">';
+  var html = '<table class="tooltip-detail-table">';
   html += '<tr><th>参数</th><th>值</th></tr>';
-  html += '<tr><td class="metric-detail-label">通信类型</td><td>' + typeName + ' 通信</td></tr>';
-  html += '<tr><td class="metric-detail-label">通信次数</td><td>' + d.comm_count + ' 次/step</td></tr>';
-  html += '<tr><td class="metric-detail-label">通信卡数</td><td>' + d.comm_cards + ' 张</td></tr>';
-  html += '<tr><td class="metric-detail-label">单次通信量</td><td>' + d.comm_size_per_time_gb.toFixed(4) + ' GB</td></tr>';
-  html += '<tr class="total-row"><td class="metric-detail-label">总通信量</td><td>' + d.total_comm_gb.toFixed(4) + ' GB</td></tr>';
+  html += '<tr><td class="tooltip-detail-label">通信类型</td><td>' + typeName + ' 通信</td></tr>';
+  html += '<tr><td class="tooltip-detail-label">通信次数</td><td>' + d.comm_count + ' 次/step</td></tr>';
+  html += '<tr><td class="tooltip-detail-label">通信卡数</td><td>' + d.comm_cards + ' 张</td></tr>';
+  html += '<tr><td class="tooltip-detail-label">单次通信量</td><td>' + d.comm_size_per_time_gb.toFixed(4) + ' GB</td></tr>';
+  html += '<tr class="total-row"><td class="tooltip-detail-label">总通信量</td><td>' + d.total_comm_gb.toFixed(4) + ' GB</td></tr>';
   html += '</table>';
-  container.innerHTML = html;
+  return html;
 }
 
-function closeMetricDetailPopup() {
-  document.getElementById('metric-detail-overlay').style.display = 'none';
-  metricDetailData = null;
-  metricDetailType = '';
+function _closeDetailPanels() {
+  var detail = document.getElementById('rank-tooltip-detail');
+  var detailMapped = document.getElementById('rank-tooltip-detail-mapped');
+  if (detail) { detail.classList.remove('visible'); detail.innerHTML = ''; }
+  if (detailMapped) { detailMapped.classList.remove('visible'); detailMapped.innerHTML = ''; }
+  tooltipDetailState = null;
 }
 
-// Close metric popup on overlay click
-document.getElementById('metric-detail-overlay').addEventListener('click', function(e) {
-  if (e.target === this) closeMetricDetailPopup();
-});
-
-// Close metric popup on Escape
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && metricDetailData) {
-    closeMetricDetailPopup();
+function _positionDetailPanel(panel, tooltip) {
+  var tipBox = tooltip.getBoundingClientRect();
+  var panelW = 300;
+  var x = tipBox.right + 6;
+  var y = tipBox.top;
+  if (x + panelW > window.innerWidth - 8) {
+    x = tipBox.left - panelW - 6;
   }
-});
+  if (x < 8) x = 8;
+  var maxH = 420;
+  if (y + maxH > window.innerHeight - 8) {
+    y = window.innerHeight - maxH - 8;
+  }
+  if (y < 8) y = 8;
+  panel.style.left = x + 'px';
+  panel.style.top = y + 'px';
+}
 
 // Model visualization — Transformer training model structure diagram
 // ═══════════════════════════════════════════════════════════════════
