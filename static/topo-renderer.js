@@ -17,7 +17,7 @@
 
 var _estimateFetchAbort = {};  // track abort controllers per side to cancel stale requests
 
-async function fetchEstimates(deviceType, totalNodes, dp, tp, pp, side, numLayers) {
+async function fetchEstimates(deviceType, totalNodes, dp, tp, pp, side, numLayers, hiddenDim) {
   // Cancel any in-flight request for this side
   if (_estimateFetchAbort[side]) {
     _estimateFetchAbort[side].abort();
@@ -33,6 +33,7 @@ async function fetchEstimates(deviceType, totalNodes, dp, tp, pp, side, numLayer
       dp: dp, tp: tp, pp: pp
     };
     if (numLayers != null) body.num_layers = numLayers;
+    if (hiddenDim != null) body.hidden_dim = hiddenDim;
 
     var resp = await fetch(API + '/session/estimate', {
       method: 'POST',
@@ -1172,8 +1173,14 @@ async function loadMeshData(topoData) {
   var existing = isOrig ? meshEstimateOrig : meshEstimateEq;
   if (Object.keys(existing).length === 0 || existing[0] == null) {
     try {
-      var numLayers = topoData.num_layers != null ? topoData.num_layers : (isOrig ? meshModelOrig : meshModelEq).num_layers;
-      var estimates = await fetchEstimates(deviceType, totalNodes, dp, tp, pp, side, numLayers);
+      var modelSide = isOrig ? modelOriginal : modelEquivalent;
+      var numLayers = topoData.num_layers != null ? topoData.num_layers
+        : ((isOrig ? meshModelOrig : meshModelEq).num_layers
+          || (modelSide && modelSide.config ? modelSide.config.num_layers : null));
+      var hiddenDim = topoData.hidden_dim != null ? topoData.hidden_dim
+        : ((isOrig ? meshModelOrig : meshModelEq).hidden_dim
+          || (modelSide && modelSide.config ? modelSide.config.d_model : null));
+      var estimates = await fetchEstimates(deviceType, totalNodes, dp, tp, pp, side, numLayers, hiddenDim);
       if (isOrig) {
         meshEstimateOrig = estimates;
       } else {
@@ -1408,10 +1415,36 @@ function loadModelData(modelData, role) {
   };
   if (role === 'original') {
     modelOriginal = entry;
+    if (modelData.config) {
+      meshModelOrig = { num_layers: modelData.config.num_layers || modelData.layers_count, hidden_dim: modelData.config.d_model };
+    }
+    // If mesh already loaded, re-fetch estimates with correct model params
+    if (meshOriginal) _refetchMeshEstimate('orig');
   } else {
     modelEquivalent = entry;
+    if (modelData.config) {
+      meshModelEq = { num_layers: modelData.config.num_layers || modelData.layers_count, hidden_dim: modelData.config.d_model };
+    }
+    if (meshEquivalent) _refetchMeshEstimate('eq');
   }
   if (typeof checkSimReady === 'function') checkSimReady();
+}
+
+async function _refetchMeshEstimate(side) {
+  var mesh = side === 'orig' ? meshOriginal : meshEquivalent;
+  var model = side === 'orig' ? meshModelOrig : meshModelEq;
+  if (!mesh || !model || model.num_layers == null) return;
+  try {
+    var estimates = await fetchEstimates(mesh.device_type, mesh.total_nodes, mesh.dp, mesh.tp, mesh.pp, side, model.num_layers, model.hidden_dim);
+    if (side === 'orig') {
+      meshEstimateOrig = estimates;
+    } else {
+      meshEstimateEq = estimates;
+    }
+    canvasRebuild();
+  } catch (e) {
+    console.warn('Estimate re-fetch failed for ' + side, e);
+  }
 }
 
 // Render one model horizontally — blocks left-to-right like mesh PP stages.

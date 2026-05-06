@@ -30,8 +30,8 @@ a = 1
 # (name, device_type, dp, tp, pp, overrides)
 # overrides can include "num_layers" and/or "hidden_dim"; omitted keys fall back to _MODEL_CONFIG
 topologies = [
-    ("Original", "A3", 8, 16, 8, {"hidden_dim": 6144, "num_layers": 128}),
-    ("Equivalent", "A3", 3, 16, 3, {"hidden_dim": 6144, "num_layers": 48}),
+    ("Original", "A3", 8, 16, 8, {"hidden_dim": 4096, "num_layers": 64}),
+    ("Equivalent", "A3", 2, 16, 3, {"hidden_dim": 4096, "num_layers": 24}),
 ]
 
 print(
