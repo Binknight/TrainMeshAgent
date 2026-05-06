@@ -296,6 +296,31 @@ body {
 }
 .results-wrap::-webkit-scrollbar { width: 4px; }
 .results-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.rank-switcher-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px; background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.rank-sw-label-text {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+}
+.rank-sw-value {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+  color: var(--teal);
+}
+.rank-sw-spacer { flex: 1; }
+.rank-sw-label {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  margin-left: 4px;
+}
+.rank-sw-select {
+  background: var(--bg-surface); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 2px 6px; cursor: pointer; outline: none;
+}
+.rank-sw-select:focus { border-color: var(--cyan); }
 
 .result-section {
   background: var(--bg-surface); border: 1px solid var(--border);
@@ -1142,6 +1167,24 @@ body {
     <!-- Tab: Results Data -->
     <div class="canvas-tab-panel" id="tab-panel-results">
       <div class="results-wrap" id="results-wrap">
+        <!-- Rank switcher -->
+        <div class="rank-switcher-bar" id="rank-switcher-bar">
+          <span class="rank-sw-label-text">当前 Rank:</span>
+          <span class="rank-sw-value" id="rank-sw-value">—</span>
+          <span class="rank-sw-spacer"></span>
+          <label class="rank-sw-label">TP:</label>
+          <select class="rank-sw-select" id="rank-sw-tp-select" onchange="jumpToTp(parseInt(this.value))"></select>
+          <label class="rank-sw-label">PP:</label>
+          <select class="rank-sw-select" id="rank-sw-pp-select" onchange="jumpToPp(parseInt(this.value))"></select>
+        </div>
+        <!-- Section 0: HBM Memory 统计 (最高优先级) -->
+        <div class="result-section" id="section-hbm-memory">
+          <div class="result-section-header">
+            <span class="result-section-title">HBM Memory 统计</span>
+            <span class="result-section-sub">Memory Usage Breakdown — 权重 · 梯度 · 优化器 · 激活 · 通信缓冲</span>
+          </div>
+          <div class="result-chart" id="chart-hbm-memory"></div>
+        </div>
         <!-- Section 1: 负载序列记录 -->
         <div class="result-section">
           <div class="result-section-header">
@@ -2115,7 +2158,77 @@ function switchCanvasTab(tabName) {
   // Hide simulation button on results tab
   var simBtn = document.getElementById('btn-start-sim');
   if (simBtn) simBtn.style.display = tabName === 'results' ? 'none' : '';
-  if (tabName === 'results') renderResultsData();
+  if (tabName === 'results') { renderResultsData(); updateRankSwitcher(); }
+}
+
+// ── Rank Switcher (Results page) ──
+
+function getPinnedTopo() {
+  if (!meshPinnedRank) return null;
+  return meshPinnedRank.side === 'orig' ? meshOriginal : meshEquivalent;
+}
+
+function updateRankSwitcher() {
+  var bar = document.getElementById('rank-switcher-bar');
+  if (!bar) return;
+  if (!meshPinnedRank) { bar.style.display = 'none'; return; }
+
+  var topo = getPinnedTopo();
+  if (!topo) { bar.style.display = 'none'; return; }
+
+  bar.style.display = '';
+  var gr = meshPinnedRank.globalRank;
+  var ranksPerDp = topo.tp * topo.pp;
+  var rankInDp = gr % ranksPerDp;
+  var ppIdx = Math.floor(rankInDp / topo.tp);
+  var tpIdx = rankInDp % topo.tp;
+  var sideLabel = meshPinnedRank.side === 'orig' ? '原始组网' : '最小等效组网';
+
+  var valEl = document.getElementById('rank-sw-value');
+  if (valEl) valEl.textContent = sideLabel + ' · Rank ' + gr + '  (TP' + tpIdx + ' / PP' + ppIdx + ')';
+
+  var tpSel = document.getElementById('rank-sw-tp-select');
+  if (tpSel) {
+    tpSel.innerHTML = '';
+    for (var t = 0; t < topo.tp; t++) {
+      tpSel.innerHTML += '<option value="' + t + '"' + (t === tpIdx ? ' selected' : '') + '>TP' + t + '</option>';
+    }
+  }
+
+  var ppSel = document.getElementById('rank-sw-pp-select');
+  if (ppSel) {
+    ppSel.innerHTML = '';
+    for (var p = 0; p < topo.pp; p++) {
+      ppSel.innerHTML += '<option value="' + p + '"' + (p === ppIdx ? ' selected' : '') + '>PP' + p + '</option>';
+    }
+  }
+}
+
+function jumpToTp(tpIdx) {
+  if (!meshPinnedRank) return;
+  var topo = getPinnedTopo();
+  if (!topo) return;
+  var ranksPerDp = topo.tp * topo.pp;
+  var dpIdx = Math.floor(meshPinnedRank.globalRank / ranksPerDp);
+  var ppIdx = Math.floor((meshPinnedRank.globalRank % ranksPerDp) / topo.tp);
+  setPinnedRank(dpIdx * ranksPerDp + ppIdx * topo.tp + tpIdx);
+}
+
+function jumpToPp(ppIdx) {
+  if (!meshPinnedRank) return;
+  var topo = getPinnedTopo();
+  if (!topo) return;
+  var ranksPerDp = topo.tp * topo.pp;
+  var dpIdx = Math.floor(meshPinnedRank.globalRank / ranksPerDp);
+  var tpIdx = (meshPinnedRank.globalRank % ranksPerDp) % topo.tp;
+  setPinnedRank(dpIdx * ranksPerDp + ppIdx * topo.tp + tpIdx);
+}
+
+function setPinnedRank(newGlobalRank) {
+  meshPinnedRank = { side: meshPinnedRank.side, globalRank: newGlobalRank };
+  _resultsRendered = false;
+  renderResultsData();
+  updateRankSwitcher();
 }
 
 function checkSimReady() {
@@ -2218,13 +2331,22 @@ var TYPE_LABELS = {
 };
 
 // Generate a realistic mock workload trace matching CSV/JSON field specs
-function genMockWorkload() {
+function genMockWorkload(pinnedRank) {
   var ops = [];         // flat op list (timeline + table)
   var t = 0;           // current time in microseconds
 
   var B = 8, S = 4096, d_model = 4096, d_ffn = 14336, num_heads = 32, d_head = 128, V = 128256;
   var num_layers = 2;
-  var tp_size = 2, dp_size = 2, pp_size = 2;
+
+  // Extract TP/PP index from pinned rank (defaults to 0 if not set)
+  var rk = pinnedRank || {};
+  var myTp = (rk.tpIdx != null) ? rk.tpIdx : 0;
+  var myPp = (rk.ppIdx != null) ? rk.ppIdx : 0;
+  var myDp = (rk.dpIdx != null) ? rk.dpIdx : 0;
+  var globalRank = (rk.globalRank != null) ? rk.globalRank : 0;
+  var tp_size = (rk.tpSize != null) ? rk.tpSize : 2;
+  var dp_size = (rk.dpSize != null) ? rk.dpSize : 2;
+  var pp_size = (rk.ppSize != null) ? rk.ppSize : 2;
 
   function fmtShape(arr) { return '[' + arr.join(',') + ']'; }
 
@@ -2330,6 +2452,21 @@ function genMockWorkload() {
   addComm('all_reduce', 'step', 'dp_group', dp_size, d_model * d_model * 2 * 6 * num_layers, 'grad-avg', 'ring');
   addCompute('optimizer_step', 'step', [d_model,d_model], [d_model,d_model], 'fp32', 12.8, 'adamw');
 
+  // ── Vary ops by rank: TP index affects comm duration, PP stage offsets layers ──
+  var ppLayerOffset = myPp * num_layers;
+  for (var oi = 0; oi < ops.length; oi++) {
+    var o2 = ops[oi];
+    if (o2.stage.indexOf('/layer') >= 0) {
+      var parts = o2.stage.split('/layer');
+      var origLayer = parseInt(parts[1]) || 0;
+      o2.stage = parts[0] + '/layer' + (origLayer + ppLayerOffset);
+    }
+    if (o2.comm_type === 'all_reduce' || o2.comm_type === 'reduce_scatter') {
+      o2.duration = Math.round(o2.duration * (0.9 + myTp * 0.07));
+      o2._elapsed_time = o2.duration;
+    }
+  }
+
   // Build per-stage summary for the load-sequence chart
   var stageMap = {};
   ops.forEach(function(o) {
@@ -2348,14 +2485,186 @@ function genMockWorkload() {
   ops.forEach(function(o) { if (stageOrder.indexOf(o.stage) < 0) stageOrder.push(o.stage); });
   stageOrder.forEach(function(s) { loadSeq.push(stageMap[s]); });
 
-  return { ops: ops, loadSeq: loadSeq, totalUs: t };
+  // ── HBM Memory breakdown (per-GPU, realistic for d_model=4096 training) ──
+  // Vary by TP (weights/grad/opt sharded) and PP (activation per stage)
+  var tpFactor = myTp / Math.max(1, tp_size);
+  var ppFactor = myPp / Math.max(1, pp_size);
+  var baseWeights = 13.82;
+  var baseGradients = 13.82;
+  var baseOptimizer = 27.64;
+  var baseActivations = 21.45;
+  var baseCommBuffer = 8.30;
+
+  // TP sharding: each TP rank holds ~1/tp of weight/grad/optimizer state
+  var tpDiv = Math.max(1, tp_size);
+  var tpScale = 1.0 / tpDiv + (tpFactor - 0.5 / tpDiv) * 0.15; // small per-rank jitter
+
+  // PP: activation memory varies by stage (early/late stages differ)
+  var ppScale = 0.85 + ppFactor * 0.3;
+
+  // Comm buffer: edge PP stages may need more buffer
+  var commScale = (myPp === 0 || myPp === pp_size - 1) ? 1.15 : 0.92;
+
+  var hbm = {
+    weights:     parseFloat((baseWeights * tpScale).toFixed(2)),
+    gradients:   parseFloat((baseGradients * tpScale).toFixed(2)),
+    optimizer:   parseFloat((baseOptimizer * tpScale).toFixed(2)),
+    activations: parseFloat((baseActivations * ppScale).toFixed(2)),
+    comm_buffer: parseFloat((baseCommBuffer * commScale).toFixed(2)),
+  };
+  hbm.total = parseFloat((hbm.weights + hbm.gradients + hbm.optimizer + hbm.activations + hbm.comm_buffer).toFixed(1));
+
+  return { ops: ops, loadSeq: loadSeq, totalUs: t, hbm: hbm };
 }
 
 function renderResultsData() {
   if (_resultsRendered) return;
   _resultsRendered = true;
 
-  var data = genMockWorkload();
+  var rankInfo = null;
+  if (meshPinnedRank) {
+    var topo = getPinnedTopo();
+    if (topo) {
+      var ranksPerDp = topo.tp * topo.pp;
+      var gr = meshPinnedRank.globalRank;
+      rankInfo = {
+        globalRank: gr,
+        dpIdx: Math.floor(gr / ranksPerDp),
+        ppIdx: Math.floor((gr % ranksPerDp) / topo.tp),
+        tpIdx: (gr % ranksPerDp) % topo.tp,
+        tpSize: topo.tp,
+        ppSize: topo.pp,
+        dpSize: topo.dp
+      };
+    }
+  }
+  var data = genMockWorkload(rankInfo);
+
+  // ═══ Section 0: HBM Memory 统计 — vertical bar chart (highest priority) ═══
+  (function() {
+    var container = document.getElementById('chart-hbm-memory');
+    if (!container) return;
+
+    var categories = [
+      { key: 'weights',     label: '权重',     color: '#39bae6' },
+      { key: 'gradients',   label: '梯度',     color: '#ff8f40' },
+      { key: 'optimizer',   label: '优化器',   color: '#baa1ff' },
+      { key: 'activations', label: '激活',     color: '#ffb454' },
+      { key: 'comm_buffer', label: '通信缓冲', color: '#7fd962' },
+    ];
+    var hbm = data.hbm;
+
+    var W = container.clientWidth - 16;
+    var H = 320, topM = 20, botM = 80, leftM = 68, rightM = 24;
+    var plotW = W - leftM - rightM;
+    var plotH = H - topM - botM;
+    var N = categories.length;
+    var barGap = Math.max(14, plotW * 0.06);
+    var barW = Math.max(48, (plotW - barGap * (N + 1)) / N);
+
+    container.innerHTML = '';
+    var svg = d3.select(container).append('svg').attr('width', W).attr('height', H);
+
+    // Y-axis: Memory Usage (GB)
+    var maxY = Math.ceil(hbm.total * 1.15 / 5) * 5; // round up to nearest 5 GB
+    var yScale = function(v) { return plotH - (v / maxY) * plotH; };
+
+    var g = svg.append('g').attr('transform', 'translate(' + leftM + ',' + topM + ')');
+
+    // ── Grid lines ──
+    var nGrids = 5;
+    for (var gi = 0; gi <= nGrids; gi++) {
+      var gv = maxY * gi / nGrids;
+      var gy = plotH - (gi / nGrids) * plotH;
+      g.append('line').attr('x1', 0).attr('x2', plotW).attr('y1', gy).attr('y2', gy)
+        .attr('stroke', '#1e2a36').attr('stroke-width', gi === 0 ? 1 : 0.5);
+      g.append('text').attr('x', -8).attr('y', gy + 4)
+        .attr('text-anchor', 'end').attr('fill', '#4a5568').attr('font-size', '10px')
+        .attr('font-family', 'JetBrains Mono,monospace').text(gv.toFixed(0) + ' GB');
+    }
+
+    // ── Bars ──
+    var defs = svg.append('defs');
+    categories.forEach(function(cat) {
+      var gradId = 'hbm-grad-' + cat.key;
+      var grad = defs.append('linearGradient').attr('id', gradId)
+        .attr('x1', '0').attr('y1', '0').attr('x2', '0').attr('y2', '1');
+      grad.append('stop').attr('offset', '0%').attr('stop-color', cat.color).attr('stop-opacity', 0.95);
+      grad.append('stop').attr('offset', '100%').attr('stop-color', cat.color).attr('stop-opacity', 0.55);
+    });
+
+    var tooltip = d3.select(container).append('div').attr('class', 'result-tooltip');
+
+    categories.forEach(function(cat, i) {
+      var val = hbm[cat.key];
+      var barX = barGap + i * (barW + barGap);
+      var barH = Math.max(2, (val / maxY) * plotH);
+      var barY = plotH - barH;
+      var pct = ((val / hbm.total) * 100).toFixed(1);
+
+      // Bar with gradient
+      g.append('rect')
+        .attr('x', barX).attr('y', barY).attr('width', barW).attr('height', barH)
+        .attr('rx', 4).attr('ry', 4)
+        .attr('fill', 'url(#hbm-grad-' + cat.key + ')');
+
+      // Value label on top
+      g.append('text')
+        .attr('x', barX + barW / 2).attr('y', barY - 6)
+        .attr('text-anchor', 'middle').attr('fill', cat.color)
+        .attr('font-size', '12px').attr('font-weight', '600')
+        .attr('font-family', 'JetBrains Mono,monospace')
+        .text(val.toFixed(1) + ' GB');
+
+      // Percentage below value
+      g.append('text')
+        .attr('x', barX + barW / 2).attr('y', barY - 22)
+        .attr('text-anchor', 'middle').attr('fill', '#7b8ca3')
+        .attr('font-size', '10px')
+        .attr('font-family', 'JetBrains Mono,monospace')
+        .text(pct + '%');
+
+      // X-axis label
+      g.append('text')
+        .attr('x', barX + barW / 2).attr('y', plotH + 22)
+        .attr('text-anchor', 'middle').attr('fill', '#7b8ca3')
+        .attr('font-size', '11px').attr('font-weight', '500')
+        .attr('font-family', 'var(--font-sans)')
+        .text(cat.label);
+
+      // Hover overlay
+      g.append('rect')
+        .attr('x', barX - 2).attr('y', 0).attr('width', barW + 4).attr('height', plotH)
+        .attr('fill', 'transparent')
+        .on('mouseover', function(ev) {
+          tooltip.classed('show', true).html(
+            '<div style="font-weight:600;margin-bottom:4px;color:' + cat.color + '">' + cat.label + '</div>' +
+            '<div>Memory: <b>' + val.toFixed(2) + ' GB</b></div>' +
+            '<div>占比: <b>' + pct + '%</b></div>' +
+            '<div style="color:var(--text-muted)">总显存: ' + hbm.total.toFixed(1) + ' GB</div>'
+          );
+        })
+        .on('mousemove', function(ev) {
+          tooltip.style('left', (ev.clientX + 14) + 'px').style('top', (ev.clientY - 60) + 'px');
+        })
+        .on('mouseout', function() { tooltip.classed('show', false); });
+    });
+
+    // ── Y-axis label ──
+    svg.append('text')
+      .attr('x', 14).attr('y', topM + plotH / 2)
+      .attr('text-anchor', 'middle').attr('fill', '#4a5568')
+      .attr('font-size', '10px').attr('font-family', 'var(--font-sans)')
+      .attr('transform', 'rotate(-90,14,' + (topM + plotH / 2) + ')')
+      .text('Memory Usage (GB)');
+
+    // ── Total line ──
+    svg.append('text')
+      .attr('x', leftM + plotW).attr('y', topM - 6)
+      .attr('text-anchor', 'end').attr('fill', 'var(--text-secondary)')
+      .attr('font-size', '10px').attr('font-family', 'JetBrains Mono,monospace')
+      .text('Total: ' + hbm.total.toFixed(1) + ' GB / GPU');
+  })();
 
   // ═══ Section 1: 负载序列记录 — stacked bar chart (compute vs comm per stage) ═══
   (function() {
