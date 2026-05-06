@@ -1621,7 +1621,11 @@ function syncWorkflowFromSession(sessionData) {
     updateWorkflowNode('topology', 'completed');
     updateWorkflowNode('model', 'completed');
     updateWorkflowNode('simulation', 'completed');
-    updateWorkflowNode('comparison', 'completed');
+    if (sessionData.comparison_equivalent === false) {
+      updateWorkflowNode('comparison', 'failed');
+    } else {
+      updateWorkflowNode('comparison', 'completed');
+    }
   } else if (hasSimulation) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
@@ -2099,6 +2103,7 @@ async function handleSSEEvent(type, data) {
         meshRebuild();
       }
       updateWorkflowNode('simulation', 'completed');
+      _simCompleted = true;
       break;
     case 'done':
       setStatus('idle');
@@ -2156,7 +2161,9 @@ function syncWorkflowFromLoadedData() {
     updateWorkflowNode('guard', 'completed');
     updateWorkflowNode('topology', 'completed');
     updateWorkflowNode('model', 'completed');
-    updateWorkflowNode('simulation', 'active');
+    if (workflowNodeStates['simulation'] !== 'completed') {
+      updateWorkflowNode('simulation', 'active');
+    }
   } else if (hasTopology) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
@@ -2311,7 +2318,11 @@ async function startSimulation() {
 
     updateWorkflowNode('simulation', 'completed');
     if (results.comparison) {
-      updateWorkflowNode('comparison', 'completed');
+      if (results.comparison.is_equivalent === false) {
+        updateWorkflowNode('comparison', 'failed');
+      } else {
+        updateWorkflowNode('comparison', 'completed');
+      }
     } else {
       updateWorkflowNode('comparison', 'active');
     }
