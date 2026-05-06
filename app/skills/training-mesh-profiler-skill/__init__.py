@@ -40,22 +40,22 @@ def _estimate_hbm_gb(
     return (term1 + term2 + term3) * a / 1e9
 
 
-def _estimate_tp_comm_gb(L: int, H: int, dp: int) -> float:
-    """TP comm = 2*(DP-1)/DP * 12*L*H^2 / 1e9"""
+def _estimate_dp_comm_gb(L: int, H: int, dp: int) -> float:
+    """DP comm = 2*(DP-1)/DP * 12*L*H^2 / 1e9"""
     if dp <= 1:
         return 0.0
     return 2 * (dp - 1) / dp * 12 * L * H**2 / 1e9
 
 
-def _estimate_pp_comm_mb(L: int, H: int, S: int, B: int, tp: int) -> float:
-    """PP comm = 8*(TP-1)/TP * B*S*H*L / 1e6"""
+def _estimate_tp_comm_mb(L: int, H: int, S: int, B: int, tp: int) -> float:
+    """TP comm = 8*(TP-1)/TP * B*S*H*L / 1e6"""
     if tp <= 1:
         return 0.0
     return 8 * (tp - 1) / tp * B * S * H * L / 1e6
 
 
-def _estimate_dp_comm_gb(H: int, S: int, B: int) -> float:
-    """DP comm = 4*B*S*H / 1e9"""
+def _estimate_pp_comm_gb(H: int, S: int, B: int) -> float:
+    """PP comm = 4*B*S*H / 1e9"""
     return 4 * B * S * H / 1e9
 
 
@@ -173,9 +173,9 @@ class MeshProfilerSkill(BaseSkill):
 
             flops = _estimate_flops(L, H, S, B, dp, tp, pp)
             hbm = _estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
-            tp_comm = _estimate_tp_comm_gb(L, H, dp)
-            pp_comm = _estimate_pp_comm_mb(L, H, S, B, tp)
-            dp_comm = _estimate_dp_comm_gb(H, S, B)
+            dp_comm = _estimate_dp_comm_gb(L, H, dp)
+            tp_comm = _estimate_tp_comm_mb(L, H, S, B, tp)
+            pp_comm = _estimate_pp_comm_gb(H, S, B)
             for rank in range(total_nodes):
                 cards.append(
                     CardMetrics(
