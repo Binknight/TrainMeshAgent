@@ -299,6 +299,7 @@ def _build_workflow_state(session: SessionState) -> dict:
         "original_simulation": session.original_simulation is not None,
         "equivalent_simulation": session.equivalent_simulation is not None,
         "comparison_report": session.comparison_report is not None,
+        "comparison_equivalent": session.comparison_report.is_equivalent if session.comparison_report else None,
     }
 
 
