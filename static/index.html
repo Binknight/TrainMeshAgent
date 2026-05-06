@@ -2096,13 +2096,14 @@ async function handleSSEEvent(type, data) {
     case 'done':
       setStatus('idle');
       fetchSimulationData();
-      if (_pendingMeshList.length) {
-        await Promise.all(_pendingMeshList.map(function (d) { return loadMeshData(d); }));
-        _pendingMeshList = [];
-      }
+      // Load models before meshes so mesh estimates can use model params (num_layers, hidden_dim)
       if (_pendingModelList.length) {
         _pendingModelList.forEach(function (d) { loadModelData(d, d._role); });
         _pendingModelList = [];
+      }
+      if (_pendingMeshList.length) {
+        await Promise.all(_pendingMeshList.map(function (d) { return loadMeshData(d); }));
+        _pendingMeshList = [];
       }
       if (meshOriginal || meshEquivalent || modelOriginal || modelEquivalent) {
         canvasRebuild();
@@ -2953,6 +2954,6 @@ renderHistory();
   document.getElementById('chat-input').focus();
 })();
 </script>
-<script src="/static/topo-renderer.js"></script>
+<script src="/static/topo-renderer.js?v=20260506"></script>
 </body>
 </html>

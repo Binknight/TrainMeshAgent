@@ -1,6 +1,6 @@
 ---
 name: training-model-gen-skill
-description: 根据模型配置参数(num_layers, 可选d_model/num_heads/d_ffn)生成结构化Transformer等效训练模型JSON。传入is_equivalent=true+pp时按公式缩放层数: pp<=3保持不变, pp>3时actual_layers=num_layers/pp*3。当用户需要生成训练模型、构建模型架构、定义Transformer结构时触发。
+description: "根据模型配置参数(num_layers, 可选d_model/num_heads/d_ffn)生成结构化Transformer等效训练模型JSON。传入is_equivalent=true+pp时按公式缩放层数: pp<=3保持不变, pp>3时actual_layers=num_layers/pp*3。当用户需要生成训练模型、构建模型架构、定义Transformer结构时触发。"
 ---
 # Training Model Gen Skill
 

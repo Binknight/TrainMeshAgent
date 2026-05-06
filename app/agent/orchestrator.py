@@ -10,6 +10,7 @@ Flow:
 """
 from __future__ import annotations
 
+
 import json
 import logging
 from typing import AsyncGenerator
@@ -25,6 +26,8 @@ from app.agent.guardrails import validate_input_params
 from app.skills.base import SkillContext, SkillResult
 from app.skills.registry import registry
 from app.mcp.client import mcp_client
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -431,7 +434,8 @@ async def agent_stream(
         if topo and task_id and not sim:
             logger.info(f"[agent_stream] auto-profiling {label} topology (task_id={task_id})")
             try:
-                _execute_skill_tool("training-mesh-profiler-skill", {
+                training_model = session.original_training_model if label == "original" else session.equivalent_training_model
+                profiler_args = {
                     "topology_name": topo.name,
                     "device_type": topo.device_type.value,
                     "total_nodes": topo.total_nodes,
@@ -439,7 +443,11 @@ async def agent_stream(
                     "tp": topo.tp_size,
                     "pp": topo.pp_size,
                     "task_id": task_id,
-                }, session)
+                }
+                if training_model:
+                    profiler_args["num_layers"] = training_model.config.num_layers
+                    profiler_args["hidden_dim"] = training_model.config.d_model
+                _execute_skill_tool("training-mesh-profiler-skill", profiler_args, session)
             except Exception as e:
                 logger.exception(f"[agent_stream] auto-profiling {label} failed: {e}")
 
