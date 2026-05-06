@@ -42,7 +42,7 @@ def _estimate_hbm_gb(
 
 def _estimate_dp_comm_gb(L: int, H: int, tp: int, pp: int) -> float:
     """DP comm = 8*L*(4H^2+3H*4)/(TP*PP) / 1e9"""
-    return 8 * L * (4 * H**2 + 3 * H * 4) / (tp * pp) / 1e9
+    return 8 * L * (4 * H**2 + 3 * H * 4 * H) / (tp * pp) / 1e9
 
 
 def _estimate_tp_comm_mb(L: int, H: int, S: int, B: int, pp: int) -> float:
