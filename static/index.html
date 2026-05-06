@@ -1583,6 +1583,14 @@ function confirmWorkflowStep(step) {
 }
 
 function updateWorkflowNode(stepId, newState) {
+  if (newState === 'active') {
+    // mutual exclusion: deactivate any other currently active step
+    for (var id in workflowNodeStates) {
+      if (id !== stepId && workflowNodeStates[id] === 'active') {
+        workflowNodeStates[id] = 'pending';
+      }
+    }
+  }
   workflowNodeStates[stepId] = newState;
   if (newState === 'completed') {
     var idx = WORKFLOW_STEPS.findIndex(function(s) { return s.id === stepId; });
@@ -2091,7 +2099,6 @@ async function handleSSEEvent(type, data) {
         meshRebuild();
       }
       updateWorkflowNode('simulation', 'completed');
-      updateWorkflowNode('comparison', 'active');
       break;
     case 'done':
       setStatus('idle');
@@ -2141,7 +2148,9 @@ function syncWorkflowFromLoadedData() {
     updateWorkflowNode('topology', 'completed');
     updateWorkflowNode('model', 'completed');
     updateWorkflowNode('simulation', 'completed');
-    updateWorkflowNode('comparison', 'active');
+    if (workflowNodeStates['comparison'] !== 'completed') {
+      updateWorkflowNode('comparison', 'active');
+    }
   } else if (hasModel && hasTopology) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
