@@ -25,18 +25,18 @@ _QUANT_COEFF = 1
 
 
 def _estimate_flops(L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int) -> float:
-    """FLOPs = [(72*B*S*H^2 + 12*B*S^2*H) / (DP*TP)] * L/PP"""
-    return ((72 * B * S * H**2 + 12 * B * S**2 * H) / (dp * tp)) * L / pp
+    """FLOPs = [(72*B*S*H^2 + 12*B*S^2*H) / TP] * L/PP"""
+    return ((72 * B * S * H**2 + 12 * B * S**2 * H) / tp) * L / pp
 
 
 def _estimate_hbm_gb(
     L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int, a: float = 1
 ) -> float:
-    """HBM = [L*(12*H^2+4H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4H)/(DP*TP*PP)] * a / 1e9"""
+    """HBM = [L*(12*H^2+4H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4H)/(TP*PP)] * a / 1e9"""
     param_term = L * (12 * H**2 + 4 * H)
     term1 = param_term / (tp * pp)
     term2 = B * S * H * L / pp
-    term3 = param_term / (dp * tp * pp)
+    term3 = param_term / (tp * pp)
     return (term1 + term2 + term3) * a / 1e9
 
 
