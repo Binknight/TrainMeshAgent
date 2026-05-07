@@ -1,0 +1,320 @@
+{
+  "model": "Transformer (GPT-style Decoder-only)",
+  "source": "transformer_model.html",
+  "overview": "这是一个标准的Transformer Decoder层的可视化，遵循Pre-LayerNorm架构，采用垂直流式布局展示从输入到输出的完整计算流程。支持Tensor Parallelism（TP）分布式切分，通过左侧4×4网格表示TP并行组。",
+  "structural_hierarchy": [
+    {
+      "id": "container_transformer_layer",
+      "name": "Transformer Layer (×N)",
+      "level": 0,
+      "type": "容器/循环模块",
+      "x": 235, "y": 72, "w": 250, "h": 446,
+      "color": "cyan",
+      "concept": {
+        "chinese": "Transformer层（堆叠N次）",
+        "english": "Transformer Layer (stacked N times)",
+        "explanation": "整个Transformer模型由N个完全相同的层堆叠而成（如GPT-3为96层）。每一层包含两个核心子层：多头自注意力（Multi-Head Self-Attention）和前馈网络（Feed-Forward Network），并通过残差连接和层归一化组合。图中的背景阴影（3层偏移矩形）表示深度堆叠的视觉效果，暗示多层重复。",
+        "math_notation": "Layer_i(x) = AddNorm_{FFN}(AddNorm_{Attn}(x)) for i ∈ [1, N]",
+        "typical_values": {
+          "GPT-2 Small": 12,
+          "GPT-2 Medium": 24,
+          "GPT-2 Large": 36,
+          "GPT-3": 96,
+          "LLaMA-7B": 32,
+          "LLaMA-13B": 40,
+          "LLaMA-70B": 80
+        }
+      }
+    },
+    {
+      "id": "embeddings",
+      "name": "Position + Word Embeddings & Dropout",
+      "level": 0,
+      "type": "输入模块",
+      "x": 235, "y": 20, "w": 250, "h": 36,
+      "color": "yellow",
+      "concept": {
+        "chinese": "位置编码 + 词嵌入 + Dropout",
+        "english": "Positional Encoding + Word Embeddings + Dropout",
+        "explanation": "这是模型的输入层，执行三个职责：(1) Word Embeddings：将离散的token ID映射为稠密向量（维度d_model，如768/4096），通过可训练的嵌入矩阵W_embed实现；(2) Positional Encoding：向嵌入向量注入位置信息，现代模型（GPT-2/3/LLaMA）通常使用可学习的绝对位置编码，或RoPE（旋转位置编码）；(3) Dropout：训练时随机置零部分神经元，防止过拟合。三者合并后形成输入序列的隐表示H∈R^{seq_len × d_model}。",
+        "math_notation": "H_0 = Dropout(WordEmbed(token_ids) + PositionEncode(positions))",
+        "typical_values": {
+          "d_model": "768 (GPT-2), 4096 (LLaMA-7B), 8192 (LLaMA-70B)",
+          "vocab_size": "50257 (GPT-2), 32000 (LLaMA)"
+        }
+      }
+    },
+    {
+      "id": "layer_norm_1",
+      "name": "Layer Norm",
+      "level": 0,
+      "type": "归一化层",
+      "x": 295, "y": 96, "w": 140, "h": 28,
+      "color": "green",
+      "concept": {
+        "chinese": "层归一化（第一个，注意力前）",
+        "english": "Layer Normalization (pre-attention)",
+        "explanation": "这是Pre-LayerNorm架构中的第一个Layer Norm，位于自注意力子层之前。Layer Norm对每个token的特征向量单独归一化（均值为0，方差为1），再通过可学习的缩放γ和平移β参数进行仿射变换。Pre-LN的优势在于训练更稳定、梯度流更平滑，是GPT-2/3和LLaMA等现代Transformer的标准做法（相比原始Transformer的Post-LN）。",
+        "math_notation": "LayerNorm(x) = γ ⊙ ((x - μ) / √(σ² + ε)) + β",
+        "typical_values": {
+          "ε (epsilon)": "1e-5 ~ 1e-6",
+          "参数维度": "d_model (每个LN独立)"
+        }
+      }
+    },
+    {
+      "id": "multi_head_self_attention",
+      "name": "Multi-Head Self-Attention",
+      "level": 0,
+      "type": "子层容器",
+      "x": 245, "y": 138, "w": 230, "h": 100,
+      "color": "cyan",
+      "concept": {
+        "chinese": "多头自注意力机制",
+        "english": "Multi-Head Self-Attention",
+        "explanation": "自注意力是Transformer的核心机制，允许序列中的每个token关注所有其他token以捕获上下文依赖。多头机制将Q/K/V投影到多个子空间并行注意力计算（每个头关注不同的关系模式），最后拼接所有头的输出。在Decoder-only模型中，使用因果掩码（causal mask）确保token只能关注自身及之前的token（自回归约束）。该子层内部包含三个操作：Self Attention计算、Linear投影（将多头输出映射回d_model）、以及Dropout正则化。",
+        "math_notation": "MultiHead(Q,K,V) = Concat(head_1,...,head_h)W_O, head_i = Attention(QW_i^Q, KW_i^K, VW_i^V), Attention(Q,K,V) = softmax(QK^T/√d_k + mask)V",
+        "typical_values": {
+          "head数量 (h)": "12 (GPT-2), 32 (LLaMA-7B), 64 (LLaMA-70B)",
+          "d_k per head": "64 (GPT-2), 128 (LLaMA-7B/70B)",
+          "d_model = h × d_k": "768 (GPT-2), 4096 (LLaMA-7B), 8192 (LLaMA-70B)"
+        }
+      },
+      "sub_items": [
+        {
+          "id": "self_attention",
+          "name": "Self Attention",
+          "level": 1,
+          "concept": {
+            "chinese": "自注意力计算",
+            "english": "Self Attention computation",
+            "explanation": "核心的注意力计算过程：将输入通过Q、K、V投影矩阵生成Query、Key、Value；计算QK^T得到注意力分数矩阵；除以√d_k进行缩放防止梯度消失；对序列中不应关注的位置（因果掩码遮住的未来token）加上-∞；通过softmax得到注意力权重分布；最后用注意力权重对V加权求和，得到每个token的上下文表示。"
+          }
+        },
+        {
+          "id": "linear_projection",
+          "name": "Linear (h → h)",
+          "level": 1,
+          "concept": {
+            "chinese": "线性输出投影",
+            "english": "Linear output projection",
+            "explanation": "将多头注意力的拼接结果通过一个线性变换W_O ∈ R^{d_model × d_model}投影回原始隐藏维度。这个投影层让不同注意力头的信息得以融合，是整个MHA子层中参数量最大的部分之一（单层约d_model²个参数，即4096²≈16.8M）。"
+          }
+        },
+        {
+          "id": "dropout_attention",
+          "name": "Dropout",
+          "level": 1,
+          "concept": {
+            "chinese": "注意力Dropout正则化",
+            "english": "Attention Dropout",
+            "explanation": "在注意力权重上应用Dropout，以概率p随机置零部分注意力连接。这迫使模型不依赖单一的注意力模式，增强泛化能力。注意：这不同于残差连接后的Dropout，是直接作用在softmax后的注意力概率矩阵上。"
+          }
+        }
+      ]
+    },
+    {
+      "id": "add_1",
+      "name": "Add",
+      "level": 0,
+      "type": "残差连接点",
+      "x": 295, "y": 250, "w": 140, "h": 28,
+      "color": "grey",
+      "concept": {
+        "chinese": "第一个残差加法（注意力残差）",
+        "english": "First residual addition (attention residual)",
+        "explanation": "将多头注意力的输出与输入（跳过多头注意力子层的原始信号）逐元素相加。这是残差网络（ResNet）思想在Transformer中的延续，解决深层网络中的梯度消失问题。残差连接为梯度提供了直通路径（identity shortcut），使得训练上百层的Transformer成为可能。图中右侧的橙色虚线标注了这条从Layer Norm 1之前分叉出来的residual路径。",
+        "math_notation": "x = LayerNorm_1(x) + MultiHeadAttention(LayerNorm_1(x)), 即 x = x + MHA(LN_1(x))"
+      }
+    },
+    {
+      "id": "layer_norm_2",
+      "name": "Layer Norm",
+      "level": 0,
+      "type": "归一化层",
+      "x": 295, "y": 292, "w": 140, "h": 28,
+      "color": "green",
+      "concept": {
+        "chinese": "层归一化（第二个，FFN前）",
+        "english": "Layer Normalization (pre-FFN)",
+        "explanation": "第二个Layer Norm，位于前馈网络子层之前。功能与第一个Layer Norm完全一致：将残差加法后的隐表示归一化到标准分布，为FFN提供数值稳定的输入。在Pre-LN架构中，两个子层各有自己的Layer Norm参数（不共享），这使得每个子层的归一化可以独立学习最优的缩放和平移参数。",
+        "math_notation": "LayerNorm(x) = γ ⊙ ((x - μ) / √(σ² + ε)) + β"
+      }
+    },
+    {
+      "id": "feed_forward_network",
+      "name": "Feed-Forward Network",
+      "level": 0,
+      "type": "子层容器",
+      "x": 245, "y": 334, "w": 230, "h": 120,
+      "color": "red",
+      "concept": {
+        "chinese": "前馈神经网络",
+        "english": "Feed-Forward Network",
+        "explanation": "FFN是每个Transformer层中的第二个核心子层，由两个线性变换和一个非线性激活函数组成。它首先将隐藏维度从d_model扩展到4×d_model（中间层），应用GeLU激活函数引入非线性，再投影回d_model。FFN为模型提供了位置无关的非线性变换能力，负责存储和处理从注意力提取的上下文信息。实践中FFN的参数量约为注意力子层的2倍（两个线性层各贡献d_model×4d_model参数）。",
+        "math_notation": "FFN(x) = Dropout(W_2(GeLU(W_1 x + b_1)) + b_2)",
+        "typical_values": {
+          "中间层维度": "4 × d_model（标准），8/3 × d_model（LLaMA SwiGLU变体）",
+          "FFN参数占比": "约67%的总参数量"
+        }
+      },
+      "sub_items": [
+        {
+          "id": "linear_up_projection",
+          "name": "Linear (h → 4h)",
+          "level": 1,
+          "concept": {
+            "chinese": "线性上投影（升维）",
+            "english": "Linear up-projection",
+            "explanation": "第一个线性层，将输入从d_model维度映射到4×d_model维度（如768→3072或4096→16384）。这个升维操作极大增加了模型的表示容量，让每个token的特征可以在高维空间中展开组合。W_1 ∈ R^{d_model × 4×d_model}。"
+          }
+        },
+        {
+          "id": "gelu_activation",
+          "name": "GeLU",
+          "level": 1,
+          "concept": {
+            "chinese": "高斯误差线性单元激活函数",
+            "english": "Gaussian Error Linear Unit activation",
+            "explanation": "GeLU是GPT-2/3等模型中使用的非线性激活函数，相比ReLU更加平滑。GeLU通过输入值的高斯累积分布函数进行加权，对小输入有概率性地输出零，对大输入近似线性。其平滑性有助于梯度的稳定传播。现代模型（如LLaMA）使用SwiGLU作为替代，后者在FFN中引入了门控机制以提升性能。",
+            "math_notation": "GeLU(x) = x · Φ(x) ≈ 0.5x(1 + tanh(√(2/π)(x + 0.044715x³)))"
+          }
+        },
+        {
+          "id": "linear_down_projection",
+          "name": "Linear (4h → h)",
+          "level": 1,
+          "concept": {
+            "chinese": "线性下投影（降维）",
+            "english": "Linear down-projection",
+            "explanation": "第二个线性层，将4×d_model维度的中间表示压缩回d_model维度。这个降维操作将高维空间中学到的特征组合压缩回原始嵌入空间，使得FFN的输出可以无缝地通过残差连接与注意力输出相加。W_2 ∈ R^{4×d_model × d_model}。"
+          }
+        },
+        {
+          "id": "dropout_ffn",
+          "name": "Dropout",
+          "level": 1,
+          "concept": {
+            "chinese": "FFN Dropout正则化",
+            "english": "FFN Dropout",
+            "explanation": "在线性降维投影之后应用Dropout，以概率p随机置零输出特征。这是FFN子层中的正则化手段，与注意力子层中的Dropout作用类似，但作用位置不同——这里是作用在残差连接之前的线性输出上，防止FFN子层过拟合。"
+          }
+        }
+      ]
+    },
+    {
+      "id": "add_2",
+      "name": "Add",
+      "level": 0,
+      "type": "残差连接点",
+      "x": 295, "y": 466, "w": 140, "h": 28,
+      "color": "grey",
+      "concept": {
+        "chinese": "第二个残差加法（FFN残差）",
+        "english": "Second residual addition (FFN residual)",
+        "explanation": "将FFN子层的输出与输入（跳过FFN的原始信号）逐元素相加。这是本层中的第二个残差连接。图中右侧的橙色虚线标注了这条从Layer Norm 2之前分叉出来的residual路径。两个残差连接（注意力残差+FFN残差）共同构成了Transformer层的梯度高速通道，使得深层Transformer的训练成为可能。",
+        "math_notation": "x = x + FFN(LayerNorm_2(x)), 完整的一层: output = x + FFN(LN_2(x + MHA(LN_1(x))))"
+      }
+    },
+    {
+      "id": "layer_norm_3",
+      "name": "Layer Norm",
+      "level": 0,
+      "type": "归一化层",
+      "x": 295, "y": 534, "w": 140, "h": 28,
+      "color": "green",
+      "concept": {
+        "chinese": "最终层归一化（输出前）",
+        "english": "Final Layer Normalization (pre-output)",
+        "explanation": "所有Transformer层堆叠完成后的最后一个Layer Norm。它接收最后一层Transformer的输出，将其归一化后传递给输出层。这个Layer Norm不属于任何单层内部，而是整个Transformer堆栈的外部归一化。在GPT-2的实现中，这也是一个标准的LayerNorm操作，确保输入到LM Head的隐表示具有稳定的数值分布，有助于语言模型头的softmax计算。",
+        "math_notation": "H_final = LayerNorm(H_N), 其中H_N是第N层Transformer的输出"
+      }
+    },
+    {
+      "id": "output_layer_and_loss",
+      "name": "Output Layer & Loss",
+      "level": 0,
+      "type": "输出模块",
+      "x": 235, "y": 574, "w": 250, "h": 36,
+      "color": "orange",
+      "concept": {
+        "chinese": "输出层与损失函数",
+        "english": "Output Layer & Loss",
+        "explanation": "模型的最终输出层，包含两个关键操作：(1) LM Head：一个线性层将d_model维度的隐表示映射到vocab_size维度，得到每个token的对数概率（logits）；(2) Loss：训练时，将logits通过softmax后与真实标签计算交叉熵损失，用于反向传播。在GPT系列中，LM Head的权重矩阵通常与输入Word Embedding矩阵共享（weight tying），以减少参数量并提升泛化能力。推理时，取softmax概率最高的token或通过采样策略（top-k, top-p）生成下一个token。",
+        "math_notation": "logits = H_final · W_embed^T (weight tying), Loss = -Σ y_i log(softmax(logits_i))"
+      }
+    },
+    {
+      "id": "tensor_parallelism_grid",
+      "name": "Tensor (4×4 TP)",
+      "level": 0,
+      "type": "分布式并行示意",
+      "x": 85, "y": 72, "w": 120, "h": 120,
+      "color": "orange",
+      "concept": {
+        "chinese": "张量并行度网格（4×4 = 16 NPUs）",
+        "english": "Tensor Parallelism grid (4×4 = 16 NPUs)",
+        "explanation": "左侧的4×4网格可视化Tensor Parallelism（TP）的分布策略。TP是一种模型并行技术，将单个Transformer层的参数矩阵（如注意力中的Q/K/V/O投影矩阵和FFN中的两个线性层）按列或按行切分到多个NPU上，每个NPU持有参数矩阵的一个分片。在每次前向和反向传播中，各NPU独立计算本分片的结果，再通过AllReduce/AllGather通信聚合。4×4=16表示在16个NPU上做TP切分。网格中橙色高亮的第一格（TP rank 0）表示当前视角所在的NPU分片。TP适用于单层参数过大无法放入单NPU的场景，但要求NPU间有高速互联（如HCCS）。",
+        "technical_details": {
+          "切分方式": "列切分（Column Parallel）：将W按列均分到TP个NPU；行切分（Row Parallel）：将W按行均分",
+          "通信原语": "AllReduce（梯度同步）、AllGather（前向激活聚合）、ReduceScatter（反向梯度聚合）",
+          "适用场景": "单层参数 > 单NPU显存（如175B模型单层约7B参数）",
+          "限制": "需要高速NPU间通信（HCCS），TP跨节点通信开销大"
+        }
+      }
+    },
+    {
+      "id": "residual_connection_1",
+      "name": "residual (skip connection 1)",
+      "level": 0,
+      "type": "数据流/连线",
+      "x": null, "y": null, "w": null, "h": null,
+      "color": "orange",
+      "concept": {
+        "chinese": "残差连接1：绕过注意力子层",
+        "english": "Residual connection bypassing the attention sublayer",
+        "explanation": "图中右侧橙色虚线和箭头表示的第一条残差连接路径：从Embeddings输出（或上一层输出）分叉，绕过Layer Norm 1和Multi-Head Attention子层，直接连接到第一个Add操作。这条路径保留了子层输入的原始信号，使得梯度可以通过恒等映射直接回传，不受注意力子层参数变换的影响。这是深层Transformer能够有效训练的关键设计。"
+      }
+    },
+    {
+      "id": "residual_connection_2",
+      "name": "residual (skip connection 2)",
+      "level": 0,
+      "type": "数据流/连线",
+      "x": null, "y": null, "w": null, "h": null,
+      "color": "orange",
+      "concept": {
+        "chinese": "残差连接2：绕过FFN子层",
+        "english": "Residual connection bypassing the FFN sublayer",
+        "explanation": "图中右侧橙色虚线和箭头表示的第二条残差连接路径：从第一个Add输出分叉，绕过Layer Norm 2和Feed-Forward Network子层，直接连接到第二个Add操作。与第一条残差连接的作用机制相同，为FFN子层提供恒等映射梯度通道。两条残差连接确保了整个Transformer层中梯度流动的双重保障，每一层的梯度信号都可以无损地向前一层回传。"
+      }
+    }
+  ],
+  "data_flow_order": [
+    "Token IDs → Word Embeddings + Positional Encoding → Dropout → Layer Norm 1 → Multi-Head Self-Attention → Add (residual 1) → Layer Norm 2 → Feed-Forward Network → Add (residual 2) → [repeat N times] → Layer Norm 3 → LM Head → Logits → Loss/Next Token"
+  ],
+  "architecture_notes": {
+    "style": "Pre-LayerNorm",
+    "advantages": [
+      "梯度流更稳定，无需warmup或学习率预热",
+      "训练初期不会有激活值爆炸问题",
+      "每一层的输出方差保持一致，便于堆叠更多层"
+    ],
+    "vs_original_transformer": {
+      "original": "Post-LayerNorm: x = LayerNorm(x + Sublayer(x))",
+      "current": "Pre-LayerNorm: x = x + Sublayer(LayerNorm(x))"
+    }
+  },
+  "parallelism_strategy": {
+    "tensor_parallelism": {
+      "degree": 4,
+      "total_npus": 16,
+      "description": "每个Transformer层的参数矩阵按4×4=16路TP切分，每个NPU持有1/16的参数分片",
+      "tp_rank_highlight": "橙色高亮格(tp=0)表示当前NPU视角所在的分片"
+    },
+    "pipeline_parallelism": {
+      "hinted": true,
+      "description": "×N 标注暗示层间可按流水线方式分配到不同NPU组（PP），与TP正交组合形成3D并行策略"
+    }
+  }
+}
