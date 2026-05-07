@@ -1103,6 +1103,10 @@ body {
 .dp-select-wrap { background: #0d1117; border: 2px solid #58a6ff; border-radius: 4px; box-sizing: border-box; }
 .dp-select { background: transparent; color: #58a6ff; border: none; font-family: sans-serif; cursor: pointer; width: 100%; padding: 0 6px; text-align: center; outline: none; }
 .dp-select option { background: #161c24; color: #c9d1d9; }
+.formula-card-rect { fill: var(--bg-surface); stroke: var(--teal); stroke-width: 1.5; }
+.formula-card-section-label { fill: var(--teal); font-family: var(--font-sans); font-weight: 600; }
+.formula-card-formula { fill: var(--text-primary); font-family: var(--font-mono); }
+.formula-card-desc { fill: var(--text-secondary); font-family: var(--font-sans); }
 </style>
 </head>
 <body>
@@ -1410,7 +1414,10 @@ let _pendingModelList = [];  // batch model_json events until "done"
 const WORKFLOW_STEPS = [
   { id: 'params',       label: '等效参数输入', icon: '\u{1F4DD}', requiresInput: true,  requiresConfirm: false },
   { id: 'guard',        label: '护栏校验',     icon: '\u{1F6E1}', requiresInput: false, requiresConfirm: false },
-  { id: 'topology',     label: '组网拓扑生成', icon: '\u{1F578}', requiresInput: false, requiresConfirm: true  },
+  { id: 'topology',       label: '组网拓扑生成', icon: '\u{1F578}', requiresInput: false, requiresConfirm: true,  isParent: true },
+  { id: 'topology_sub1',  label: '原始组网生成', icon: '●', requiresInput: false, requiresConfirm: false, parentId: 'topology', isChild: true },
+  { id: 'topology_sub2',  label: '等效机制分析', icon: '●', requiresInput: false, requiresConfirm: false, parentId: 'topology', isChild: true },
+  { id: 'topology_sub3',  label: '等效组网生成', icon: '●', requiresInput: false, requiresConfirm: false, parentId: 'topology', isChild: true },
   { id: 'model',        label: '模型结构生成', icon: '\u{1F9E0}', requiresInput: false, requiresConfirm: true  },
   { id: 'simulation',   label: '仿真验证',     icon: '\u{1F52C}', requiresInput: false, requiresConfirm: true  },
   { id: 'comparison',   label: '等效对比',     icon: '\u{1F4CA}', requiresInput: false, requiresConfirm: false },
@@ -1465,12 +1472,22 @@ function renderWorkflow() {
   if (!container) return;
   var W = container.clientWidth - 16;
   if (W < 200) W = 360;
-  var nodeH = 32, gapH = 24, topPad = 10;
+  var nodeH = 32, childNodeH = 22, gapH = 18, topPad = 10;
   var maxNodeW = Math.min(280, W - 40);
   var nodeW = maxNodeW;
+  var childNodeW = nodeW - 28;
   var offsetX = (W - nodeW) / 2;
+  var childOffsetX = offsetX + 28;
   var allVisible = WORKFLOW_STEPS;
-  var totalH = allVisible.length * (nodeH + gapH) + topPad * 2;
+
+  // Pre-compute cumulative Y positions (child nodes use smaller height)
+  var cumY = 0;
+  var stepY = [];
+  allVisible.forEach(function(s) {
+    stepY.push(cumY);
+    cumY += (s.isChild ? childNodeH : nodeH) + gapH;
+  });
+  var totalH = cumY - gapH + topPad * 2;
   var svgH = Math.max(totalH, container.clientHeight - 8);
 
   container.innerHTML = '';
@@ -1480,48 +1497,75 @@ function renderWorkflow() {
   var g = svg.append('g').attr('transform', 'translate(' + offsetX + ',' + topPad + ')');
 
   allVisible.forEach(function(step, i) {
-    var y = i * (nodeH + gapH);
+    var y = stepY[i];
     var state = workflowNodeStates[step.id] || 'pending';
-    var isPrevCompleted = i > 0 && (workflowNodeStates[allVisible[i-1].id] === 'completed');
+    var isChild = !!step.isChild;
+    var currH = isChild ? childNodeH : nodeH;
+    var currW = isChild ? childNodeW : nodeW;
+    var currX = isChild ? childOffsetX - offsetX : 0;
+
+    var prevStep = i > 0 ? allVisible[i-1] : null;
+    var prevState = prevStep ? (workflowNodeStates[prevStep.id] || 'pending') : null;
+    var isPrevCompleted = prevStep && prevState === 'completed';
     var isCurCompleted = state === 'completed';
 
-    // arrow image between steps
-    if (i > 0) {
-      var prevY = (i-1) * (nodeH + gapH) + nodeH;
-      var arrowH = 16, arrowW = 12;
+    // Arrow between steps (skip for parent→first-child, use connector instead)
+    if (i > 0 && !(prevStep.isParent && step.isChild)) {
+      var prevH = prevStep.isChild ? childNodeH : nodeH;
+      var prevY = stepY[i-1] + prevH;
+      var arrowH = isChild ? 10 : 16, arrowW = isChild ? 8 : 12;
       var arrowSrc = (isCurCompleted || isPrevCompleted)
         ? '/static/assets/down_arrow_green.png'
         : '/static/assets/down_arrow_grey.png';
+      var arrowCenterX = isChild ? (childNodeW / 2) : (nodeW / 2);
       g.append('image')
-        .attr('x', nodeW/2 - arrowW/2)
+        .attr('x', arrowCenterX - arrowW/2)
         .attr('y', prevY + (gapH - arrowH)/2)
         .attr('width', arrowW)
         .attr('height', arrowH)
         .attr('href', arrowSrc);
     }
 
-    // node rect
+    // Connector line from parent to first child
+    if (prevStep && prevStep.isParent && step.isChild) {
+      var connY = stepY[i-1] + nodeH;
+      g.append('line')
+        .attr('x1', nodeW/2).attr('y1', connY)
+        .attr('x2', childNodeW/2).attr('y2', connY + gapH/2)
+        .attr('stroke', isCurCompleted ? 'var(--green)' : 'var(--border)')
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '2,2');
+      g.append('line')
+        .attr('x1', childNodeW/2).attr('y1', connY + gapH/2)
+        .attr('x2', childNodeW/2).attr('y2', y)
+        .attr('stroke', isCurCompleted ? 'var(--green)' : 'var(--border)')
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '2,2');
+    }
+
+    // Node rect
     var rect = g.append('rect')
-      .attr('x', 0).attr('y', y)
-      .attr('width', nodeW).attr('height', nodeH)
-      .attr('rx', 6).attr('ry', 6)
+      .attr('x', currX).attr('y', y)
+      .attr('width', currW).attr('height', currH)
+      .attr('rx', isChild ? 4 : 6).attr('ry', isChild ? 4 : 6)
       .attr('class', getNodeStateClass(step.id));
 
-    // status dot
+    // Status dot
     g.append('circle')
-      .attr('cx', 16).attr('cy', y + nodeH/2)
-      .attr('r', 5)
+      .attr('cx', currX + (isChild ? 12 : 16))
+      .attr('cy', y + currH/2)
+      .attr('r', isChild ? 3 : 5)
       .attr('fill', getStatusColor(state))
       .attr('class', 'wf-status-dot');
 
     // icon + label
-    var labelText = step.icon + ' ' + step.label;
+    var labelText = (isChild ? '' : step.icon + ' ') + step.label;
     if (step.disabled) labelText += ' (暂未开放)';
     g.append('text')
-      .attr('x', nodeW/2).attr('y', y + nodeH/2 + 5)
+      .attr('x', currX + currW/2).attr('y', y + currH/2 + 4)
       .attr('text-anchor', 'middle')
       .attr('fill', state === 'disabled' ? 'var(--text-muted)' : 'var(--text-primary)')
-      .attr('font-size', '13px')
+      .attr('font-size', isChild ? '11px' : '13px')
       .attr('font-family', 'var(--font-sans)')
       .attr('font-weight', state === 'active' ? '600' : '400')
       .text(labelText);
@@ -1529,10 +1573,11 @@ function renderWorkflow() {
     // completed checkmark
     if (state === 'completed') {
       g.append('text')
-        .attr('x', nodeW - 18).attr('y', y + nodeH/2 + 4)
+        .attr('x', currX + currW - (isChild ? 14 : 18))
+        .attr('y', y + currH/2 + 4)
         .attr('text-anchor', 'end')
         .attr('fill', 'var(--green)')
-        .attr('font-size', '12px')
+        .attr('font-size', isChild ? '10px' : '12px')
         .text('\u2713');
     }
 
@@ -1548,6 +1593,15 @@ function handleWorkflowNodeClick(step) {
   if (step.disabled) return;
 
   var state = workflowNodeStates[step.id] || 'pending';
+
+  // Parent with children: only allow confirm when all children are completed
+  if (step.isParent && step.requiresConfirm && state === 'active') {
+    var children = WORKFLOW_STEPS.filter(function(s) { return s.parentId === step.id; });
+    var allDone = children.every(function(c) { return workflowNodeStates[c.id] === 'completed'; });
+    if (!allDone) return;
+    confirmWorkflowStep(step);
+    return;
+  }
 
   if (step.requiresInput && (state === 'waiting_input' || state === 'active')) {
     openWorkflowParams();
@@ -1590,6 +1644,11 @@ function updateWorkflowNode(stepId, newState) {
         workflowNodeStates[id] = 'pending';
       }
     }
+    // Activate parent if this is a child step
+    var currentStep = WORKFLOW_STEPS.find(function(s) { return s.id === stepId; });
+    if (currentStep && currentStep.parentId && workflowNodeStates[currentStep.parentId] !== 'completed') {
+      workflowNodeStates[currentStep.parentId] = 'active';
+    }
   }
   workflowNodeStates[stepId] = newState;
   if (newState === 'completed') {
@@ -1602,12 +1661,46 @@ function updateWorkflowNode(stepId, newState) {
         workflowNodeStates[next.id] = 'active';
       }
     }
+    // Parent/child linkage: if a child completed, check if all siblings done
+    var completedStep = WORKFLOW_STEPS.find(function(s) { return s.id === stepId; });
+    if (completedStep && completedStep.parentId) {
+      var parentId = completedStep.parentId;
+      var children = WORKFLOW_STEPS.filter(function(s) { return s.parentId === parentId; });
+      var allChildrenDone = children.every(function(c) {
+        return workflowNodeStates[c.id] === 'completed';
+      });
+      if (allChildrenDone && workflowNodeStates[parentId] !== 'completed') {
+        workflowNodeStates[parentId] = 'completed';
+        var pIdx = WORKFLOW_STEPS.findIndex(function(s) { return s.id === parentId; });
+        if (pIdx > workflowHighestCompleted) workflowHighestCompleted = pIdx;
+        // Auto-advance to next top-level step after parent
+        if (pIdx >= 0 && pIdx < WORKFLOW_STEPS.length - 1) {
+          var afterParent = WORKFLOW_STEPS[pIdx + 1];
+          if (!afterParent.disabled && !afterParent.requiresInput && workflowNodeStates[afterParent.id] === 'pending') {
+            workflowNodeStates[afterParent.id] = 'active';
+          }
+        }
+      }
+    }
   }
   renderWorkflow();
 }
 
+function _syncTopologySubsteps(hasOrig, hasEq) {
+  if (hasOrig) {
+    updateWorkflowNode('topology_sub1', 'completed');
+    updateWorkflowNode('topology_sub2', 'completed');
+    if (typeof _formulaCardReady !== 'undefined') _formulaCardReady = true;
+  }
+  if (hasEq) {
+    updateWorkflowNode('topology_sub3', 'completed');
+  }
+}
+
 function syncWorkflowFromSession(sessionData) {
   var hasTopology = !!(sessionData.original_topology || sessionData.equivalent_topology);
+  var hasOrigTopo = !!sessionData.original_topology;
+  var hasEqTopo = !!sessionData.equivalent_topology;
   var hasModel = !!(sessionData.original_training_model || sessionData.equivalent_training_model ||
                      (typeof modelOriginal !== 'undefined' && modelOriginal) ||
                      (typeof modelEquivalent !== 'undefined' && modelEquivalent));
@@ -1618,7 +1711,7 @@ function syncWorkflowFromSession(sessionData) {
   if (hasComparison) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
-    updateWorkflowNode('topology', 'completed');
+    _syncTopologySubsteps(true, true);
     updateWorkflowNode('model', 'completed');
     updateWorkflowNode('simulation', 'completed');
     if (sessionData.comparison_equivalent === false) {
@@ -1629,25 +1722,25 @@ function syncWorkflowFromSession(sessionData) {
   } else if (hasSimulation) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
-    updateWorkflowNode('topology', 'completed');
+    _syncTopologySubsteps(true, true);
     updateWorkflowNode('model', 'completed');
     updateWorkflowNode('simulation', 'completed');
     updateWorkflowNode('comparison', 'active');
   } else if (hasModel && hasTopology) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
-    updateWorkflowNode('topology', 'completed');
+    _syncTopologySubsteps(hasOrigTopo, hasEqTopo);
     updateWorkflowNode('model', 'completed');
     updateWorkflowNode('simulation', 'active');
   } else if (hasTopology) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
-    updateWorkflowNode('topology', 'completed');
+    _syncTopologySubsteps(hasOrigTopo, hasEqTopo);
     updateWorkflowNode('model', 'active');
   } else if (step === 'params_collected' || step === 'topology_generated') {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
-    if (hasTopology) updateWorkflowNode('topology', 'completed');
+    if (hasTopology) _syncTopologySubsteps(hasOrigTopo, hasEqTopo);
     updateWorkflowNode('model', 'active');
   }
 }
@@ -1895,6 +1988,7 @@ function newSession() {
   meshEstimateOrig = {};
   meshEstimateEq = {};
   _renderState.mode = null;
+  _formulaCardReady = false;
   d3.select("#canvas-section").selectAll("svg").remove();
   document.getElementById("canvas-section").style.display = 'none';
   document.getElementById("mesh-config-toolbar").classList.remove("visible");
@@ -2055,12 +2149,20 @@ async function handleSSEEvent(type, data) {
     case 'mesh_json':
       setStatus('generated');
       const topoData = data.data || data;
-      const topoSummary = `📦 ${topoData.name || ''}\n节点数: ${topoData.total_nodes || 0}  |  DP×TP×PP = ${topoData.dp_size || 0}×${topoData.tp_size || 0}×${topoData.pp_size || 0}\n通信域: dp=${topoData.comm_dp_groups ?? (topoData.communication_groups?.dp || []).length}  tp=${topoData.comm_tp_groups ?? (topoData.communication_groups?.tp || []).length}  pp=${topoData.comm_pp_groups ?? (topoData.communication_groups?.pp || []).length}`;
+      const topoSummary = '📦 ' + (topoData.name || '') + '\n节点数: ' + (topoData.total_nodes || 0) + '  |  DP×TP×PP = ' + (topoData.dp_size || 0) + '×' + (topoData.tp_size || 0) + '×' + (topoData.pp_size || 0) + '\n通信域: dp=' + (topoData.comm_dp_groups != null ? topoData.comm_dp_groups : (topoData.communication_groups?.dp || []).length) + '  tp=' + (topoData.comm_tp_groups != null ? topoData.comm_tp_groups : (topoData.communication_groups?.tp || []).length) + '  pp=' + (topoData.comm_pp_groups != null ? topoData.comm_pp_groups : (topoData.communication_groups?.pp || []).length);
       addMessage('mesh', topoSummary, 'mesh');
       _pendingMeshList.push(topoData);
-      // if topology node is active (waiting confirm), keep it active; otherwise auto-complete
-      if (workflowNodeStates['topology'] !== 'completed') {
-        updateWorkflowNode('topology', 'completed');
+      // Detect original vs equivalent topology
+      var topoName = (topoData.name || '').toLowerCase();
+      var isOrigTopo = topoName.indexOf('原始') !== -1;
+      if (isOrigTopo) {
+        if (workflowNodeStates['topology_sub1'] !== 'completed') {
+          updateWorkflowNode('topology_sub1', 'completed');
+        }
+      } else {
+        if (workflowNodeStates['topology_sub3'] !== 'completed') {
+          updateWorkflowNode('topology_sub3', 'completed');
+        }
       }
       break;
     case 'model_json':
@@ -2143,6 +2245,8 @@ async function handleSSEEvent(type, data) {
 
 function syncWorkflowFromLoadedData() {
   var hasTopology = !!(meshOriginal || meshEquivalent);
+  var hasOrigTopo = !!meshOriginal;
+  var hasEqTopo = !!meshEquivalent;
   var hasModel = !!(modelOriginal || modelEquivalent);
   var hasSimulation = !!((typeof meshActualOrig !== 'undefined' && Object.keys(meshActualOrig || {}).length) ||
                          (typeof meshActualEq !== 'undefined' && Object.keys(meshActualEq || {}).length));
@@ -2150,7 +2254,7 @@ function syncWorkflowFromLoadedData() {
   if (hasSimulation && hasModel && hasTopology) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
-    updateWorkflowNode('topology', 'completed');
+    _syncTopologySubsteps(true, true);
     updateWorkflowNode('model', 'completed');
     updateWorkflowNode('simulation', 'completed');
     if (workflowNodeStates['comparison'] !== 'completed') {
@@ -2159,7 +2263,7 @@ function syncWorkflowFromLoadedData() {
   } else if (hasModel && hasTopology) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
-    updateWorkflowNode('topology', 'completed');
+    _syncTopologySubsteps(hasOrigTopo, hasEqTopo);
     updateWorkflowNode('model', 'completed');
     if (workflowNodeStates['simulation'] !== 'completed') {
       updateWorkflowNode('simulation', 'active');
@@ -2167,7 +2271,7 @@ function syncWorkflowFromLoadedData() {
   } else if (hasTopology) {
     updateWorkflowNode('params', 'completed');
     updateWorkflowNode('guard', 'completed');
-    updateWorkflowNode('topology', 'completed');
+    _syncTopologySubsteps(hasOrigTopo, hasEqTopo);
     updateWorkflowNode('model', 'active');
   }
 }
