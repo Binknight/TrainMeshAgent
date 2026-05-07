@@ -1080,7 +1080,8 @@ function canvasRebuild() {
 
   // Arrow marker defs for model data-flow arrows
   if (hasModel) {
-    svg.append('defs').append('marker')
+    var defs = svg.append('defs');
+    defs.append('marker')
       .attr('id', 'arrow-dataflow')
       .attr('viewBox', '0 0 10 10')
       .attr('refX', 5).attr('refY', 5)
@@ -1089,6 +1090,21 @@ function canvasRebuild() {
       .append('path')
       .attr('d', 'M 0 0 L 10 5 L 0 10 z')
       .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
+
+    // Hover glow filter for model diagram
+    var filter = defs.append('filter')
+      .attr('id', 'model-hover-glow')
+      .attr('x', '-30%').attr('y', '-30%')
+      .attr('width', '160%').attr('height', '160%');
+    filter.append('feDropShadow')
+      .attr('dx', 0).attr('dy', 3)
+      .attr('stdDeviation', 4)
+      .attr('flood-color', '#39bae6')
+      .attr('flood-opacity', 0.45);
+
+    defs.append('style')
+      .attr('type', 'text/css')
+      .text('.model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }');
   }
 
   // ── Layout dimensions used by both topology and model sections ──
@@ -1693,8 +1709,8 @@ var _TM_DESIGN = {
   H_ATTN: 92,              // attention block height
   H_FFN: 106,              // FFN block height
   ARROW_S: 12,             // arrow size
-  TENSOR_W: 96,            // tensor grid width
-  TENSOR_H: 96,            // tensor grid height
+  TENSOR_W: 108,           // tensor grid width
+  TENSOR_H: 108,           // tensor grid height
   TENSOR_X: 12,            // tensor grid left edge
   TENSOR_Y: 50,            // tensor grid top (aligned to transformer card top)
   // Vertical layout
@@ -1739,12 +1755,29 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   var sg = g.append('g')
     .attr('transform', 'translate(' + offX + ',' + (topY + headerH) + ') scale(' + scale + ')');
 
+  // ── Helper: bind hover effect (glow + stroke lift) to a rect ──
+  function addHover(rect, origSw) {
+    rect
+      .attr('class', 'model-node')
+      .on('mouseenter', function () {
+        d3.select(this)
+          .attr('stroke-width', origSw * 2.2)
+          .attr('filter', 'url(#model-hover-glow)');
+      })
+      .on('mouseleave', function () {
+        d3.select(this)
+          .attr('stroke-width', origSw)
+          .attr('filter', null);
+      });
+  }
+
   // ── Helper: draw a simple labeled box ──
   function box(x, y, w, h, label, fill, stroke, textColor, fontSize) {
     fontSize = fontSize || 11;
-    sg.append('rect')
+    var rect = sg.append('rect')
       .attr('x', x).attr('y', y).attr('width', w).attr('height', h)
       .attr('rx', 4).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.2);
+    addHover(rect, 1.2);
     sg.append('text')
       .attr('x', x + w / 2).attr('y', y + h / 2 + 1)
       .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
@@ -1754,9 +1787,10 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
 
   // ── Helper: draw a sub-block with title and inner items ──
   function subBlock(ox, oy, ow, oh, title, items, fill, stroke, titleColor, itemBg, itemStroke) {
-    sg.append('rect')
+    var rect = sg.append('rect')
       .attr('x', ox).attr('y', oy).attr('width', ow).attr('height', oh)
       .attr('rx', 4).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.2);
+    addHover(rect, 1.2);
     sg.append('text')
       .attr('x', ox + ow / 2).attr('y', oy + 13)
       .attr('text-anchor', 'middle').attr('font-size', 10).attr('font-family', 'DM Sans, sans-serif')
@@ -1770,10 +1804,11 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
 
     items.forEach(function (item, i) {
       var iy = innerStartY + i * (innerH + innerGap);
-      sg.append('rect')
+      var innerRect = sg.append('rect')
         .attr('x', innerX).attr('y', iy).attr('width', innerW).attr('height', innerH)
         .attr('rx', 3).attr('fill', itemBg).attr('stroke', itemStroke)
         .attr('stroke-width', 0.8).attr('stroke-opacity', 0.5);
+      addHover(innerRect, 0.8);
       sg.append('text')
         .attr('x', innerX + innerW / 2).attr('y', iy + innerH / 2 + 1)
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
@@ -1822,11 +1857,12 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
       .attr('stroke-width', 1).attr('opacity', 0.35 + i * 0.25);
   });
 
-  sg.append('rect')
+  var tfCard = sg.append('rect')
     .attr('x', D.CX - D.BOX_W / 2).attr('y', D.Y_HEADER)
     .attr('width', D.BOX_W).attr('height', tfH)
     .attr('rx', 8).attr('fill', MODEL_COLORS.transformer_card.fill)
     .attr('stroke', MODEL_COLORS.transformer_card.stroke).attr('stroke-width', 1.8);
+  addHover(tfCard, 1.8);
 
   sg.append('text')
     .attr('x', D.CX - D.BOX_W / 2 + 12).attr('y', D.Y_HEADER + 18)
@@ -1960,11 +1996,12 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   var gridCols = 4, gridRows = 4;
   var cellW = D.TENSOR_W / gridCols, cellH = D.TENSOR_H / gridRows;
 
-  sg.append('rect')
+  var tensorOuter = sg.append('rect')
     .attr('x', D.TENSOR_X).attr('y', D.TENSOR_Y)
     .attr('width', D.TENSOR_W).attr('height', D.TENSOR_H)
     .attr('rx', 4).attr('fill', 'var(--bg-surface)')
     .attr('stroke', 'var(--text-muted)').attr('stroke-width', 1);
+  addHover(tensorOuter, 1);
 
   for (var row = 0; row < gridRows; row++) {
     for (var col = 0; col < gridCols; col++) {
@@ -1972,10 +2009,11 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
       var tcy = D.TENSOR_Y + row * cellH;
       var num = row * gridCols + col + 1;
       var isFirst = (num === 1);
-      sg.append('rect')
+      var cellRect = sg.append('rect')
         .attr('x', tcx).attr('y', tcy).attr('width', cellW).attr('height', cellH)
         .attr('fill', isFirst ? '#ff8f40' : '#161c24')
         .attr('stroke', 'var(--text-muted)').attr('stroke-width', 0.5);
+      addHover(cellRect, 0.5);
       sg.append('text')
         .attr('x', tcx + cellW / 2).attr('y', tcy + cellH / 2 + 1)
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
