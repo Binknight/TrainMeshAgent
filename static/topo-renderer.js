@@ -1723,7 +1723,7 @@ async function _refetchMeshEstimate(side) {
 // Design-base coordinates (rendered at natural size, then scaled uniformly to fit areaW).
 var _TM_DESIGN = {
   W: 480, H: 620,         // design canvas
-  CX: 240,                 // center X
+  CX: 246,                 // center X
   BOX_W: 220,              // wide block width
   NARROW_W: 120,           // narrow block width (LayerNorm, Add)
   BLOCK_W: 200,            // sub-block width (ATTN, FFN)
@@ -1733,9 +1733,9 @@ var _TM_DESIGN = {
   H_ATTN: 92,              // attention block height
   H_FFN: 106,              // FFN block height
   ARROW_S: 12,             // arrow size
-  TENSOR_W: 108,           // tensor grid width
-  TENSOR_H: 108,           // tensor grid height
-  TENSOR_X: 12,            // tensor grid left edge
+  TENSOR_W: 124,           // tensor grid width
+  TENSOR_H: 124,           // tensor grid height
+  TENSOR_X: 0,             // tensor grid left edge
   TENSOR_Y: 50,            // tensor grid top (aligned to transformer card top)
   // Vertical layout
   Y_EMBED: 0,
