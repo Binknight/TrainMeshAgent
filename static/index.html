@@ -1323,6 +1323,63 @@
                 pointer-events: auto;
             }
 
+            /* ── Model Concept Tooltip ── */
+            #model-tooltip {
+                position: fixed;
+                pointer-events: none;
+                z-index: 2000;
+                background: var(--bg-panel);
+                border: 1px solid var(--border-active);
+                border-radius: 10px;
+                padding: 14px 16px;
+                min-width: 240px;
+                max-width: 360px;
+                font-family: var(--font-sans);
+                font-size: 12px;
+                box-shadow: 0 6px 28px rgba(0, 0, 0, 0.55);
+                opacity: 0;
+                transition: opacity 0.15s;
+                line-height: 1.55;
+                color: var(--text-primary);
+            }
+            #model-tooltip.visible {
+                opacity: 1;
+            }
+            #model-tooltip .tip-title {
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--cyan);
+                margin-bottom: 6px;
+            }
+            #model-tooltip .tip-eng {
+                font-size: 11px;
+                font-weight: 400;
+                color: var(--text-secondary);
+                margin-bottom: 10px;
+                font-family: var(--font-mono);
+            }
+            #model-tooltip .tip-explain {
+                font-size: 11px;
+                color: var(--text-primary);
+                margin-bottom: 8px;
+                line-height: 1.6;
+            }
+            #model-tooltip .tip-math {
+                font-size: 10px;
+                font-family: var(--font-mono);
+                color: var(--teal);
+                background: var(--bg-surface);
+                border-radius: 5px;
+                padding: 6px 10px;
+                margin-bottom: 8px;
+                word-break: break-all;
+            }
+            #model-tooltip .tip-values {
+                font-size: 10px;
+                color: var(--text-secondary);
+                line-height: 1.5;
+            }
+
             /* ── Tooltip Detail Panel (right-side expansion) ── */
             #rank-tooltip-detail,
             #rank-tooltip-detail-mapped {
@@ -1938,6 +1995,7 @@
                     <div class="canvas-svg-wrap" id="canvas-svg-wrap">
                         <div id="rank-tooltip"></div>
                         <div id="rank-tooltip-mapped"></div>
+                        <div id="model-tooltip"></div>
                         <div id="rank-tooltip-detail"></div>
                         <div id="rank-tooltip-detail-mapped"></div>
                         <div
