@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformer Model Architecture</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #0a0e14;
+    --bg-panel: #11161d;
+    --bg-surface: #161c24;
+    --border: #1e2a36;
+    --text-primary: #d4dce8;
+    --text-secondary: #7b8ca3;
+    --text-muted: #4a5568;
+    --cyan: #39bae6;
+    --teal: #3bceb4;
+    --red: #f26d78;
+    --yellow: #ffb454;
+    --green: #7fd962;
+    --purple: #baa1ff;
+    --orange: #ff8f40;
+    --blue: #58a6ff;
+    --tp-green: #3fb950;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'DM Sans', system-ui, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg-deep);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  svg text { user-select: none; }
+  .node-rect { transition: all 0.2s ease; }
+</style>
+</head>
+<body>
+<svg id="transformer" width="680" height="660"></svg>
+<script>
+const svg = d3.select("#transformer");
+
+// Arrow image paths
+const ARROW_GREEN = "../static/assets/down_arrow_green.png";
+const ARROW_GREY = "../static/assets/down_arrow_grey.png";
+
+// ========== LAYOUT CONSTANTS ==========
+const CX = 360;
+const BOX_W = 250;
+const NARROW_W = 140;
+const BLOCK_W = 230;
+const SUB_W = 170;
+const H_SM = 28;
+const H_MD = 36;
+const H_ATTN = 100;
+const H_FFN = 120;
+const ARROW_S = 14;
+
+// Y positions
+const Y_EMBED = 20;
+const Y_TRANSFORMER = 72;
+const Y_LN1 = 96;
+const Y_ATTN = 138;
+const Y_ADD1 = 250;
+const Y_LN2 = 292;
+const Y_FFN = 334;
+const Y_ADD2 = 466;
+const Y_TRANSFORMER_END = 518;
+const Y_LN3 = 534;
+const Y_OUTPUT = 574;
+
+// ========== STACKED LAYER SHADOWS ==========
+const N_STACK = 5;
+for (let i = N_STACK; i >= 1; i--) {
+  svg.append("rect")
+    .attr("x", CX - BOX_W/2 + i * 3)
+    .attr("y", Y_TRANSFORMER + i * 3)
+    .attr("width", BOX_W)
+    .attr("height", Y_TRANSFORMER_END - Y_TRANSFORMER)
+    .attr("rx", 6)
+    .attr("fill", "none")
+    .attr("stroke", "var(--border)")
+    .attr("stroke-width", 1)
+    .attr("stroke-dasharray", "4 3")
+    .attr("opacity", 1 - i * 0.18);
+}
+
+// ========== TRANSFORMER LAYER ==========
+svg.append("rect")
+  .attr("x", CX - BOX_W/2)
+  .attr("y", Y_TRANSFORMER)
+  .attr("width", BOX_W)
+  .attr("height", Y_TRANSFORMER_END - Y_TRANSFORMER)
+  .attr("rx", 6)
+  .attr("fill", "#111820")
+  .attr("stroke", "var(--cyan)")
+  .attr("stroke-width", 1.5);
+
+svg.append("text")
+  .attr("x", CX - BOX_W/2 + 12)
+  .attr("y", Y_TRANSFORMER + 19)
+  .text("Transformer Layer  (×N)")
+  .attr("font-size", 12)
+  .attr("font-weight", "600")
+  .attr("font-family", "var(--font-sans)")
+  .attr("fill", "var(--cyan)");
+
+svg.append("text")
+  .attr("x", CX + BOX_W/2 - 12)
+  .attr("y", Y_TRANSFORMER + 19)
+  .text("×N")
+  .attr("font-size", 12)
+  .attr("font-weight", "600")
+  .attr("font-family", "var(--font-mono)")
+  .attr("fill", "var(--text-muted)")
+  .attr("text-anchor", "end");
+
+// ========== HELPERS ==========
+function drawBox(x, y, w, h, label, fill, stroke, textColor) {
+  const g = svg.append("g");
+  g.append("rect")
+    .attr("x", x).attr("y", y)
+    .attr("width", w).attr("height", h)
+    .attr("rx", 4)
+    .attr("fill", fill)
+    .attr("stroke", stroke)
+    .attr("stroke-width", 1.2)
+    .attr("class", "node-rect");
+  g.append("text")
+    .attr("x", x + w/2)
+    .attr("y", y + h/2 + 1)
+    .attr("text-anchor", "middle")
+    .attr("dominant-baseline", "middle")
+    .attr("font-size", 11)
+    .attr("font-family", "var(--font-sans)")
+    .attr("font-weight", "500")
+    .attr("fill", textColor)
+    .text(label);
+  return g;
+}
+
+function drawSubBlock(outerX, outerY, outerW, outerH, title, subItems, fill, stroke, titleColor, itemBg, itemStroke) {
+  const g = svg.append("g");
+  g.append("rect")
+    .attr("x", outerX).attr("y", outerY)
+    .attr("width", outerW).attr("height", outerH)
+    .attr("rx", 4)
+    .attr("fill", fill)
+    .attr("stroke", stroke)
+    .attr("stroke-width", 1.2)
+    .attr("class", "node-rect");
+  g.append("text")
+    .attr("x", outerX + outerW/2)
+    .attr("y", outerY + 13)
+    .attr("text-anchor", "middle")
+    .attr("font-size", 10)
+    .attr("font-family", "var(--font-sans)")
+    .attr("font-weight", "600")
+    .attr("fill", titleColor)
+    .text(title);
+
+  const innerX = outerX + (outerW - SUB_W)/2;
+  const innerStartY = outerY + 24;
+  const innerH = 20;
+  const innerGap = 4;
+
+  subItems.forEach((item, i) => {
+    const iy = innerStartY + i * (innerH + innerGap);
+    g.append("rect")
+      .attr("x", innerX).attr("y", iy)
+      .attr("width", SUB_W).attr("height", innerH)
+      .attr("rx", 3)
+      .attr("fill", itemBg)
+      .attr("stroke", itemStroke)
+      .attr("stroke-width", 0.8)
+      .attr("stroke-opacity", 0.5);
+    g.append("text")
+      .attr("x", innerX + SUB_W/2)
+      .attr("y", iy + innerH/2 + 1)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .attr("font-size", 9)
+      .attr("font-family", "var(--font-mono)")
+      .attr("font-weight", "500")
+      .attr("fill", "var(--text-secondary)")
+      .text(item);
+  });
+  return g;
+}
+
+function drawArrowImg(cx, cy, size) {
+  svg.append("image")
+    .attr("x", cx - size/2)
+    .attr("y", cy - size/2)
+    .attr("width", size)
+    .attr("height", size)
+    .attr("href", ARROW_GREEN);
+}
+
+function drawLine(x1, y1, x2, y2, color, dash) {
+  svg.append("line")
+    .attr("x1", x1).attr("y1", y1)
+    .attr("x2", x2).attr("y2", y2)
+    .attr("stroke", color)
+    .attr("stroke-width", 1.2)
+    .attr("stroke-dasharray", dash || "none");
+}
+
+// ========== 1. EMBEDDINGS ==========
+drawBox(CX - BOX_W/2, Y_EMBED, BOX_W, H_MD,
+  "Position + Word Embeddings & Dropout",
+  "#1a1a10", "var(--yellow)", "var(--yellow)");
+
+// ========== 2. LAYER NORM 1 ==========
+drawBox(CX - NARROW_W/2, Y_LN1, NARROW_W, H_SM,
+  "Layer Norm",
+  "#111a13", "var(--green)", "var(--green)");
+
+// ========== 3. ATTENTION ==========
+drawSubBlock(CX - BLOCK_W/2, Y_ATTN, BLOCK_W, H_ATTN,
+  "Multi-Head Self-Attention",
+  ["Self Attention", "Linear (h → h)", "Dropout"],
+  "#111922", "var(--cyan)", "var(--cyan)", "#15202b", "var(--cyan)");
+
+// ========== 4. ADD 1 ==========
+drawBox(CX - NARROW_W/2, Y_ADD1, NARROW_W, H_SM,
+  "Add",
+  "var(--bg-surface)", "var(--text-muted)", "var(--text-secondary)");
+
+// ========== 5. LAYER NORM 2 ==========
+drawBox(CX - NARROW_W/2, Y_LN2, NARROW_W, H_SM,
+  "Layer Norm",
+  "#111a13", "var(--green)", "var(--green)");
+
+// ========== 6. FFN ==========
+drawSubBlock(CX - BLOCK_W/2, Y_FFN, BLOCK_W, H_FFN,
+  "Feed-Forward Network",
+  ["Linear (h → 4h)", "GeLU", "Linear (4h → h)", "Dropout"],
+  "#1a1114", "var(--red)", "var(--red)", "#1f1518", "var(--red)");
+
+// ========== 7. ADD 2 ==========
+drawBox(CX - NARROW_W/2, Y_ADD2, NARROW_W, H_SM,
+  "Add",
+  "var(--bg-surface)", "var(--text-muted)", "var(--text-secondary)");
+
+// ========== 8. LAYER NORM 3 ==========
+drawBox(CX - NARROW_W/2, Y_LN3, NARROW_W, H_SM,
+  "Layer Norm",
+  "#111a13", "var(--green)", "var(--green)");
+
+// ========== 9. OUTPUT ==========
+drawBox(CX - BOX_W/2, Y_OUTPUT, BOX_W, H_MD,
+  "Output Layer & Loss",
+  "#1a140f", "var(--orange)", "var(--orange)");
+
+// ========== TENSOR (left side, 4×4 grid) ==========
+const GRID_COLS = 4;
+const GRID_ROWS = 4;
+const TENSOR_W = 120;
+const TENSOR_H = 120;
+const TENSOR_X = 85;
+const TENSOR_Y = Y_TRANSFORMER;
+const CELL_W = TENSOR_W / GRID_COLS;
+const CELL_H = TENSOR_H / GRID_ROWS;
+
+// Outer rect
+svg.append("rect")
+  .attr("x", TENSOR_X).attr("y", TENSOR_Y)
+  .attr("width", TENSOR_W).attr("height", TENSOR_H)
+  .attr("rx", 4)
+  .attr("fill", "var(--bg-surface)")
+  .attr("stroke", "var(--text-muted)")
+  .attr("stroke-width", 1);
+
+// Cells
+for (let row = 0; row < GRID_ROWS; row++) {
+  for (let col = 0; col < GRID_COLS; col++) {
+    const cx = TENSOR_X + col * CELL_W;
+    const cy = TENSOR_Y + row * CELL_H;
+    const num = row * GRID_COLS + col + 1;
+    const isFirst = (num === 1);
+    svg.append("rect")
+      .attr("x", cx).attr("y", cy)
+      .attr("width", CELL_W).attr("height", CELL_H)
+      .attr("fill", isFirst ? "var(--orange)" : "#161c24")
+      .attr("stroke", "var(--text-muted)")
+      .attr("stroke-width", 0.5);
+    svg.append("text")
+      .attr("x", cx + CELL_W/2)
+      .attr("y", cy + CELL_H/2 + 1)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .attr("font-size", 10)
+      .attr("font-family", "var(--font-mono)")
+      .attr("font-weight", "600")
+      .attr("fill", isFirst ? "#0a0e14" : "var(--text-secondary)")
+      .text(num);
+  }
+}
+
+// Tensor title
+svg.append("text")
+  .attr("x", TENSOR_X + TENSOR_W/2)
+  .attr("y", TENSOR_Y - 10)
+  .attr("text-anchor", "middle")
+  .attr("font-size", 10)
+  .attr("font-family", "var(--font-sans)")
+  .attr("font-weight", "500")
+  .attr("fill", "var(--text-secondary)")
+  .text("Tensor");
+
+// Grid label
+svg.append("text")
+  .attr("x", TENSOR_X + TENSOR_W/2)
+  .attr("y", TENSOR_Y + TENSOR_H + 14)
+  .attr("text-anchor", "middle")
+  .attr("font-size", 9)
+  .attr("font-family", "var(--font-mono)")
+  .attr("fill", "var(--text-muted)")
+  .text(`(${GRID_ROWS}×${GRID_COLS} TP)`);
+
+// ========== MAIN FLOW ARROWS ==========
+drawArrowImg(CX, Y_EMBED + H_MD + (Y_LN1 - Y_EMBED - H_MD)/2, ARROW_S);
+drawArrowImg(CX, Y_LN1 + H_SM + (Y_ATTN - Y_LN1 - H_SM)/2, ARROW_S);
+drawArrowImg(CX, Y_ATTN + H_ATTN + (Y_ADD1 - Y_ATTN - H_ATTN)/2, ARROW_S);
+drawArrowImg(CX, Y_ADD1 + H_SM + (Y_LN2 - Y_ADD1 - H_SM)/2, ARROW_S);
+drawArrowImg(CX, Y_LN2 + H_SM + (Y_FFN - Y_LN2 - H_SM)/2, ARROW_S);
+drawArrowImg(CX, Y_FFN + H_FFN + (Y_ADD2 - Y_FFN - H_FFN)/2, ARROW_S);
+drawArrowImg(CX, Y_ADD2 + H_SM + (Y_LN3 - Y_ADD2 - H_SM)/2, ARROW_S);
+drawArrowImg(CX, Y_LN3 + H_SM + (Y_OUTPUT - Y_LN3 - H_SM)/2, ARROW_S);
+
+// ========== SKIP CONNECTIONS ==========
+const skipColor = "var(--orange)";
+const skipRight = CX + BOX_W/2 + 38;
+
+// Skip 1: Embeddings→LN1 gap → Add1
+const skip1StartY = Y_EMBED + H_MD + (Y_LN1 - Y_EMBED - H_MD) / 2;
+const skip1EndX = CX + NARROW_W/2;
+const skip1EndY = Y_ADD1 + H_SM/2;
+drawLine(CX, skip1StartY, skipRight, skip1StartY, skipColor, "4 3");
+drawLine(skipRight, skip1StartY, skipRight, skip1EndY, skipColor, "4 3");
+drawLine(skipRight, skip1EndY, skip1EndX + 6, skip1EndY, skipColor, "4 3");
+drawArrowImg(skip1EndX, skip1EndY, ARROW_S);
+
+svg.append("text")
+  .attr("text-anchor", "middle")
+  .attr("font-size", 9)
+  .attr("font-family", "var(--font-sans)")
+  .attr("font-style", "italic")
+  .attr("fill", "var(--orange)")
+  .attr("transform", `translate(${skipRight + 10}, ${skip1StartY + (skip1EndY - skip1StartY)/2}) rotate(-90)`)
+  .text("residual");
+
+// Skip 2: Add1→LN2 gap → Add2
+const skip2StartY = Y_ADD1 + H_SM + (Y_LN2 - Y_ADD1 - H_SM) / 2;
+const skip2EndX = CX + NARROW_W/2;
+const skip2EndY = Y_ADD2 + H_SM/2;
+drawLine(CX, skip2StartY, skipRight, skip2StartY, skipColor, "4 3");
+drawLine(skipRight, skip2StartY, skipRight, skip2EndY, skipColor, "4 3");
+drawLine(skipRight, skip2EndY, skip2EndX + 6, skip2EndY, skipColor, "4 3");
+drawArrowImg(skip2EndX, skip2EndY, ARROW_S);
+
+svg.append("text")
+  .attr("text-anchor", "middle")
+  .attr("font-size", 9)
+  .attr("font-family", "var(--font-sans)")
+  .attr("font-style", "italic")
+  .attr("fill", "var(--orange)")
+  .attr("transform", `translate(${skipRight + 10}, ${skip2StartY + (skip2EndY - skip2StartY)/2}) rotate(-90)`)
+  .text("residual");
+
+// ========== LEGEND (single column, last row at transformer bottom) ==========
+const N_LEGEND = 6;
+const LEGEND_ROW_H = 18;
+const legendBaseY = Y_TRANSFORMER_END;
+const legendTitleY = legendBaseY - (N_LEGEND + 1) * LEGEND_ROW_H;
+
+svg.append("text")
+  .attr("x", TENSOR_X)
+  .attr("y", legendTitleY + 4)
+  .text("Legend")
+  .attr("font-size", 10)
+  .attr("font-family", "var(--font-sans)")
+  .attr("font-weight", "600")
+  .attr("fill", "var(--text-muted)")
+  .attr("letter-spacing", "1px");
+
+const legendItems = [
+  { color: "var(--yellow)", label: "Embeddings" },
+  { color: "var(--green)", label: "Layer Normalization" },
+  { color: "var(--cyan)", label: "Self-Attention" },
+  { color: "var(--red)", label: "Feed-Forward Network" },
+  { color: "var(--orange)", label: "Skip Connection" },
+  { color: "var(--orange)", label: "Tensor (highlight)" },
+];
+legendItems.forEach((item, i) => {
+  const ly = legendTitleY + 14 + (i + 1) * LEGEND_ROW_H;
+  svg.append("rect")
+    .attr("x", TENSOR_X).attr("y", ly - 4)
+    .attr("width", 8).attr("height", 8)
+    .attr("rx", 2).attr("fill", item.color);
+  svg.append("text")
+    .attr("x", TENSOR_X + 13).attr("y", ly + 5)
+    .attr("font-size", 9)
+    .attr("font-family", "var(--font-sans)")
+    .attr("fill", "var(--text-secondary)")
+    .text(item.label);
+});
+
+</script>
+</body>
+</html>
