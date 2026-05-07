@@ -80,6 +80,7 @@ var meshActualEq = {};
 var meshPinnedRank = null;     // { side: "orig"|"eq", globalRank: number }
 var modelOriginal = null;    // TrainingModel from SSE model_json
 var modelEquivalent = null;
+var _formulaCardReady = false;  // true when original mesh is loaded, shows formula card between orig and eq
 
 // Tracks the last rendered configuration for fast DP-switch path
 var _renderState = {
@@ -796,6 +797,109 @@ function _updateDpSelect(selId, activeDp) {
 
 // ── DP switch handlers (exposed globally for inline onchange) ──
 
+// ── Formula Card (static formulas, no computation) ──
+
+function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
+  var cardG = parentG.append("g").attr("class", "formula-card-group");
+  var pad = 14;
+
+  // Spacing tuned for 340px card
+  var lineH_label = 20;
+  var lineH_formula = 16;
+  var lineH_desc = 14;
+  var sectGap = 8;
+
+  // Section definitions (long formulas split to fit 280px content area)
+  var sections = [
+    {
+      label: "▸ 单卡FLOPs",
+      lines: [
+        "[(72·B·S·H² + 12·B·S²·H) ÷ TP] · L÷PP"
+      ],
+      desc: "计算量与 TP 成反比，与 L/PP 成正比"
+    },
+    {
+      label: "▸ HBM 占用",
+      lines: [
+        "[L·(12H²+4H)÷(TP·PP) + B·S·H·L÷PP",
+        " + L·(12H²+4H)÷(TP·PP)] · a ÷ 1e9"
+      ],
+      desc: "权重+梯度+优化器 / 激活值 / 通信缓冲"
+    },
+    {
+      label: "▸ 通信流量",
+      lines: [
+        "TP: L÷PP · 32·B·S·H ÷ 1e6 GB/micro",
+        "DP: 8·L·(4H²+12H²)÷(TP·PP)",
+        "    ÷ 1e9 GB/step",
+        "PP: 4·B·S·H ÷ 1e9 GB/step"
+      ],
+      desc: "TP/DP通信与 TP·PP 成反比，PP通信仅取决于模型规模"
+    },
+  ];
+
+  // Compute card intrinsic height
+  var titleFont = 16;
+  var cardH = pad + titleFont + 10; // top pad + title area + title gap
+  sections.forEach(function(sec) {
+    cardH += lineH_label;
+    cardH += sec.lines.length * lineH_formula;
+    cardH += lineH_desc + sectGap;
+  });
+  cardH += pad - sectGap; // remove trailing gap, add bottom pad
+
+  // Center card vertically in the available space
+  var cardY = viewY + (viewH - cardH) / 2;
+  if (cardY < viewY) cardY = viewY;
+
+  // Card background
+  cardG.append("rect")
+    .attr("x", viewX).attr("y", cardY)
+    .attr("width", viewW).attr("height", cardH)
+    .attr("rx", 8).attr("ry", 8)
+    .attr("class", "formula-card-rect");
+
+  // Title
+  cardG.append("text")
+    .attr("x", viewX + viewW / 2).attr("y", cardY + pad + titleFont)
+    .attr("text-anchor", "middle")
+    .attr("fill", "#39bae6").attr("font-weight", "bold")
+    .attr("font-size", titleFont + "px").attr("font-family", "var(--font-sans)")
+    .text("📐 等效机制分析");
+
+  var curY = cardY + pad + titleFont + 10;
+
+  sections.forEach(function(sec) {
+    // Section label
+    cardG.append("text")
+      .attr("x", viewX + pad).attr("y", curY + 15)
+      .attr("fill", "var(--teal)").attr("font-weight", "600")
+      .attr("font-size", "12px").attr("font-family", "var(--font-sans)")
+      .text(sec.label);
+    curY += lineH_label;
+
+    // Formula lines
+    sec.lines.forEach(function(line) {
+      cardG.append("text")
+        .attr("x", viewX + pad + 4).attr("y", curY + 14)
+        .attr("fill", "var(--text-primary)").attr("font-size", "11px")
+        .attr("font-family", "var(--font-mono)")
+        .text(line);
+      curY += lineH_formula;
+    });
+
+    // Description
+    cardG.append("text")
+      .attr("x", viewX + pad + 4).attr("y", curY + 12)
+      .attr("fill", "var(--text-muted)").attr("font-size", "10px")
+      .attr("font-family", "var(--font-sans)")
+      .text(sec.desc);
+    curY += lineH_desc + sectGap;
+  });
+}
+
+// ── DP switch handlers (exposed globally for inline onchange) ──
+
 function meshSwitchDp(dpIndex) {
   meshOrigDp = dpIndex;
   meshRebuild();
@@ -987,10 +1091,13 @@ function canvasRebuild() {
       .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
   }
 
+  // ── Layout dimensions used by both topology and model sections ──
+  var _topoLayout = null; // { mode, origW, cardW, eqW, gap1, gap2, titleH, contentH }
+
   // ═══ Render topology ═══
   if (hasTopo) {
     if (meshOriginal && meshEquivalent) {
-      // ── Compare Mode ──
+      // ── Three-Part Mode: Orig + Card + Eq ──
       document.getElementById("mesh-tpInput").parentElement.style.display = "none";
       document.getElementById("mesh-ppInput").parentElement.style.display = "none";
       document.getElementById("mesh-dpInput").parentElement.style.display = "none";
@@ -1000,24 +1107,25 @@ function canvasRebuild() {
       document.getElementById("canvas-label").textContent =
         (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "最小等效组网");
 
-      var _cmpTitleH = 26, _cmpGap = 24;
-      var availableW = meshWidth - _cmpGap;
-      var contentH = topoH - _cmpTitleH;
+      var _tH = 26, _gap = 10;
+      var _cardW = 340; // fixed card width, centered between topologies
+      var _availForTopos = meshWidth - _cardW - _gap * 2;
       var dimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
       var dimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
       var origShare = dimsOrig.dpW / (dimsOrig.dpW + dimsEq.dpW);
-      origShare = Math.max(0.45, Math.min(0.6, origShare));
-      var origW = availableW * origShare;
-      var eqW = availableW * (1 - origShare);
-      var sharedScale = 0.5;
+      origShare = Math.max(0.4, Math.min(0.6, origShare));
+      var _origW = _availForTopos * origShare;
+      var _eqW = _availForTopos * (1 - origShare);
+      var _contentH = topoH - _tH;
+      var _sharedScale = 0.5;
 
       zoomLayer.append("text")
-        .attr("x", origW / 2).attr("y", _cmpTitleH - 8)
+        .attr("x", _origW / 2).attr("y", _tH - 8)
         .attr("text-anchor", "middle").attr("fill", "#58a6ff")
         .attr("font-family", "sans-serif").attr("font-size", "13px").attr("font-weight", "bold")
-        .text(meshOriginal.name || "原始模型");
+        .text(meshOriginal.name || "原始组网");
       zoomLayer.append("text")
-        .attr("x", origW + _cmpGap + eqW / 2).attr("y", _cmpTitleH - 8)
+        .attr("x", _origW + _gap + _cardW + _gap + _eqW / 2).attr("y", _tH - 8)
         .attr("text-anchor", "middle").attr("fill", "#58a6ff")
         .attr("font-family", "sans-serif").attr("font-size", "13px").attr("font-weight", "bold")
         .text(meshEquivalent.name || "最小等效组网");
@@ -1026,23 +1134,68 @@ function canvasRebuild() {
         zoomLayer.append("g"),
         meshBuildData(meshOriginal.tp, meshOriginal.pp, meshOriginal.dp, meshOrigDp),
         "mesh-dp-sel-orig", "meshSwitchDpOrig",
-        0, _cmpTitleH, origW, contentH, sharedScale, true
+        0, _tH, _origW, _contentH, _sharedScale, true
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
+
+      _renderFormulaCard(zoomLayer.append("g"),
+        _origW + _gap, _tH, _cardW, _contentH);
 
       _meshBuildView(
         zoomLayer.append("g"),
         meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
         "mesh-dp-sel-eq", "meshSwitchDpEq",
-        origW + _cmpGap, _cmpTitleH, eqW, contentH, sharedScale, false
+        _origW + _gap + _cardW + _gap, _tH, _eqW, _contentH, _sharedScale, false
       );
       _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
+      _topoLayout = { mode: "three", origW: _origW, cardW: _cardW, eqW: _eqW, gap: _gap, titleH: _tH, cardX: _origW + _gap };
       _renderState.mode = "compare";
       _renderState.orig.tp = meshOriginal.tp; _renderState.orig.pp = meshOriginal.pp;
       _renderState.orig.dp = meshOriginal.dp; _renderState.orig.activeDp = meshOrigDp;
       _renderState.eq.tp = meshEquivalent.tp; _renderState.eq.pp = meshEquivalent.pp;
       _renderState.eq.dp = meshEquivalent.dp; _renderState.eq.activeDp = meshEqDp;
+    } else if (_formulaCardReady && meshOriginal) {
+      // ── Two-Part Mode: Orig + Card ──
+      var _tH2 = 26, _gap2 = 10;
+      var _cardW2 = 340; // fixed card width
+      var _origW2 = meshWidth - _cardW2 - _gap2;
+      var _contentH2 = topoH - _tH2;
+      var _sharedScale2 = 0.5;
+      var entry2 = meshOriginal;
+
+      if (meshOrigDp >= entry2.dp) meshOrigDp = entry2.dp - 1;
+
+      document.getElementById("mesh-tpInput").parentElement.style.display = "none";
+      document.getElementById("mesh-ppInput").parentElement.style.display = "none";
+      document.getElementById("mesh-dpInput").parentElement.style.display = "none";
+      toolbar.querySelector("button").style.display = "none";
+      document.getElementById("mesh-npu-count").textContent = "Total NPUs: " + _meshNpuTotal(entry2);
+      document.getElementById("canvas-label").textContent =
+        (entry2.name || "组网拓扑") + " | " + (entry2.device_type || "") +
+        "  DP" + entry2.dp + "×TP" + entry2.tp + "×PP" + entry2.pp;
+
+      zoomLayer.append("text")
+        .attr("x", _origW2 / 2).attr("y", _tH2 - 8)
+        .attr("text-anchor", "middle").attr("fill", "#58a6ff")
+        .attr("font-family", "sans-serif").attr("font-size", "13px").attr("font-weight", "bold")
+        .text(entry2.name || "原始组网");
+
+      _meshBuildView(
+        zoomLayer.append("g"),
+        meshBuildData(entry2.tp, entry2.pp, entry2.dp, meshOrigDp),
+        "mesh-dp-select", "meshSwitchDp",
+        0, _tH2, _origW2, _contentH2, _sharedScale2, true
+      );
+      _populateDpSelect("mesh-dp-select", entry2.dp, meshOrigDp);
+
+      _renderFormulaCard(zoomLayer.append("g"),
+        _origW2 + _gap2, _tH2, _cardW2, _contentH2);
+
+      _topoLayout = { mode: "two", origW: _origW2, cardW: _cardW2, gap: _gap2, titleH: _tH2, cardX: _origW2 + _gap2 };
+      _renderState.mode = "single_card";
+      _renderState.orig.tp = entry2.tp; _renderState.orig.pp = entry2.pp;
+      _renderState.orig.dp = entry2.dp; _renderState.orig.activeDp = meshOrigDp;
     } else {
       // ── Single View Mode ──
       var entry = meshOriginal || meshEquivalent;
@@ -1077,7 +1230,20 @@ function canvasRebuild() {
     // ── Calculate model layout aligned to DP card ──
     var modelX0, modelAreaW;
     var modelX0Eq, modelAreaWEq;
-    if (meshOriginal && meshEquivalent) {
+    if (_topoLayout && _topoLayout.mode === "three") {
+      // Three-part: align models to topology columns
+      var _moW3 = _topoLayout.origW;
+      var _meW3 = _topoLayout.eqW;
+      modelAreaW = _meshCalcDims(meshOriginal.tp, meshOriginal.pp).dpW * 0.5;
+      modelX0 = (_moW3 - modelAreaW) / 2;
+      modelAreaWEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp).dpW * 0.5;
+      modelX0Eq = _moW3 + _topoLayout.gap + _topoLayout.cardW + _topoLayout.gap + (_meW3 - modelAreaWEq) / 2;
+    } else if (_topoLayout && _topoLayout.mode === "two") {
+      // Two-part: only original model
+      var _moW2 = _topoLayout.origW;
+      modelAreaW = _meshCalcDims(meshOriginal.tp, meshOriginal.pp).dpW * 0.5;
+      modelX0 = (_moW2 - modelAreaW) / 2;
+    } else if (meshOriginal && meshEquivalent) {
       var _mgap = 24;
       var _mavailW = meshWidth - _mgap;
       var _mdO = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
@@ -1196,7 +1362,7 @@ async function loadMeshData(topoData) {
     }
   }
 
-  canvasRebuild();
+  // canvasRebuild is called by the caller after loadMeshData completes
 }
 
 // ── Attach to window for inline onclick / onchange handlers ──
