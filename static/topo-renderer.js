@@ -295,7 +295,7 @@ function _buildCompareRow(label, unit, estimate, actual, key, fmt, globalRank, i
 
   var linkHtml = '';
   if (key === 'flops_per_card') {
-    linkHtml = '<span class="metric-link-na">查看</span>';
+    linkHtml = '<a class="metric-link" href="javascript:void(0)" onclick="event.stopPropagation();toggleTooltipDetail(' + globalRank + ',' + (isOrig ? 'true' : 'false') + ',\'flops\')">查看</a>';
   } else {
     var linkType = key.replace(/_per_micro|_per_step|_gb|_mb/g, '');
     if (key === 'hbm_gb') linkType = 'hbm';
@@ -1418,12 +1418,22 @@ document.addEventListener('keydown', function (e) {
 var tooltipDetailState = null; // { metricType, origRank, eqRank }
 
 function _metricTypeLabel(type) {
-  var map = { 'hbm': 'HBM 占用详情', 'tp-comm': 'TP通信详情', 'pp-comm': 'PP通信详情', 'dp-comm': 'DP通信详情' };
+  var map = { 'flops': '单卡FLOPs详情', 'hbm': 'HBM 占用详情', 'tp-comm': 'TP通信详情', 'pp-comm': 'PP通信详情', 'dp-comm': 'DP通信详情' };
   return map[type] || '指标详情';
 }
 
 async function toggleTooltipDetail(globalRank, isOrig, metricType) {
-  if (metricType === 'flops') return;
+	    _closeDetailPanels();
+	    var flopsActual = (isOrig ? meshActualOrig : meshActualEq)[globalRank];
+	    var flopsEst = (isOrig ? meshEstimateOrig : meshEstimateEq)[globalRank];
+	    var cardFlops = (flopsActual && flopsActual.flops_per_card) || (flopsEst && flopsEst.flops_per_card) || 0;
+	    var mockData = _generateFlopsMockData(cardFlops);
+	    var flopsDetail = document.getElementById('rank-tooltip-detail');
+	    var flopsTip = document.getElementById('rank-tooltip');
+	    _showDetailPanel(flopsDetail, flopsTip, globalRank, mockData, metricType);
+	    tooltipDetailState = { metricType: metricType, origRank: isOrig ? globalRank : null, eqRank: isOrig ? null : globalRank };
+	    return;
+	  }
 
   // If same metric type already open, close it (toggle off)
   if (tooltipDetailState && tooltipDetailState.metricType === metricType) {
@@ -1479,6 +1489,30 @@ async function toggleTooltipDetail(globalRank, isOrig, metricType) {
   }
 }
 
+function _generateFlopsMockData(cardFlops) {
+  var total = cardFlops || 7.5e11;
+  var forward = total * 0.34;
+  var backwardB = total * 0.33;
+  var backwardW = total * 0.33;
+  return {
+    total_flops: total,
+    forward_flops: forward,
+    backward_B_flops: backwardB,
+    backward_W_flops: backwardW
+  };
+}
+
+function _renderFlopsDetailHtml(d) {
+  var html = '<table class="tooltip-detail-table">';
+  html += '<tr><th>参数</th><th>计算量 (FLOPs)</th><th>占比</th></tr>';
+  html += '<tr><td class="tooltip-detail-label">总计算量</td><td>' + formatFlops(d.total_flops) + '</td><td>100%</td></tr>';
+  html += '<tr><td class="tooltip-detail-label">前向计算量</td><td>' + formatFlops(d.forward_flops) + '</td><td>' + (d.forward_flops / d.total_flops * 100).toFixed(1) + '%</td></tr>';
+  html += '<tr><td class="tooltip-detail-label">反向传播输入梯度计算量</td><td>' + formatFlops(d.backward_B_flops) + '</td><td>' + (d.backward_B_flops / d.total_flops * 100).toFixed(1) + '%</td></tr>';
+  html += '<tr><td class="tooltip-detail-label">反向传播权重梯度计算量</td><td>' + formatFlops(d.backward_W_flops) + '</td><td>' + (d.backward_W_flops / d.total_flops * 100).toFixed(1) + '%</td></tr>';
+  html += '</table>';
+  return html;
+}
+
 function _showDetailPanel(panel, tooltip, globalRank, data, metricType) {
   var html = '<div class="tooltip-detail-header">';
   html += '<span class="tooltip-detail-title">Rank ' + globalRank + ' | ' + _metricTypeLabel(metricType) + '</span>';
@@ -1487,7 +1521,8 @@ function _showDetailPanel(panel, tooltip, globalRank, data, metricType) {
 
   if (metricType === 'hbm') {
     html += _renderHbmDetailHtml(data);
-  } else {
+	    html += _renderFlopsDetailHtml(data);
+	  } else {
     html += _renderCommDetailHtml(data);
   }
 
