@@ -1043,17 +1043,17 @@ function canvasRebuild() {
       var dO = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
       var dE = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
       var maxDpH = Math.max(dO.dpH, dE.dpH);
-      topoH = _cmpTitleH + Math.ceil(maxDpH * 0.5 + 20);
+      // DP card at scale 0.5 + shadow offset (90*0.5) + title + small margin
+      topoH = _cmpTitleH + Math.ceil((maxDpH + 90) * 0.5) + 4;
     } else {
       var entry = meshOriginal || meshEquivalent;
       var dims = _meshCalcDims(entry.tp, entry.pp);
-      topoH = Math.ceil(dims.dpH * 0.5 + 20);
+      topoH = Math.ceil((dims.dpH + 90) * 0.5) + 8;
     }
-    topoH = Math.max(meshHeight, topoH);
   }
 
-  var modelH = hasModel ? 260 : 0;
-  var sectionGap = (hasTopo && hasModel) ? 100 : 0;
+  var modelH = hasModel ? 520 : 0;
+  var sectionGap = (hasTopo && hasModel) ? 6 : 0;
   var totalH = topoH + sectionGap + modelH;
 
   var svg = container.append("svg")
@@ -1231,18 +1231,18 @@ function canvasRebuild() {
     var modelX0, modelAreaW;
     var modelX0Eq, modelAreaWEq;
     if (_topoLayout && _topoLayout.mode === "three") {
-      // Three-part: align models to topology columns
+      // Three-part: align models to topology columns, use nearly full column width
       var _moW3 = _topoLayout.origW;
       var _meW3 = _topoLayout.eqW;
-      modelAreaW = _meshCalcDims(meshOriginal.tp, meshOriginal.pp).dpW * 0.5;
-      modelX0 = (_moW3 - modelAreaW) / 2;
-      modelAreaWEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp).dpW * 0.5;
-      modelX0Eq = _moW3 + _topoLayout.gap + _topoLayout.cardW + _topoLayout.gap + (_meW3 - modelAreaWEq) / 2;
+      modelAreaW = _moW3 - 16;
+      modelX0 = 8;
+      modelAreaWEq = _meW3 - 16;
+      modelX0Eq = _moW3 + _topoLayout.gap + _topoLayout.cardW + _topoLayout.gap + 8;
     } else if (_topoLayout && _topoLayout.mode === "two") {
-      // Two-part: only original model
+      // Two-part: only original model, use full topology width
       var _moW2 = _topoLayout.origW;
-      modelAreaW = _meshCalcDims(meshOriginal.tp, meshOriginal.pp).dpW * 0.5;
-      modelX0 = (_moW2 - modelAreaW) / 2;
+      modelAreaW = _moW2 - 16;
+      modelX0 = 8;
     } else if (meshOriginal && meshEquivalent) {
       var _mgap = 24;
       var _mavailW = meshWidth - _mgap;
@@ -1252,15 +1252,13 @@ function canvasRebuild() {
       _mshare = Math.max(0.45, Math.min(0.6, _mshare));
       var _moW = _mavailW * _mshare;
       var _meW = _mavailW * (1 - _mshare);
-      modelAreaW = _mdO.dpW * 0.5;
-      modelX0 = (_moW - modelAreaW) / 2;
-      modelAreaWEq = _mdE.dpW * 0.5;
-      modelX0Eq = _moW + _mgap + (_meW - modelAreaWEq) / 2;
+      modelAreaW = _moW - 16;
+      modelX0 = 8;
+      modelAreaWEq = _meW - 16;
+      modelX0Eq = _moW + _mgap + 8;
     } else if (hasTopo) {
-      var _entry = meshOriginal || meshEquivalent;
-      var _dims = _meshCalcDims(_entry.tp, _entry.pp);
-      modelAreaW = _dims.dpW * 0.5;
-      modelX0 = (meshWidth - modelAreaW) / 2;
+      modelAreaW = meshWidth - 32;
+      modelX0 = 16;
     } else {
       modelAreaW = meshWidth - 32;
       modelX0 = 16;
@@ -1281,8 +1279,12 @@ function canvasRebuild() {
         .attr('font-size', '13px').attr('font-family', 'var(--font-sans)')
         .attr('font-weight', 600).text('最小等效模型');
 
-      _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW, false);
-      _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq, false, 120, 5);
+      var sharedScale = Math.min(
+        Math.min(1, (modelAreaW - 16) / _TM_DESIGN.W),
+        Math.min(1, (modelAreaWEq - 16) / _TM_DESIGN.W)
+      );
+      _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW, false, sharedScale);
+      _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq, false, sharedScale);
     } else {
       _renderOneModel(zoomLayer, model, modelX0, modelTopY, modelAreaW, true);
     }
@@ -1617,15 +1619,16 @@ function _positionDetailPanel(panel, tooltip) {
 // ═══════════════════════════════════════════════════════════════════
 
 var MODEL_COLORS = {
-  input_embedding:  { fill: 'rgba(59,206,180,0.12)', stroke: 'var(--teal)', label: 'Input Embedding' },
-  transformer_block:{ fill: 'rgba(57,186,230,0.08)', stroke: 'var(--cyan)', label: 'Transformer Block' },
-  layer_norm:       { fill: 'rgba(108,122,158,0.1)', stroke: 'var(--text-secondary)', label: 'LayerNorm' },
-  mha:              { fill: 'rgba(91,155,213,0.12)', stroke: 'var(--cyan)', label: 'Multi-Head Attention' },
-  ffn:              { fill: 'rgba(186,161,255,0.12)', stroke: 'var(--purple)', label: 'Feed-Forward Network' },
-  ellipsis:         { fill: 'var(--bg-surface)', stroke: 'var(--text-muted)', label: '...' },
-  output:           { fill: 'rgba(242,109,120,0.1)', stroke: 'var(--red)', label: 'Output Projection' },
-  skip:             { stroke: 'var(--green)', fill: 'none' },
-  data_flow:        { stroke: 'var(--text-muted)', fill: 'none' },
+  input_embedding:  { fill: '#1a1a10', stroke: '#ffb454', label: 'Embeddings', text: '#ffb454' },
+  layer_norm:       { fill: '#111a13', stroke: '#7fd962', label: 'Layer Norm', text: '#7fd962' },
+  mha:              { fill: '#111922', stroke: '#39bae6', label: 'Multi-Head Attention', text: '#39bae6' },
+  mha_sub:          { fill: '#15202b', stroke: '#39bae6', text: '#7b8ca3' },
+  ffn:              { fill: '#1a1114', stroke: '#f26d78', label: 'Feed-Forward Network', text: '#f26d78' },
+  ffn_sub:          { fill: '#1f1518', stroke: '#f26d78', text: '#7b8ca3' },
+  add:              { fill: '#161c24', stroke: '#4a5568', label: 'Add', text: '#7b8ca3' },
+  output:           { fill: '#1a140f', stroke: '#ff8f40', label: 'Output Layer', text: '#ff8f40' },
+  skip:             { stroke: '#ff8f40' },
+  transformer_card: { fill: '#111820', stroke: '#39bae6' },
 };
 
 function loadModelData(modelData, role) {
@@ -1672,183 +1675,355 @@ async function _refetchMeshEstimate(side) {
   }
 }
 
-// Render one model horizontally — blocks left-to-right like mesh PP stages.
-// showHeader: prepend a config-header line above the row.
-function _renderOneModel(g, model, x0, topY, areaW, showHeader, baseWidth, maxDisplay) {
+// ── Transformer Model Architecture Diagram (vertical flow) ──
+// Renders the internal structure of a single transformer layer as a vertical
+// column diagram: Embeddings → LayerNorm → Attention → Add → LayerNorm → FFN → Add → LayerNorm → Output
+// with a TP tensor grid on the left, skip connections on the right, and a legend.
+
+// Design-base coordinates (rendered at natural size, then scaled uniformly to fit areaW).
+var _TM_DESIGN = {
+  W: 480, H: 620,         // design canvas
+  CX: 240,                 // center X
+  BOX_W: 220,              // wide block width
+  NARROW_W: 120,           // narrow block width (LayerNorm, Add)
+  BLOCK_W: 200,            // sub-block width (ATTN, FFN)
+  SUB_W: 150,              // inner sub-item width
+  H_SM: 26,                // small block height
+  H_MD: 32,                // medium block height
+  H_ATTN: 92,              // attention block height
+  H_FFN: 106,              // FFN block height
+  ARROW_S: 12,             // arrow size
+  TENSOR_W: 72,            // tensor grid width
+  TENSOR_H: 72,            // tensor grid height
+  TENSOR_X: 12,            // tensor grid left edge
+  TENSOR_Y: 50,            // tensor grid top (aligned to transformer card top)
+  // Vertical layout
+  Y_EMBED: 0,
+  Y_HEADER: 48,            // transformer card top
+  Y_LN1: 72,
+  Y_ATTN: 110,
+  Y_ADD1: 214,
+  Y_LN2: 252,
+  Y_FFN: 290,
+  Y_ADD2: 408,
+  Y_TF_END: 460,           // transformer card bottom
+  Y_LN3: 478,
+  Y_OUTPUT: 516,
+};
+
+function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unused2) {
   var cfg = model.config || {};
   var comp = model.computed || {};
+  var numLayers = cfg.num_layers || 1;
+  var D = _TM_DESIGN;
 
-  // ── Build horizontal display list, truncate with ellipsis if > 8 layers ──
-  var all = [];
-  model.layers.forEach(function (l) {
-    if (l.type === 'input_embedding' || l.type === 'output') return;
-    all.push(l);
-  });
-
-  var MAX_DISPLAY = maxDisplay != null ? maxDisplay : 8;
-  var displayList = all;
-  if (all.length > MAX_DISPLAY) {
-    displayList = [];
-    var firstN = MAX_DISPLAY - 2;
-    for (var di = 0; di < firstN; di++) displayList.push(all[di]);
-    var hiddenStart = all[firstN].id != null ? all[firstN].id : firstN;
-    var hiddenEnd = all[all.length - 2].id != null ? all[all.length - 2].id : (all.length - 2);
-    displayList.push({ type: 'ellipsis', desc: 'L' + hiddenStart + '~L' + hiddenEnd });
-    displayList.push(all[all.length - 1]);
-  }
-
-  // ── Layout constants ──
-  var gap = 8;
-  var blockH = 160;
-  var baseW = baseWidth != null ? baseWidth : 80;
-  var thinW = 50;    // ellipsis width
-  var totalN = displayList.length;
-  // Count types
-  var normalCt = 0, thinCt = 0;
-  displayList.forEach(function (b) {
-    if (b.type === 'transformer_block') normalCt++;
-    else thinCt++;
-  });
-  var needW = normalCt * baseW + thinCt * thinW + (totalN - 1) * gap;
-  var padX = 12;
-  var scale = Math.min(1, (areaW - padX * 2) / needW);
-  var useW = Math.floor(baseW * scale);
-  var useThin = Math.floor(thinW * scale);
-  var useGap = Math.max(3, Math.floor(gap * scale));
-  var rowW = normalCt * useW + thinCt * useThin + (totalN - 1) * useGap;
-  var sx = x0 + Math.max(0, (areaW - rowW) / 2);
+  // ── Scale to fit allocated width (use forced scale when comparing two models side-by-side) ──
+  var scale = (forceScale != null && forceScale > 0) ? forceScale : Math.min(1, (areaW - 16) / D.W);
+  var useW = D.W * scale;
+  var useH = D.H * scale;
+  var offX = x0 + (areaW - useW) / 2;
 
   // ── Config header ──
+  var headerH = 0;
   if (showHeader) {
+    headerH = 30;
     var cfgText = 'd_model=' + cfg.d_model + '  num_heads=' + cfg.num_heads + '  d_ffn=' + cfg.d_ffn
       + '  d_head=' + comp.d_head + '  params=' + (comp.total_params_billions || '—');
     g.append('text')
-      .attr('x', x0 + areaW / 2).attr('y', 16)
+      .attr('x', x0 + areaW / 2).attr('y', topY + 16)
       .attr('text-anchor', 'middle')
-      .attr('fill', 'var(--text-secondary)').attr('font-size', '11px').attr('font-family', 'JetBrains Mono, monospace')
+      .attr('fill', 'var(--text-secondary)').attr('font-size', '10px').attr('font-family', 'JetBrains Mono, monospace')
       .text((model.type || 'TRANSFORMER_MODEL').toUpperCase() + '  ·  ' + cfg.num_layers + ' layers  ·  ' + cfgText);
   }
 
-  var rowY = topY + (showHeader ? 54 : 12);
-  var hdrH = 22;
-  var subPadX = 6;
-  var subGap = 4;
+  var sg = g.append('g')
+    .attr('transform', 'translate(' + offX + ',' + (topY + headerH) + ') scale(' + scale + ')');
 
-  displayList.forEach(function (block, i) {
-    var bw = block.type === 'transformer_block' ? useW : useThin;
-    var bx = sx;
-    for (var j = 0; j < i; j++) {
-      bx += (displayList[j].type === 'transformer_block' ? useW : useThin) + useGap;
+  // ── Helper: draw a simple labeled box ──
+  function box(x, y, w, h, label, fill, stroke, textColor, fontSize) {
+    fontSize = fontSize || 11;
+    sg.append('rect')
+      .attr('x', x).attr('y', y).attr('width', w).attr('height', h)
+      .attr('rx', 4).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.2);
+    sg.append('text')
+      .attr('x', x + w / 2).attr('y', y + h / 2 + 1)
+      .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+      .attr('font-size', fontSize).attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
+      .attr('fill', textColor).text(label);
+  }
+
+  // ── Helper: draw a sub-block with title and inner items ──
+  function subBlock(ox, oy, ow, oh, title, items, fill, stroke, titleColor, itemBg, itemStroke) {
+    sg.append('rect')
+      .attr('x', ox).attr('y', oy).attr('width', ow).attr('height', oh)
+      .attr('rx', 4).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.2);
+    sg.append('text')
+      .attr('x', ox + ow / 2).attr('y', oy + 13)
+      .attr('text-anchor', 'middle').attr('font-size', 10).attr('font-family', 'DM Sans, sans-serif')
+      .attr('font-weight', 600).attr('fill', titleColor).text(title);
+
+    var innerW = D.SUB_W;
+    var innerX = ox + (ow - innerW) / 2;
+    var innerStartY = oy + 23;
+    var innerH = 18;
+    var innerGap = 3;
+
+    items.forEach(function (item, i) {
+      var iy = innerStartY + i * (innerH + innerGap);
+      sg.append('rect')
+        .attr('x', innerX).attr('y', iy).attr('width', innerW).attr('height', innerH)
+        .attr('rx', 3).attr('fill', itemBg).attr('stroke', itemStroke)
+        .attr('stroke-width', 0.8).attr('stroke-opacity', 0.5);
+      sg.append('text')
+        .attr('x', innerX + innerW / 2).attr('y', iy + innerH / 2 + 1)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+        .attr('font-size', 9).attr('font-family', 'JetBrains Mono, monospace').attr('font-weight', 500)
+        .attr('fill', 'var(--text-secondary)').text(item);
+    });
+  }
+
+  // ── Helper: arrow between two vertical positions ──
+  function arrow(cx, y1, y2) {
+    var midY = (y1 + y2) / 2;
+    sg.append('polygon')
+      .attr('points', cx + ',' + (midY - D.ARROW_S / 2) + ' '
+        + (cx - D.ARROW_S / 2) + ',' + (midY + D.ARROW_S / 2) + ' '
+        + (cx + D.ARROW_S / 2) + ',' + (midY + D.ARROW_S / 2))
+      .attr('fill', '#3fb950');
+  }
+
+  // ── Helper: dashed line ──
+  function dashLine(x1, y1, x2, y2, color) {
+    sg.append('line')
+      .attr('x1', x1).attr('y1', y1).attr('x2', x2).attr('y2', y2)
+      .attr('stroke', color).attr('stroke-width', 1).attr('stroke-dasharray', '3 3');
+  }
+
+  // ══════════════════════════════════════════════
+  // 1. Embeddings
+  // ══════════════════════════════════════════════
+  box(D.CX - D.BOX_W / 2, D.Y_EMBED, D.BOX_W, D.H_MD,
+    'Position + Word Embeddings & Dropout',
+    MODEL_COLORS.input_embedding.fill, MODEL_COLORS.input_embedding.stroke, MODEL_COLORS.input_embedding.text, 10);
+
+  // ══════════════════════════════════════════════
+  // 2. Transformer Layer card (with stacked depth shadows)
+  // ══════════════════════════════════════════════
+  var tfH = D.Y_TF_END - D.Y_HEADER;
+  var stackOffsets = [[24, 20], [16, 14], [8, 7]];
+  stackOffsets.forEach(function (off, i) {
+    sg.append('rect')
+      .attr('x', D.CX - D.BOX_W / 2 + off[0])
+      .attr('y', D.Y_HEADER + off[1])
+      .attr('width', D.BOX_W).attr('height', tfH)
+      .attr('rx', 8)
+      .attr('fill', '#0d131a')
+      .attr('stroke', MODEL_COLORS.transformer_card.stroke)
+      .attr('stroke-width', 1).attr('opacity', 0.35 + i * 0.25);
+  });
+
+  sg.append('rect')
+    .attr('x', D.CX - D.BOX_W / 2).attr('y', D.Y_HEADER)
+    .attr('width', D.BOX_W).attr('height', tfH)
+    .attr('rx', 8).attr('fill', MODEL_COLORS.transformer_card.fill)
+    .attr('stroke', MODEL_COLORS.transformer_card.stroke).attr('stroke-width', 1.8);
+
+  sg.append('text')
+    .attr('x', D.CX - D.BOX_W / 2 + 12).attr('y', D.Y_HEADER + 18)
+    .text('Transformer Layer  (×N)').attr('font-size', 11)
+    .attr('font-weight', 600).attr('font-family', 'DM Sans, sans-serif')
+    .attr('fill', MODEL_COLORS.transformer_card.stroke);
+
+  sg.append('text')
+    .attr('x', D.CX + D.BOX_W / 2 - 12).attr('y', D.Y_HEADER + 18)
+    .text('×' + numLayers).attr('font-size', 11)
+    .attr('font-weight', 600).attr('font-family', 'JetBrains Mono, monospace')
+    .attr('fill', 'var(--text-muted)').attr('text-anchor', 'end');
+
+  // ══════════════════════════════════════════════
+  // 3. Layer Norm 1
+  // ══════════════════════════════════════════════
+  box(D.CX - D.NARROW_W / 2, D.Y_LN1, D.NARROW_W, D.H_SM, 'Layer Norm',
+    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text);
+
+  // ══════════════════════════════════════════════
+  // 4. Multi-Head Self-Attention
+  // ══════════════════════════════════════════════
+  subBlock(D.CX - D.BLOCK_W / 2, D.Y_ATTN, D.BLOCK_W, D.H_ATTN,
+    'Multi-Head Self-Attention',
+    ['Self Attention', 'Linear (h → h)', 'Dropout'],
+    MODEL_COLORS.mha.fill, MODEL_COLORS.mha.stroke, MODEL_COLORS.mha.text,
+    MODEL_COLORS.mha_sub.fill, MODEL_COLORS.mha_sub.stroke);
+
+  // ══════════════════════════════════════════════
+  // 5. Add 1
+  // ══════════════════════════════════════════════
+  box(D.CX - D.NARROW_W / 2, D.Y_ADD1, D.NARROW_W, D.H_SM, 'Add',
+    MODEL_COLORS.add.fill, MODEL_COLORS.add.stroke, MODEL_COLORS.add.text);
+
+  // ══════════════════════════════════════════════
+  // 6. Layer Norm 2
+  // ══════════════════════════════════════════════
+  box(D.CX - D.NARROW_W / 2, D.Y_LN2, D.NARROW_W, D.H_SM, 'Layer Norm',
+    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text);
+
+  // ══════════════════════════════════════════════
+  // 7. Feed-Forward Network
+  // ══════════════════════════════════════════════
+  subBlock(D.CX - D.BLOCK_W / 2, D.Y_FFN, D.BLOCK_W, D.H_FFN,
+    'Feed-Forward Network',
+    ['Linear (h → 4h)', 'GeLU', 'Linear (4h → h)', 'Dropout'],
+    MODEL_COLORS.ffn.fill, MODEL_COLORS.ffn.stroke, MODEL_COLORS.ffn.text,
+    MODEL_COLORS.ffn_sub.fill, MODEL_COLORS.ffn_sub.stroke);
+
+  // ══════════════════════════════════════════════
+  // 8. Add 2
+  // ══════════════════════════════════════════════
+  box(D.CX - D.NARROW_W / 2, D.Y_ADD2, D.NARROW_W, D.H_SM, 'Add',
+    MODEL_COLORS.add.fill, MODEL_COLORS.add.stroke, MODEL_COLORS.add.text);
+
+  // ══════════════════════════════════════════════
+  // 9. Layer Norm 3
+  // ══════════════════════════════════════════════
+  box(D.CX - D.NARROW_W / 2, D.Y_LN3, D.NARROW_W, D.H_SM, 'Layer Norm',
+    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text);
+
+  // ══════════════════════════════════════════════
+  // 10. Output Layer
+  // ══════════════════════════════════════════════
+  box(D.CX - D.BOX_W / 2, D.Y_OUTPUT, D.BOX_W, D.H_MD,
+    'Output Layer & Loss',
+    MODEL_COLORS.output.fill, MODEL_COLORS.output.stroke, MODEL_COLORS.output.text, 10);
+
+  // ══════════════════════════════════════════════
+  // Main flow arrows (between components)
+  // ══════════════════════════════════════════════
+  var gaps = [
+    [D.Y_EMBED + D.H_MD, D.Y_LN1],
+    [D.Y_LN1 + D.H_SM, D.Y_ATTN],
+    [D.Y_ATTN + D.H_ATTN, D.Y_ADD1],
+    [D.Y_ADD1 + D.H_SM, D.Y_LN2],
+    [D.Y_LN2 + D.H_SM, D.Y_FFN],
+    [D.Y_FFN + D.H_FFN, D.Y_ADD2],
+    [D.Y_ADD2 + D.H_SM, D.Y_LN3],
+    [D.Y_LN3 + D.H_SM, D.Y_OUTPUT],
+  ];
+  gaps.forEach(function (g) { arrow(D.CX, g[0], g[1]); });
+
+  // ══════════════════════════════════════════════
+  // Skip / Residual connections (right side)
+  // ══════════════════════════════════════════════
+  var skipColor = MODEL_COLORS.skip.stroke;
+  var skipRight = D.CX + D.BOX_W / 2 + 28;
+
+  function drawSkip(startY, endX, endY) {
+    dashLine(D.CX, startY, skipRight, startY, skipColor);
+    dashLine(skipRight, startY, skipRight, endY, skipColor);
+    dashLine(skipRight, endY, endX + 6, endY, skipColor);
+    // Arrow at endpoint
+    sg.append('polygon')
+      .attr('points', endX + ',' + (endY - D.ARROW_S / 2) + ' '
+        + (endX + D.ARROW_S / 2) + ',' + endY + ' '
+        + endX + ',' + (endY + D.ARROW_S / 2))
+      .attr('fill', skipColor);
+  }
+
+  // Skip 1: Embeddings→LN1 gap → Add1
+  var skip1StartY = D.Y_EMBED + D.H_MD + (D.Y_LN1 - D.Y_EMBED - D.H_MD) / 2;
+  var skip1EndX = D.CX + D.NARROW_W / 2;
+  var skip1EndY = D.Y_ADD1 + D.H_SM / 2;
+  drawSkip(skip1StartY, skip1EndX, skip1EndY);
+
+  sg.append('text')
+    .attr('text-anchor', 'middle').attr('font-size', 8)
+    .attr('font-family', 'DM Sans, sans-serif').attr('font-style', 'italic')
+    .attr('fill', skipColor)
+    .attr('transform', 'translate(' + (skipRight + 10) + ',' + (skip1StartY + (skip1EndY - skip1StartY) / 2) + ') rotate(-90)')
+    .text('residual');
+
+  // Skip 2: Add1→LN2 gap → Add2
+  var skip2StartY = D.Y_ADD1 + D.H_SM + (D.Y_LN2 - D.Y_ADD1 - D.H_SM) / 2;
+  var skip2EndX = D.CX + D.NARROW_W / 2;
+  var skip2EndY = D.Y_ADD2 + D.H_SM / 2;
+  drawSkip(skip2StartY, skip2EndX, skip2EndY);
+
+  sg.append('text')
+    .attr('text-anchor', 'middle').attr('font-size', 8)
+    .attr('font-family', 'DM Sans, sans-serif').attr('font-style', 'italic')
+    .attr('fill', skipColor)
+    .attr('transform', 'translate(' + (skipRight + 10) + ',' + (skip2StartY + (skip2EndY - skip2StartY) / 2) + ') rotate(-90)')
+    .text('residual');
+
+  // ══════════════════════════════════════════════
+  // TP Tensor Grid (left side, inside transformer card area)
+  // ══════════════════════════════════════════════
+  var gridCols = 4, gridRows = 4;
+  var cellW = D.TENSOR_W / gridCols, cellH = D.TENSOR_H / gridRows;
+
+  sg.append('rect')
+    .attr('x', D.TENSOR_X).attr('y', D.TENSOR_Y)
+    .attr('width', D.TENSOR_W).attr('height', D.TENSOR_H)
+    .attr('rx', 4).attr('fill', 'var(--bg-surface)')
+    .attr('stroke', 'var(--text-muted)').attr('stroke-width', 1);
+
+  for (var row = 0; row < gridRows; row++) {
+    for (var col = 0; col < gridCols; col++) {
+      var tcx = D.TENSOR_X + col * cellW;
+      var tcy = D.TENSOR_Y + row * cellH;
+      var num = row * gridCols + col + 1;
+      var isFirst = (num === 1);
+      sg.append('rect')
+        .attr('x', tcx).attr('y', tcy).attr('width', cellW).attr('height', cellH)
+        .attr('fill', isFirst ? '#ff8f40' : '#161c24')
+        .attr('stroke', 'var(--text-muted)').attr('stroke-width', 0.5);
+      sg.append('text')
+        .attr('x', tcx + cellW / 2).attr('y', tcy + cellH / 2 + 1)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+        .attr('font-size', 9).attr('font-family', 'JetBrains Mono, monospace').attr('font-weight', 600)
+        .attr('fill', isFirst ? '#0a0e14' : 'var(--text-secondary)').text(num);
     }
+  }
 
-    // ── Ellipsis ──
-    if (block.type === 'ellipsis') {
-      g.append('rect')
-        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
-        .attr('rx', 6).attr('fill', MODEL_COLORS.ellipsis.fill).attr('stroke', MODEL_COLORS.ellipsis.stroke).attr('stroke-width', 1.5);
-      g.append('text')
-        .attr('x', bx + bw / 2).attr('y', rowY + 50).attr('text-anchor', 'middle')
-        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(12, Math.min(18, bw / 4)) + 'px')
-        .text('⋮');
-      g.append('text')
-        .attr('x', bx + bw / 2).attr('y', rowY + 78).attr('text-anchor', 'middle')
-        .attr('fill', 'var(--text-muted)').attr('font-size', Math.max(9, Math.min(12, bw / 6)) + 'px')
-        .text(block.desc || '');
-      return;
-    }
+  sg.append('text')
+    .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', D.TENSOR_Y - 10)
+    .attr('text-anchor', 'middle').attr('font-size', 9)
+    .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
+    .attr('fill', 'var(--text-secondary)').text('Tensor');
 
-    // ── Input Embedding ──
-    if (block.type === 'input_embedding') {
-      var ieColors = MODEL_COLORS.input_embedding;
-      g.append('rect')
-        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
-        .attr('rx', 6).attr('fill', ieColors.fill).attr('stroke', ieColors.stroke).attr('stroke-width', 1.5);
-      g.append('text')
-        .attr('x', bx + bw / 2).attr('y', rowY + 34).attr('text-anchor', 'middle')
-        .attr('fill', ieColors.stroke).attr('font-size', Math.max(8, Math.min(12, bw / 7)) + 'px').attr('font-weight', 500)
-        .text('Input');
-      g.append('text')
-        .attr('x', bx + bw / 2).attr('y', rowY + 54).attr('text-anchor', 'middle')
-        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(7, Math.min(10, bw / 9)) + 'px')
-        .text('Embedding');
-      return;
-    }
+  sg.append('text')
+    .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', D.TENSOR_Y + D.TENSOR_H + 13)
+    .attr('text-anchor', 'middle').attr('font-size', 8)
+    .attr('font-family', 'JetBrains Mono, monospace')
+    .attr('fill', 'var(--text-muted)').text('(' + gridRows + '×' + gridCols + ' TP)');
 
-    // ── Output ──
-    if (block.type === 'output') {
-      var outColors = MODEL_COLORS.output;
-      g.append('rect')
-        .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
-        .attr('rx', 6).attr('fill', outColors.fill).attr('stroke', outColors.stroke).attr('stroke-width', 1.5);
-      g.append('text')
-        .attr('x', bx + bw / 2).attr('y', rowY + 34).attr('text-anchor', 'middle')
-        .attr('fill', outColors.stroke).attr('font-size', Math.max(8, Math.min(12, bw / 7)) + 'px').attr('font-weight', 500)
-        .text('Output');
-      g.append('text')
-        .attr('x', bx + bw / 2).attr('y', rowY + 54).attr('text-anchor', 'middle')
-        .attr('fill', 'var(--text-secondary)').attr('font-size', Math.max(7, Math.min(10, bw / 9)) + 'px')
-        .text('Proj');
-      return;
-    }
+  // ══════════════════════════════════════════════
+  // Legend (bottom-left, below tensor area)
+  // ══════════════════════════════════════════════
+  var legendItems = [
+    { color: MODEL_COLORS.input_embedding.stroke, label: 'Embeddings' },
+    { color: MODEL_COLORS.layer_norm.stroke, label: 'Layer Norm' },
+    { color: MODEL_COLORS.mha.stroke, label: 'Self-Attention' },
+    { color: MODEL_COLORS.ffn.stroke, label: 'FFN' },
+    { color: skipColor, label: 'Skip Connection' },
+    { color: '#ff8f40', label: 'Tensor' },
+  ];
+  var lx = D.TENSOR_X;
+  var legendTitleY = D.Y_TF_END - (legendItems.length + 1) * 16;
+  sg.append('text')
+    .attr('x', lx).attr('y', legendTitleY + 4)
+    .text('Legend').attr('font-size', 9)
+    .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 600)
+    .attr('fill', 'var(--text-muted)').attr('letter-spacing', '1px');
 
-    // ── Transformer Block ──
-    var tbColors = MODEL_COLORS.transformer_block;
-    g.append('rect')
-      .attr('x', bx).attr('y', rowY).attr('width', bw).attr('height', blockH)
-      .attr('rx', 6).attr('fill', tbColors.fill).attr('stroke', tbColors.stroke).attr('stroke-width', 1.5);
-
-    // Layer label
-    g.append('text')
-      .attr('x', bx + bw / 2).attr('y', rowY + hdrH - 4)
-      .attr('text-anchor', 'middle')
-      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(9, Math.min(12, bw / 9)) + 'px')
-      .attr('font-weight', 500)
-      .text('Layer ' + block.id);
-
-    // ATTN + FFN sub-blocks (stacked vertically)
-    var subW = bw - subPadX * 2;
-    var subH = Math.floor((blockH - hdrH - subGap - 8) / 2);
-    var subX = bx + subPadX;
-    var attnY = rowY + hdrH + 3;
-    var ffnY = attnY + subH + subGap;
-
-    var mhaColors = MODEL_COLORS.mha;
-    g.append('rect')
-      .attr('x', subX).attr('y', attnY).attr('width', subW).attr('height', subH)
-      .attr('rx', 3).attr('fill', mhaColors.fill).attr('stroke', mhaColors.stroke).attr('stroke-width', 1);
-    g.append('text')
-      .attr('x', bx + bw / 2).attr('y', attnY + subH / 2 + 4)
-      .attr('text-anchor', 'middle')
-      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(7, Math.min(11, subW / 12)) + 'px')
-      .text('ATTN');
-
-    var ffnColors = MODEL_COLORS.ffn;
-    g.append('rect')
-      .attr('x', subX).attr('y', ffnY).attr('width', subW).attr('height', subH)
-      .attr('rx', 3).attr('fill', ffnColors.fill).attr('stroke', ffnColors.stroke).attr('stroke-width', 1);
-    g.append('text')
-      .attr('x', bx + bw / 2).attr('y', ffnY + subH / 2 + 4)
-      .attr('text-anchor', 'middle')
-      .attr('fill', 'var(--text-primary)').attr('font-size', Math.max(7, Math.min(11, subW / 12)) + 'px')
-      .text('FFN');
-
-    // Skip indicator — small curved line on top-left
-    if (block.skip_connection) {
-      g.append('path')
-        .attr('d', 'M' + (bx + 2) + ',' + (rowY + 4) + ' Q' + (bx - 2) + ',' + (rowY + 4) + ' ' + (bx - 2) + ',' + (rowY + 10))
-        .attr('fill', 'none').attr('stroke', 'var(--green)').attr('stroke-width', 1).attr('opacity', 0.5);
-    }
-
-    // Data-flow arrow to next block
-    if (i < displayList.length - 1) {
-      var ax1 = bx + bw + 1;
-      var ax2 = bx + bw + useGap - 2;
-      g.append('line')
-        .attr('x1', ax1).attr('y1', rowY + blockH / 2)
-        .attr('x2', ax2).attr('y2', rowY + blockH / 2)
-        .attr('stroke', 'var(--text-muted)').attr('stroke-width', 1).attr('opacity', 0.5)
-        .attr('marker-end', 'url(#arrow-dataflow)');
-    }
+  legendItems.forEach(function (item, i) {
+    var ly = legendTitleY + 14 + (i + 1) * 16;
+    sg.append('rect')
+      .attr('x', lx).attr('y', ly - 4).attr('width', 7).attr('height', 7)
+      .attr('rx', 2).attr('fill', item.color);
+    sg.append('text')
+      .attr('x', lx + 12).attr('y', ly + 4)
+      .attr('font-size', 8).attr('font-family', 'DM Sans, sans-serif')
+      .attr('fill', 'var(--text-secondary)').text(item.label);
   });
 }
 
