@@ -1666,7 +1666,7 @@ var _MODEL_TIPS = {
   add_2: { t:'残差加法（FFN残差）', te:'Residual addition (FFN residual)', d:'将FFN输出与输入逐元素相加。本层的第二个残差连接。两个残差连接共同构成Transformer层的梯度高速通道。', m:'x = x + FFN(LN_2(x))', v:'' },
   layer_norm_3: { t:'最终层归一化（输出前）', te:'Final Layer Normalization (pre-output)', d:'所有Transformer层堆叠完成后的最后一个Layer Norm，不属于任何单层内部。归一化后传递给输出层，确保输入到LM Head的隐表示数值稳定。', m:'H_final = LayerNorm(H_N)', v:'' },
   output_layer_and_loss: { t:'输出层与损失函数', te:'Output Layer & Loss', d:'将d_model维度的隐表示映射到vocab_size维度得到logits。训练时计算交叉熵损失。GPT系列中LM Head权重常与输入Embedding共享（weight tying）。', m:'logits = H_final · W_embed^T, Loss = -Σ y_i log(softmax(logits_i))', v:'' },
-  tensor_parallelism_grid: { t:'张量并行网格（4×4 TP）', te:'Tensor Parallelism grid (4×4 = 16 GPUs)', d:'4×4网格可视化Tensor Parallelism（TP）分布。TP将单层参数矩阵按列或行切分到多个GPU，各GPU独立计算分片后通过AllReduce通信聚合。橙色高亮格(tp=0)表示当前GPU分片。适用于单层参数过大无法放入单GPU的场景，要求GPU间高速互联（如NVLink）。', m:'', v:'切分方式: 列切分/行切分 | 通信: AllReduce/AllGather/ReduceScatter' },
+  tensor_parallelism_grid: { t:'张量并行网格（4×4 TP）', te:'Tensor Parallelism grid (4×4 = 16 NPUs)', d:'4×4网格可视化Tensor Parallelism（TP）分布。TP将单层参数矩阵按列或行切分到多个NPU，各NPU独立计算分片后通过AllReduce通信聚合。橙色高亮格(tp=0)表示当前NPU分片。适用于单层参数过大无法放入单NPU的场景，要求NPU间高速互联（如HCCS）。', m:'', v:'切分方式: 列切分/行切分 | 通信: AllReduce/AllGather/ReduceScatter' },
   residual_connection_1: { t:'残差连接1：绕过注意力', te:'Residual bypassing attention sublayer', d:'从Embeddings输出分叉，绕过Layer Norm 1和Multi-Head Attention子层，直接连接到第一个Add。保留子层输入的原始信号，梯度可通过恒等映射直接回传。', m:'', v:'' },
   residual_connection_2: { t:'残差连接2：绕过FFN', te:'Residual bypassing FFN sublayer', d:'从第一个Add输出分叉，绕过Layer Norm 2和FFN子层，直接连接到第二个Add。两条残差连接确保梯度流动的双重保障。', m:'', v:'' }
 };
