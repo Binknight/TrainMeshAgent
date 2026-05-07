@@ -1693,8 +1693,8 @@ var _TM_DESIGN = {
   H_ATTN: 92,              // attention block height
   H_FFN: 106,              // FFN block height
   ARROW_S: 12,             // arrow size
-  TENSOR_W: 72,            // tensor grid width
-  TENSOR_H: 72,            // tensor grid height
+  TENSOR_W: 96,            // tensor grid width
+  TENSOR_H: 96,            // tensor grid height
   TENSOR_X: 12,            // tensor grid left edge
   TENSOR_Y: 50,            // tensor grid top (aligned to transformer card top)
   // Vertical layout
