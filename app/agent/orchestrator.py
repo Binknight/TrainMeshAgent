@@ -231,16 +231,22 @@ def _build_comparison_report(original: SimulationResult, equivalent: SimulationR
     def _diff_pct(ov: float, ev: float) -> float:
         return round(abs(ov - ev) / max(abs(ov), eps) * 100, 2)
 
-    of = original.aggregate_flops
-    ef = equivalent.aggregate_flops
-    oh = original.aggregate_hbm_gb
-    eh = equivalent.aggregate_hbm_gb
-    otp = original.aggregate_tp_comm_gb_per_micro
-    etp = equivalent.aggregate_tp_comm_gb_per_micro
-    opp = original.aggregate_pp_comm_mb_per_micro
-    epp = equivalent.aggregate_pp_comm_mb_per_micro
-    odp = original.aggregate_dp_comm_gb_per_step
-    edp = equivalent.aggregate_dp_comm_gb_per_step
+    def _per_card(agg: float, nodes: int) -> float:
+        return agg / max(nodes, 1)
+
+    on = original.total_nodes
+    en = equivalent.total_nodes
+
+    of = _per_card(original.aggregate_flops, on)
+    ef = _per_card(equivalent.aggregate_flops, en)
+    oh = _per_card(original.aggregate_hbm_gb, on)
+    eh = _per_card(equivalent.aggregate_hbm_gb, en)
+    otp = _per_card(original.aggregate_tp_comm_gb_per_micro, on)
+    etp = _per_card(equivalent.aggregate_tp_comm_gb_per_micro, en)
+    opp = _per_card(original.aggregate_pp_comm_mb_per_micro, on)
+    epp = _per_card(equivalent.aggregate_pp_comm_mb_per_micro, en)
+    odp = _per_card(original.aggregate_dp_comm_gb_per_step, on)
+    edp = _per_card(equivalent.aggregate_dp_comm_gb_per_step, en)
 
     flops_diff = _diff_pct(of, ef)
     hbm_diff = _diff_pct(oh, eh)
