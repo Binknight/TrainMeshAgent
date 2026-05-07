@@ -1647,6 +1647,30 @@ var MODEL_COLORS = {
   transformer_card: { fill: '#111820', stroke: '#39bae6' },
 };
 
+// ── Model structure concept tips (from transformer_tip.json) ──
+var _MODEL_TIPS = {
+  container_transformer_layer: { t:'Transformer层（堆叠N次）', te:'Transformer Layer (stacked N times)', d:'整个Transformer模型由N个完全相同的层堆叠而成（如GPT-3为96层）。每一层包含两个核心子层：多头自注意力和前馈网络，通过残差连接和层归一化组合。', m:'Layer_i(x) = AddNorm_FFN(AddNorm_Attn(x)) for i ∈ [1, N]', v:'GPT-3: 96层 | LLaMA-7B: 32层 | LLaMA-70B: 80层' },
+  embeddings: { t:'位置编码 + 词嵌入 + Dropout', te:'Positional Encoding + Word Embeddings + Dropout', d:'将离散token ID映射为稠密向量（维度d_model），注入位置信息后应用Dropout正则化。现代模型使用可学习位置编码或RoPE。', m:'H_0 = Dropout(WordEmbed(token_ids) + PositionEncode(positions))', v:'d_model: 768(GPT-2) / 4096(LLaMA-7B) / 8192(LLaMA-70B)' },
+  layer_norm_1: { t:'层归一化（注意力前）', te:'Layer Normalization (pre-attention)', d:'Pre-LN架构中的第一个Layer Norm。对每个token特征向量独立归一化（均值为0，方差为1），再通过可学习γ/β参数仿射变换。Pre-LN相比原始Post-LN训练更稳定、梯度流更平滑。', m:'LN(x) = γ ⊙ ((x - μ) / √(σ² + ε)) + β', v:'ε = 1e-5 ~ 1e-6 | 参数量: d_model per LN' },
+  multi_head_self_attention: { t:'多头自注意力机制', te:'Multi-Head Self-Attention', d:'自注意力是Transformer的核心，允许每个token关注所有其他token捕获上下文依赖。多头机制将Q/K/V投影到多个子空间并行计算，最后拼接输出。Decoder-only模型使用因果掩码确保自回归约束。', m:'MultiHead(Q,K,V) = Concat(head_1,...,head_h)W_O, head_i = Attention(QW_i^Q, KW_i^K, VW_i^V)', v:'head数: 12(GPT-2) / 32(LLaMA-7B) / 64(LLaMA-70B) | d_k: 64~128' },
+  self_attention: { t:'自注意力计算', te:'Self Attention computation', d:'核心注意力计算：Q/K/V投影→计算QK^T注意力分数→除以√d_k缩放→因果掩码→softmax→对V加权求和，得到每个token的上下文表示。', m:'Attention(Q,K,V) = softmax(QK^T/√d_k + mask)V', v:'' },
+  linear_projection: { t:'线性输出投影', te:'Linear output projection', d:'将多头注意力的拼接结果通过线性变换W_O投影回原始隐藏维度d_model。让不同注意力头的信息融合，是MHA子层参数量最大的部分。', m:'output = Concat(heads) · W_O, W_O ∈ R^{d_model × d_model}', v:'' },
+  dropout_attention: { t:'注意力Dropout', te:'Attention Dropout', d:'在注意力权重上应用Dropout正则化，随机置零部分注意力连接。迫使模型不依赖单一注意力模式，增强泛化能力。', m:'', v:'' },
+  add_1: { t:'残差加法（注意力残差）', te:'Residual addition (attention residual)', d:'将注意力输出与输入逐元素相加。残差连接为梯度提供直通路径（identity shortcut），是深层Transformer训练的关键。图中橙色虚线标注了这条residual路径。', m:'x = x + MHA(LN_1(x))', v:'' },
+  layer_norm_2: { t:'层归一化（FFN前）', te:'Layer Normalization (pre-FFN)', d:'第二个Layer Norm，位于FFN子层之前。将残差加法后的隐表示归一化到标准分布，为FFN提供数值稳定的输入。两个子层各有独立的LN参数。', m:'LN(x) = γ ⊙ ((x - μ) / √(σ² + ε)) + β', v:'' },
+  feed_forward_network: { t:'前馈神经网络', te:'Feed-Forward Network', d:'FFN是每层第二个核心子层：将d_model扩展到4×d_model（中间层），应用GeLU激活函数引入非线性，再投影回d_model。为模型提供位置无关的非线性变换能力，参数量约为注意力子层的2倍。', m:'FFN(x) = Dropout(W_2(GeLU(W_1 x + b_1)) + b_2)', v:'中间层: 4×d_model | FFN参数占比: ~67%' },
+  linear_up_projection: { t:'线性上投影（升维）', te:'Linear up-projection', d:'将输入从d_model映射到4×d_model维度（如4096→16384），极大增加表示容量。W_1 ∈ R^{d_model × 4d_model}。', m:'h_up = W_1 x + b_1', v:'' },
+  gelu_activation: { t:'高斯误差线性单元', te:'Gaussian Error Linear Unit (GeLU)', d:'GPT-2/3使用的平滑非线性激活函数，相比ReLU更平滑，有助于梯度稳定传播。现代模型（LLaMA）使用SwiGLU替代以提升性能。', m:'GeLU(x) = x · Φ(x) ≈ 0.5x(1 + tanh(√(2/π)(x + 0.044715x³)))', v:'' },
+  linear_down_projection: { t:'线性下投影（降维）', te:'Linear down-projection', d:'将4×d_model维度的中间表示压缩回d_model维度，使FFN输出可无缝通过残差连接与注意力输出相加。W_2 ∈ R^{4d_model × d_model}。', m:'h_out = W_2 h_ge + b_2', v:'' },
+  dropout_ffn: { t:'FFN Dropout', te:'FFN Dropout', d:'在线性降维投影之后应用Dropout，随机置零输出特征。与注意力Dropout类似但是作用在FFN子层的线性输出上。', m:'', v:'' },
+  add_2: { t:'残差加法（FFN残差）', te:'Residual addition (FFN residual)', d:'将FFN输出与输入逐元素相加。本层的第二个残差连接。两个残差连接共同构成Transformer层的梯度高速通道。', m:'x = x + FFN(LN_2(x))', v:'' },
+  layer_norm_3: { t:'最终层归一化（输出前）', te:'Final Layer Normalization (pre-output)', d:'所有Transformer层堆叠完成后的最后一个Layer Norm，不属于任何单层内部。归一化后传递给输出层，确保输入到LM Head的隐表示数值稳定。', m:'H_final = LayerNorm(H_N)', v:'' },
+  output_layer_and_loss: { t:'输出层与损失函数', te:'Output Layer & Loss', d:'将d_model维度的隐表示映射到vocab_size维度得到logits。训练时计算交叉熵损失。GPT系列中LM Head权重常与输入Embedding共享（weight tying）。', m:'logits = H_final · W_embed^T, Loss = -Σ y_i log(softmax(logits_i))', v:'' },
+  tensor_parallelism_grid: { t:'张量并行网格（4×4 TP）', te:'Tensor Parallelism grid (4×4 = 16 GPUs)', d:'4×4网格可视化Tensor Parallelism（TP）分布。TP将单层参数矩阵按列或行切分到多个GPU，各GPU独立计算分片后通过AllReduce通信聚合。橙色高亮格(tp=0)表示当前GPU分片。适用于单层参数过大无法放入单GPU的场景，要求GPU间高速互联（如NVLink）。', m:'', v:'切分方式: 列切分/行切分 | 通信: AllReduce/AllGather/ReduceScatter' },
+  residual_connection_1: { t:'残差连接1：绕过注意力', te:'Residual bypassing attention sublayer', d:'从Embeddings输出分叉，绕过Layer Norm 1和Multi-Head Attention子层，直接连接到第一个Add。保留子层输入的原始信号，梯度可通过恒等映射直接回传。', m:'', v:'' },
+  residual_connection_2: { t:'残差连接2：绕过FFN', te:'Residual bypassing FFN sublayer', d:'从第一个Add输出分叉，绕过Layer Norm 2和FFN子层，直接连接到第二个Add。两条残差连接确保梯度流动的双重保障。', m:'', v:'' }
+};
+
 function loadModelData(modelData, role) {
   role = role || (modelData._role || ((modelOriginal ? 'equivalent' : 'original')));
 
@@ -1755,29 +1779,63 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   var sg = g.append('g')
     .attr('transform', 'translate(' + offX + ',' + (topY + headerH) + ') scale(' + scale + ')');
 
-  // ── Helper: bind hover effect (glow + stroke lift) to a rect ──
-  function addHover(rect, origSw) {
+  // ── Helper: show/hide model concept tooltip ──
+  function showTip(show, tipId, event) {
+    var tipEl = document.getElementById('model-tooltip');
+    if (!tipEl) return;
+    if (!show || !tipId || !_MODEL_TIPS[tipId]) {
+      tipEl.classList.remove('visible');
+      return;
+    }
+    var tip = _MODEL_TIPS[tipId];
+    var html = '<div class="tip-title">' + tip.t + '</div>';
+    html += '<div class="tip-eng">' + tip.te + '</div>';
+    html += '<div class="tip-explain">' + tip.d + '</div>';
+    if (tip.m) html += '<div class="tip-math">' + tip.m + '</div>';
+    if (tip.v) html += '<div class="tip-values">' + tip.v + '</div>';
+    tipEl.innerHTML = html;
+    tipEl.classList.add('visible');
+    // Position near cursor, avoid edge overflow
+    var x = event.clientX + 16;
+    var y = event.clientY - 10;
+    var tw = tipEl.offsetWidth || 300;
+    var th = tipEl.offsetHeight || 200;
+    if (x + tw > window.innerWidth - 20) x = event.clientX - tw - 16;
+    if (y + th > window.innerHeight - 20) y = event.clientY - th - 10;
+    if (x < 10) x = 10;
+    if (y < 10) y = 10;
+    tipEl.style.left = x + 'px';
+    tipEl.style.top = y + 'px';
+  }
+
+  // ── Helper: bind hover effect (glow + stroke lift + tooltip) ──
+  function addHover(rect, origSw, tipId) {
     rect
       .attr('class', 'model-node')
-      .on('mouseenter', function () {
+      .on('mouseenter', function (event) {
         d3.select(this)
           .attr('stroke-width', origSw * 2.2)
           .attr('filter', 'url(#model-hover-glow)');
+        showTip(true, tipId, event);
+      })
+      .on('mousemove', function (event) {
+        showTip(true, tipId, event);
       })
       .on('mouseleave', function () {
         d3.select(this)
           .attr('stroke-width', origSw)
           .attr('filter', null);
+        showTip(false);
       });
   }
 
   // ── Helper: draw a simple labeled box ──
-  function box(x, y, w, h, label, fill, stroke, textColor, fontSize) {
+  function box(x, y, w, h, label, fill, stroke, textColor, fontSize, tipId) {
     fontSize = fontSize || 11;
     var rect = sg.append('rect')
       .attr('x', x).attr('y', y).attr('width', w).attr('height', h)
       .attr('rx', 4).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.2);
-    addHover(rect, 1.2);
+    addHover(rect, 1.2, tipId);
     sg.append('text')
       .attr('x', x + w / 2).attr('y', y + h / 2 + 1)
       .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
@@ -1786,11 +1844,11 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   }
 
   // ── Helper: draw a sub-block with title and inner items ──
-  function subBlock(ox, oy, ow, oh, title, items, fill, stroke, titleColor, itemBg, itemStroke) {
+  function subBlock(ox, oy, ow, oh, title, items, fill, stroke, titleColor, itemBg, itemStroke, tipId, subTipIds) {
     var rect = sg.append('rect')
       .attr('x', ox).attr('y', oy).attr('width', ow).attr('height', oh)
       .attr('rx', 4).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.2);
-    addHover(rect, 1.2);
+    addHover(rect, 1.2, tipId);
     sg.append('text')
       .attr('x', ox + ow / 2).attr('y', oy + 13)
       .attr('text-anchor', 'middle').attr('font-size', 10).attr('font-family', 'DM Sans, sans-serif')
@@ -1808,7 +1866,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
         .attr('x', innerX).attr('y', iy).attr('width', innerW).attr('height', innerH)
         .attr('rx', 3).attr('fill', itemBg).attr('stroke', itemStroke)
         .attr('stroke-width', 0.8).attr('stroke-opacity', 0.5);
-      addHover(innerRect, 0.8);
+      addHover(innerRect, 0.8, subTipIds ? subTipIds[i] : null);
       sg.append('text')
         .attr('x', innerX + innerW / 2).attr('y', iy + innerH / 2 + 1)
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
@@ -1839,7 +1897,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   // ══════════════════════════════════════════════
   box(D.CX - D.BOX_W / 2, D.Y_EMBED, D.BOX_W, D.H_MD,
     'Position + Word Embeddings & Dropout',
-    MODEL_COLORS.input_embedding.fill, MODEL_COLORS.input_embedding.stroke, MODEL_COLORS.input_embedding.text, 10);
+    MODEL_COLORS.input_embedding.fill, MODEL_COLORS.input_embedding.stroke, MODEL_COLORS.input_embedding.text, 10, 'embeddings');
 
   // ══════════════════════════════════════════════
   // 2. Transformer Layer card (with stacked depth shadows)
@@ -1862,7 +1920,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('width', D.BOX_W).attr('height', tfH)
     .attr('rx', 8).attr('fill', MODEL_COLORS.transformer_card.fill)
     .attr('stroke', MODEL_COLORS.transformer_card.stroke).attr('stroke-width', 1.8);
-  addHover(tfCard, 1.8);
+  addHover(tfCard, 1.8, 'container_transformer_layer');
 
   sg.append('text')
     .attr('x', D.CX - D.BOX_W / 2 + 12).attr('y', D.Y_HEADER + 18)
@@ -1880,7 +1938,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   // 3. Layer Norm 1
   // ══════════════════════════════════════════════
   box(D.CX - D.NARROW_W / 2, D.Y_LN1, D.NARROW_W, D.H_SM, 'Layer Norm',
-    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text);
+    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text, null, 'layer_norm_1');
 
   // ══════════════════════════════════════════════
   // 4. Multi-Head Self-Attention
@@ -1889,19 +1947,20 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     'Multi-Head Self-Attention',
     ['Self Attention', 'Linear (h → h)', 'Dropout'],
     MODEL_COLORS.mha.fill, MODEL_COLORS.mha.stroke, MODEL_COLORS.mha.text,
-    MODEL_COLORS.mha_sub.fill, MODEL_COLORS.mha_sub.stroke);
+    MODEL_COLORS.mha_sub.fill, MODEL_COLORS.mha_sub.stroke,
+    'multi_head_self_attention', ['self_attention', 'linear_projection', 'dropout_attention']);
 
   // ══════════════════════════════════════════════
   // 5. Add 1
   // ══════════════════════════════════════════════
   box(D.CX - D.NARROW_W / 2, D.Y_ADD1, D.NARROW_W, D.H_SM, 'Add',
-    MODEL_COLORS.add.fill, MODEL_COLORS.add.stroke, MODEL_COLORS.add.text);
+    MODEL_COLORS.add.fill, MODEL_COLORS.add.stroke, MODEL_COLORS.add.text, null, 'add_1');
 
   // ══════════════════════════════════════════════
   // 6. Layer Norm 2
   // ══════════════════════════════════════════════
   box(D.CX - D.NARROW_W / 2, D.Y_LN2, D.NARROW_W, D.H_SM, 'Layer Norm',
-    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text);
+    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text, null, 'layer_norm_2');
 
   // ══════════════════════════════════════════════
   // 7. Feed-Forward Network
@@ -1910,26 +1969,27 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     'Feed-Forward Network',
     ['Linear (h → 4h)', 'GeLU', 'Linear (4h → h)', 'Dropout'],
     MODEL_COLORS.ffn.fill, MODEL_COLORS.ffn.stroke, MODEL_COLORS.ffn.text,
-    MODEL_COLORS.ffn_sub.fill, MODEL_COLORS.ffn_sub.stroke);
+    MODEL_COLORS.ffn_sub.fill, MODEL_COLORS.ffn_sub.stroke,
+    'feed_forward_network', ['linear_up_projection', 'gelu_activation', 'linear_down_projection', 'dropout_ffn']);
 
   // ══════════════════════════════════════════════
   // 8. Add 2
   // ══════════════════════════════════════════════
   box(D.CX - D.NARROW_W / 2, D.Y_ADD2, D.NARROW_W, D.H_SM, 'Add',
-    MODEL_COLORS.add.fill, MODEL_COLORS.add.stroke, MODEL_COLORS.add.text);
+    MODEL_COLORS.add.fill, MODEL_COLORS.add.stroke, MODEL_COLORS.add.text, null, 'add_2');
 
   // ══════════════════════════════════════════════
   // 9. Layer Norm 3
   // ══════════════════════════════════════════════
   box(D.CX - D.NARROW_W / 2, D.Y_LN3, D.NARROW_W, D.H_SM, 'Layer Norm',
-    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text);
+    MODEL_COLORS.layer_norm.fill, MODEL_COLORS.layer_norm.stroke, MODEL_COLORS.layer_norm.text, null, 'layer_norm_3');
 
   // ══════════════════════════════════════════════
   // 10. Output Layer
   // ══════════════════════════════════════════════
   box(D.CX - D.BOX_W / 2, D.Y_OUTPUT, D.BOX_W, D.H_MD,
     'Output Layer & Loss',
-    MODEL_COLORS.output.fill, MODEL_COLORS.output.stroke, MODEL_COLORS.output.text, 10);
+    MODEL_COLORS.output.fill, MODEL_COLORS.output.stroke, MODEL_COLORS.output.text, 10, 'output_layer_and_loss');
 
   // ══════════════════════════════════════════════
   // Main flow arrows (between components)
@@ -1950,7 +2010,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   // Skip / Residual connections (right side)
   // ══════════════════════════════════════════════
   var skipColor = MODEL_COLORS.skip.stroke;
-  var skipRight = D.CX + D.BOX_W / 2 + 28;
+  var skipRight = D.CX + D.BOX_W / 2 + 48;
 
   function drawSkip(startY, endX, endY) {
     dashLine(D.CX, startY, skipRight, startY, skipColor);
@@ -2001,7 +2061,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('width', D.TENSOR_W).attr('height', D.TENSOR_H)
     .attr('rx', 4).attr('fill', 'var(--bg-surface)')
     .attr('stroke', 'var(--text-muted)').attr('stroke-width', 1);
-  addHover(tensorOuter, 1);
+  addHover(tensorOuter, 1, 'tensor_parallelism_grid');
 
   for (var row = 0; row < gridRows; row++) {
     for (var col = 0; col < gridCols; col++) {
@@ -2013,7 +2073,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
         .attr('x', tcx).attr('y', tcy).attr('width', cellW).attr('height', cellH)
         .attr('fill', isFirst ? '#ff8f40' : '#161c24')
         .attr('stroke', 'var(--text-muted)').attr('stroke-width', 0.5);
-      addHover(cellRect, 0.5);
+      addHover(cellRect, 0.5, 'tensor_parallelism_grid');
       sg.append('text')
         .attr('x', tcx + cellW / 2).attr('y', tcy + cellH / 2 + 1)
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
