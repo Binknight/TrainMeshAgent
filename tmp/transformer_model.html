@@ -76,32 +76,31 @@ const Y_TRANSFORMER_END = 518;
 const Y_LN3 = 534;
 const Y_OUTPUT = 574;
 
-// ========== STACKED LAYER SHADOWS ==========
-const N_STACK = 5;
-for (let i = N_STACK; i >= 1; i--) {
+// ========== STACKED LAYER SHADOWS (DP-style depth effect) ==========
+const stackOffsets = [[30, 30], [20, 20], [10, 10]];
+stackOffsets.forEach((off, i) => {
   svg.append("rect")
-    .attr("x", CX - BOX_W/2 + i * 3)
-    .attr("y", Y_TRANSFORMER + i * 3)
+    .attr("x", CX - BOX_W/2 + off[0])
+    .attr("y", Y_TRANSFORMER + off[1])
     .attr("width", BOX_W)
     .attr("height", Y_TRANSFORMER_END - Y_TRANSFORMER)
-    .attr("rx", 6)
-    .attr("fill", "none")
-    .attr("stroke", "var(--border)")
-    .attr("stroke-width", 1)
-    .attr("stroke-dasharray", "4 3")
-    .attr("opacity", 1 - i * 0.18);
-}
+    .attr("rx", 8)
+    .attr("fill", "#0d131a")
+    .attr("stroke", "var(--cyan)")
+    .attr("stroke-width", 1.2)
+    .attr("opacity", 0.35 + i * 0.25);
+});
 
-// ========== TRANSFORMER LAYER ==========
+// ========== TRANSFORMER LAYER (main card on top) ==========
 svg.append("rect")
   .attr("x", CX - BOX_W/2)
   .attr("y", Y_TRANSFORMER)
   .attr("width", BOX_W)
   .attr("height", Y_TRANSFORMER_END - Y_TRANSFORMER)
-  .attr("rx", 6)
+  .attr("rx", 8)
   .attr("fill", "#111820")
   .attr("stroke", "var(--cyan)")
-  .attr("stroke-width", 1.5);
+  .attr("stroke-width", 1.8);
 
 svg.append("text")
   .attr("x", CX - BOX_W/2 + 12)
