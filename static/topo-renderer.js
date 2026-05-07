@@ -803,7 +803,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var cardG = parentG.append("g").attr("class", "formula-card-group");
   var pad = 14;
 
-  // Spacing tuned for 380px card
+  // Spacing tuned for 340px card
   var lineH_label = 20;
   var lineH_formula = 16;
   var lineH_desc = 14;
@@ -830,7 +830,8 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
       label: "▸ 通信流量",
       lines: [
         "TP: L÷PP · 32·B·S·H ÷ 1e6 GB/micro",
-        "DP: 8·L·(4H²+12H²)÷(TP·PP) ÷ 1e9 GB/step",
+        "DP: 8·L·(4H²+12H²)÷(TP·PP)",
+        "    ÷ 1e9 GB/step",
         "PP: 4·B·S·H ÷ 1e9 GB/step"
       ],
       desc: "TP/DP通信与 TP·PP 成反比，PP通信仅取决于模型规模"
@@ -1107,7 +1108,7 @@ function canvasRebuild() {
         (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "最小等效组网");
 
       var _tH = 26, _gap = 10;
-      var _cardW = 380; // fixed card width, centered between topologies
+      var _cardW = 340; // fixed card width, centered between topologies
       var _availForTopos = meshWidth - _cardW - _gap * 2;
       var dimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
       var dimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
@@ -1157,7 +1158,7 @@ function canvasRebuild() {
     } else if (_formulaCardReady && meshOriginal) {
       // ── Two-Part Mode: Orig + Card ──
       var _tH2 = 26, _gap2 = 10;
-      var _cardW2 = 380; // fixed card width
+      var _cardW2 = 340; // fixed card width
       var _origW2 = meshWidth - _cardW2 - _gap2;
       var _contentH2 = topoH - _tH2;
       var _sharedScale2 = 0.5;
@@ -1316,13 +1317,6 @@ async function loadMeshData(topoData) {
   var isOrig = name.indexOf("原始") !== -1;
   var side = isOrig ? 'orig' : 'eq';
 
-  // Activate substep1 when original mesh starts loading
-  if (isOrig && typeof updateWorkflowNode === 'function') {
-    if (typeof workflowNodeStates !== 'undefined' && workflowNodeStates['topology_sub1'] === 'pending') {
-      updateWorkflowNode('topology_sub1', 'active');
-    }
-  }
-
   // Store model config from topoData if provided (e.g. from REST restore)
   if (topoData.num_layers != null) {
     if (isOrig) {
@@ -1335,11 +1329,6 @@ async function loadMeshData(topoData) {
   if (isOrig) {
     meshOriginal = entry;
     meshOrigDp = 0;
-    _formulaCardReady = true;
-    // Auto-complete substep2 (formulas are static, card renders immediately)
-    if (typeof updateWorkflowNode === 'function' && typeof workflowNodeStates !== 'undefined' && workflowNodeStates['topology_sub2'] === 'active') {
-      updateWorkflowNode('topology_sub2', 'completed');
-    }
   } else {
     meshEquivalent = entry;
     meshEqDp = 0;
@@ -1373,7 +1362,7 @@ async function loadMeshData(topoData) {
     }
   }
 
-  canvasRebuild();
+  // canvasRebuild is called by the caller after loadMeshData completes
 }
 
 // ── Attach to window for inline onclick / onchange handlers ──
