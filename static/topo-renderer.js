@@ -1423,17 +1423,34 @@ function _metricTypeLabel(type) {
 }
 
 async function toggleTooltipDetail(globalRank, isOrig, metricType) {
-	    _closeDetailPanels();
-	    var flopsActual = (isOrig ? meshActualOrig : meshActualEq)[globalRank];
-	    var flopsEst = (isOrig ? meshEstimateOrig : meshEstimateEq)[globalRank];
-	    var cardFlops = (flopsActual && flopsActual.flops_per_card) || (flopsEst && flopsEst.flops_per_card) || 0;
-	    var mockData = _generateFlopsMockData(cardFlops);
-	    var flopsDetail = document.getElementById('rank-tooltip-detail');
-	    var flopsTip = document.getElementById('rank-tooltip');
-	    _showDetailPanel(flopsDetail, flopsTip, globalRank, mockData, metricType);
-	    tooltipDetailState = { metricType: metricType, origRank: isOrig ? globalRank : null, eqRank: isOrig ? null : globalRank };
-	    return;
-	  }
+  if (metricType === 'flops') {
+    _closeDetailPanels();
+    var pinned = meshPinnedRank;
+    var hasLinked = pinned && pinned.mappedRank != null;
+    var origRank = hasLinked ? (pinned.side === 'orig' ? pinned.globalRank : pinned.mappedRank) : (isOrig ? globalRank : null);
+    var eqRank = hasLinked ? (pinned.side === 'orig' ? pinned.mappedRank : pinned.globalRank) : (isOrig ? null : globalRank);
+    tooltipDetailState = { metricType: metricType, origRank: origRank, eqRank: eqRank };
+  
+    var detail = document.getElementById('rank-tooltip-detail');
+    var detailMapped = document.getElementById('rank-tooltip-detail-mapped');
+    var tip = document.getElementById('rank-tooltip');
+    var tipMapped = document.getElementById('rank-tooltip-mapped');
+  
+    if (hasLinked) {
+      var mainIsOrig = pinned.side === 'orig';
+      var mainRank = mainIsOrig ? origRank : eqRank;
+      var mappedRank = mainIsOrig ? eqRank : origRank;
+      _showDetailPanel(detail, tip, mainRank, _generateFlopsMockData(_getCardFlops(mainRank, mainIsOrig)), metricType);
+      _showDetailPanel(detailMapped, tipMapped, mappedRank, _generateFlopsMockData(_getCardFlops(mappedRank, !mainIsOrig)), metricType);
+    } else {
+      if (origRank != null) {
+        _showDetailPanel(detail, tip, origRank, _generateFlopsMockData(_getCardFlops(origRank, true)), metricType);
+      } else if (eqRank != null) {
+        _showDetailPanel(detail, tip, eqRank, _generateFlopsMockData(_getCardFlops(eqRank, false)), metricType);
+      }
+    }
+    return;
+  }
 
   // If same metric type already open, close it (toggle off)
   if (tooltipDetailState && tooltipDetailState.metricType === metricType) {
@@ -1489,6 +1506,12 @@ async function toggleTooltipDetail(globalRank, isOrig, metricType) {
   }
 }
 
+function _getCardFlops(globalRank, isOrig) {
+  var actual = (isOrig ? meshActualOrig : meshActualEq)[globalRank];
+  var est = (isOrig ? meshEstimateOrig : meshEstimateEq)[globalRank];
+  return (actual && actual.flops_per_card) || (est && est.flops_per_card) || 0;
+}
+
 function _generateFlopsMockData(cardFlops) {
   var total = cardFlops || 7.5e11;
   var forward = total * 0.34;
@@ -1521,8 +1544,9 @@ function _showDetailPanel(panel, tooltip, globalRank, data, metricType) {
 
   if (metricType === 'hbm') {
     html += _renderHbmDetailHtml(data);
-	    html += _renderFlopsDetailHtml(data);
-	  } else {
+  } else if (metricType === 'flops') {
+    html += _renderFlopsDetailHtml(data);
+  } else {
     html += _renderCommDetailHtml(data);
   }
 
