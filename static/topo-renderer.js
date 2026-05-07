@@ -2008,21 +2008,22 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     { color: '#ff8f40', label: 'Tensor' },
   ];
   var lx = D.TENSOR_X;
-  var legendTitleY = D.Y_TF_END - (legendItems.length + 1) * 16;
+  var LEGEND_ROW = 20;
+  var legendTitleY = D.Y_TF_END - (legendItems.length + 1) * LEGEND_ROW;
   sg.append('text')
     .attr('x', lx).attr('y', legendTitleY + 4)
-    .text('Legend').attr('font-size', 9)
+    .text('Legend').attr('font-size', 11)
     .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 600)
     .attr('fill', 'var(--text-muted)').attr('letter-spacing', '1px');
 
   legendItems.forEach(function (item, i) {
-    var ly = legendTitleY + 14 + (i + 1) * 16;
+    var ly = legendTitleY + 16 + (i + 1) * LEGEND_ROW;
     sg.append('rect')
-      .attr('x', lx).attr('y', ly - 4).attr('width', 7).attr('height', 7)
+      .attr('x', lx).attr('y', ly - 5).attr('width', 9).attr('height', 9)
       .attr('rx', 2).attr('fill', item.color);
     sg.append('text')
-      .attr('x', lx + 12).attr('y', ly + 4)
-      .attr('font-size', 8).attr('font-family', 'DM Sans, sans-serif')
+      .attr('x', lx + 14).attr('y', ly + 5)
+      .attr('font-size', 10).attr('font-family', 'DM Sans, sans-serif')
       .attr('fill', 'var(--text-secondary)').text(item.label);
   });
 }
