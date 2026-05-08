@@ -427,6 +427,8 @@ function _clearBothTooltips() {
   _closeDetailPanels();
   d3.selectAll('.tp-rect.pinned').classed('pinned', false);
   meshPinnedRank = null;
+  meshPinnedTpInfo = null;
+  modelRebuild();
 }
 
 // ── Fetch simulation data from REST ──
@@ -700,8 +702,6 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
 
           if (alreadyPinned) {
             _clearBothTooltips();
-            meshPinnedTpInfo = null;
-            modelRebuild();
           } else {
             d3.select(this).classed('pinned', true);
             if (mappedRank != null) {
