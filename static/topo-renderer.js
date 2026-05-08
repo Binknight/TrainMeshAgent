@@ -78,6 +78,7 @@ var meshEstimateEq = {};
 var meshActualOrig = {};       // { global_rank: CardMetrics } from REST simulation data
 var meshActualEq = {};
 var meshPinnedRank = null;     // { side: "orig"|"eq", globalRank: number }
+var meshPinnedTpInfo = null; // { side: "orig"|"eq", tpIndex: number, ppIndex: number, globalRank: number }
 var modelOriginal = null;    // TrainingModel from SSE model_json
 var modelEquivalent = null;
 var _formulaCardReady = false;  // true when original mesh is loaded, shows formula card between orig and eq
@@ -674,6 +675,8 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
 
           if (alreadyPinned) {
             _clearBothTooltips();
+            meshPinnedTpInfo = null;
+            modelRebuild();
           } else {
             d3.select(this).classed('pinned', true);
             if (mappedRank != null) {
@@ -711,6 +714,13 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
               _positionTooltip(event, tip);
             }
             meshPinnedRank = { side: side, globalRank: globalRank, mappedRank: mappedRank };
+            meshPinnedTpInfo = { side: side, tpIndex: ti, ppIndex: pp.id, globalRank: globalRank };
+            // Save pinned state — modelRebuild → canvasRebuild clears meshPinnedRank
+            var _savedRank = meshPinnedRank;
+            var _savedTpInfo = meshPinnedTpInfo;
+            modelRebuild();
+            meshPinnedRank = _savedRank;
+            meshPinnedTpInfo = _savedTpInfo;
           }
         });
       ppG
@@ -932,6 +942,7 @@ function meshRebuild() {
   if (tipMapped) { tipMapped.classList.remove('visible', 'pinned'); tipMapped.innerHTML = ''; }
   _closeDetailPanels();
   meshPinnedRank = null;
+  meshPinnedTpInfo = null;
   meshUpdateSize();
 
   var hasTopo = !!(meshOriginal || meshEquivalent);
@@ -1283,6 +1294,23 @@ function canvasRebuild() {
     var hasBothModels = !!(modelOriginal && modelOriginal.layers && modelOriginal.layers.length
       && modelEquivalent && modelEquivalent.layers && modelEquivalent.layers.length);
 
+    // ── Resolve topology TP/PP for tensor grid and TP/PP highlight ──
+    var origTp = meshOriginal ? meshOriginal.tp : 0;
+    var origPp = meshOriginal ? meshOriginal.pp : 0;
+    var eqTp = meshEquivalent ? meshEquivalent.tp : 0;
+    var eqPp = meshEquivalent ? meshEquivalent.pp : 0;
+    var highlightOrigTp = null, highlightOrigPp = null;
+    var highlightEqTp = null, highlightEqPp = null;
+    if (meshPinnedTpInfo) {
+      if (meshPinnedTpInfo.side === 'orig') {
+        highlightOrigTp = meshPinnedTpInfo.tpIndex;
+        highlightOrigPp = meshPinnedTpInfo.ppIndex;
+      } else {
+        highlightEqTp = meshPinnedTpInfo.tpIndex;
+        highlightEqPp = meshPinnedTpInfo.ppIndex;
+      }
+    }
+
     if (hasBothModels) {
       zoomLayer.append('text')
         .attr('x', modelX0 + modelAreaW / 2).attr('y', modelTopY + 40)
@@ -1299,10 +1327,17 @@ function canvasRebuild() {
         Math.min(1, (modelAreaW - 16) / _TM_DESIGN.W),
         Math.min(1, (modelAreaWEq - 16) / _TM_DESIGN.W)
       );
-      _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW, false, sharedScale);
-      _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq, false, sharedScale);
+      _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW, false, sharedScale, null, origTp, origPp, highlightOrigTp, highlightOrigPp);
+      _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq, false, sharedScale, null, eqTp, eqPp, highlightEqTp, highlightEqPp);
     } else {
-      _renderOneModel(zoomLayer, model, modelX0, modelTopY, modelAreaW, true);
+      var singleTp = (meshOriginal || meshEquivalent) ? (meshOriginal || meshEquivalent).tp : 0;
+      var singlePp = (meshOriginal || meshEquivalent) ? (meshOriginal || meshEquivalent).pp : 0;
+      var singleHlTp = null, singleHlPp = null;
+      if (meshPinnedTpInfo) {
+        singleHlTp = meshPinnedTpInfo.tpIndex;
+        singleHlPp = meshPinnedTpInfo.ppIndex;
+      }
+      _renderOneModel(zoomLayer, model, modelX0, modelTopY, modelAreaW, true, null, null, singleTp, singlePp, singleHlTp, singleHlPp);
     }
   }
 
@@ -1751,7 +1786,7 @@ var _TM_DESIGN = {
   Y_OUTPUT: 516,
 };
 
-function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unused2) {
+function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unused2, tpCount, ppCount, highlightTpIdx, highlightPpIdx) {
   var cfg = model.config || {};
   var comp = model.computed || {};
   var numLayers = cfg.num_layers || 1;
@@ -2052,8 +2087,11 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
 
   // ══════════════════════════════════════════════
   // TP Tensor Grid (left side, inside transformer card area)
+  // Dynamic grid: auto-generates from TP count, defaults to no fill
   // ══════════════════════════════════════════════
-  var gridCols = 4, gridRows = 4;
+  var effectiveTp = tpCount || 16;
+  var gridCols = Math.ceil(Math.sqrt(effectiveTp));
+  var gridRows = Math.ceil(effectiveTp / gridCols);
   var cellW = D.TENSOR_W / gridCols, cellH = D.TENSOR_H / gridRows;
 
   var tensorOuter = sg.append('rect')
@@ -2063,23 +2101,23 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('stroke', 'var(--text-muted)').attr('stroke-width', 1);
   addHover(tensorOuter, 1, 'tensor_parallelism_grid');
 
-  for (var row = 0; row < gridRows; row++) {
-    for (var col = 0; col < gridCols; col++) {
-      var tcx = D.TENSOR_X + col * cellW;
-      var tcy = D.TENSOR_Y + row * cellH;
-      var num = row * gridCols + col + 1;
-      var isFirst = (num === 1);
-      var cellRect = sg.append('rect')
-        .attr('x', tcx).attr('y', tcy).attr('width', cellW).attr('height', cellH)
-        .attr('fill', isFirst ? '#ff8f40' : '#161c24')
-        .attr('stroke', 'var(--text-muted)').attr('stroke-width', 0.5);
-      addHover(cellRect, 0.5, 'tensor_parallelism_grid');
-      sg.append('text')
-        .attr('x', tcx + cellW / 2).attr('y', tcy + cellH / 2 + 1)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('font-size', 9).attr('font-family', 'JetBrains Mono, monospace').attr('font-weight', 600)
-        .attr('fill', isFirst ? '#0a0e14' : 'var(--text-secondary)').text(num);
-    }
+  var hasHighlight = highlightTpIdx != null && highlightTpIdx >= 0;
+  for (var cellIdx = 0; cellIdx < effectiveTp; cellIdx++) {
+    var col = cellIdx % gridCols;
+    var row = Math.floor(cellIdx / gridCols);
+    var tcx = D.TENSOR_X + col * cellW;
+    var tcy = D.TENSOR_Y + row * cellH;
+    var isHighlighted = hasHighlight && cellIdx === highlightTpIdx;
+    var cellRect = sg.append('rect')
+      .attr('x', tcx).attr('y', tcy).attr('width', cellW).attr('height', cellH)
+      .attr('fill', isHighlighted ? '#ff8f40' : 'var(--bg-surface)')
+      .attr('stroke', 'var(--text-muted)').attr('stroke-width', 0.5);
+    addHover(cellRect, 0.5, 'tensor_parallelism_grid');
+    sg.append('text')
+      .attr('x', tcx + cellW / 2).attr('y', tcy + cellH / 2 + 1)
+      .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+      .attr('font-size', effectiveTp > 16 ? 7 : 9).attr('font-family', 'JetBrains Mono, monospace').attr('font-weight', 600)
+      .attr('fill', isHighlighted ? '#0a0e14' : 'var(--text-secondary)').text(cellIdx + 1);
   }
 
   sg.append('text')
@@ -2088,11 +2126,26 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
     .attr('fill', 'var(--text-secondary)').text('Tensor');
 
+  var gridLabelY = D.TENSOR_Y + D.TENSOR_H + 13;
   sg.append('text')
-    .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', D.TENSOR_Y + D.TENSOR_H + 13)
+    .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', gridLabelY)
     .attr('text-anchor', 'middle').attr('font-size', 8)
     .attr('font-family', 'JetBrains Mono, monospace')
-    .attr('fill', 'var(--text-muted)').text('(' + gridRows + '×' + gridCols + ' TP)');
+    .attr('fill', 'var(--text-muted)').text('TP' + effectiveTp + ' (' + gridRows + '×' + gridCols + ')');
+
+  // ── PP → layer mapping (shown when a rank is pinned) ──
+  if (hasHighlight && highlightPpIdx != null && ppCount && cfg.num_layers) {
+    var layersPerPp = Math.floor(cfg.num_layers / ppCount);
+    var layerStart = highlightPpIdx * layersPerPp;
+    var layerEnd = layerStart + layersPerPp - 1;
+    var mapLabelY = gridLabelY + 16;
+    sg.append('text')
+      .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', mapLabelY)
+      .attr('text-anchor', 'middle').attr('font-size', 9)
+      .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
+      .attr('fill', '#ff8f40')
+      .text('当前映射 PP' + highlightPpIdx + ' → layer' + layerStart + '-layer' + layerEnd);
+  }
 
   // ══════════════════════════════════════════════
   // Legend (bottom-left, below tensor area)
