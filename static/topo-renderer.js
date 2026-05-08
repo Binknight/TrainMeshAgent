@@ -1113,20 +1113,20 @@ function canvasRebuild() {
     // Hover glow filter for formula card
     var cardFilter = defs.append('filter')
       .attr('id', 'formula-card-glow')
-      .attr('x', '-20%').attr('y', '-20%')
-      .attr('width', '140%').attr('height', '140%');
+      .attr('x', '-30%').attr('y', '-30%')
+      .attr('width', '160%').attr('height', '160%');
     cardFilter.append('feDropShadow')
-      .attr('dx', 0).attr('dy', 2)
-      .attr('stdDeviation', 6)
+      .attr('dx', 0).attr('dy', 4)
+      .attr('stdDeviation', 10)
       .attr('flood-color', '#39bae6')
-      .attr('flood-opacity', 0.35);
+      .attr('flood-opacity', 0.55);
 
     defs.append('style')
       .attr('type', 'text/css')
       .text([
         '.model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }',
-        '.formula-card-rect { cursor: default; transition: filter 0.3s ease; }',
-        '.formula-card-rect:hover { filter: url(#formula-card-glow); }',
+        '.formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }',
+        '.formula-card-rect:hover { filter: url(#formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }',
         '.formula-card-group text { pointer-events: none; }',
       ].join(' '));
   }
