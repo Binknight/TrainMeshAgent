@@ -719,12 +719,7 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
             }
             meshPinnedRank = { side: side, globalRank: globalRank, mappedRank: mappedRank };
             meshPinnedTpInfo = { side: side, tpIndex: ti, ppIndex: pp.id, globalRank: globalRank };
-            // Save pinned state — modelRebuild → canvasRebuild clears meshPinnedRank
-            var _savedRank = meshPinnedRank;
-            var _savedTpInfo = meshPinnedTpInfo;
             modelRebuild();
-            meshPinnedRank = _savedRank;
-            meshPinnedTpInfo = _savedTpInfo;
           }
         });
       ppG
@@ -1020,12 +1015,7 @@ function meshRebuild() {
 // ── Public API ──
 
 function canvasRebuild() {
-  var tip = document.getElementById('rank-tooltip');
-  if (tip) { tip.classList.remove('visible', 'pinned'); tip.innerHTML = ''; }
-  var tipMapped = document.getElementById('rank-tooltip-mapped');
-  if (tipMapped) { tipMapped.classList.remove('visible', 'pinned'); tipMapped.innerHTML = ''; }
   _closeDetailPanels();
-  meshPinnedRank = null;
   meshUpdateSize();
 
   var hasTopo = !!(meshOriginal || meshEquivalent);
