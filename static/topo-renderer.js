@@ -1154,6 +1154,17 @@ function canvasRebuild() {
       .attr('flood-color', '#3fb950')
       .attr('flood-opacity', 0.7);
 
+    // Hover glow filter for tensor grid cells
+    var tensorCellFilter = defs.append('filter')
+      .attr('id', 'tensor-cell-glow')
+      .attr('x', '-40%').attr('y', '-40%')
+      .attr('width', '180%').attr('height', '180%');
+    tensorCellFilter.append('feDropShadow')
+      .attr('dx', 0).attr('dy', 2)
+      .attr('stdDeviation', 4)
+      .attr('flood-color', '#ff8f40')
+      .attr('flood-opacity', 0.6);
+
     defs.append('style')
       .attr('type', 'text/css')
       .text([
@@ -1168,6 +1179,9 @@ function canvasRebuild() {
         '.pp-group:hover .pp-card { filter: url(#pp-card-glow); stroke: #ffb366; stroke-width: 1.5; }',
         '.tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; }',
         '.tp-rect:hover { filter: url(#tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }',
+        '.tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; }',
+        '.tensor-cell:hover { filter: url(#tensor-cell-glow); stroke: #ff8f40; stroke-width: 1.2; }',
+        '.tensor-cell-label { pointer-events: none; }',
       ].join(' '));
   }
 
@@ -2186,13 +2200,15 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     var cellRect = sg.append('rect')
       .attr('x', tcx).attr('y', tcy).attr('width', cellW).attr('height', cellH)
       .attr('fill', isHighlighted ? '#ff8f40' : 'var(--bg-surface)')
-      .attr('stroke', 'var(--text-muted)').attr('stroke-width', 0.5);
+      .attr('stroke', 'var(--text-muted)').attr('stroke-width', 0.5)
+      .attr('class', 'tensor-cell');
     addHover(cellRect, 0.5, 'tensor_parallelism_grid');
     sg.append('text')
       .attr('x', tcx + cellW / 2).attr('y', tcy + cellH / 2 + 1)
       .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
       .attr('font-size', effectiveTp > 16 ? 7 : 9).attr('font-family', 'JetBrains Mono, monospace').attr('font-weight', 600)
-      .attr('fill', isHighlighted ? '#0a0e14' : 'var(--text-secondary)').text(cellIdx + 1);
+      .attr('fill', isHighlighted ? '#0a0e14' : 'var(--text-secondary)').text(cellIdx + 1)
+      .attr('class', 'tensor-cell-label');
   }
 
   sg.append('text')
