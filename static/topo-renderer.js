@@ -1296,12 +1296,34 @@ function canvasRebuild() {
     var highlightOrigTp = null, highlightOrigPp = null;
     var highlightEqTp = null, highlightEqPp = null;
     if (meshPinnedTpInfo) {
-      if (meshPinnedTpInfo.side === 'orig') {
+      var clickedSide = meshPinnedTpInfo.side;
+      // Highlight the clicked side directly
+      if (clickedSide === 'orig') {
         highlightOrigTp = meshPinnedTpInfo.tpIndex;
         highlightOrigPp = meshPinnedTpInfo.ppIndex;
       } else {
         highlightEqTp = meshPinnedTpInfo.tpIndex;
         highlightEqPp = meshPinnedTpInfo.ppIndex;
+      }
+      // Compute mapped TP/PP for the other side via _mapRankToOtherSide
+      var mappedRank = _mapRankToOtherSide(clickedSide, meshPinnedTpInfo.globalRank);
+      if (mappedRank != null) {
+        var otherSide = clickedSide === 'orig' ? 'eq' : 'orig';
+        var otherMesh = otherSide === 'orig' ? meshOriginal : meshEquivalent;
+        if (otherMesh) {
+          var dstTp = otherMesh.tp, dstPp = otherMesh.pp;
+          var rankInDp = mappedRank % (dstTp * dstPp);
+          if (rankInDp < 0) rankInDp += dstTp * dstPp;
+          var otherTpIdx = rankInDp % dstTp;
+          var otherPpIdx = Math.floor(rankInDp / dstTp);
+          if (clickedSide === 'orig') {
+            highlightEqTp = otherTpIdx;
+            highlightEqPp = otherPpIdx;
+          } else {
+            highlightOrigTp = otherTpIdx;
+            highlightOrigPp = otherPpIdx;
+          }
+        }
       }
     }
 
