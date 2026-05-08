@@ -2237,30 +2237,53 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
 
     var tableH = HEADER_H + ppCount * ROW_H;
     var gridStroke = 'var(--text-muted)';
-    var gridStrokeW = 0.5;
+    var gridStrokeW = 0.6;
 
-    // Table outer border
-    sg.append('rect')
-      .attr('x', tableX).attr('y', mapTableY)
-      .attr('width', tableW).attr('height', tableH)
-      .attr('fill', 'none')
-      .attr('stroke', gridStroke).attr('stroke-width', 0.8).attr('rx', 2);
+    // Column boundary X positions
+    var sepX1 = tableX + COL_PP;
+    var sepX2 = tableX + COL_PP + COL_START;
+    var colSeps = [sepX1, sepX2];
 
-    // Header row
+    // ── Cell backgrounds (drawn first, below grid lines) ──
+    // Header row background
     sg.append('rect')
       .attr('x', tableX).attr('y', mapTableY)
       .attr('width', tableW).attr('height', HEADER_H)
-      .attr('fill', '#21262d').attr('stroke', gridStroke).attr('stroke-width', gridStrokeW);
+      .attr('fill', '#21262d');
 
-    // Column separators
-    var sepX1 = tableX + COL_PP;
-    var sepX2 = tableX + COL_PP + COL_START;
-    [sepX1, sepX2].forEach(function (sx) {
+    // Data row backgrounds
+    for (var pi = 0; pi < ppCount; pi++) {
+      var rowY = mapTableY + HEADER_H + pi * ROW_H;
+      var isPinnedRow = hasHighlight && highlightPpIdx === pi;
+      sg.append('rect')
+        .attr('x', tableX).attr('y', rowY)
+        .attr('width', tableW).attr('height', ROW_H)
+        .attr('fill', isPinnedRow ? '#ff8f40' : (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'));
+    }
+
+    // ── Vertical column separator lines (full table height) ──
+    colSeps.forEach(function (sx) {
       sg.append('line')
         .attr('x1', sx).attr('y1', mapTableY).attr('x2', sx).attr('y2', mapTableY + tableH)
         .attr('stroke', gridStroke).attr('stroke-width', gridStrokeW);
     });
 
+    // ── Horizontal row separator lines ──
+    for (var hi = 0; hi <= ppCount; hi++) {
+      var hy = mapTableY + HEADER_H + hi * ROW_H;
+      sg.append('line')
+        .attr('x1', tableX).attr('y1', hy).attr('x2', tableX + tableW).attr('y2', hy)
+        .attr('stroke', gridStroke).attr('stroke-width', gridStrokeW);
+    }
+
+    // ── Table outer border ──
+    sg.append('rect')
+      .attr('x', tableX).attr('y', mapTableY)
+      .attr('width', tableW).attr('height', tableH)
+      .attr('fill', 'none')
+      .attr('stroke', gridStroke).attr('stroke-width', 1).attr('rx', 2);
+
+    // ── Header text ──
     var headerY = mapTableY + 11;
     sg.append('text').attr('x', tableX + COL_PP / 2).attr('y', headerY)
       .attr('text-anchor', 'middle').attr('font-size', 8)
@@ -2275,32 +2298,26 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
       .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 600)
       .attr('fill', 'var(--text-secondary)').text('End');
 
-    // Data rows
-    for (var pi = 0; pi < ppCount; pi++) {
-      var rowY = mapTableY + HEADER_H + pi * ROW_H;
-      var layerStart = pi * layersPerPp;
-      var layerEnd = layerStart + layersPerPp - 1;
-      var isPinnedRow = hasHighlight && highlightPpIdx === pi;
+    // ── Data row text ──
+    for (var pi2 = 0; pi2 < ppCount; pi2++) {
+      var rowY2 = mapTableY + HEADER_H + pi2 * ROW_H;
+      var layerStart2 = pi2 * layersPerPp;
+      var layerEnd2 = layerStart2 + layersPerPp - 1;
+      var isPinnedRow2 = hasHighlight && highlightPpIdx === pi2;
 
-      sg.append('rect')
-        .attr('x', tableX).attr('y', rowY)
-        .attr('width', tableW).attr('height', ROW_H)
-        .attr('fill', isPinnedRow ? '#ff8f40' : (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'))
-        .attr('stroke', gridStroke).attr('stroke-width', gridStrokeW);
-
-      var rowTextY = rowY + 10;
+      var rowTextY = rowY2 + 10;
       sg.append('text').attr('x', tableX + COL_PP / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow ? '#0a0e14' : 'var(--text-primary)').text(pi);
+        .attr('fill', isPinnedRow2 ? '#0a0e14' : 'var(--text-primary)').text(pi2);
       sg.append('text').attr('x', tableX + COL_PP + COL_START / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow ? '#0a0e14' : 'var(--text-primary)').text(layerStart);
+        .attr('fill', isPinnedRow2 ? '#0a0e14' : 'var(--text-primary)').text(layerStart2);
       sg.append('text').attr('x', tableX + COL_PP + COL_START + COL_END_W / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow ? '#0a0e14' : 'var(--text-primary)').text(layerEnd);
+        .attr('fill', isPinnedRow2 ? '#0a0e14' : 'var(--text-primary)').text(layerEnd2);
     }
 
     legendTopY = mapTableY + tableH + 10;
