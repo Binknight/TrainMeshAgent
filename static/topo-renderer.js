@@ -862,11 +862,15 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   if (cardY < viewY) cardY = viewY;
 
   // Card background
-  cardG.append("rect")
+  var cardBg = cardG.append("rect")
     .attr("x", viewX).attr("y", cardY)
     .attr("width", viewW).attr("height", cardH)
     .attr("rx", 8).attr("ry", 8)
     .attr("class", "formula-card-rect");
+
+  cardG
+    .on("mouseover", function () { cardBg.attr("filter", "url(#formula-card-glow)"); })
+    .on("mouseout", function () { cardBg.attr("filter", null); });
 
   // Title
   cardG.append("text")
@@ -1083,33 +1087,50 @@ function canvasRebuild() {
       })
   );
 
-  // Arrow marker defs for model data-flow arrows
-  if (hasModel) {
+  // Arrow marker defs and hover filters
+  if (hasModel || hasTopo) {
     var defs = svg.append('defs');
-    defs.append('marker')
-      .attr('id', 'arrow-dataflow')
-      .attr('viewBox', '0 0 10 10')
-      .attr('refX', 5).attr('refY', 5)
-      .attr('markerWidth', 6).attr('markerHeight', 6)
-      .attr('orient', 'auto-start-reverse')
-      .append('path')
-      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
-      .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
 
-    // Hover glow filter for model diagram
-    var filter = defs.append('filter')
-      .attr('id', 'model-hover-glow')
-      .attr('x', '-30%').attr('y', '-30%')
-      .attr('width', '160%').attr('height', '160%');
-    filter.append('feDropShadow')
-      .attr('dx', 0).attr('dy', 3)
-      .attr('stdDeviation', 4)
+    if (hasModel) {
+      defs.append('marker')
+        .attr('id', 'arrow-dataflow')
+        .attr('viewBox', '0 0 10 10')
+        .attr('refX', 5).attr('refY', 5)
+        .attr('markerWidth', 6).attr('markerHeight', 6)
+        .attr('orient', 'auto-start-reverse')
+        .append('path')
+        .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+        .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
+
+      // Hover glow filter for model diagram
+      var modelFilter = defs.append('filter')
+        .attr('id', 'model-hover-glow')
+        .attr('x', '-30%').attr('y', '-30%')
+        .attr('width', '160%').attr('height', '160%');
+      modelFilter.append('feDropShadow')
+        .attr('dx', 0).attr('dy', 3)
+        .attr('stdDeviation', 4)
+        .attr('flood-color', '#39bae6')
+        .attr('flood-opacity', 0.45);
+    }
+
+    // Hover glow filter for formula card
+    var cardFilter = defs.append('filter')
+      .attr('id', 'formula-card-glow')
+      .attr('x', '-20%').attr('y', '-20%')
+      .attr('width', '140%').attr('height', '140%');
+    cardFilter.append('feDropShadow')
+      .attr('dx', 0).attr('dy', 2)
+      .attr('stdDeviation', 6)
       .attr('flood-color', '#39bae6')
-      .attr('flood-opacity', 0.45);
+      .attr('flood-opacity', 0.25);
 
     defs.append('style')
       .attr('type', 'text/css')
-      .text('.model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }');
+      .text([
+        '.model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }',
+        '.formula-card-rect { cursor: default; transition: filter 0.3s ease; }',
+      ].join(' '));
   }
 
   // ── Layout dimensions used by both topology and model sections ──
