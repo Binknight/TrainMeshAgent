@@ -1121,6 +1121,28 @@ function canvasRebuild() {
       .attr('flood-color', '#39bae6')
       .attr('flood-opacity', 0.55);
 
+    // Hover glow filter for DP card
+    var dpCardFilter = defs.append('filter')
+      .attr('id', 'dp-card-glow')
+      .attr('x', '-20%').attr('y', '-20%')
+      .attr('width', '140%').attr('height', '140%');
+    dpCardFilter.append('feDropShadow')
+      .attr('dx', 0).attr('dy', 3)
+      .attr('stdDeviation', 8)
+      .attr('flood-color', '#58a6ff')
+      .attr('flood-opacity', 0.5);
+
+    // Hover glow filter for PP card
+    var ppCardFilter = defs.append('filter')
+      .attr('id', 'pp-card-glow')
+      .attr('x', '-25%').attr('y', '-25%')
+      .attr('width', '150%').attr('height', '150%');
+    ppCardFilter.append('feDropShadow')
+      .attr('dx', 0).attr('dy', 2)
+      .attr('stdDeviation', 6)
+      .attr('flood-color', '#ff8f40')
+      .attr('flood-opacity', 0.5);
+
     defs.append('style')
       .attr('type', 'text/css')
       .text([
@@ -1128,6 +1150,11 @@ function canvasRebuild() {
         '.formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }',
         '.formula-card-rect:hover { filter: url(#formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }',
         '.formula-card-group text { pointer-events: none; }',
+        '.dp-card { transition: filter 0.3s ease, stroke 0.3s ease; }',
+        '.dp-card-group:hover .dp-card { filter: url(#dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }',
+        '.dp-card-group:hover .dp-shadow { filter: url(#dp-card-glow); }',
+        '.pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }',
+        '.pp-group:hover .pp-card { filter: url(#pp-card-glow); stroke: #ffb366; stroke-width: 1.5; }',
       ].join(' '));
   }
 
