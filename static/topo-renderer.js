@@ -85,9 +85,9 @@ var _flowAnimId = null;
 function _startFlowAnimation() {
   if (_flowAnimId) return;
   var start = null;
-  // LCM of dash patterns (8+4=12 and 6+3=9) is 36, ensures seamless wrap for both
-  var cyclePx = 36;
-  var cycleMs = 1080;
+  // LCM of dash patterns (4+2=6 and 3+2=5) is 30, ensures seamless wrap for both
+  var cyclePx = 30;
+  var cycleMs = 900;
   function tick(ts) {
     if (!start) start = ts;
     var offset = -((ts - start) * cyclePx / cycleMs) % cyclePx;
@@ -2224,7 +2224,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
       .attr('fill', 'var(--bg-surface)')
       .attr('stroke', isHighlighted ? '#ff8f40' : 'var(--text-muted)')
       .attr('stroke-width', isHighlighted ? 2 : 0.5)
-      .attr('stroke-dasharray', isHighlighted ? '6 3' : 'none')
+      .attr('stroke-dasharray', isHighlighted ? '3 2' : 'none')
       .attr('class', cellClass);
     addHover(cellRect, 0.5, 'tensor_parallelism_grid');
     sg.append('text')
@@ -2286,7 +2286,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
         .attr('fill', (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'))
         .attr('stroke', isPinnedRow ? '#ff8f40' : 'none')
         .attr('stroke-width', isPinnedRow ? 2 : 0)
-        .attr('stroke-dasharray', isPinnedRow ? '6 3' : 'none')
+        .attr('stroke-dasharray', isPinnedRow ? '3 2' : 'none')
         .attr('class', rowClass);
     }
 
