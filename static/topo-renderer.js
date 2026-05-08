@@ -2235,11 +2235,31 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     var tableW = COL_PP + COL_START + COL_END_W;
     var tableX = D.TENSOR_X + (D.TENSOR_W - tableW) / 2;
 
+    var tableH = HEADER_H + ppCount * ROW_H;
+    var gridStroke = 'var(--text-muted)';
+    var gridStrokeW = 0.5;
+
+    // Table outer border
+    sg.append('rect')
+      .attr('x', tableX).attr('y', mapTableY)
+      .attr('width', tableW).attr('height', tableH)
+      .attr('fill', 'none')
+      .attr('stroke', gridStroke).attr('stroke-width', 0.8).attr('rx', 2);
+
     // Header row
     sg.append('rect')
       .attr('x', tableX).attr('y', mapTableY)
       .attr('width', tableW).attr('height', HEADER_H)
-      .attr('fill', '#21262d').attr('rx', 2);
+      .attr('fill', '#21262d').attr('stroke', gridStroke).attr('stroke-width', gridStrokeW);
+
+    // Column separators
+    var sepX1 = tableX + COL_PP;
+    var sepX2 = tableX + COL_PP + COL_START;
+    [sepX1, sepX2].forEach(function (sx) {
+      sg.append('line')
+        .attr('x1', sx).attr('y1', mapTableY).attr('x2', sx).attr('y2', mapTableY + tableH)
+        .attr('stroke', gridStroke).attr('stroke-width', gridStrokeW);
+    });
 
     var headerY = mapTableY + 11;
     sg.append('text').attr('x', tableX + COL_PP / 2).attr('y', headerY)
@@ -2266,7 +2286,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
         .attr('x', tableX).attr('y', rowY)
         .attr('width', tableW).attr('height', ROW_H)
         .attr('fill', isPinnedRow ? '#ff8f40' : (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'))
-        .attr('rx', 1);
+        .attr('stroke', gridStroke).attr('stroke-width', gridStrokeW);
 
       var rowTextY = rowY + 10;
       sg.append('text').attr('x', tableX + COL_PP / 2).attr('y', rowTextY)
@@ -2283,7 +2303,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
         .attr('fill', isPinnedRow ? '#0a0e14' : 'var(--text-primary)').text(layerEnd);
     }
 
-    legendTopY = mapTableY + HEADER_H + ppCount * ROW_H + 10;
+    legendTopY = mapTableY + tableH + 10;
   }
 
   // ══════════════════════════════════════════════
