@@ -79,6 +79,27 @@ var meshActualOrig = {};       // { global_rank: CardMetrics } from REST simulat
 var meshActualEq = {};
 var meshPinnedRank = null;     // { side: "orig"|"eq", globalRank: number }
 var meshPinnedTpInfo = null; // { side: "orig"|"eq", tpIndex: number, ppIndex: number, globalRank: number }
+
+// ── Flowing border animation (RAF-based, more reliable than CSS @keyframes on SVG) ──
+var _flowAnimId = null;
+function _startFlowAnimation() {
+  if (_flowAnimId) return;
+  var start = null;
+  // LCM of dash patterns (8+4=12 and 6+3=9) is 36, ensures seamless wrap for both
+  var cyclePx = 36;
+  var cycleMs = 1080;
+  function tick(ts) {
+    if (!start) start = ts;
+    var offset = -((ts - start) * cyclePx / cycleMs) % cyclePx;
+    var els = document.querySelectorAll('.tp-rect.pinned, .tensor-cell.pinned, .pp-row.pinned');
+    for (var i = 0; i < els.length; i++) {
+      els[i].setAttribute('stroke-dashoffset', offset);
+    }
+    _flowAnimId = requestAnimationFrame(tick);
+  }
+  _flowAnimId = requestAnimationFrame(tick);
+}
+
 var modelOriginal = null;    // TrainingModel from SSE model_json
 var modelEquivalent = null;
 var _formulaCardReady = false;  // true when original mesh is loaded, shows formula card between orig and eq
@@ -2197,17 +2218,20 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     var tcx = D.TENSOR_X + col * cellW;
     var tcy = D.TENSOR_Y + row * cellH;
     var isHighlighted = hasHighlight && cellIdx === highlightTpIdx;
+    var cellClass = 'tensor-cell' + (isHighlighted ? ' pinned' : '');
     var cellRect = sg.append('rect')
       .attr('x', tcx).attr('y', tcy).attr('width', cellW).attr('height', cellH)
-      .attr('fill', isHighlighted ? '#ff8f40' : 'var(--bg-surface)')
-      .attr('stroke', 'var(--text-muted)').attr('stroke-width', 0.5)
-      .attr('class', 'tensor-cell');
+      .attr('fill', 'var(--bg-surface)')
+      .attr('stroke', isHighlighted ? '#ff8f40' : 'var(--text-muted)')
+      .attr('stroke-width', isHighlighted ? 2 : 0.5)
+      .attr('stroke-dasharray', isHighlighted ? '6 3' : 'none')
+      .attr('class', cellClass);
     addHover(cellRect, 0.5, 'tensor_parallelism_grid');
     sg.append('text')
       .attr('x', tcx + cellW / 2).attr('y', tcy + cellH / 2 + 1)
       .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
       .attr('font-size', effectiveTp > 16 ? 7 : 9).attr('font-family', 'JetBrains Mono, monospace').attr('font-weight', 600)
-      .attr('fill', isHighlighted ? '#0a0e14' : 'var(--text-secondary)').text(cellIdx + 1)
+      .attr('fill', 'var(--text-secondary)').text(cellIdx + 1)
       .attr('class', 'tensor-cell-label');
   }
 
@@ -2255,10 +2279,15 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     for (var pi = 0; pi < ppCount; pi++) {
       var rowY = mapTableY + HEADER_H + pi * ROW_H;
       var isPinnedRow = hasHighlight && highlightPpIdx === pi;
+      var rowClass = 'pp-row' + (isPinnedRow ? ' pinned' : '');
       sg.append('rect')
         .attr('x', tableX).attr('y', rowY)
         .attr('width', tableW).attr('height', ROW_H)
-        .attr('fill', isPinnedRow ? '#ff8f40' : (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'));
+        .attr('fill', (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'))
+        .attr('stroke', isPinnedRow ? '#ff8f40' : 'none')
+        .attr('stroke-width', isPinnedRow ? 2 : 0)
+        .attr('stroke-dasharray', isPinnedRow ? '6 3' : 'none')
+        .attr('class', rowClass);
     }
 
     // ── Vertical column separator lines (full table height) ──
@@ -2303,21 +2332,20 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
       var rowY2 = mapTableY + HEADER_H + pi2 * ROW_H;
       var layerStart2 = pi2 * layersPerPp;
       var layerEnd2 = layerStart2 + layersPerPp - 1;
-      var isPinnedRow2 = hasHighlight && highlightPpIdx === pi2;
 
       var rowTextY = rowY2 + 10;
       sg.append('text').attr('x', tableX + COL_PP / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow2 ? '#0a0e14' : 'var(--text-primary)').text(pi2);
+        .attr('fill', 'var(--text-primary)').text(pi2);
       sg.append('text').attr('x', tableX + COL_PP + COL_START / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow2 ? '#0a0e14' : 'var(--text-primary)').text(layerStart2);
+        .attr('fill', 'var(--text-primary)').text(layerStart2);
       sg.append('text').attr('x', tableX + COL_PP + COL_START + COL_END_W / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow2 ? '#0a0e14' : 'var(--text-primary)').text(layerEnd2);
+        .attr('fill', 'var(--text-primary)').text(layerEnd2);
     }
 
     legendTopY = mapTableY + tableH + 36;
@@ -2358,3 +2386,5 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
 function modelRebuild() {
   canvasRebuild();
 }
+
+_startFlowAnimation();
