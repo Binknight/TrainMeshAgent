@@ -1132,6 +1132,17 @@ function canvasRebuild() {
       .attr('flood-color', '#58a6ff')
       .attr('flood-opacity', 0.5);
 
+    // Hover glow filter for PP card
+    var ppCardFilter = defs.append('filter')
+      .attr('id', 'pp-card-glow')
+      .attr('x', '-25%').attr('y', '-25%')
+      .attr('width', '150%').attr('height', '150%');
+    ppCardFilter.append('feDropShadow')
+      .attr('dx', 0).attr('dy', 2)
+      .attr('stdDeviation', 6)
+      .attr('flood-color', '#ff8f40')
+      .attr('flood-opacity', 0.5);
+
     defs.append('style')
       .attr('type', 'text/css')
       .text([
@@ -1142,6 +1153,8 @@ function canvasRebuild() {
         '.dp-card { transition: filter 0.3s ease, stroke 0.3s ease; }',
         '.dp-card-group:hover .dp-card { filter: url(#dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }',
         '.dp-card-group:hover .dp-shadow { filter: url(#dp-card-glow); }',
+        '.pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }',
+        '.pp-group:hover .pp-card { filter: url(#pp-card-glow); stroke: #ffb366; stroke-width: 1.5; }',
       ].join(' '));
   }
 
