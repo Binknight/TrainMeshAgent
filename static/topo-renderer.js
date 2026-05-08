@@ -1143,6 +1143,17 @@ function canvasRebuild() {
       .attr('flood-color', '#ff8f40')
       .attr('flood-opacity', 0.5);
 
+    // Hover glow filter for TP rank rects
+    var tpRectFilter = defs.append('filter')
+      .attr('id', 'tp-rect-glow')
+      .attr('x', '-30%').attr('y', '-30%')
+      .attr('width', '160%').attr('height', '160%');
+    tpRectFilter.append('feDropShadow')
+      .attr('dx', 0).attr('dy', 1)
+      .attr('stdDeviation', 3)
+      .attr('flood-color', '#3fb950')
+      .attr('flood-opacity', 0.55);
+
     defs.append('style')
       .attr('type', 'text/css')
       .text([
@@ -1155,6 +1166,8 @@ function canvasRebuild() {
         '.dp-card-group:hover .dp-shadow { filter: url(#dp-card-glow); }',
         '.pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }',
         '.pp-group:hover .pp-card { filter: url(#pp-card-glow); stroke: #ffb366; stroke-width: 1.5; }',
+        '.tp-rect { transition: filter 0.2s ease; }',
+        '.tp-rect:hover { filter: url(#tp-rect-glow); }',
       ].join(' '));
   }
 
