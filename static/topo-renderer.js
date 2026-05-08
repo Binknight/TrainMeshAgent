@@ -2215,7 +2215,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', D.TENSOR_Y - 10)
     .attr('text-anchor', 'middle').attr('font-size', 9)
     .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
-    .attr('fill', 'var(--text-secondary)').text('Tensor');
+    .attr('fill', 'var(--text-secondary)').text('TP切分Tensor映射');
 
   var gridLabelY = D.TENSOR_Y + D.TENSOR_H + 13;
   sg.append('text')
@@ -2225,7 +2225,14 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('fill', 'var(--text-muted)').text('TP' + effectiveTp + ' (' + gridRows + '×' + gridCols + ')');
 
   // ── PP → layer mapping table ──
-  var mapTableY = gridLabelY + 22;
+  var mapTableTitleY = gridLabelY + 18;
+  sg.append('text')
+    .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', mapTableTitleY)
+    .attr('text-anchor', 'middle').attr('font-size', 9)
+    .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
+    .attr('fill', 'var(--text-secondary)').text('PP切分模型层映射');
+
+  var mapTableY = mapTableTitleY + 14;
   var legendTopY = mapTableY; // will be updated if table renders
 
   if (ppCount && cfg.num_layers) {
@@ -2320,7 +2327,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
         .attr('fill', isPinnedRow2 ? '#0a0e14' : 'var(--text-primary)').text(layerEnd2);
     }
 
-    legendTopY = mapTableY + tableH + 10;
+    legendTopY = mapTableY + tableH + 18;
   }
 
   // ══════════════════════════════════════════════
