@@ -1416,8 +1416,8 @@ function canvasRebuild() {
         Math.min(1, (modelAreaW - 16) / _TM_DESIGN.W),
         Math.min(1, (modelAreaWEq - 16) / _TM_DESIGN.W)
       );
-      _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW, false, sharedScale, null, origTp, origPp, highlightOrigTp, highlightOrigPp);
-      _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq, false, sharedScale, null, eqTp, eqPp, highlightEqTp, highlightEqPp);
+      _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW, false, sharedScale, null, 'var(--cyan)', origTp, origPp, highlightOrigTp, highlightOrigPp);
+      _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq, false, sharedScale, null, 'var(--teal)', eqTp, eqPp, highlightEqTp, highlightEqPp);
     } else {
       var singleTp = (meshOriginal || meshEquivalent) ? (meshOriginal || meshEquivalent).tp : 0;
       var singlePp = (meshOriginal || meshEquivalent) ? (meshOriginal || meshEquivalent).pp : 0;
@@ -1426,7 +1426,7 @@ function canvasRebuild() {
         singleHlTp = meshPinnedTpInfo.tpIndex;
         singleHlPp = meshPinnedTpInfo.ppIndex;
       }
-      _renderOneModel(zoomLayer, model, modelX0, modelTopY, modelAreaW, true, null, null, singleTp, singlePp, singleHlTp, singleHlPp);
+      _renderOneModel(zoomLayer, model, modelX0, modelTopY, modelAreaW, true, null, null, 'var(--cyan)', singleTp, singlePp, singleHlTp, singleHlPp);
     }
   }
 
@@ -1875,7 +1875,7 @@ var _TM_DESIGN = {
   Y_OUTPUT: 516,
 };
 
-function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unused2, tpCount, ppCount, highlightTpIdx, highlightPpIdx) {
+function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unused2, labelColor, tpCount, ppCount, highlightTpIdx, highlightPpIdx) {
   var cfg = model.config || {};
   var comp = model.computed || {};
   var numLayers = cfg.num_layers || 1;
@@ -2215,7 +2215,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', D.TENSOR_Y - 10)
     .attr('text-anchor', 'middle').attr('font-size', 9)
     .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
-    .attr('fill', 'var(--text-secondary)').text('TP切分Tensor映射');
+    .attr('fill', labelColor).text('TP切分Tensor映射');
 
   // ── PP → layer mapping table ──
   var mapTableTitleY = D.TENSOR_Y + D.TENSOR_H + 18;
@@ -2223,7 +2223,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', mapTableTitleY)
     .attr('text-anchor', 'middle').attr('font-size', 9)
     .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
-    .attr('fill', 'var(--text-primary)').text('PP切分模型层映射');
+    .attr('fill', labelColor).text('PP切分模型层映射');
 
   var mapTableY = mapTableTitleY + 14;
   var legendTopY = mapTableY; // will be updated if table renders
