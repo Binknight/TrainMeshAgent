@@ -636,7 +636,11 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
       var ty = tpY + ti * (MESH_CARD.tpH + MESH_CARD.tpGap) * scale;
       var side = isOrig ? 'orig' : 'eq';
       var hasActual = _hasActualData(side);
-      var rectClass = 'tp-rect' + (hasActual ? ' has-data' : '');
+      var isPinned = meshPinnedRank && (
+        (meshPinnedRank.side === side && meshPinnedRank.globalRank === tp.globalRank) ||
+        (meshPinnedRank.mappedRank != null && meshPinnedRank.side !== side && meshPinnedRank.mappedRank === tp.globalRank)
+      );
+      var rectClass = 'tp-rect' + (hasActual ? ' has-data' : '') + (isPinned ? ' pinned' : '');
       ppG
         .append("rect")
         .attr("x", tpX)
