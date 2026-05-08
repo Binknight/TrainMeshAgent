@@ -2217,15 +2217,8 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('font-family', 'DM Sans, sans-serif').attr('font-weight', 500)
     .attr('fill', 'var(--text-secondary)').text('TP切分Tensor映射');
 
-  var gridLabelY = D.TENSOR_Y + D.TENSOR_H + 13;
-  sg.append('text')
-    .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', gridLabelY)
-    .attr('text-anchor', 'middle').attr('font-size', 8)
-    .attr('font-family', 'JetBrains Mono, monospace')
-    .attr('fill', 'var(--text-muted)').text('TP' + effectiveTp + ' (' + gridRows + '×' + gridCols + ')');
-
   // ── PP → layer mapping table ──
-  var mapTableTitleY = gridLabelY + 18;
+  var mapTableTitleY = D.TENSOR_Y + D.TENSOR_H + 18;
   sg.append('text')
     .attr('x', D.TENSOR_X + D.TENSOR_W / 2).attr('y', mapTableTitleY)
     .attr('text-anchor', 'middle').attr('font-size', 9)
@@ -2327,7 +2320,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
         .attr('fill', isPinnedRow2 ? '#0a0e14' : 'var(--text-primary)').text(layerEnd2);
     }
 
-    legendTopY = mapTableY + tableH + 28;
+    legendTopY = mapTableY + tableH + 36;
   }
 
   // ══════════════════════════════════════════════
@@ -2351,7 +2344,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     .attr('fill', 'var(--text-muted)').attr('letter-spacing', '1px');
 
   legendItems.forEach(function (item, i) {
-    var ly = legendTitleY + 16 + (i + 1) * LEGEND_ROW;
+    var ly = legendTitleY + 8 + (i + 1) * LEGEND_ROW;
     sg.append('rect')
       .attr('x', lx).attr('y', ly - 5).attr('width', 9).attr('height', 9)
       .attr('rx', 2).attr('fill', item.color);
