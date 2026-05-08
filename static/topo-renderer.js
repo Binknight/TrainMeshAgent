@@ -2265,22 +2265,22 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
       sg.append('rect')
         .attr('x', tableX).attr('y', rowY)
         .attr('width', tableW).attr('height', ROW_H)
-        .attr('fill', isPinnedRow ? '#2a1a10' : (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'))
+        .attr('fill', isPinnedRow ? '#ff8f40' : (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'))
         .attr('rx', 1);
 
       var rowTextY = rowY + 10;
       sg.append('text').attr('x', tableX + COL_PP / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow ? '#ff8f40' : 'var(--text-primary)').text(pi);
+        .attr('fill', isPinnedRow ? '#0a0e14' : 'var(--text-primary)').text(pi);
       sg.append('text').attr('x', tableX + COL_PP + COL_START / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow ? '#ff8f40' : 'var(--text-primary)').text(layerStart);
+        .attr('fill', isPinnedRow ? '#0a0e14' : 'var(--text-primary)').text(layerStart);
       sg.append('text').attr('x', tableX + COL_PP + COL_START + COL_END_W / 2).attr('y', rowTextY)
         .attr('text-anchor', 'middle').attr('font-size', 8)
         .attr('font-family', 'JetBrains Mono, monospace')
-        .attr('fill', isPinnedRow ? '#ff8f40' : 'var(--text-primary)').text(layerEnd);
+        .attr('fill', isPinnedRow ? '#0a0e14' : 'var(--text-primary)').text(layerEnd);
     }
 
     legendTopY = mapTableY + HEADER_H + ppCount * ROW_H + 10;
