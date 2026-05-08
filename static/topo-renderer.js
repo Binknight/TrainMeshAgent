@@ -2212,12 +2212,11 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   addHover(tensorOuter, 1, 'tensor_parallelism_grid');
 
   var hasHighlight = highlightTpIdx != null && highlightTpIdx >= 0;
-  for (var cellIdx = 0; cellIdx < effectiveTp; cellIdx++) {
+  function renderCell(cellIdx, isHighlighted) {
     var col = cellIdx % gridCols;
     var row = Math.floor(cellIdx / gridCols);
     var tcx = D.TENSOR_X + col * cellW;
     var tcy = D.TENSOR_Y + row * cellH;
-    var isHighlighted = hasHighlight && cellIdx === highlightTpIdx;
     var cellClass = 'tensor-cell' + (isHighlighted ? ' pinned' : '');
     var cellRect = sg.append('rect')
       .attr('x', tcx).attr('y', tcy).attr('width', cellW).attr('height', cellH)
@@ -2233,6 +2232,13 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
       .attr('font-size', effectiveTp > 16 ? 7 : 9).attr('font-family', 'JetBrains Mono, monospace').attr('font-weight', 600)
       .attr('fill', 'var(--text-secondary)').text(cellIdx + 1)
       .attr('class', 'tensor-cell-label');
+  }
+  for (var cellIdx = 0; cellIdx < effectiveTp; cellIdx++) {
+    if (hasHighlight && cellIdx === highlightTpIdx) continue;
+    renderCell(cellIdx, false);
+  }
+  if (hasHighlight) {
+    renderCell(highlightTpIdx, true);
   }
 
   sg.append('text')
@@ -2275,19 +2281,27 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
       .attr('width', tableW).attr('height', HEADER_H)
       .attr('fill', '#21262d');
 
-    // Data row backgrounds
+    // Data row backgrounds (highlighted row rendered last to stay on top)
     for (var pi = 0; pi < ppCount; pi++) {
+      if (hasHighlight && highlightPpIdx === pi) continue;
       var rowY = mapTableY + HEADER_H + pi * ROW_H;
-      var isPinnedRow = hasHighlight && highlightPpIdx === pi;
-      var rowClass = 'pp-row' + (isPinnedRow ? ' pinned' : '');
       sg.append('rect')
         .attr('x', tableX).attr('y', rowY)
         .attr('width', tableW).attr('height', ROW_H)
         .attr('fill', (pi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'))
-        .attr('stroke', isPinnedRow ? '#ff8f40' : 'none')
-        .attr('stroke-width', isPinnedRow ? 2 : 0)
-        .attr('stroke-dasharray', isPinnedRow ? '3 2' : 'none')
-        .attr('class', rowClass);
+        .attr('class', 'pp-row');
+    }
+    if (hasHighlight) {
+      var hlPi = highlightPpIdx;
+      var hlRowY = mapTableY + HEADER_H + hlPi * ROW_H;
+      sg.append('rect')
+        .attr('x', tableX).attr('y', hlRowY)
+        .attr('width', tableW).attr('height', ROW_H)
+        .attr('fill', (hlPi % 2 === 0 ? 'var(--bg-surface)' : '#161b22'))
+        .attr('stroke', '#ff8f40')
+        .attr('stroke-width', 2)
+        .attr('stroke-dasharray', '3 2')
+        .attr('class', 'pp-row pinned');
     }
 
     // ── Vertical column separator lines (full table height) ──
