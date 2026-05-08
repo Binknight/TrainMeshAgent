@@ -15,6 +15,7 @@ import json
 import logging
 from typing import AsyncGenerator
 
+import httpx
 from openai import OpenAI
 
 from app.config import config
@@ -314,9 +315,11 @@ async def agent_stream(
     user_message: str,
 ) -> AsyncGenerator[AgentEvent, None]:
     """Main agent streaming loop. Skills dispatched via registry, utilities handled directly."""
+    http_client = httpx.Client(verify=config.OPENAI_SSL_VERIFY)
     client = OpenAI(
         api_key=config.OPENAI_API_KEY,
         base_url=config.OPENAI_BASE_URL,
+        http_client=http_client,
     )
 
     messages = [
