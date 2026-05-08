@@ -1956,7 +1956,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   // ── Helper: bind hover effect (glow + stroke lift + tooltip) ──
   function addHover(rect, origSw, tipId) {
     rect
-      .attr('class', 'model-node')
+      .classed('model-node', true)
       .on('mouseenter', function (event) {
         d3.select(this)
           .attr('stroke-width', origSw * 2.2)
