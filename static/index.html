@@ -5449,6 +5449,7 @@
 
             function sendQuick(text) {
                 document.getElementById("chat-input").value = text;
+                updateWorkflowNode("params", "completed");
                 sendMessage();
             }
 
