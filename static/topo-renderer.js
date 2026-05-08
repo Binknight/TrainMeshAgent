@@ -85,9 +85,9 @@ var _flowAnimId = null;
 function _startFlowAnimation() {
   if (_flowAnimId) return;
   var start = null;
-  // LCM of dash patterns (4+2=6 and 3+2=5) is 30, ensures seamless wrap for both
-  var cyclePx = 30;
-  var cycleMs = 900;
+  // dash patterns both 3+2=5, use 4× cycle for seamless wrap
+  var cyclePx = 20;
+  var cycleMs = 600;
   function tick(ts) {
     if (!start) start = ts;
     var offset = -((ts - start) * cyclePx / cycleMs) % cyclePx;
