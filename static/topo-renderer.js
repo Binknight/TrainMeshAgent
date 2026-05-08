@@ -1083,33 +1083,52 @@ function canvasRebuild() {
       })
   );
 
-  // Arrow marker defs for model data-flow arrows
-  if (hasModel) {
+  // Arrow marker defs and hover filters
+  if (hasModel || hasTopo) {
     var defs = svg.append('defs');
-    defs.append('marker')
-      .attr('id', 'arrow-dataflow')
-      .attr('viewBox', '0 0 10 10')
-      .attr('refX', 5).attr('refY', 5)
-      .attr('markerWidth', 6).attr('markerHeight', 6)
-      .attr('orient', 'auto-start-reverse')
-      .append('path')
-      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
-      .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
 
-    // Hover glow filter for model diagram
-    var filter = defs.append('filter')
-      .attr('id', 'model-hover-glow')
+    if (hasModel) {
+      defs.append('marker')
+        .attr('id', 'arrow-dataflow')
+        .attr('viewBox', '0 0 10 10')
+        .attr('refX', 5).attr('refY', 5)
+        .attr('markerWidth', 6).attr('markerHeight', 6)
+        .attr('orient', 'auto-start-reverse')
+        .append('path')
+        .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+        .attr('fill', 'var(--text-muted)').attr('opacity', 0.5);
+
+      // Hover glow filter for model diagram
+      var modelFilter = defs.append('filter')
+        .attr('id', 'model-hover-glow')
+        .attr('x', '-30%').attr('y', '-30%')
+        .attr('width', '160%').attr('height', '160%');
+      modelFilter.append('feDropShadow')
+        .attr('dx', 0).attr('dy', 3)
+        .attr('stdDeviation', 4)
+        .attr('flood-color', '#39bae6')
+        .attr('flood-opacity', 0.45);
+    }
+
+    // Hover glow filter for formula card
+    var cardFilter = defs.append('filter')
+      .attr('id', 'formula-card-glow')
       .attr('x', '-30%').attr('y', '-30%')
       .attr('width', '160%').attr('height', '160%');
-    filter.append('feDropShadow')
-      .attr('dx', 0).attr('dy', 3)
-      .attr('stdDeviation', 4)
+    cardFilter.append('feDropShadow')
+      .attr('dx', 0).attr('dy', 4)
+      .attr('stdDeviation', 10)
       .attr('flood-color', '#39bae6')
-      .attr('flood-opacity', 0.45);
+      .attr('flood-opacity', 0.55);
 
     defs.append('style')
       .attr('type', 'text/css')
-      .text('.model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }');
+      .text([
+        '.model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }',
+        '.formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }',
+        '.formula-card-rect:hover { filter: url(#formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }',
+        '.formula-card-group text { pointer-events: none; }',
+      ].join(' '));
   }
 
   // ── Layout dimensions used by both topology and model sections ──
