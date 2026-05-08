@@ -862,15 +862,11 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   if (cardY < viewY) cardY = viewY;
 
   // Card background
-  var cardBg = cardG.append("rect")
+  cardG.append("rect")
     .attr("x", viewX).attr("y", cardY)
     .attr("width", viewW).attr("height", cardH)
     .attr("rx", 8).attr("ry", 8)
     .attr("class", "formula-card-rect");
-
-  cardG
-    .on("mouseover", function () { cardBg.attr("filter", "url(#formula-card-glow)"); })
-    .on("mouseout", function () { cardBg.attr("filter", null); });
 
   // Title
   cardG.append("text")
@@ -1123,13 +1119,15 @@ function canvasRebuild() {
       .attr('dx', 0).attr('dy', 2)
       .attr('stdDeviation', 6)
       .attr('flood-color', '#39bae6')
-      .attr('flood-opacity', 0.25);
+      .attr('flood-opacity', 0.35);
 
     defs.append('style')
       .attr('type', 'text/css')
       .text([
         '.model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }',
         '.formula-card-rect { cursor: default; transition: filter 0.3s ease; }',
+        '.formula-card-rect:hover { filter: url(#formula-card-glow); }',
+        '.formula-card-group text { pointer-events: none; }',
       ].join(' '));
   }
 
