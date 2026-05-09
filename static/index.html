@@ -3063,6 +3063,8 @@
                     if (hasTopology)
                         _syncTopologySubsteps(hasOrigTopo, hasEqTopo);
                     updateWorkflowNode("model", "active");
+                } else {
+                    initWorkflow();
                 }
             }
 
