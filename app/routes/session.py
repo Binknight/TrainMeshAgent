@@ -1,8 +1,11 @@
 """REST endpoints for session management."""
 import importlib
+import logging
 import math
 import random
 from flask import Blueprint, request, jsonify
+
+logger = logging.getLogger(__name__)
 
 from app.agent.session import session_manager
 from app.mcp.client import mcp_client
@@ -163,11 +166,16 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     total_nodes = dp * tp * pp
 
     # Submit MCP task (fire-and-forget)
+    # Use _topo_with_model to include num_layers / hidden_dim in the payload
     task_id = task_id_in
     if not task_id:
         try:
-            task_id = mcp_client.execute_task(topo.model_dump())
-        except Exception:
+            topo_payload = _topo_with_model(topo, training_model) or topo.model_dump()
+            task_id = mcp_client.execute_task(topo_payload)
+            if not task_id:
+                logger.warning(f"[run_simulation] MCP execute_task returned empty task_id for {label}")
+        except Exception as exc:
+            logger.warning(f"[run_simulation] MCP execute_task failed for {label}: {exc}")
             task_id = ""
 
     # Run estimation formulas
@@ -281,6 +289,8 @@ def run_simulation(session_id: str):
         session.step = "simulating"
     return jsonify({
         "session_id": session_id,
+        "original_task_id": session.original_task_id,
+        "equivalent_task_id": session.equivalent_task_id,
         "results": results,
         "step": session.step,
     })
