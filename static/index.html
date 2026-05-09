@@ -2674,9 +2674,9 @@
                     topPad = 10;
                 var maxNodeW = Math.min(280, W - 40);
                 var nodeW = maxNodeW;
-                var childNodeW = nodeW - 28;
+                var childNodeW = nodeW - 60;
                 var offsetX = (W - nodeW) / 2;
-                var childOffsetX = offsetX + 28;
+                var childOffsetX = offsetX + (nodeW - childNodeW) / 2;
                 var allVisible = WORKFLOW_STEPS;
 
                 // Pre-compute cumulative Y positions (child nodes use smaller height)
@@ -2728,7 +2728,7 @@
                             isCurCompleted || isPrevCompleted
                                 ? "/static/assets/down_arrow_green.png"
                                 : "/static/assets/down_arrow_grey.png";
-                        var arrowCenterX = isChild ? childNodeW / 2 : nodeW / 2;
+                        var arrowCenterX = nodeW / 2;
                         g.append("image")
                             .attr("x", arrowCenterX - arrowW / 2)
                             .attr("y", prevY + (gapH - arrowH) / 2)
@@ -2737,13 +2737,13 @@
                             .attr("href", arrowSrc);
                     }
 
-                    // Connector line from parent to first child
+                    // Connector line from parent to first child (centers aligned)
                     if (prevStep && prevStep.isParent && step.isChild) {
                         var connY = stepY[i - 1] + nodeH;
                         g.append("line")
                             .attr("x1", nodeW / 2)
                             .attr("y1", connY)
-                            .attr("x2", childNodeW / 2)
+                            .attr("x2", nodeW / 2)
                             .attr("y2", connY + gapH / 2)
                             .attr(
                                 "stroke",
@@ -2754,9 +2754,9 @@
                             .attr("stroke-width", 1)
                             .attr("stroke-dasharray", "2,2");
                         g.append("line")
-                            .attr("x1", childNodeW / 2)
+                            .attr("x1", nodeW / 2)
                             .attr("y1", connY + gapH / 2)
-                            .attr("x2", childNodeW / 2)
+                            .attr("x2", nodeW / 2)
                             .attr("y2", y)
                             .attr(
                                 "stroke",
