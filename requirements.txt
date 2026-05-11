@@ -7,3 +7,4 @@ python-dotenv>=1.0
 uuid7>=0.1
 pyyaml>=6.0
 requests>=2.31
+psycopg2-binary>=2.9

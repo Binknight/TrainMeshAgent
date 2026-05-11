@@ -287,6 +287,9 @@ def run_simulation(session_id: str):
         results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
     else:
         session.step = "simulating"
+
+    session_manager.save_session(session)
+
     return jsonify({
         "session_id": session_id,
         "original_task_id": session.original_task_id,
