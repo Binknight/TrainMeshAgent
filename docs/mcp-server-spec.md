@@ -65,7 +65,7 @@
 ```json
 {
   "topology": { <SimulationTaskInput> },
-  "simulation_params": {}
+  "simulation_params": { <SimulationRunnerParams> }
 }
 ```
 
@@ -110,7 +110,23 @@
     "seq_len": 2048,
     "batch_size": 32
   },
-  "simulation_params": {}
+  "simulation_params": {
+    "script_path": "/opt/ascend/script/pretrain_xxxx.sh",
+    "epoch_num": 1,
+    "model_name": "",
+    "device_type": "ASCEND_910B",
+    "vocab_size": "18277",
+    "frame": "Mindspeed",
+    "rank": 0,
+    "rank_range": 1023,
+    "comp_filepath": "/opt/traffic_modeling/aicm/default.txt",
+    "no_time_accumulation": false,
+    "level0_config": null,
+    "level1_config": null,
+    "visual_json_output": true,
+    "comm_group_output": true,
+    "debug_time": false
+  }
 }
 ```
 
@@ -132,7 +148,23 @@
     "seq_len": 2048,
     "batch_size": 32
   },
-  "simulation_params": {}
+  "simulation_params": {
+    "script_path": "/opt/ascend/script/pretrain_xxxx.sh",
+    "epoch_num": 1,
+    "model_name": "",
+    "device_type": "ASCEND_910B",
+    "vocab_size": "18277",
+    "frame": "Mindspeed",
+    "rank": 0,
+    "rank_range": 1023,
+    "comp_filepath": "/opt/traffic_modeling/aicm/default.txt",
+    "no_time_accumulation": false,
+    "level0_config": null,
+    "level1_config": null,
+    "visual_json_output": true,
+    "comm_group_output": true,
+    "debug_time": false
+  }
 }
 ```
 

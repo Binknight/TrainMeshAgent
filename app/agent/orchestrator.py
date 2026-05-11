@@ -478,4 +478,8 @@ async def agent_stream(
     )
 
     session.history.append({"role": "user", "content": user_message})
+
+    from app.agent.session import session_manager
+    session_manager.save_session(session)
+
     yield AgentEvent(event_type="done", message="处理完成")
