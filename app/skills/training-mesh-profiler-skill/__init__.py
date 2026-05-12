@@ -209,11 +209,6 @@ class MeshProfilerSkill(BaseSkill):
             device_type=device_type,
             total_nodes=total_nodes,
             cards=cards,
-            aggregate_flops=sum(c.flops_per_card for c in cards),
-            aggregate_hbm_gb=sum(c.hbm_gb for c in cards),
-            aggregate_tp_comm_gb_per_micro=sum(c.tp_comm_gb_per_micro for c in cards),
-            aggregate_pp_comm_mb_per_micro=sum(c.pp_comm_mb_per_micro for c in cards),
-            aggregate_dp_comm_gb_per_step=sum(c.dp_comm_gb_per_step for c in cards),
         )
 
         return SkillResult(success=True, data=result)

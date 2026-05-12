@@ -20,7 +20,7 @@ from openai import OpenAI
 
 from app.config import config
 from app.models.schemas import (
-    AgentEvent, ComparisonReport, DeviceType, MeshTopology,
+    AgentEvent, CardMetrics, ComparisonReport, DeviceType, MeshTopology,
     SessionState, SimulationResult, TopologyParams, TrainingModel,
 )
 from app.agent.guardrails import validate_input_params
@@ -208,11 +208,6 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             "device_type": data.device_type.value,
             "total_nodes": data.total_nodes,
             "cards_count": len(data.cards),
-            "aggregate_flops": data.aggregate_flops,
-            "aggregate_hbm_gb": data.aggregate_hbm_gb,
-            "aggregate_tp_comm_gb_per_micro": data.aggregate_tp_comm_gb_per_micro,
-            "aggregate_pp_comm_mb_per_micro": data.aggregate_pp_comm_mb_per_micro,
-            "aggregate_dp_comm_gb_per_step": data.aggregate_dp_comm_gb_per_step,
             "session_id": session.session_id,
             "_type": "profiler_summary",
         }
@@ -244,22 +239,19 @@ def _build_comparison_report(original: SimulationResult, equivalent: SimulationR
     def _diff_pct(ov: float, ev: float) -> float:
         return round(abs(ov - ev) / max(abs(ov), eps) * 100, 2)
 
-    def _per_card(agg: float, nodes: int) -> float:
-        return agg / max(nodes, 1)
+    def _per_card(cards: list[CardMetrics], attr: str) -> float:
+        return sum(getattr(c, attr) for c in cards) / max(len(cards), 1)
 
-    on = original.total_nodes
-    en = equivalent.total_nodes
-
-    of = _per_card(original.aggregate_flops, on)
-    ef = _per_card(equivalent.aggregate_flops, en)
-    oh = _per_card(original.aggregate_hbm_gb, on)
-    eh = _per_card(equivalent.aggregate_hbm_gb, en)
-    otp = _per_card(original.aggregate_tp_comm_gb_per_micro, on)
-    etp = _per_card(equivalent.aggregate_tp_comm_gb_per_micro, en)
-    opp = _per_card(original.aggregate_pp_comm_mb_per_micro, on)
-    epp = _per_card(equivalent.aggregate_pp_comm_mb_per_micro, en)
-    odp = _per_card(original.aggregate_dp_comm_gb_per_step, on)
-    edp = _per_card(equivalent.aggregate_dp_comm_gb_per_step, en)
+    of = _per_card(original.cards, "flops_per_card")
+    ef = _per_card(equivalent.cards, "flops_per_card")
+    oh = _per_card(original.cards, "hbm_gb")
+    eh = _per_card(equivalent.cards, "hbm_gb")
+    otp = _per_card(original.cards, "tp_comm_gb_per_micro")
+    etp = _per_card(equivalent.cards, "tp_comm_gb_per_micro")
+    opp = _per_card(original.cards, "pp_comm_mb_per_micro")
+    epp = _per_card(equivalent.cards, "pp_comm_mb_per_micro")
+    odp = _per_card(original.cards, "dp_comm_gb_per_step")
+    edp = _per_card(equivalent.cards, "dp_comm_gb_per_step")
 
     flops_diff = _diff_pct(of, ef)
     hbm_diff = _diff_pct(oh, eh)
@@ -424,9 +416,7 @@ async def agent_stream(
             elif tool_name == "training-model-gen-skill":
                 result_msg = f"模型结构 'transformer_model' 生成成功, {result.get('layers_count', 0)} 层"
             elif tool_name == "training-mesh-profiler-skill":
-                agg_flops = result.get('aggregate_flops', 0)
-                agg_hbm = result.get('aggregate_hbm_gb', 0)
-                result_msg = f"仿真分析完成: {result.get('topology_name', '')} — {result.get('total_nodes', 0)} 节点, 聚合FLOPs {agg_flops:.2e}, HBM {agg_hbm:.1f}GB"
+                result_msg = f"仿真分析完成: {result.get('topology_name', '')} — {result.get('total_nodes', 0)} 节点"
             elif tool_name == "run_simulation":
                 result_msg = f"仿真任务已下发: {result.get('task_id', '')}"
             elif tool_name == "compare_results":

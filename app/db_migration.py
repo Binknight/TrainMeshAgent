@@ -58,11 +58,6 @@ CREATE TABLE IF NOT EXISTS simulation_results (
     topology_name   VARCHAR(100),
     device_type     VARCHAR(10),
     total_nodes     INT,
-    total_flops     FLOAT,
-    total_hbm       FLOAT,
-    total_tp_comm   FLOAT,
-    total_pp_comm   FLOAT,
-    total_dp_comm   FLOAT,
     is_simulated    BOOLEAN DEFAULT FALSE,
     cards           JSONB DEFAULT '[]',
     UNIQUE (session_id, role)
@@ -91,6 +86,12 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
     content         TEXT,
     timestamp       TIMESTAMP DEFAULT NOW()
 );
+
+ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_flops;
+ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_hbm;
+ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_tp_comm;
+ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_pp_comm;
+ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_dp_comm;
 
 CREATE INDEX IF NOT EXISTS idx_topology_params_session ON topology_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_params_session ON simulation_params(session_id, role);

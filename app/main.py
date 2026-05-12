@@ -25,6 +25,10 @@ def create_app() -> Flask:
     # CORS support
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 
+    # Run database migration on startup
+    from app.db_migration import init_db
+    init_db()
+
     # Register blueprints
     app.register_blueprint(chat_bp)
     app.register_blueprint(session_bp)
