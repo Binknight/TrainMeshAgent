@@ -44,6 +44,41 @@ def list_session_ids() -> list[dict[str, Any]]:
     return [{"session_id": r[0], "step": r[1], "created_at": r[2].isoformat() if r[2] else None, "updated_at": r[3].isoformat() if r[3] else None} for r in rows]
 
 
+def get_session_summaries() -> list[dict[str, Any]]:
+    """Return lightweight session list for history panel, with topology-derived titles."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT s.id, s.step, s.created_at, s.updated_at,
+                       o.name AS orig_name, e.name AS eq_name
+                FROM sessions s
+                LEFT JOIN topology_params o ON o.session_id = s.id AND o.role = 'original'
+                LEFT JOIN topology_params e ON e.session_id = s.id AND e.role = 'equivalent'
+                ORDER BY s.updated_at DESC
+            """)
+            rows = cur.fetchall()
+    result = []
+    for r in rows:
+        orig_name = r[4]
+        eq_name = r[5]
+        if orig_name and eq_name:
+            title = f"{orig_name} → {eq_name}"
+        elif orig_name:
+            title = orig_name
+        elif eq_name:
+            title = eq_name
+        else:
+            title = "新建任务"
+        result.append({
+            "session_id": r[0],
+            "title": title,
+            "step": r[1],
+            "created_at": r[2].isoformat() if r[2] else None,
+            "updated_at": r[3].isoformat() if r[3] else None,
+        })
+    return result
+
+
 def get_session_summary(session_id: str) -> dict[str, Any] | None:
     with get_db() as conn:
         with conn.cursor() as cur:

@@ -32,13 +32,11 @@ def create_session():
     return jsonify(result)
 
 
-@session_bp.route("/<session_id>", methods=["GET"])
-def get_session(session_id: str):
-    """Get session state by ID."""
-    session = session_manager.get_session(session_id)
-    if not session:
-        return {"error": "session not found"}, 404
-    return jsonify(session.model_dump())
+@session_bp.route("/summaries", methods=["GET"])
+def list_session_summaries():
+    """List session summaries for the history panel (lightweight, with topology titles)."""
+    from app.dao import get_session_summaries
+    return jsonify(get_session_summaries())
 
 
 @session_bp.route("", methods=["GET"])
@@ -46,6 +44,15 @@ def list_sessions():
     """List all active sessions."""
     sessions = session_manager.list_sessions()
     return jsonify([s.model_dump() for s in sessions])
+
+
+@session_bp.route("/<session_id>", methods=["GET"])
+def get_session(session_id: str):
+    """Get session state by ID."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    return jsonify(session.model_dump())
 
 
 @session_bp.route("/<session_id>", methods=["DELETE"])
