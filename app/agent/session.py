@@ -163,6 +163,11 @@ def _persist_session(session: SessionState) -> None:
         if sim:
             save_simulation_result(sid, role, sim.model_dump())
 
+    if session.simulation_params:
+        d = session.simulation_params.model_dump()
+        save_simulation_params(sid, "original", d)
+        save_simulation_params(sid, "equivalent", d)
+
     if session.comparison_report:
         from app.dao import get_simulation_result
         orig_sim = get_simulation_result(sid, "original")
@@ -180,7 +185,7 @@ def _persist_session(session: SessionState) -> None:
 
 def _load_session(session_id: str) -> Optional[SessionState]:
     try:
-        from app.dao import get_session_summary, get_topology_params, get_simulation_result, get_comparison_report, get_messages
+        from app.dao import get_session_summary, get_topology_params, get_simulation_result, get_comparison_report, get_messages, get_simulation_params
         from app.models.schemas import DeviceType, MeshTopology, TopologyParams, TrainingModel, TrainingModelConfig, TrainingModelComputed, SimulationResult, ComparisonReport, CardMetrics
 
         summary = get_session_summary(session_id)
@@ -275,6 +280,12 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                 error_tolerance_pct=cr.get("error_tolerance", 5.0),
                 details=cr.get("details", {}),
             )
+
+        # Restore simulation params
+        sim_params_data = get_simulation_params(session_id, "original")
+        if sim_params_data:
+            from app.models.schemas import SimulationParams
+            state.simulation_params = SimulationParams(**sim_params_data)
 
         state.history = get_messages(session_id)
         return state

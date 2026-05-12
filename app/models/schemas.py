@@ -220,6 +220,24 @@ class TrainingModel(BaseModel):
         return super().model_dump(**kwargs)
 
 
+class SimulationParams(BaseModel):
+    """Simulation parameters passed to the MCP simulation system."""
+    epoch_num: int = 1
+    model_name: str = ""
+    device_type: str = "ASCEND_910B"
+    vocab_size: str = "18277"
+    frame: str = "Mindspeed"
+    rank: int = 0
+    rank_range: int = 1023
+    comp_filepath: str = "/opt/traffic_modeling/aicm/default.txt"
+    no_time_accumulation: bool = False
+    level0_config: dict[str, Any] | None = None
+    level1_config: dict[str, Any] | None = None
+    visual_json_output: bool = True
+    comm_group_output: bool = True
+    debug_time: bool = False
+
+
 class SessionState(BaseModel):
     """Persistent session state."""
     session_id: str
@@ -234,6 +252,7 @@ class SessionState(BaseModel):
     equivalent_training_model: TrainingModel | None = None
     original_task_id: str | None = None
     equivalent_task_id: str | None = None
+    simulation_params: SimulationParams | None = None
     step: str = "idle"  # idle | params_collected | topology_generated | simulating | completed
     history: list[dict[str, Any]] = Field(default_factory=list)
     # Step1 form metadata captured from frontend
