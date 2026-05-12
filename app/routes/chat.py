@@ -41,7 +41,7 @@ def chat_stream():
 
     session = session_manager.get_session(session_id)
     if not session:
-        session = session_manager.create_session()
+        return {"error": "session not found"}, 404
 
     # Capture step1 form metadata from frontend before LLM processes the message
     for role in ("original", "equivalent"):

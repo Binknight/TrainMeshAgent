@@ -3313,7 +3313,12 @@
             async function restoreSession(id) {
                 try {
                     const resp = await fetch(`${API}/session/${id}/topology`);
-                    if (!resp.ok) throw new Error("session expired");
+                    if (!resp.ok) {
+                        if (resp.status === 404) {
+                            localStorage.removeItem("mesh_session_id");
+                        }
+                        return false;
+                    }
                     const data = await resp.json();
 
                     sessionId = id;
@@ -3388,12 +3393,12 @@
                     fetchSimulationData();
                     return true;
                 } catch (e) {
-                    localStorage.removeItem("mesh_session_id");
+                    // Network error or parse error — keep cached session
                     return false;
                 }
             }
 
-            function newSession() {
+            async function newSession() {
                 sessionId = "";
                 _pendingMeshList = [];
                 _pendingModelList = [];
@@ -3444,7 +3449,7 @@
                 _pendingSimData = false;
                 checkSimReady();
                 initWorkflow();
-                ensureSession();
+                await ensureSession();
             }
 
             // ── Chat rendering ──
@@ -3535,6 +3540,14 @@
                         removeThinking();
                         addMessage("error", `请求失败: HTTP ${resp.status}`);
                         return;
+                    }
+
+                    // Sync session id from server response header (safety net)
+                    const serverSid = resp.headers.get("X-Session-Id");
+                    if (serverSid && serverSid !== sessionId) {
+                        sessionId = serverSid;
+                        document.getElementById("session-id-display").textContent = sessionId;
+                        localStorage.setItem("mesh_session_id", sessionId);
                     }
 
                     const reader = resp.body.getReader();
