@@ -3306,7 +3306,10 @@
                 sessionId = data.session_id;
                 document.getElementById("session-id-display").textContent =
                     sessionId;
-                localStorage.setItem("mesh_session_id", sessionId);
+                localStorage.setItem("mesh_session", JSON.stringify({
+                    id: sessionId,
+                    boot: data.server_boot_id || "",
+                }));
                 return sessionId;
             }
 
@@ -3315,16 +3318,26 @@
                     const resp = await fetch(`${API}/session/${id}/topology`);
                     if (!resp.ok) {
                         if (resp.status === 404) {
-                            localStorage.removeItem("mesh_session_id");
+                            localStorage.removeItem("mesh_session");
                         }
                         return false;
                     }
                     const data = await resp.json();
 
+                    // Detect server restart: if boot id changed, discard old session
+                    const saved = JSON.parse(localStorage.getItem("mesh_session") || "{}");
+                    if (data.server_boot_id && saved.boot && data.server_boot_id !== saved.boot) {
+                        localStorage.removeItem("mesh_session");
+                        return false;
+                    }
+
                     sessionId = id;
                     document.getElementById("session-id-display").textContent =
                         sessionId;
-                    localStorage.setItem("mesh_session_id", sessionId);
+                    localStorage.setItem("mesh_session", JSON.stringify({
+                        id: sessionId,
+                        boot: data.server_boot_id || saved.boot || "",
+                    }));
 
                     // Restore training model data first (synchronous), so canvasRebuild sees them
                     if (data.original_training_model) {
@@ -3402,7 +3415,7 @@
                 sessionId = "";
                 _pendingMeshList = [];
                 _pendingModelList = [];
-                localStorage.removeItem("mesh_session_id");
+                localStorage.removeItem("mesh_session");
                 document.getElementById("session-id-display").textContent = "—";
                 document.getElementById("chat-messages").innerHTML = `
     <div class="msg-group fade-in">
@@ -3547,7 +3560,11 @@
                     if (serverSid && serverSid !== sessionId) {
                         sessionId = serverSid;
                         document.getElementById("session-id-display").textContent = sessionId;
-                        localStorage.setItem("mesh_session_id", sessionId);
+                        const saved = JSON.parse(localStorage.getItem("mesh_session") || "{}");
+                        localStorage.setItem("mesh_session", JSON.stringify({
+                            id: sessionId,
+                            boot: saved.boot || "",
+                        }));
                     }
 
                     const reader = resp.body.getReader();
@@ -5488,7 +5505,8 @@
             renderHistory();
 
             (async function init() {
-                const savedId = localStorage.getItem("mesh_session_id");
+                const saved = JSON.parse(localStorage.getItem("mesh_session") || "{}");
+                const savedId = saved.id || "";
                 if (savedId && (await restoreSession(savedId))) {
                     document.getElementById("chat-input").focus();
                     return;

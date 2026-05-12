@@ -3,9 +3,14 @@ import importlib
 import logging
 import math
 import random
+import uuid
 from flask import Blueprint, request, jsonify
 
 logger = logging.getLogger(__name__)
+
+# Server boot identifier — changes on every restart, so the frontend can
+# detect a server restart and discard cached sessions from the last run.
+SERVER_BOOT_ID = str(uuid.uuid4())[:8]
 
 from app.agent.session import session_manager
 from app.mcp.client import mcp_client
@@ -22,7 +27,9 @@ session_bp = Blueprint("session", __name__, url_prefix="/api/session")
 def create_session():
     """Create a new agent session."""
     session = session_manager.create_session()
-    return jsonify(session.model_dump())
+    result = session.model_dump()
+    result["server_boot_id"] = SERVER_BOOT_ID
+    return jsonify(result)
 
 
 @session_bp.route("/<session_id>", methods=["GET"])
@@ -70,6 +77,7 @@ def get_topology(session_id: str):
 
     return jsonify({
         "session_id": session_id,
+        "server_boot_id": SERVER_BOOT_ID,
         "original_topology": _topo_with_model(session.original_topology, session.original_training_model),
         "equivalent_topology": _topo_with_model(session.equivalent_topology, session.equivalent_training_model),
         "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
