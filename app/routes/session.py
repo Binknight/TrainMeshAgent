@@ -86,6 +86,7 @@ def get_topology(session_id: str):
         "equivalent_simulation": session.equivalent_simulation is not None,
         "comparison_report": session.comparison_report is not None,
         "step": session.step,
+        "messages": session.history,
     })
 
 

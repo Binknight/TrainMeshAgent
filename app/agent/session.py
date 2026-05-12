@@ -1,3 +1,4 @@
+import json
 import uuid
 import threading
 import logging
@@ -173,9 +174,8 @@ def _persist_session(session: SessionState) -> None:
     if session.history:
         delete_messages(sid)
         for i, msg in enumerate(session.history):
-            content = msg.get("content", "")
-            if content:
-                save_message(sid, i, msg.get("role", "unknown"), str(content))
+            content = json.dumps(msg, ensure_ascii=False)
+            save_message(sid, i, msg.get("role", "unknown"), content)
 
 
 def _load_session(session_id: str) -> Optional[SessionState]:

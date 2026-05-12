@@ -332,6 +332,7 @@ async def agent_stream(
     for h in session.history[-20:]:
         messages.append(h)
     messages.append({"role": "user", "content": user_message})
+    session.history.append({"role": "user", "content": user_message})
 
     tools = _build_tools()
     _msg_size = lambda msgs: sum(len(json.dumps(m, ensure_ascii=False)) for m in msgs)
@@ -362,6 +363,7 @@ async def agent_stream(
         if not msg.tool_calls:
             if msg.content:
                 yield AgentEvent(event_type="message", message=msg.content)
+                session.history.append({"role": "assistant", "content": msg.content})
             break
 
         # Append assistant message with ALL tool_calls once before the loop
@@ -373,6 +375,7 @@ async def agent_stream(
         if hasattr(msg, "reasoning_content") and msg.reasoning_content:
             assistant_msg["reasoning_content"] = msg.reasoning_content
         messages.append(assistant_msg)
+        session.history.append(assistant_msg)
 
         for tool_call in msg.tool_calls:
             tool_name = tool_call.function.name
@@ -436,6 +439,11 @@ async def agent_stream(
                 "tool_call_id": tool_call.id,
                 "content": tool_content,
             })
+            session.history.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": tool_content,
+            })
 
     # Auto-profiling: if topologies have task_ids but no simulation data, run profiler now
     for label, topo, task_id in [
@@ -478,8 +486,6 @@ async def agent_stream(
         message="",
         data=_build_workflow_state(session),
     )
-
-    session.history.append({"role": "user", "content": user_message})
 
     from app.agent.session import session_manager
     session_manager.save_session(session)

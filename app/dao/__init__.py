@@ -242,7 +242,17 @@ def get_messages(session_id: str, limit: int = 20) -> list[dict[str, Any]]:
                 (session_id, limit),
             )
             rows = cur.fetchall()
-    return [{"role": r[0], "content": r[1]} for r in rows]
+    result = []
+    for r in rows:
+        try:
+            msg = json.loads(r[1])
+            if isinstance(msg, dict):
+                result.append(msg)
+            else:
+                result.append({"role": r[0], "content": r[1]})
+        except (json.JSONDecodeError, TypeError):
+            result.append({"role": r[0], "content": r[1]})
+    return result
 
 
 def delete_messages(session_id: str) -> None:
