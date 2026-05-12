@@ -3406,6 +3406,20 @@
                         boot: data.server_boot_id || saved.boot || "",
                     }));
 
+                    // Clear old session's topology/model state before restoring new one
+                    meshOriginal = null;
+                    meshEquivalent = null;
+                    modelOriginal = null;
+                    modelEquivalent = null;
+                    meshActualOrig = {};
+                    meshActualEq = {};
+                    meshEstimateOrig = {};
+                    meshEstimateEq = {};
+                    meshModelOrig = {};
+                    meshModelEq = {};
+                    _pendingMeshList = [];
+                    _pendingModelList = [];
+
                     // Restore training model data first (synchronous), so canvasRebuild sees them
                     if (data.original_training_model) {
                         data.original_training_model._role = "original";
@@ -3480,6 +3494,8 @@
                         );
                     }
 
+                    _simCompleted = !!(data.original_simulation && data.equivalent_simulation);
+                    checkSimReady();
                     fetchSimulationData();
                     return true;
                 } catch (e) {
