@@ -73,12 +73,24 @@ _UTILITY_TOOLS = [
         "type": "function",
         "function": {
             "name": "run_simulation",
-            "description": "向仿真系统下发仿真任务（通过 MCP Client）",
+            "description": "向仿真系统下发仿真任务（通过 MCP Client）。支持可选的仿真参数。当用户描述仿真参数时，提取并传入。未指定的参数使用默认值。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "topology_name": {"type": "string", "description": "组网名称"},
                     "topology_json": {"type": "string", "description": "组网 JSON 字符串"},
+                    "epoch_num": {"type": "integer", "description": "训练 epoch 数，默认 1"},
+                    "model_name": {"type": "string", "description": "模型名称"},
+                    "device_type": {"type": "string", "description": "仿真硬件设备类型，默认 ASCEND_910B"},
+                    "vocab_size": {"type": "string", "description": "词表大小，默认 18277"},
+                    "frame": {"type": "string", "description": "框架类型，默认 Mindspeed"},
+                    "rank": {"type": "integer", "description": "起始 rank，默认 0"},
+                    "rank_range": {"type": "integer", "description": "rank 范围，默认 1023"},
+                    "comp_filepath": {"type": "string", "description": "计算文件路径"},
+                    "no_time_accumulation": {"type": "boolean", "description": "是否禁用时间累积，默认 false"},
+                    "visual_json_output": {"type": "boolean", "description": "是否输出可视化 JSON，默认 true"},
+                    "comm_group_output": {"type": "boolean", "description": "是否输出通信组，默认 true"},
+                    "debug_time": {"type": "boolean", "description": "是否调试时间，默认 false"},
                 },
                 "required": ["topology_name", "topology_json"],
             },
@@ -130,7 +142,16 @@ def _execute_utility_tool(tool_name: str, arguments: dict, session: SessionState
 
     elif tool_name == "run_simulation":
         topology_json = json.loads(arguments["topology_json"])
-        task_id = mcp_client.execute_task(topology_json)
+        # Build simulation params from arguments, falling back to defaults
+        sim_fields = ["epoch_num", "model_name", "device_type", "vocab_size", "frame",
+                      "rank", "rank_range", "comp_filepath", "no_time_accumulation",
+                      "visual_json_output", "comm_group_output", "debug_time"]
+        sim_data = {k: arguments[k] for k in sim_fields if k in arguments}
+        if sim_data:
+            from app.models.schemas import SimulationParams
+            session.simulation_params = SimulationParams(**sim_data)
+        sim_params_dict = session.simulation_params.model_dump() if session.simulation_params else None
+        task_id = mcp_client.execute_task(topology_json, params=sim_params_dict)
         topo_name = arguments.get("topology_name", "")
         if "原始" in topo_name:
             session.original_task_id = task_id
@@ -466,6 +487,8 @@ async def agent_stream(
                     "pp": topo.pp_size,
                     "task_id": task_id,
                 }
+                if session.simulation_params:
+                    profiler_args["simulation_params"] = session.simulation_params.model_dump()
                 if training_model:
                     profiler_args["num_layers"] = training_model.config.num_layers
                     profiler_args["hidden_dim"] = training_model.config.d_model

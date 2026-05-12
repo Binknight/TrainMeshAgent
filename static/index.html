@@ -950,8 +950,70 @@
                 transition: border-color 0.18s;
             }
             .workflow-param-row select:focus,
-            .workflow-param-row input:focus {
+            .workflow-param-row input:focus,
+            .workflow-param-row textarea:focus {
                 border-color: var(--border-active);
+            }
+            .workflow-param-row input[type="checkbox"] {
+                flex: 0;
+                width: 18px;
+                height: 18px;
+                min-width: 18px;
+                padding: 0;
+                cursor: pointer;
+                appearance: none;
+                -webkit-appearance: none;
+                -moz-appearance: none;
+                border: 2px solid var(--border-active);
+                border-radius: 3px;
+                background: var(--bg-input);
+                position: relative;
+                outline: none;
+                transition: background 0.15s, border-color 0.15s;
+            }
+            .workflow-param-row input[type="checkbox"]:checked {
+                background: var(--cyan);
+                border-color: var(--cyan);
+            }
+            .workflow-param-row input[type="checkbox"]:checked::after {
+                content: "";
+                position: absolute;
+                left: 5px;
+                top: 1px;
+                width: 5px;
+                height: 10px;
+                border: solid #0a0e14;
+                border-width: 0 2px 2px 0;
+                transform: rotate(45deg);
+            }
+            .workflow-param-row:has(input[type="checkbox"]) {
+                justify-content: flex-start;
+                align-items: center;
+            }
+            .workflow-param-row:has(input[type="checkbox"]) label {
+                line-height: 18px;
+                width: 160px;
+                flex-shrink: 0;
+            }
+            .workflow-param-row input[type="checkbox"]:hover {
+                border-color: #fff;
+            }
+            .workflow-param-row textarea {
+                flex: 1;
+                min-width: 0;
+                background: var(--bg-input);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                color: var(--text-primary);
+                font-family: var(--font-mono);
+                font-size: 11px;
+                padding: 5px 6px;
+                outline: none;
+                resize: vertical;
+            }
+            .sim-param-card {
+                width: 400px;
+                max-width: calc(100% - 20px);
             }
             .workflow-param-actions {
                 display: flex;
@@ -2474,6 +2536,83 @@
                     </div>
                 </div>
 
+                <!-- ── Step 5 仿真参数 Overlay ── -->
+                <div
+                    class="workflow-param-overlay"
+                    id="sim-param-overlay"
+                    style="display: none"
+                >
+                    <div class="workflow-param-card sim-param-card">
+                        <div class="workflow-param-title">
+                            Step 5 — 仿真参数
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Epoch Num</label>
+                            <input id="sim-epoch-num" type="number" value="1" min="1" max="1000" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Model Name</label>
+                            <input id="sim-model-name" type="text" value="" readonly placeholder="从 Step1 自动获取" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Device Type</label>
+                            <input id="sim-device-type" type="text" value="" readonly placeholder="从 Step1 自动获取" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Vocab Size</label>
+                            <input id="sim-vocab-size" type="text" value="18277" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Frame</label>
+                            <select id="sim-frame">
+                                <option value="Mindspeed">Mindspeed</option>
+                                <option value="Megatron-LM">Megatron-LM</option>
+                                <option value="DeepSpeed">DeepSpeed</option>
+                            </select>
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Rank</label>
+                            <input id="sim-rank" type="number" value="0" min="0" max="65535" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Rank Range</label>
+                            <input id="sim-rank-range" type="number" value="1023" min="0" max="65535" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Comp Filepath</label>
+                            <input id="sim-comp-filepath" type="text" value="/opt/traffic_modeling/aicm/default.txt" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>No Time Accumulation</label>
+                            <input type="checkbox" id="sim-no-time-acc" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Visual JSON Output</label>
+                            <input type="checkbox" id="sim-visual-json" checked />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Comm Group Output</label>
+                            <input type="checkbox" id="sim-comm-group" checked />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Debug Time</label>
+                            <input type="checkbox" id="sim-debug-time" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Level0 Config (JSON)</label>
+                            <textarea id="sim-level0-config" rows="2" placeholder='可选，JSON 对象，如 {"key":"value"}'></textarea>
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Level1 Config (JSON)</label>
+                            <textarea id="sim-level1-config" rows="2" placeholder='可选，JSON 对象，如 {"key":"value"}'></textarea>
+                        </div>
+                        <div class="workflow-param-actions">
+                            <button class="btn-wf-cancel" onclick="closeSimParams()">取消</button>
+                            <button class="btn-wf-submit" onclick="submitSimParams()">开始仿真</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="wf-resize-handle" id="wf-resize-handle"></div>
 
                 <!-- ── Chat Panel (Bottom) ── -->
@@ -2903,6 +3042,12 @@
                     return;
                 }
 
+                // Step 5: simulation → open params form instead of auto-confirm
+                if (step.id === "simulation" && step.requiresConfirm && state === "active") {
+                    openSimParams();
+                    return;
+                }
+
                 if (step.requiresConfirm && state === "active") {
                     confirmWorkflowStep(step);
                     return;
@@ -3244,6 +3389,113 @@
                     equivalent_seq_len: parseInt(equivS) || 2048,
                     equivalent_batch_size: parseInt(equivB) || 32,
                 });
+            }
+
+            // ── Step 5 Simulation Params ──
+
+            function getDefaultSimParams() {
+                var modelName = document.getElementById("wf-orig-model-name")?.value || "";
+                var topoDevice = document.getElementById("wf-orig-device")?.value || "A3";
+                var DEVICE_MAP = { A2: "ASCEND_910A", A3: "ASCEND_910B", A5: "ASCEND_310P" };
+                return {
+                    epoch_num: 1,
+                    model_name: modelName,
+                    device_type: DEVICE_MAP[topoDevice] || "ASCEND_910B",
+                    vocab_size: "18277",
+                    frame: "Mindspeed",
+                    rank: 0,
+                    rank_range: 1023,
+                    comp_filepath: "/opt/traffic_modeling/aicm/default.txt",
+                    no_time_accumulation: false,
+                    level0_config: null,
+                    level1_config: null,
+                    visual_json_output: true,
+                    comm_group_output: true,
+                    debug_time: false,
+                };
+            }
+
+            function getSimParamsFromForm() {
+                var level0 = document.getElementById("sim-level0-config").value.trim();
+                var level1 = document.getElementById("sim-level1-config").value.trim();
+                // Auto-fill model_name and device_type from Step 1 data
+                var modelName = document.getElementById("wf-orig-model-name")?.value || "";
+                var topoDevice = document.getElementById("wf-orig-device")?.value || "A3";
+                var DEVICE_MAP = { A2: "ASCEND_910A", A3: "ASCEND_910B", A5: "ASCEND_310P" };
+                return {
+                    epoch_num: parseInt(document.getElementById("sim-epoch-num").value) || 1,
+                    model_name: modelName,
+                    device_type: DEVICE_MAP[topoDevice] || "ASCEND_910B",
+                    vocab_size: document.getElementById("sim-vocab-size").value,
+                    frame: document.getElementById("sim-frame").value,
+                    rank: parseInt(document.getElementById("sim-rank").value) || 0,
+                    rank_range: parseInt(document.getElementById("sim-rank-range").value) || 1023,
+                    comp_filepath: document.getElementById("sim-comp-filepath").value,
+                    no_time_accumulation: document.getElementById("sim-no-time-acc").checked,
+                    level0_config: level0 ? JSON.parse(level0) : null,
+                    level1_config: level1 ? JSON.parse(level1) : null,
+                    visual_json_output: document.getElementById("sim-visual-json").checked,
+                    comm_group_output: document.getElementById("sim-comm-group").checked,
+                    debug_time: document.getElementById("sim-debug-time").checked,
+                };
+            }
+
+            function populateSimForm(params) {
+                document.getElementById("sim-epoch-num").value = params.epoch_num || 1;
+                // Auto-fill model_name and device_type from Step 1 or saved params
+                var modelName = params.model_name || document.getElementById("wf-orig-model-name")?.value || "";
+                document.getElementById("sim-model-name").value = modelName;
+                var topoDevice = document.getElementById("wf-orig-device")?.value || "A3";
+                var DEVICE_MAP = { A2: "ASCEND_910A", A3: "ASCEND_910B", A5: "ASCEND_310P" };
+                document.getElementById("sim-device-type").value = params.device_type || DEVICE_MAP[topoDevice] || "ASCEND_910B";
+                document.getElementById("sim-vocab-size").value = params.vocab_size || "18277";
+                document.getElementById("sim-frame").value = params.frame || "Mindspeed";
+                document.getElementById("sim-rank").value = params.rank || 0;
+                document.getElementById("sim-rank-range").value = params.rank_range || 1023;
+                document.getElementById("sim-comp-filepath").value = params.comp_filepath || "/opt/traffic_modeling/aicm/default.txt";
+                document.getElementById("sim-no-time-acc").checked = !!params.no_time_accumulation;
+                document.getElementById("sim-level0-config").value = params.level0_config ? JSON.stringify(params.level0_config) : "";
+                document.getElementById("sim-level1-config").value = params.level1_config ? JSON.stringify(params.level1_config) : "";
+                document.getElementById("sim-visual-json").checked = params.visual_json_output !== false;
+                document.getElementById("sim-comm-group").checked = params.comm_group_output !== false;
+                document.getElementById("sim-debug-time").checked = !!params.debug_time;
+            }
+
+            async function openSimParams() {
+                var overlay = document.getElementById("sim-param-overlay");
+                if (!overlay) return;
+                // Try loading saved params from backend
+                try {
+                    var resp = await fetch(API + "/session/" + sessionId + "/simulation-params");
+                    if (resp.ok) {
+                        var data = await resp.json();
+                        if (data.simulation_params) {
+                            populateSimForm(data.simulation_params);
+                            overlay.style.display = "flex";
+                            return;
+                        }
+                    }
+                } catch (e) {}
+                // Fallback: populate with defaults
+                populateSimForm(getDefaultSimParams());
+                overlay.style.display = "flex";
+            }
+
+            function closeSimParams() {
+                var overlay = document.getElementById("sim-param-overlay");
+                if (overlay) overlay.style.display = "none";
+            }
+
+            function submitSimParams() {
+                var params = getSimParamsFromForm();
+                closeSimParams();
+                startSimulation(params);
+                // Also save params via API for persistence
+                fetch(API + "/session/" + sessionId + "/simulation-params", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(params),
+                }).catch(function () {});
             }
 
             // ── Workflow-Chat Resize Handle ──
@@ -4165,7 +4417,7 @@
                 btn.classList.remove("sim-done");
             }
 
-            async function startSimulation() {
+            async function startSimulation(simParams) {
                 var btn = document.getElementById("btn-start-sim");
                 if (!btn || btn.disabled) return;
 
@@ -4175,12 +4427,18 @@
                 updateWorkflowNode("simulation", "active");
                 addMessage("system", "📊 开始仿真任务...");
 
+                // Build request body with optional simulation params
+                var body = {};
+                var params = simParams || getDefaultSimParams();
+                body.simulation_params = params;
+
                 try {
                     var resp = await fetch(
                         API + "/session/" + sessionId + "/run-simulation",
                         {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(body),
                         },
                     );
 

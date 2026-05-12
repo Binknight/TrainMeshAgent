@@ -39,6 +39,34 @@ def list_session_summaries():
     return jsonify(get_session_summaries())
 
 
+@session_bp.route("/<session_id>/simulation-params", methods=["GET"])
+def get_simulation_params(session_id: str):
+    """Get saved simulation params for a session."""
+    from app.dao import get_simulation_params as dao_get_sim_params
+    params = dao_get_sim_params(session_id, "original")
+    if not params:
+        return {"simulation_params": None}
+    return {"simulation_params": params}
+
+
+@session_bp.route("/<session_id>/simulation-params", methods=["POST"])
+def save_simulation_params(session_id: str):
+    """Save simulation params without triggering simulation."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    from app.models.schemas import SimulationParams
+    from app.dao import save_simulation_params as dao_save_sim_params
+    data = request.get_json(silent=True) or {}
+    sim_params = SimulationParams(**data)
+    session.simulation_params = sim_params
+    d = sim_params.model_dump()
+    dao_save_sim_params(session_id, "original", d)
+    dao_save_sim_params(session_id, "equivalent", d)
+    session_manager.save_session(session)
+    return jsonify({"status": "saved", "simulation_params": d})
+
+
 @session_bp.route("", methods=["GET"])
 def list_sessions():
     """List all active sessions."""
@@ -92,6 +120,7 @@ def get_topology(session_id: str):
         "original_simulation": session.original_simulation is not None,
         "equivalent_simulation": session.equivalent_simulation is not None,
         "comparison_report": session.comparison_report is not None,
+        "simulation_params": session.simulation_params.model_dump() if session.simulation_params else None,
         "step": session.step,
         "messages": session.history,
     })
@@ -166,7 +195,7 @@ def estimate_metrics():
     })
 
 
-def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str) -> tuple[str | None, SimulationResult | None]:
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None) -> tuple[str | None, SimulationResult | None]:
     """Submit MCP task + run estimation profiler for a single topology. Returns (task_id, SimulationResult)."""
     if not topo:
         return task_id_in, None
@@ -187,7 +216,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     if not task_id:
         try:
             topo_payload = _topo_with_model(topo, training_model) or topo.model_dump()
-            task_id = mcp_client.execute_task(topo_payload)
+            task_id = mcp_client.execute_task(topo_payload, params=sim_params)
             if not task_id:
                 logger.warning(f"[run_simulation] MCP execute_task returned empty task_id for {label}")
         except Exception as exc:
@@ -264,13 +293,24 @@ def run_simulation(session_id: str):
     if not session:
         return {"error": "session not found"}, 404
 
+    # Accept optional simulation params from request body
+    from app.models.schemas import SimulationParams
+    body = request.get_json(silent=True) or {}
+    sim_params_data = body.get("simulation_params", None)
+    if sim_params_data:
+        session.simulation_params = SimulationParams(**sim_params_data)
+    elif session.simulation_params is None:
+        session.simulation_params = SimulationParams()
+
+    sim_params_dict = session.simulation_params.model_dump()
+
     session.history.append({"role": "system", "content": "📊 开始仿真任务..."})
     results = {}
 
     # ── Original topology ──
     orig_tid, orig_sim = _run_simulation_for_topology(
         session.original_topology, session.original_training_model,
-        session.original_task_id, "original"
+        session.original_task_id, "original", sim_params_dict
     )
     if orig_sim:
         session.original_simulation = orig_sim
@@ -280,7 +320,7 @@ def run_simulation(session_id: str):
     # ── Equivalent topology ──
     eq_tid, eq_sim = _run_simulation_for_topology(
         session.equivalent_topology, session.equivalent_training_model,
-        session.equivalent_task_id, "equivalent"
+        session.equivalent_task_id, "equivalent", sim_params_dict
     )
     if eq_sim:
         session.equivalent_simulation = eq_sim
