@@ -3193,7 +3193,13 @@
                     equivS +
                     ", B=" +
                     equivB;
-                sendMessage(msg);
+                sendMessage(msg, {
+                    original_model_name: origModelName,
+                    original_seq_len: parseInt(origS) || 2048,
+                    original_batch_size: parseInt(origB) || 32,
+                    equivalent_seq_len: parseInt(equivS) || 2048,
+                    equivalent_batch_size: parseInt(equivB) || 32,
+                });
             }
 
             // ── Workflow-Chat Resize Handle ──
@@ -3502,7 +3508,7 @@
             }
 
             // ── SSE Streaming ──
-            async function sendMessage(text) {
+            async function sendMessage(text, extraParams) {
                 const input =
                     text || document.getElementById("chat-input").value.trim();
                 if (!input || isStreaming) return;
@@ -3517,13 +3523,12 @@
                 addThinking();
 
                 try {
+                    var body = { session_id: sessionId, message: input };
+                    if (extraParams) Object.assign(body, extraParams);
                     const resp = await fetch(`${API}/chat/stream`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            session_id: sessionId,
-                            message: input,
-                        }),
+                        body: JSON.stringify(body),
                     });
 
                     if (!resp.ok) {

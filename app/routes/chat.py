@@ -43,6 +43,18 @@ def chat_stream():
     if not session:
         session = session_manager.create_session()
 
+    # Capture step1 form metadata from frontend before LLM processes the message
+    for role in ("original", "equivalent"):
+        role_model_name = data.get(f"{role}_model_name")
+        role_seq_len = data.get(f"{role}_seq_len")
+        role_batch_size = data.get(f"{role}_batch_size")
+        if role_model_name is not None:
+            setattr(session, f"{role}_model_name", role_model_name)
+        if role_seq_len is not None:
+            setattr(session, f"{role}_seq_len", int(role_seq_len))
+        if role_batch_size is not None:
+            setattr(session, f"{role}_batch_size", int(role_batch_size))
+
     logger.info(f"[chat_stream] session={session.session_id} message={message[:80]}...")
 
     def generate():

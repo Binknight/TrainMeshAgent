@@ -95,7 +95,8 @@ def _persist_session(session: SessionState) -> None:
     for role in ("original", "equivalent"):
         topo = getattr(session, f"{role}_topology", None)
         model = getattr(session, f"{role}_training_model", None)
-        if topo or model:
+        params_obj = getattr(session, f"{role}_params", None)
+        if topo or model or params_obj:
             import importlib
             _profiler = importlib.import_module("app.skills.training-mesh-profiler-skill")
             params: dict = {}
@@ -108,8 +109,16 @@ def _persist_session(session: SessionState) -> None:
                     "pp_size": topo.pp_size,
                     "total_nodes": topo.total_nodes,
                 })
-                params.setdefault("seq_len", _profiler._SEQ_LEN)
-                params.setdefault("batch_size", _profiler._TOTAL_BATCH)
+            elif params_obj:
+                dev = params_obj.device_type.value if hasattr(params_obj.device_type, 'value') else str(params_obj.device_type)
+                params.update({
+                    "name": "原始组网" if role == "original" else "等效组网",
+                    "device_type": dev,
+                    "dp_size": params_obj.dp,
+                    "tp_size": params_obj.tp,
+                    "pp_size": params_obj.pp,
+                    "total_nodes": params_obj.dp * params_obj.tp * params_obj.pp,
+                })
             if model and hasattr(model, "config"):
                 params.update({
                     "num_layers": model.config.num_layers,
@@ -117,7 +126,16 @@ def _persist_session(session: SessionState) -> None:
                     "num_heads": model.config.num_heads,
                     "d_ffn": model.config.d_ffn,
                 })
-                params.setdefault("model_name", model.type)
+                step1_model_name = getattr(session, f"{role}_model_name", None)
+                params.setdefault("model_name", step1_model_name or model.model_name or model.type)
+            else:
+                step1_model_name = getattr(session, f"{role}_model_name", None)
+                if step1_model_name:
+                    params.setdefault("model_name", step1_model_name)
+            step1_seq_len = getattr(session, f"{role}_seq_len", None)
+            step1_batch_size = getattr(session, f"{role}_batch_size", None)
+            params.setdefault("seq_len", step1_seq_len or _profiler._SEQ_LEN)
+            params.setdefault("batch_size", step1_batch_size or _profiler._TOTAL_BATCH)
             if params:
                 save_topology_params(sid, role, params)
 
@@ -195,6 +213,7 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                     model_attr = f"{role}_training_model"
                     setattr(state, model_attr, TrainingModel(
                         type="transformer",
+                        model_name=tp.get("model_name"),
                         config=config,
                         computed=computed,
                         layers=[],
