@@ -148,20 +148,16 @@ def save_simulation_result(session_id: str, role: str, data: dict[str, Any]) -> 
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO simulation_results (session_id, role, topology_name, device_type, total_nodes,
-                   total_flops, total_hbm, total_tp_comm, total_pp_comm, total_dp_comm, is_simulated, cards)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   is_simulated, cards)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (session_id, role) DO UPDATE SET
                    topology_name=EXCLUDED.topology_name, device_type=EXCLUDED.device_type,
-                   total_nodes=EXCLUDED.total_nodes, total_flops=EXCLUDED.total_flops,
-                   total_hbm=EXCLUDED.total_hbm, total_tp_comm=EXCLUDED.total_tp_comm,
-                   total_pp_comm=EXCLUDED.total_pp_comm, total_dp_comm=EXCLUDED.total_dp_comm,
+                   total_nodes=EXCLUDED.total_nodes,
                    is_simulated=EXCLUDED.is_simulated, cards=EXCLUDED.cards
                    RETURNING id""",
                 (
                     session_id, role,
                     data.get("topology_name"), data.get("device_type"), data.get("total_nodes"),
-                    data.get("total_flops"), data.get("total_hbm"), data.get("total_tp_comm"),
-                    data.get("total_pp_comm"), data.get("total_dp_comm"),
                     data.get("is_simulated", False),
                     json.dumps(data.get("cards", [])),
                 ),
@@ -174,13 +170,13 @@ def get_simulation_result(session_id: str, role: str) -> dict[str, Any] | None:
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, topology_name, device_type, total_nodes, total_flops, total_hbm, total_tp_comm, total_pp_comm, total_dp_comm, is_simulated, cards FROM simulation_results WHERE session_id=%s AND role=%s",
+                "SELECT id, topology_name, device_type, total_nodes, is_simulated, cards FROM simulation_results WHERE session_id=%s AND role=%s",
                 (session_id, role),
             )
             row = cur.fetchone()
     if not row:
         return None
-    keys = ["id", "topology_name", "device_type", "total_nodes", "total_flops", "total_hbm", "total_tp_comm", "total_pp_comm", "total_dp_comm", "is_simulated", "cards"]
+    keys = ["id", "topology_name", "device_type", "total_nodes", "is_simulated", "cards"]
     result = dict(zip(keys, row))
     if isinstance(result.get("cards"), str):
         result["cards"] = json.loads(result["cards"])

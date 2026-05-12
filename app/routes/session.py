@@ -202,11 +202,6 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
         device_type=device_type,
         total_nodes=total_nodes,
         cards=cards,
-        aggregate_flops=sum(c.flops_per_card for c in cards),
-        aggregate_hbm_gb=sum(c.hbm_gb for c in cards),
-        aggregate_tp_comm_gb_per_micro=sum(c.tp_comm_gb_per_micro for c in cards),
-        aggregate_pp_comm_mb_per_micro=sum(c.pp_comm_mb_per_micro for c in cards),
-        aggregate_dp_comm_gb_per_step=sum(c.dp_comm_gb_per_step for c in cards),
     )
     return task_id, result
 
@@ -217,17 +212,14 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
     def _diff_pct(ov, ev):
         return round(abs(ov - ev) / max(abs(ov), eps) * 100, 2)
 
-    def _per_card(agg, nodes):
-        return agg / max(nodes, 1)
+    def _per_card(cards: list[CardMetrics], attr: str) -> float:
+        return sum(getattr(c, attr) for c in cards) / max(len(cards), 1)
 
-    on = original.total_nodes
-    en = equivalent.total_nodes
-
-    flops_diff = _diff_pct(_per_card(original.aggregate_flops, on), _per_card(equivalent.aggregate_flops, en))
-    hbm_diff = _diff_pct(_per_card(original.aggregate_hbm_gb, on), _per_card(equivalent.aggregate_hbm_gb, en))
-    tp_diff = _diff_pct(_per_card(original.aggregate_tp_comm_gb_per_micro, on), _per_card(equivalent.aggregate_tp_comm_gb_per_micro, en))
-    pp_diff = _diff_pct(_per_card(original.aggregate_pp_comm_mb_per_micro, on), _per_card(equivalent.aggregate_pp_comm_mb_per_micro, en))
-    dp_diff = _diff_pct(_per_card(original.aggregate_dp_comm_gb_per_step, on), _per_card(equivalent.aggregate_dp_comm_gb_per_step, en))
+    flops_diff = _diff_pct(_per_card(original.cards, "flops_per_card"), _per_card(equivalent.cards, "flops_per_card"))
+    hbm_diff = _diff_pct(_per_card(original.cards, "hbm_gb"), _per_card(equivalent.cards, "hbm_gb"))
+    tp_diff = _diff_pct(_per_card(original.cards, "tp_comm_gb_per_micro"), _per_card(equivalent.cards, "tp_comm_gb_per_micro"))
+    pp_diff = _diff_pct(_per_card(original.cards, "pp_comm_mb_per_micro"), _per_card(equivalent.cards, "pp_comm_mb_per_micro"))
+    dp_diff = _diff_pct(_per_card(original.cards, "dp_comm_gb_per_step"), _per_card(equivalent.cards, "dp_comm_gb_per_step"))
 
     tolerance = 5.0
     is_eq = all(d <= tolerance for d in [flops_diff, hbm_diff, tp_diff, pp_diff, dp_diff])

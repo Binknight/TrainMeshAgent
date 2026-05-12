@@ -228,11 +228,6 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                     device_type=sr.get("device_type", "A3"),
                     total_nodes=sr.get("total_nodes", 0),
                     cards=cards,
-                    aggregate_flops=sr.get("total_flops", 0),
-                    aggregate_hbm_gb=sr.get("total_hbm", 0),
-                    aggregate_tp_comm_gb_per_micro=sr.get("total_tp_comm", 0),
-                    aggregate_pp_comm_mb_per_micro=sr.get("total_pp_comm", 0),
-                    aggregate_dp_comm_gb_per_step=sr.get("total_dp_comm", 0),
                 )
                 sim_attr = f"{role}_simulation"
                 setattr(state, sim_attr, sim)
@@ -242,15 +237,9 @@ def _load_session(session_id: str) -> Optional[SessionState]:
             state.comparison_report = ComparisonReport(
                 original=state.original_simulation or SimulationResult(
                     topology_name="", device_type="A3", total_nodes=0, cards=[],
-                    aggregate_flops=0, aggregate_hbm_gb=0,
-                    aggregate_tp_comm_gb_per_micro=0, aggregate_pp_comm_mb_per_micro=0,
-                    aggregate_dp_comm_gb_per_step=0,
                 ),
                 equivalent=state.equivalent_simulation or SimulationResult(
                     topology_name="", device_type="A3", total_nodes=0, cards=[],
-                    aggregate_flops=0, aggregate_hbm_gb=0,
-                    aggregate_tp_comm_gb_per_micro=0, aggregate_pp_comm_mb_per_micro=0,
-                    aggregate_dp_comm_gb_per_step=0,
                 ),
                 flops_diff_pct=cr.get("flops_diff_pct", 0),
                 hbm_diff_pct=cr.get("hbm_diff_pct", 0),

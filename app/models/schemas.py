@@ -71,11 +71,6 @@ class SimulationResult(BaseModel):
     device_type: DeviceType
     total_nodes: int
     cards: list[CardMetrics]
-    aggregate_flops: float
-    aggregate_hbm_gb: float
-    aggregate_tp_comm_gb_per_micro: float
-    aggregate_pp_comm_mb_per_micro: float
-    aggregate_dp_comm_gb_per_step: float
 
 
 class OperatorTrace(BaseModel):
