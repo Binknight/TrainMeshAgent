@@ -3390,7 +3390,31 @@
                                     0) +
                                 " 层 已恢复",
                         );
-                    if (parts.length > 0) {
+                    // Restore conversation messages from server
+                    if (data.messages && data.messages.length > 0) {
+                        document.getElementById("chat-messages").innerHTML = "";
+                        for (const msg of data.messages) {
+                            const role = msg.role || "";
+                            const content = msg.content || "";
+                            // Map assistant -> agent for display
+                            const displayRole = role === "assistant" ? "agent" : role;
+                            if (role === "tool") {
+                                // Show a compact tool result summary
+                                let toolSummary = content;
+                                try {
+                                    const parsed = typeof content === "string" ? JSON.parse(content) : content;
+                                    if (parsed && parsed.name) {
+                                        toolSummary = "✅ " + parsed.name;
+                                    } else if (parsed && parsed.message) {
+                                        toolSummary = parsed.message;
+                                    }
+                                } catch (e) {}
+                                addMessage(displayRole, toolSummary);
+                            } else {
+                                addMessage(displayRole, content);
+                            }
+                        }
+                    } else if (parts.length > 0) {
                         addMessage(
                             "system",
                             "🔄 会话 " + id + " 已恢复\n" + parts.join("\n"),
