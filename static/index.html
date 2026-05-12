@@ -3050,6 +3050,7 @@
             }
 
             function syncWorkflowFromSession(sessionData) {
+                initWorkflow(); // reset all nodes first, then apply session-specific state
                 var hasTopology = !!(
                     sessionData.original_topology ||
                     sessionData.equivalent_topology
@@ -3107,9 +3108,8 @@
                     if (hasTopology)
                         _syncTopologySubsteps(hasOrigTopo, hasEqTopo);
                     updateWorkflowNode("model", "active");
-                } else {
-                    initWorkflow();
                 }
+                // else: nodes remain in initWorkflow() default state (waiting_input / pending)
             }
 
             // ── Workflow Parameter Panel ──
