@@ -1,4 +1,5 @@
 import uuid
+import threading
 import logging
 from typing import Optional
 from app.models.schemas import SessionState
@@ -15,20 +16,24 @@ class SessionManager:
 
     def __init__(self):
         self._sessions: dict[str, SessionState] = {}
+        self._lock = threading.Lock()
 
     def create_session(self) -> SessionState:
         session_id = str(uuid.uuid4())[:8]
         state = SessionState(session_id=session_id)
-        self._sessions[session_id] = state
+        with self._lock:
+            self._sessions[session_id] = state
         _persist_new_session(session_id)
         return state
 
     def get_session(self, session_id: str) -> Optional[SessionState]:
-        if session_id in self._sessions:
-            return self._sessions[session_id]
+        with self._lock:
+            if session_id in self._sessions:
+                return self._sessions[session_id]
         state = _load_session(session_id)
         if state:
-            self._sessions[session_id] = state
+            with self._lock:
+                self._sessions[session_id] = state
         return state
 
     def list_sessions(self) -> list[SessionState]:
@@ -37,25 +42,29 @@ class SessionManager:
         result = []
         for s in summaries:
             sid = s["session_id"]
-            if sid in self._sessions:
-                result.append(self._sessions[sid])
-            else:
-                state = _load_session(sid)
-                if state:
+            with self._lock:
+                if sid in self._sessions:
+                    result.append(self._sessions[sid])
+                    continue
+            state = _load_session(sid)
+            if state:
+                with self._lock:
                     self._sessions[sid] = state
-                    result.append(state)
+                result.append(state)
         return result
 
     def delete_session(self, session_id: str) -> bool:
         from app.dao import delete_session as dao_delete
         dao_delete(session_id)
-        if session_id in self._sessions:
-            del self._sessions[session_id]
-            return True
+        with self._lock:
+            if session_id in self._sessions:
+                del self._sessions[session_id]
+                return True
         return False
 
     def update_session(self, session_id: str, **kwargs) -> Optional[SessionState]:
-        state = self._sessions.get(session_id)
+        with self._lock:
+            state = self._sessions.get(session_id)
         if not state:
             return None
         for key, value in kwargs.items():
