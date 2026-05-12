@@ -174,6 +174,9 @@
                 transition: background var(--transition);
                 margin-bottom: 3px;
                 border: 1px solid transparent;
+                display: flex;
+                align-items: flex-start;
+                gap: 6px;
             }
             .history-item:hover {
                 background: var(--bg-hover);
@@ -181,6 +184,11 @@
             .history-item.active {
                 background: var(--bg-surface);
                 border-color: var(--border-active);
+            }
+            .history-item-main {
+                flex: 1;
+                min-width: 0;
+                cursor: pointer;
             }
             .history-item-title {
                 font-size: 13px;
@@ -190,6 +198,34 @@
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+            }
+            .history-delete {
+                flex-shrink: 0;
+                width: 20px;
+                height: 20px;
+                border: none;
+                background: transparent;
+                color: var(--text-muted);
+                font-size: 15px;
+                line-height: 1;
+                cursor: pointer;
+                border-radius: 3px;
+                padding: 0;
+                opacity: 0;
+                transition: opacity var(--transition), color var(--transition);
+            }
+            .history-item:hover .history-delete {
+                opacity: 1;
+            }
+            .history-delete:hover {
+                color: var(--red);
+                background: rgba(242, 109, 120, 0.1);
+            }
+            .history-empty {
+                padding: 32px 16px;
+                text-align: center;
+                color: var(--text-muted);
+                font-size: 13px;
             }
             .history-item-meta {
                 font-family: var(--font-mono);
@@ -3257,52 +3293,75 @@
                 });
             })();
 
-            // ── Mock history ──
-            const mockHistory = [
-                {
-                    id: "s1",
-                    title: "A3 DP8/TP4/PP2 → A5 DP4/TP4/PP4",
-                    time: "2 分钟前",
-                    status: "done",
-                    active: true,
-                },
-                {
-                    id: "s2",
-                    title: "A2 DP4/TP2/PP1 基础验证",
-                    time: "1 小时前",
-                    status: "done",
-                    active: false,
-                },
-                {
-                    id: "s3",
-                    title: "A5 DP16/TP8/PP4 大规模测试",
-                    time: "3 小时前",
-                    status: "running",
-                    active: false,
-                },
-            ];
+            // ── History ──
+            var _historyCache = [];
 
-            function renderHistory() {
+            function statusBadge(step) {
+                if (step === "completed") return ["done", "已完成"];
+                if (step === "idle" || step === "draft") return ["draft", "草稿"];
+                return ["running", "运行中"];
+            }
+
+            function timeAgo(iso) {
+                if (!iso) return "";
+                var diff = Date.now() - new Date(iso).getTime();
+                var mins = Math.floor(diff / 60000);
+                if (mins < 1) return "刚刚";
+                if (mins < 60) return mins + " 分钟前";
+                var hours = Math.floor(mins / 60);
+                if (hours < 24) return hours + " 小时前";
+                return Math.floor(hours / 24) + " 天前";
+            }
+
+            async function renderHistory() {
                 const list = document.getElementById("history-list");
-                document.getElementById("history-count").textContent =
-                    mockHistory.length;
-                list.innerHTML = mockHistory
-                    .map(
-                        (h) => `
-    <div class="history-item ${h.active ? "active" : ""} fade-in" onclick="selectHistory('${h.id}')">
-      <div class="history-item-title">${h.title}</div>
-      <div class="history-item-meta">
-        <span>${h.time}</span>
-        <span class="history-badge badge-${h.status}">${h.status === "running" ? "运行中" : h.status === "done" ? "已完成" : "草稿"}</span>
-      </div>
-    </div>
-  `,
-                    )
+                try {
+                    const resp = await fetch(API + "/session/summaries");
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    _historyCache = await resp.json();
+                } catch (e) {
+                    _historyCache = [];
+                }
+                document.getElementById("history-count").textContent = _historyCache.length;
+                if (_historyCache.length === 0) {
+                    list.innerHTML = '<div class="history-empty">暂无历史任务</div>';
+                    return;
+                }
+                list.innerHTML = _historyCache
+                    .map(function (h) {
+                        var badge = statusBadge(h.step);
+                        var isActive = h.session_id === sessionId;
+                        return '<div class="history-item ' + (isActive ? "active" : "") + ' fade-in">' +
+                            '<div class="history-item-main" onclick="selectHistory(\'' + h.session_id + '\')">' +
+                            '<div class="history-item-title">' + (h.title || "新建任务") + '</div>' +
+                            '<div class="history-item-meta">' +
+                            '<span>' + timeAgo(h.updated_at) + '</span>' +
+                            '<span class="history-badge badge-' + badge[0] + '">' + badge[1] + '</span>' +
+                            '</div></div>' +
+                            '<button class="history-delete" onclick="deleteHistory(event, \'' + h.session_id + '\')" title="删除">×</button>' +
+                            '</div>';
+                    })
                     .join("");
             }
 
-            function selectHistory(id) {
-                mockHistory.forEach((h) => (h.active = h.id === id));
+            async function selectHistory(id) {
+                if (id === sessionId) return;
+                if (await restoreSession(id)) {
+                    renderHistory();
+                }
+            }
+
+            async function deleteHistory(e, id) {
+                e.stopPropagation();
+                if (!confirm("确定要删除此任务？此操作不可撤销。")) return;
+                try {
+                    await fetch(API + "/session/" + id, { method: "DELETE" });
+                } catch (err) {}
+                if (id === sessionId) {
+                    sessionId = "";
+                    localStorage.removeItem("mesh_session");
+                    newSession();
+                }
                 renderHistory();
             }
 
@@ -3481,6 +3540,7 @@
                 checkSimReady();
                 initWorkflow();
                 await ensureSession();
+                renderHistory();
             }
 
             // ── Chat rendering ──
