@@ -16,6 +16,9 @@ class TopologyParams(BaseModel):
     dp: int = Field(ge=1, le=1024, description="数据并行度 (Data Parallel)")
     tp: int = Field(ge=1, le=32, description="张量并行度 (Tensor Parallel)")
     pp: int = Field(ge=1, le=128, description="流水线并行度 (Pipeline Parallel)")
+    seq_len: int | None = Field(default=None, description="序列长度 S")
+    batch_size: int | None = Field(default=None, description="批次大小 B")
+    model_name: str | None = Field(default=None, description="模型名称")
 
 
 class MeshNode(BaseModel):
@@ -211,6 +214,7 @@ class TrainingModelLayer(BaseModel):
 class TrainingModel(BaseModel):
     """Structured training model definition output."""
     type: str = Field(default="transformer_model")
+    model_name: str | None = Field(default=None, description="User-facing model name, e.g. Llama-3.1-8B")
     config: TrainingModelConfig
     computed: TrainingModelComputed
     layers: list[TrainingModelLayer]
@@ -237,3 +241,9 @@ class SessionState(BaseModel):
     equivalent_task_id: str | None = None
     step: str = "idle"  # idle | params_collected | topology_generated | simulating | completed
     history: list[dict[str, Any]] = Field(default_factory=list)
+    # Step1 form metadata captured from frontend
+    original_model_name: str | None = None
+    original_seq_len: int | None = None
+    original_batch_size: int | None = None
+    equivalent_seq_len: int | None = None
+    equivalent_batch_size: int | None = None

@@ -114,6 +114,18 @@ def _execute_utility_tool(tool_name: str, arguments: dict, session: SessionState
             tp=arguments["tp"],
             pp=arguments["pp"],
         )
+        if result.passed:
+            from app.models.schemas import TopologyParams, DeviceType
+            params = TopologyParams(
+                device_type=DeviceType(arguments["device_type"].upper()),
+                dp=arguments["dp"],
+                tp=arguments["tp"],
+                pp=arguments["pp"],
+            )
+            if session.original_params is None:
+                session.original_params = params
+            else:
+                session.equivalent_params = params
         return result.model_dump()
 
     elif tool_name == "run_simulation":
