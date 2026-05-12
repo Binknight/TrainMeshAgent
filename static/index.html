@@ -3390,29 +3390,15 @@
                                     0) +
                                 " 层 已恢复",
                         );
-                    // Restore conversation messages from server
+                    // Restore conversation messages from server (user + agent only)
                     if (data.messages && data.messages.length > 0) {
                         document.getElementById("chat-messages").innerHTML = "";
                         for (const msg of data.messages) {
                             const role = msg.role || "";
+                            if (role === "tool") continue;
                             const content = msg.content || "";
-                            // Map assistant -> agent for display
                             const displayRole = role === "assistant" ? "agent" : role;
-                            if (role === "tool") {
-                                // Show a compact tool result summary
-                                let toolSummary = content;
-                                try {
-                                    const parsed = typeof content === "string" ? JSON.parse(content) : content;
-                                    if (parsed && parsed.name) {
-                                        toolSummary = "✅ " + parsed.name;
-                                    } else if (parsed && parsed.message) {
-                                        toolSummary = parsed.message;
-                                    }
-                                } catch (e) {}
-                                addMessage(displayRole, toolSummary);
-                            } else {
-                                addMessage(displayRole, content);
-                            }
+                            addMessage(displayRole, content);
                         }
                     } else if (parts.length > 0) {
                         addMessage(
@@ -3654,14 +3640,6 @@
                         break;
                     case "tool_call":
                         setStatus("calling");
-                        const toolName = data.data?.tool_name || "";
-                        const args = data.data?.arguments
-                            ? JSON.stringify(data.data.arguments, null, 2)
-                            : "";
-                        addMessage(
-                            "tool",
-                            `🔧 ${toolName}${args ? "\n" + args : ""}`,
-                        );
                         break;
                     case "guard_check":
                         setStatus("validating");
@@ -3710,7 +3688,6 @@
                                 ? topoData.comm_pp_groups
                                 : (topoData.communication_groups?.pp || [])
                                       .length);
-                        addMessage("mesh", topoSummary, "mesh");
                         _pendingMeshList.push(topoData);
                         // Workflow state and canvas rendering are orchestrated in 'done' handler
                         break;
