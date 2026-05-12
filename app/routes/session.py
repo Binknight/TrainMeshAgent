@@ -257,6 +257,7 @@ def run_simulation(session_id: str):
     if not session:
         return {"error": "session not found"}, 404
 
+    session.history.append({"role": "system", "content": "📊 开始仿真任务..."})
     results = {}
 
     # ── Original topology ──
@@ -286,8 +287,13 @@ def run_simulation(session_id: str):
         session.comparison_report = report
         session.step = "completed"
         results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
+        if report.is_equivalent:
+            session.history.append({"role": "system", "content": "✅ 仿真验证已通过，等效性对比一致"})
+        else:
+            session.history.append({"role": "system", "content": "⚠️ 仿真完成，等效性对比存在差异，请检查"})
     else:
         session.step = "simulating"
+        session.history.append({"role": "system", "content": "📊 仿真任务已提交"})
 
     session_manager.save_session(session)
 
