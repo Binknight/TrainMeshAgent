@@ -136,8 +136,15 @@ def _persist_session(session: SessionState) -> None:
             step1_batch_size = getattr(session, f"{role}_batch_size", None)
             params.setdefault("seq_len", step1_seq_len or _profiler._SEQ_LEN)
             params.setdefault("batch_size", step1_batch_size or _profiler._TOTAL_BATCH)
-            if role == "equivalent" and params.get("model_name"):
-                params["model_name"] = params["model_name"] + "_eq"
+            if role == "equivalent":
+                orig_model = getattr(session, "original_training_model", None)
+                base_name = (
+                    getattr(session, "original_model_name", None)
+                    or (orig_model.model_name if orig_model else None)
+                    or (orig_model.type if orig_model else None)
+                )
+                if base_name:
+                    params["model_name"] = base_name + "_eq"
             if params:
                 save_topology_params(sid, role, params)
 
