@@ -412,8 +412,10 @@ async def agent_stream(
             if "error" in result:
                 event_type = "error"
                 result_msg = f"执行失败: {result.get('error')}"
+                session.history.append({"role": "system", "content": "❌ " + result_msg})
             elif tool_name == "validate_mesh_params":
                 result_msg = "护栏校验" + ("通过" if result.get("passed") else "失败")
+                session.history.append({"role": "system", "content": "✅ " + result_msg} if result.get("passed") else {"role": "system", "content": "❌ " + result_msg})
             elif tool_name == "training-mesh-gen-skill":
                 result_msg = f"组网 '{result.get('name', '')}' 生成成功"
             elif tool_name == "training-model-gen-skill":
