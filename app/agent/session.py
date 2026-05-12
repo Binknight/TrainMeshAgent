@@ -136,6 +136,8 @@ def _persist_session(session: SessionState) -> None:
             step1_batch_size = getattr(session, f"{role}_batch_size", None)
             params.setdefault("seq_len", step1_seq_len or _profiler._SEQ_LEN)
             params.setdefault("batch_size", step1_batch_size or _profiler._TOTAL_BATCH)
+            if role == "equivalent" and params.get("model_name"):
+                params["model_name"] = params["model_name"] + "_eq"
             if params:
                 save_topology_params(sid, role, params)
 
@@ -148,8 +150,8 @@ def _persist_session(session: SessionState) -> None:
         from app.dao import get_simulation_result
         orig_sim = get_simulation_result(sid, "original")
         eq_sim = get_simulation_result(sid, "equivalent")
-        orig_id = orig_sim["id"] if orig_sim else 0
-        eq_id = eq_sim["id"] if eq_sim else 0
+        orig_id = orig_sim["id"] if orig_sim else None
+        eq_id = eq_sim["id"] if eq_sim else None
         save_comparison_report(sid, orig_id, eq_id, session.comparison_report.model_dump())
 
     if session.history:
@@ -200,15 +202,22 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                 if tp.get("num_layers"):
                     d_model = tp.get("hidden_dim", 4096)
                     num_heads = tp.get("num_heads", 32)
+                    d_ffn = tp.get("d_ffn", 11008)
                     config = TrainingModelConfig(
                         num_layers=tp.get("num_layers", 32),
                         d_model=d_model,
                         num_heads=num_heads,
-                        d_ffn=tp.get("d_ffn", 11008),
+                        d_ffn=d_ffn,
                     )
+                    d_head = d_model // num_heads
                     computed = TrainingModelComputed(
-                        d_head=d_model // num_heads,
+                        d_head=d_head,
                         total_params_billions="~0.0",
+                    )
+                    import importlib
+                    _model_gen = importlib.import_module("app.skills.training-model-gen-skill")
+                    layers = _model_gen._build_layers(
+                        config.num_layers, num_heads, d_head, d_ffn, "GELU",
                     )
                     model_attr = f"{role}_training_model"
                     setattr(state, model_attr, TrainingModel(
@@ -216,7 +225,7 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                         model_name=tp.get("model_name"),
                         config=config,
                         computed=computed,
-                        layers=[],
+                        layers=layers,
                     ))
 
         for role in ("original", "equivalent"):
