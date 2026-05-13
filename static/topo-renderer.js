@@ -128,6 +128,11 @@ var MESH_CARD = {
   maxPpDisplay: 8,
 };
 
+// PP color palette — three position types: first, middle, last
+// First and last PPs on both sides map to each other; middle PPs map to each other
+var _PP_COLORS = ['#58a6ff', '#ff8f40', '#3fb950'];
+var _PP_COLORS_HOVER = ['#79c0ff', '#ffb366', '#4ae168'];
+
 var meshWidth = 600;
 var meshHeight = 400;
 
@@ -168,6 +173,19 @@ function meshBuildData(tp, pp, dpCount, activeDp) {
       };
     }),
   };
+}
+
+// Returns a color index for a PP so that original and equivalent PPs that map to
+// each other share the same color. The mapping groups PPs into up to three buckets:
+// first (0), middle (1), and last (2). When either side has 2 or fewer PPs the
+// "last" bucket collapses into the "middle" bucket (since both map to the same index).
+function _getPpColorIndex(ppIdx, ppCount, otherPpCount) {
+  if (ppCount <= 1) return 1;
+  if (ppIdx === 0) return 0;
+  // Last forms a distinct group only when both sides have 3+ PPs
+  var hasThreeGroups = ppCount >= 3 && otherPpCount >= 3;
+  if (ppIdx === ppCount - 1 && hasThreeGroups) return 2;
+  return 1;
 }
 
 function _mapRankToOtherSide(side, globalRank) {
@@ -617,6 +635,13 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
 
     var pp = item.data;
     var ppG = parentG.append("g").attr("class", "pp-group");
+
+    // Assign color by PP position so mapped groups share the same color across sides
+    var otherPpCount = isOrig ? (meshEquivalent ? meshEquivalent.pp : ppList.length) : (meshOriginal ? meshOriginal.pp : ppList.length);
+    var ppColorIdx = _getPpColorIndex(pp.id, ppList.length, otherPpCount);
+    var ppColor = _PP_COLORS[ppColorIdx];
+    var ppColorHover = _PP_COLORS_HOVER[ppColorIdx];
+
     ppG
       .append("rect")
       .attr("x", px)
@@ -625,7 +650,8 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
       .attr("height", ppH * scale)
       .attr("rx", 8 * scale)
       .attr("ry", 8 * scale)
-      .attr("class", "pp-card");
+      .attr("class", "pp-card")
+      .attr("style", "stroke: " + ppColor);
     ppG
       .append("rect")
       .attr("x", px)
@@ -634,14 +660,16 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
       .attr("height", MESH_CARD.ppHeaderH * scale)
       .attr("rx", 8 * scale)
       .attr("ry", 8 * scale)
-      .attr("class", "pp-header");
+      .attr("class", "pp-header")
+      .attr("style", "fill: " + ppColor);
     ppG
       .append("rect")
       .attr("x", px)
       .attr("y", py + (MESH_CARD.ppHeaderH * scale) / 2)
       .attr("width", ppW * scale)
       .attr("height", (MESH_CARD.ppHeaderH * scale) / 2)
-      .attr("class", "pp-header");
+      .attr("class", "pp-header")
+      .attr("style", "fill: " + ppColor);
     var ppLabelSize = Math.max(10, 13 * scale);
     var ppLabelY = py + (MESH_CARD.ppHeaderH * scale) / 2 + ppLabelSize * 0.35;
     ppG
@@ -652,6 +680,15 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
       .attr("class", "pp-label")
       .attr("font-size", ppLabelSize + "px")
       .text(pp.label);
+
+    // Hover glow via JS (per-color filters replace the old single #pp-card-glow)
+    ppG.on("mouseenter", function () {
+      d3.select(this).select(".pp-card")
+        .attr("style", "stroke: " + ppColorHover + "; stroke-width: 1.5; filter: url(#pp-glow-" + ppColorIdx + ")");
+    }).on("mouseleave", function () {
+      d3.select(this).select(".pp-card")
+        .attr("style", "stroke: " + ppColor);
+    });
 
     var tpX = px + ((ppW - MESH_CARD.tpW) * scale) / 2;
     var tpY = py + MESH_CARD.ppHeaderH * scale + MESH_CARD.tpPadY * scale;
@@ -1153,16 +1190,18 @@ function canvasRebuild() {
       .attr('flood-color', '#58a6ff')
       .attr('flood-opacity', 0.5);
 
-    // Hover glow filter for PP card
-    var ppCardFilter = defs.append('filter')
-      .attr('id', 'pp-card-glow')
-      .attr('x', '-25%').attr('y', '-25%')
-      .attr('width', '150%').attr('height', '150%');
-    ppCardFilter.append('feDropShadow')
-      .attr('dx', 0).attr('dy', 2)
-      .attr('stdDeviation', 6)
-      .attr('flood-color', '#ff8f40')
-      .attr('flood-opacity', 0.5);
+    // Hover glow filters for PP cards — one per position-type color
+    _PP_COLORS.forEach(function(color, i) {
+      var ppFilter = defs.append('filter')
+        .attr('id', 'pp-glow-' + i)
+        .attr('x', '-25%').attr('y', '-25%')
+        .attr('width', '150%').attr('height', '150%');
+      ppFilter.append('feDropShadow')
+        .attr('dx', 0).attr('dy', 2)
+        .attr('stdDeviation', 6)
+        .attr('flood-color', color)
+        .attr('flood-opacity', 0.5);
+    });
 
     // Hover glow filter for TP rank rects
     var tpRectFilter = defs.append('filter')
@@ -1197,7 +1236,6 @@ function canvasRebuild() {
         '.dp-card-group:hover .dp-card { filter: url(#dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }',
         '.dp-card-group:hover .dp-shadow { filter: url(#dp-card-glow); }',
         '.pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }',
-        '.pp-group:hover .pp-card { filter: url(#pp-card-glow); stroke: #ffb366; stroke-width: 1.5; }',
         '.tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; }',
         '.tp-rect:hover { filter: url(#tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }',
         '.tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; }',
