@@ -882,14 +882,14 @@
             }
             .wf-param-columns {
                 display: grid;
-                grid-template-columns: 1fr 1fr;
+                grid-template-columns: 1fr;
                 gap: 20px;
             }
             .wf-param-col {
                 min-width: 0;
             }
             .workflow-param-card {
-                width: 560px;
+                width: 340px;
                 max-height: 90vh;
                 overflow-y: auto;
                 background: var(--bg-panel);
@@ -935,6 +935,10 @@
                 min-width: 28px;
                 flex-shrink: 0;
             }
+            #wf-orig-model-name {
+                flex: 0 0 auto;
+                width: 200px;
+            }
             .workflow-param-row select,
             .workflow-param-row input {
                 flex: 1;
@@ -948,6 +952,13 @@
                 padding: 5px 6px;
                 outline: none;
                 transition: border-color 0.18s;
+            }
+            .workflow-param-row select:disabled,
+            .workflow-param-row input:disabled {
+                background: #161b22;
+                color: #6e7681;
+                border-color: #21262d;
+                cursor: not-allowed;
             }
             .workflow-param-row select:focus,
             .workflow-param-row input:focus,
@@ -2273,48 +2284,7 @@
                             <div class="workflow-param-row">
                                 <label>模型名称</label>
                                 <select id="wf-orig-model-name">
-                                    <option value="Llama-3.1-8B">
-                                        Llama-3.1-8B
-                                    </option>
-                                    <option value="Llama-3.1-70B">
-                                        Llama-3.1-70B
-                                    </option>
-                                    <option value="Llama-3.1-405B">
-                                        Llama-3.1-405B
-                                    </option>
-                                    <option value="Llama-3-8B">
-                                        Llama-3-8B
-                                    </option>
-                                    <option value="Llama-3-70B">
-                                        Llama-3-70B
-                                    </option>
-                                    <option value="Llama-2-7B">
-                                        Llama-2-7B
-                                    </option>
-                                    <option value="Llama-2-13B">
-                                        Llama-2-13B
-                                    </option>
-                                    <option value="Llama-2-70B">
-                                        Llama-2-70B
-                                    </option>
-                                    <option value="Qwen-2.5-7B">
-                                        Qwen-2.5-7B
-                                    </option>
-                                    <option value="Qwen-2.5-14B">
-                                        Qwen-2.5-14B
-                                    </option>
-                                    <option value="Qwen-2.5-32B">
-                                        Qwen-2.5-32B
-                                    </option>
-                                    <option value="Qwen-2.5-72B">
-                                        Qwen-2.5-72B
-                                    </option>
-                                    <option value="GPT-3-175B">
-                                        GPT-3-175B
-                                    </option>
-                                    <option value="GPT-3.5-175B">
-                                        GPT-3.5-175B
-                                    </option>
+                                    <option value="Qwen3-32B">Qwen3-32B</option>
                                 </select>
                             </div>
                             <div class="wf-param-columns">
@@ -2341,11 +2311,12 @@
                                             value="8"
                                             min="1"
                                             max="1024"
+                                            disabled
                                         />
                                     </div>
                                     <div class="workflow-param-row">
                                         <label>TP</label>
-                                        <select id="wf-orig-tp">
+                                        <select id="wf-orig-tp" disabled>
                                             <option value="16">16</option>
                                         </select>
                                     </div>
@@ -2358,6 +2329,7 @@
                                             min="1"
                                             max="128"
                                             onchange="updateEquivalentModelL()"
+                                            disabled
                                         />
                                     </div>
 
@@ -2373,6 +2345,7 @@
                                             min="1"
                                             max="512"
                                             onchange="updateEquivalentModelL()"
+                                            disabled
                                         />
                                     </div>
                                     <div class="workflow-param-row">
@@ -2384,6 +2357,8 @@
                                             min="128"
                                             max="32768"
                                             step="64"
+                                            onchange="updateEquivalentModelL()"
+                                            disabled
                                         />
                                     </div>
                                     <div class="workflow-param-row">
@@ -2394,6 +2369,8 @@
                                             value="32"
                                             min="1"
                                             max="256"
+                                            onchange="updateEquivalentModelL()"
+                                            disabled
                                         />
                                     </div>
                                     <div class="workflow-param-row">
@@ -2416,105 +2393,26 @@
                                             max="1048576"
                                         />
                                     </div>
-                                </div>
-
-                                <!-- ── 右列：等效 ── -->
-                                <div class="wf-param-col">
-                                    <div class="workflow-param-section">
-                                        等效组网参数
+                                    <div class="workflow-param-section" style="margin-top: 16px;">
+                                        默认等效策略
                                     </div>
                                     <div class="workflow-param-row">
-                                        <label>设备类型</label>
-                                        <select
-                                            id="wf-equiv-device"
-                                            onchange="onEquivDeviceChange()"
-                                        >
-                                            <option value="A3">A3</option>
-                                            <option value="A2">A2</option>
-                                            <option value="A5">A5</option>
+                                        <label>策略</label>
+                                        <select id="wf-equiv-strategy">
+                                            <option value="min_equiv">最小等效分析</option>
                                         </select>
                                     </div>
-                                    <div class="workflow-param-row">
-                                        <label>DP</label>
-                                        <input
-                                            id="wf-equiv-dp"
-                                            type="number"
-                                            value="2"
-                                            min="1"
-                                            max="1024"
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>TP</label>
-                                        <select id="wf-equiv-tp">
-                                            <option value="16">16</option>
-                                        </select>
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>PP</label>
-                                        <input
-                                            id="wf-equiv-pp"
-                                            type="number"
-                                            value="3"
-                                            min="1"
-                                            max="128"
-                                        />
-                                    </div>
 
-                                    <div class="workflow-param-section">
-                                        等效模型参数
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>L</label>
-                                        <input
-                                            id="wf-equiv-model-l"
-                                            type="number"
-                                            value="24"
-                                            min="1"
-                                            max="512"
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>H</label>
-                                        <input
-                                            id="wf-equiv-model-h"
-                                            type="number"
-                                            value="4096"
-                                            min="128"
-                                            max="32768"
-                                            step="64"
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>A</label>
-                                        <input
-                                            id="wf-equiv-model-a"
-                                            type="number"
-                                            value="32"
-                                            min="1"
-                                            max="256"
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>S</label>
-                                        <input
-                                            id="wf-equiv-model-s"
-                                            type="number"
-                                            value="2048"
-                                            min="1"
-                                            max="131072"
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>B</label>
-                                        <input
-                                            id="wf-equiv-model-b"
-                                            type="number"
-                                            value="32"
-                                            min="1"
-                                            max="1048576"
-                                        />
-                                    </div>
+                                    <!-- hidden equivalent topology params (auto-synced from original) -->
+                                    <input type="hidden" id="wf-equiv-device" value="A3" />
+                                    <input type="hidden" id="wf-equiv-dp" value="2" />
+                                    <input type="hidden" id="wf-equiv-tp" value="16" />
+                                    <input type="hidden" id="wf-equiv-pp" value="3" />
+                                    <input type="hidden" id="wf-equiv-model-l" value="24" />
+                                    <input type="hidden" id="wf-equiv-model-h" value="4096" />
+                                    <input type="hidden" id="wf-equiv-model-a" value="32" />
+                                    <input type="hidden" id="wf-equiv-model-s" value="2048" />
+                                    <input type="hidden" id="wf-equiv-model-b" value="32" />
                                 </div>
                             </div>
 
@@ -3279,14 +3177,12 @@
                 var v = document.getElementById("wf-orig-device").value;
                 document.getElementById("wf-equiv-device").value = v;
                 syncTP("wf-orig-device", "wf-orig-tp");
-                syncTP("wf-equiv-device", "wf-equiv-tp");
+                var options = DEVICE_TP_OPTIONS[v] || ["16"];
+                document.getElementById("wf-equiv-tp").value = options[0];
             }
 
             function onEquivDeviceChange() {
-                var v = document.getElementById("wf-equiv-device").value;
-                document.getElementById("wf-orig-device").value = v;
-                syncTP("wf-orig-device", "wf-orig-tp");
-                syncTP("wf-equiv-device", "wf-equiv-tp");
+                // equivalent device is now auto-synced from original (hidden)
             }
 
             function updateEquivalentModelL() {
@@ -3302,13 +3198,19 @@
                 } else {
                     equivLInput.value = Math.floor(origL / origPP) * 3;
                 }
+                document.getElementById("wf-equiv-model-h").value =
+                    document.getElementById("wf-orig-model-h").value;
+                document.getElementById("wf-equiv-model-a").value =
+                    document.getElementById("wf-orig-model-a").value;
             }
 
             function openWorkflowParams() {
                 var overlay = document.getElementById("workflow-param-overlay");
                 if (overlay) overlay.style.display = "flex";
                 syncTP("wf-orig-device", "wf-orig-tp");
-                syncTP("wf-equiv-device", "wf-equiv-tp");
+                var device = document.getElementById("wf-orig-device").value;
+                var options = DEVICE_TP_OPTIONS[device] || ["16"];
+                document.getElementById("wf-equiv-tp").value = options[0];
                 updateEquivalentModelL();
             }
 
