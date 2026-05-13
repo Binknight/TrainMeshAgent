@@ -746,7 +746,7 @@ function _meshBuildView(
     ];
     var bracePath = bracePathParts.join(" ");
     var braceG = parentG.append("g").attr("class", "dp-layer-brace-group");
-    var braceColor = isOrig ? "#58a6ff" : "#8be9ff";
+    var braceColor = "#58a6ff";
     braceG
       .append("path")
       .attr("d", bracePath)
