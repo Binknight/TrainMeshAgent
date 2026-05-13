@@ -727,103 +727,30 @@ function _meshBuildView(
       .attr("opacity", 0.4 + i * 0.15);
   });
 
-  if (isOrig && cfg && cfg.dpCount) {
+  if (cfg && cfg.dpCount) {
     var stackOffset = dpGap * dpStackCount * scale;
-    var braceLen = isOrig ? Math.sqrt(2) * stackOffset : dpH * scale + stackOffset;
+    var braceLen = Math.sqrt(2) * stackOffset;
     var braceW = 18 * scale;
     var braceCurl = Math.min(14 * scale, braceLen / 5);
     var braceMid = braceLen / 2;
-    var braceCenterX = isOrig
-      ? dpX + dpW * scale + stackOffset / 2 + 30 * scale
-      : dpX + dpW * scale + stackOffset + 22 * scale;
-    var braceCenterY = isOrig
-      ? dpY + MESH_CARD.headerH * scale + stackOffset / 2 - 50 * scale
-      : dpY + (dpH * scale + stackOffset) / 2;
+    var braceCenterX = dpX + dpW * scale + stackOffset / 2 + 30 * scale;
+    var braceCenterY = dpY + MESH_CARD.headerH * scale + stackOffset / 2 - 50 * scale;
     var braceStartX = braceCenterX - stackOffset / 2;
     var braceStartY = braceCenterY - stackOffset / 2;
-    var bracePathParts = isOrig
-      ? [
-          "M",
-          0,
-          braceW,
-          "C",
-          0,
-          0,
-          braceCurl,
-          0,
-          braceCurl * 2,
-          0,
-          "C",
-          braceMid - braceCurl,
-          0,
-          braceMid - braceCurl,
-          -braceW,
-          braceMid,
-          -braceW,
-          "C",
-          braceMid + braceCurl,
-          -braceW,
-          braceMid + braceCurl,
-          0,
-          braceLen - braceCurl * 2,
-          0,
-          "C",
-          braceLen - braceCurl,
-          0,
-          braceLen,
-          0,
-          braceLen,
-          braceW,
-        ]
-      : [
-          "M",
-          -braceW,
-          0,
-          "C",
-          0,
-          0,
-          0,
-          braceCurl,
-          0,
-          braceCurl * 2,
-          "C",
-          0,
-          braceMid - braceCurl,
-          braceW,
-          braceMid - braceCurl,
-          braceW,
-          braceMid,
-          "C",
-          braceW,
-          braceMid + braceCurl,
-          0,
-          braceMid + braceCurl,
-          0,
-          braceLen - braceCurl * 2,
-          "C",
-          0,
-          braceLen - braceCurl,
-          0,
-          braceLen,
-          -braceW,
-          braceLen,
-        ];
+    var bracePathParts = [
+      "M", 0, braceW,
+      "C", 0, 0, braceCurl, 0, braceCurl * 2, 0,
+      "C", braceMid - braceCurl, 0, braceMid - braceCurl, -braceW, braceMid, -braceW,
+      "C", braceMid + braceCurl, -braceW, braceMid + braceCurl, 0, braceLen - braceCurl * 2, 0,
+      "C", braceLen - braceCurl, 0, braceLen, 0, braceLen, braceW,
+    ];
     var bracePath = bracePathParts.join(" ");
     var braceG = parentG.append("g").attr("class", "dp-layer-brace-group");
     var braceColor = isOrig ? "#58a6ff" : "#8be9ff";
     braceG
       .append("path")
       .attr("d", bracePath)
-      .attr(
-        "transform",
-        isOrig
-          ? "translate(" + braceStartX + "," + braceStartY + ") rotate(45)"
-          : "translate(" +
-              braceCenterX +
-              "," +
-              (braceCenterY - braceLen / 2) +
-              ")",
-      )
+      .attr("transform", "translate(" + braceStartX + "," + braceStartY + ") rotate(45)")
       .attr("fill", "none")
       .attr("stroke", braceColor)
       .attr("stroke-width", Math.max(1.8, 2.4 * scale))
