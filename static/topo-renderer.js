@@ -613,17 +613,17 @@ function hideTooltip() {
 function _clearBothTooltips() {
   var tip = document.getElementById("rank-tooltip");
   var tipMapped = document.getElementById("rank-tooltip-mapped");
-  tip.classList.remove("visible", "pinned");
-  tip.innerHTML = "";
-  if (tipMapped) {
-    tipMapped.classList.remove("visible", "pinned");
-    tipMapped.innerHTML = "";
-  }
+  if (tip) { tip.classList.remove("visible", "pinned"); tip.innerHTML = ""; }
+  if (tipMapped) { tipMapped.classList.remove("visible", "pinned"); tipMapped.innerHTML = ""; }
   _closeDetailPanels();
   d3.selectAll(".tp-rect.pinned").classed("pinned", false);
   meshPinnedRank = null;
   meshPinnedTpInfo = null;
-  modelRebuild();
+  // Clear center panel bar chart
+  if (_centerPanelState.barG) {
+    _centerPanelState.rankData = null;
+    _centerPanelState.barG.selectAll("*").remove();
+  }
 }
 
 // ── Fetch simulation data from REST ──
@@ -1004,18 +1004,13 @@ function _meshBuildView(
         .attr("class", rectClass)
         .attr("data-rank", tp.globalRank)
         .attr("data-side", side)
-        .on("mouseover", function (event) {
+        .on("mouseover", function () {
           if (meshPinnedRank) return;
           d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
-          showTooltip(event, parseInt(this.getAttribute("data-rank")), isOrig);
-        })
-        .on("mousemove", function (event) {
-          moveTooltip(event);
         })
         .on("mouseout", function () {
           if (meshPinnedRank) return;
           d3.select(this).attr("stroke", null).attr("stroke-width", null);
-          hideTooltip();
         })
         .on("click", function (event) {
           event.stopPropagation();
@@ -1031,11 +1026,10 @@ function _meshBuildView(
             meshPinnedRank.side === side;
 
           d3.selectAll(".tp-rect.pinned").classed("pinned", false);
-          var tip = document.getElementById("rank-tooltip");
-          var tipMapped = document.getElementById("rank-tooltip-mapped");
 
           if (alreadyPinned) {
             _clearBothTooltips();
+            modelRebuild();
           } else {
             d3.select(this).classed("pinned", true);
             if (mappedRank != null) {
@@ -1048,50 +1042,6 @@ function _meshBuildView(
               ).classed("pinned", true);
             }
 
-            if (isCompare && mappedRank != null) {
-              var origRank = side === "orig" ? globalRank : mappedRank;
-              var eqRank = side === "orig" ? mappedRank : globalRank;
-              var origMetrics = _getMetrics(origRank, true);
-              var eqMetrics = _getMetrics(eqRank, false);
-
-              // Main tooltip: the side the user clicked on
-              var clickedIsOrig = side === "orig";
-              tip.innerHTML = _buildTooltipHTML(
-                clickedIsOrig ? origRank : eqRank,
-                clickedIsOrig ? origMetrics : eqMetrics,
-                clickedIsOrig,
-              );
-              tip.classList.add("visible", "pinned");
-              _positionTooltip(event, tip);
-
-              // Mapped tooltip: the other side, positioned near its rank rect
-              var otherRank = clickedIsOrig ? eqRank : origRank;
-              var otherIsOrig = !clickedIsOrig;
-              var otherMetrics = _getMetrics(otherRank, otherIsOrig);
-              tipMapped.innerHTML = _buildTooltipHTML(
-                otherRank,
-                otherMetrics,
-                otherIsOrig,
-              );
-              tipMapped.classList.add("visible", "pinned");
-              var mappedRect = document.querySelector(
-                '.tp-rect[data-rank="' +
-                  mappedRank +
-                  '"][data-side="' +
-                  otherSide +
-                  '"]',
-              );
-              if (mappedRect) {
-                _positionTooltipAtElement(tipMapped, mappedRect);
-              } else {
-                _positionTooltip(event, tipMapped);
-              }
-            } else {
-              var metrics = _getMetrics(globalRank, isOrig);
-              tip.innerHTML = _buildTooltipHTML(globalRank, metrics, isOrig);
-              tip.classList.add("visible", "pinned");
-              _positionTooltip(event, tip);
-            }
             meshPinnedRank = {
               side: side,
               globalRank: globalRank,
@@ -1103,6 +1053,8 @@ function _meshBuildView(
               ppIndex: pp.id,
               globalRank: globalRank,
             };
+
+            _updateCenterBarChart(globalRank, side);
             modelRebuild();
           }
         });
@@ -1190,19 +1142,15 @@ function _updateDpSelect(selId, activeDp) {
 
 // ── DP switch handlers (exposed globally for inline onchange) ──
 
-// ── Formula Card (static formulas, no computation) ──
+// ── Center Panel (collapsible formula card + rank bar chart) ──
 
 function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var cardG = parentG.append("g").attr("class", "formula-card-group");
   var pad = 14;
+  var titleFont = 16;
+  var toggleSize = 16;
 
-  // Spacing tuned for 340px card
-  var lineH_label = 20;
-  var lineH_formula = 16;
-  var lineH_desc = 14;
-  var sectGap = 8;
-
-  // Section definitions (long formulas split to fit 280px content area)
+  // Section definitions (same as before)
   var sections = [
     {
       label: "▸ 单卡FLOPs",
@@ -1229,48 +1177,88 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     },
   ];
 
-  // Compute card intrinsic height
-  var titleFont = 16;
-  var cardH = pad + titleFont + 10; // top pad + title area + title gap
+  var lineH_label = 20;
+  var lineH_formula = 16;
+  var lineH_desc = 14;
+  var sectGap = 8;
+
+  // Compute formula content height
+  var formulaContentH = 0;
   sections.forEach(function (sec) {
-    cardH += lineH_label;
-    cardH += sec.lines.length * lineH_formula;
-    cardH += lineH_desc + sectGap;
+    formulaContentH += lineH_label;
+    formulaContentH += sec.lines.length * lineH_formula;
+    formulaContentH += lineH_desc + sectGap;
   });
-  cardH += pad - sectGap; // remove trailing gap, add bottom pad
+  formulaContentH += pad - sectGap; // bottom pad
 
-  // Center card vertically in the available space
-  var cardY = viewY + (viewH - cardH) / 2;
-  if (cardY < viewY) cardY = viewY;
+  var headerH = pad + titleFont + 10;
 
-  // Card background
+  // Card background (full height)
   cardG
     .append("rect")
     .attr("x", viewX)
-    .attr("y", cardY)
+    .attr("y", viewY)
     .attr("width", viewW)
-    .attr("height", cardH)
+    .attr("height", viewH)
     .attr("rx", 8)
     .attr("ry", 8)
     .attr("class", "formula-card-rect");
 
-  // Title
-  cardG
+  // ── Header row: title + collapse toggle ──
+  var headerG = cardG.append("g").attr("class", "center-panel-header");
+
+  headerG
     .append("text")
-    .attr("x", viewX + viewW / 2)
-    .attr("y", cardY + pad + titleFont)
-    .attr("text-anchor", "middle")
+    .attr("x", viewX + pad)
+    .attr("y", viewY + pad + titleFont)
     .attr("fill", "#39bae6")
     .attr("font-weight", "bold")
     .attr("font-size", titleFont + "px")
     .attr("font-family", "var(--font-sans)")
     .text("📐 等效机制分析");
 
-  var curY = cardY + pad + titleFont + 10;
+  var toggleCX = viewX + viewW - pad - toggleSize / 2;
+  var toggleCY = viewY + pad + titleFont / 2;
 
+  var toggleG = headerG
+    .append("g")
+    .attr("class", "formula-toggle")
+    .attr("transform", "translate(" + toggleCX + "," + toggleCY + ")")
+    .style("cursor", "pointer")
+    .on("click", function () {
+      _centerPanelState.formulasCollapsed =
+        !_centerPanelState.formulasCollapsed;
+      _updateFormulaCollapse();
+    });
+
+  toggleG
+    .append("rect")
+    .attr("x", -toggleSize / 2)
+    .attr("y", -toggleSize / 2)
+    .attr("width", toggleSize)
+    .attr("height", toggleSize)
+    .attr("rx", 3)
+    .attr("fill", "rgba(255,255,255,0.06)")
+    .attr("stroke", "var(--border)")
+    .attr("stroke-width", 1);
+
+  var toggleChev = toggleG
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("dy", "0.35em")
+    .attr("fill", "var(--text-secondary)")
+    .attr("font-size", "11px")
+    .attr("pointer-events", "none")
+    .text("▼");
+
+  // ── Formula content group (collapsible) ──
+  var formulaG = cardG
+    .append("g")
+    .attr("class", "formula-content-group");
+
+  var curY = viewY + headerH;
   sections.forEach(function (sec) {
-    // Section label
-    cardG
+    formulaG
       .append("text")
       .attr("x", viewX + pad)
       .attr("y", curY + 15)
@@ -1281,9 +1269,8 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
       .text(sec.label);
     curY += lineH_label;
 
-    // Formula lines
     sec.lines.forEach(function (line) {
-      cardG
+      formulaG
         .append("text")
         .attr("x", viewX + pad + 4)
         .attr("y", curY + 14)
@@ -1294,8 +1281,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
       curY += lineH_formula;
     });
 
-    // Description
-    cardG
+    formulaG
       .append("text")
       .attr("x", viewX + pad + 4)
       .attr("y", curY + 12)
@@ -1304,6 +1290,307 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
       .attr("font-family", "var(--font-sans)")
       .text(sec.desc);
     curY += lineH_desc + sectGap;
+  });
+
+  // ── Separator line ──
+  var sepY = viewY + headerH + formulaContentH;
+  cardG
+    .append("line")
+    .attr("x1", viewX + pad)
+    .attr("y1", sepY)
+    .attr("x2", viewX + viewW - pad)
+    .attr("y2", sepY)
+    .attr("stroke", "var(--border)")
+    .attr("stroke-width", 1)
+    .attr("class", "formula-sep");
+
+  // ── Bar chart area (relative to card top-left) ──
+  var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
+  var barAreaY = headerH + formulaContentH + 8;
+  var barAreaH = viewH - barAreaY - 8;
+
+  // Placeholder text
+  barG
+    .append("text")
+    .attr("x", viewX + viewW / 2)
+    .attr("y", viewY + barAreaY + barAreaH / 2)
+    .attr("text-anchor", "middle")
+    .attr("fill", "var(--text-muted)")
+    .attr("font-size", "11px")
+    .attr("font-family", "var(--font-sans)")
+    .attr("class", "bar-placeholder")
+    .text("点击拓扑中的 Rank 查看性能详情");
+
+  // ── Store state ──
+  _centerPanelState.g = cardG;
+  _centerPanelState.barG = barG;
+  _centerPanelState.barW = viewW - pad * 2;
+  _centerPanelState.barY = barAreaY;
+  _centerPanelState.barH = barAreaH;
+  _centerPanelState.cardX = viewX;
+  _centerPanelState.cardY = viewY;
+  _centerPanelState.toggleG = toggleG;
+  _centerPanelState.toggleChev = toggleChev;
+  _centerPanelState.formulaG = formulaG;
+  _centerPanelState.formulaContentH = formulaContentH;
+  _centerPanelState.headerH = headerH;
+  _centerPanelState.formulasCollapsed = false;
+  _centerPanelState.sepLine = cardG.select(".formula-sep");
+
+  // Restore bar chart if rank was pinned before rebuild
+  if (_centerPanelState.rankData) {
+    _drawRankBars(_centerPanelState.rankData);
+  }
+}
+
+function _updateFormulaCollapse() {
+  var st = _centerPanelState;
+  if (!st.formulaG) return;
+  if (st.formulasCollapsed) {
+    st.formulaG.attr("display", "none");
+    st.sepLine.attr("display", "none");
+    st.toggleChev.text("▶");
+  } else {
+    st.formulaG.attr("display", null);
+    st.sepLine.attr("display", null);
+    st.toggleChev.text("▼");
+  }
+  _centerPanelBarRecalc();
+}
+
+function _centerPanelBarRecalc() {
+  var st = _centerPanelState;
+  if (!st.barG) return;
+  // Recalculate bar area Y based on collapse state
+  if (st.formulasCollapsed) {
+    st.barY = st.headerH + 8;
+  } else {
+    st.barY = st.headerH + st.formulaContentH + 8;
+  }
+  // Redraw bars if data exists
+  if (st.rankData) {
+    _drawRankBars(st.rankData);
+  }
+}
+
+// ── Rank bar chart rendering (inside center panel) ──
+
+var _BAR_METRICS = [
+  { key: "flops_per_card", label: "单卡FLOPs", fmt: null, unit: "" },
+  { key: "hbm_gb", label: "HBM", fmt: null, unit: "GB" },
+  { key: "tp_comm_gb_per_micro", label: "TP通信", fmt: null, unit: "GB/micro" },
+  { key: "pp_comm_mb_per_micro", label: "PP通信", fmt: null, unit: "MB/micro" },
+  { key: "dp_comm_gb_per_step", label: "DP通信", fmt: null, unit: "GB/step" },
+];
+
+function _formatBarVal(v, key) {
+  if (v == null) return "—";
+  if (key === "flops_per_card") return formatFlops(v);
+  if (key === "dp_comm_gb_per_step" || key === "tp_comm_gb_per_micro")
+    return Number(v).toFixed(4);
+  return Number(v).toFixed(2);
+}
+
+function _updateCenterBarChart(globalRank, side) {
+  var st = _centerPanelState;
+  if (!st.barG) return; // no center panel (single mode)
+  var isCompare = !!(meshOriginal && meshEquivalent && meshPinnedRank && meshPinnedRank.mappedRank != null);
+  var data = {};
+
+  if (isCompare) {
+    var pinned = meshPinnedRank;
+    var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
+    var eqRank = pinned.side === "orig" ? pinned.mappedRank : pinned.globalRank;
+    data.orig = { globalRank: origRank, metrics: _getMetrics(origRank, true) };
+    data.eq = { globalRank: eqRank, metrics: _getMetrics(eqRank, false) };
+  } else {
+    var m = _getMetrics(globalRank, side === "orig" || !meshEquivalent);
+    if (side === "orig" || !meshEquivalent || (meshOriginal && !meshEquivalent)) {
+      data.orig = { globalRank: globalRank, metrics: m };
+    } else {
+      data.eq = { globalRank: globalRank, metrics: m };
+    }
+  }
+
+  st.rankData = data;
+  _drawRankBars(data);
+}
+
+function _drawRankBars(data) {
+  var st = _centerPanelState;
+  if (!st.barG) return;
+
+  // Clear previous
+  st.barG.selectAll("*").remove();
+
+  var pad = 8;
+  var x0 = st.cardX + pad;
+  var barAreaW = st.barW;
+  var y = st.cardY + st.barY + 4;
+  var hasBoth = !!(data.orig && data.eq);
+  var hasActualOrig = data.orig && data.orig.metrics.actual && Object.keys(data.orig.metrics.actual).length > 0;
+  var hasActualEq = data.eq && data.eq.metrics.actual && Object.keys(data.eq.metrics.actual).length > 0;
+  var hasAnyActual = hasActualOrig || hasActualEq;
+
+  var rowH = hasAnyActual ? 14 : 22; // tighter when compare rows
+  var groupGap = 6;
+  var labelW = 54;
+  var barStartX = x0 + labelW + 6;
+  var barMaxW = barAreaW - labelW - 50; // reserve right side for values
+
+  // Header
+  var headerText = "";
+  if (hasBoth) {
+    headerText = "Rank " + data.orig.globalRank + " (原始) vs Rank " + data.eq.globalRank + " (等效)";
+  } else if (data.orig) {
+    headerText = "Rank " + data.orig.globalRank + " · 原始组网";
+  } else if (data.eq) {
+    headerText = "Rank " + data.eq.globalRank + " · 等效组网";
+  }
+  st.barG
+    .append("text")
+    .attr("x", x0)
+    .attr("y", y + 12)
+    .attr("fill", "var(--text-primary)")
+    .attr("font-weight", "600")
+    .attr("font-size", "11px")
+    .attr("font-family", "var(--font-sans)")
+    .text(headerText);
+  y += 20;
+
+  // Legend row
+  var legX = x0;
+  var drawLegend = function (color, label) {
+    st.barG
+      .append("rect")
+      .attr("x", legX)
+      .attr("y", y + 2)
+      .attr("width", 10)
+      .attr("height", 8)
+      .attr("rx", 2)
+      .attr("fill", color);
+    legX += 14;
+    st.barG
+      .append("text")
+      .attr("x", legX)
+      .attr("y", y + 10)
+      .attr("fill", "var(--text-muted)")
+      .attr("font-size", "9px")
+      .attr("font-family", "var(--font-sans)")
+      .text(label);
+    legX += 56;
+  };
+  if (hasBoth) {
+    drawLegend("#58a6ff", "原始估算");
+    drawLegend("#3fb950", "原始仿真");
+    drawLegend("#79c0ff", "等效估算");
+    drawLegend("#7ee787", "等效仿真");
+  } else {
+    drawLegend("#58a6ff", "理论估算");
+    if (hasAnyActual) drawLegend("#3fb950", "仿真验证");
+  }
+  y += 14;
+
+  _BAR_METRICS.forEach(function (m, mi) {
+    var key = m.key;
+
+    // Collect values for normalization
+    var vals = [];
+    if (data.orig) {
+      var origEst = data.orig.metrics.estimate;
+      var origAct = data.orig.metrics.actual;
+      if (origEst && origEst[key] != null) vals.push(Number(origEst[key]));
+      if (origAct && origAct[key] != null) vals.push(Number(origAct[key]));
+    }
+    if (data.eq) {
+      var eqEst = data.eq.metrics.estimate;
+      var eqAct = data.eq.metrics.actual;
+      if (eqEst && eqEst[key] != null) vals.push(Number(eqEst[key]));
+      if (eqAct && eqAct[key] != null) vals.push(Number(eqAct[key]));
+    }
+    var maxV = vals.length ? Math.max.apply(null, vals.map(Math.abs)) : 1;
+    if (maxV === 0) maxV = 1;
+
+    var scaleFn = function (v) {
+      if (v == null) return 0;
+      return Math.max(2, (Math.abs(v) / maxV) * barMaxW);
+    };
+
+    // Draw label
+    st.barG
+      .append("text")
+      .attr("x", x0)
+      .attr("y", y + 12)
+      .attr("fill", "var(--text-secondary)")
+      .attr("font-size", "10px")
+      .attr("font-family", "var(--font-mono)")
+      .text(m.label);
+
+    var barY = y + 2;
+    var barH = hasAnyActual ? 7 : 14;
+    var miniGap = hasAnyActual ? 3 : 4;
+
+    // Helper to draw a bar
+    var drawBar = function (val, color, label) {
+      if (val == null) return;
+      var w = scaleFn(val);
+      if (w < 2) w = 2;
+      var g = st.barG.append("g");
+      g.append("rect")
+        .attr("x", barStartX)
+        .attr("y", barY)
+        .attr("width", w)
+        .attr("height", barH)
+        .attr("rx", 2)
+        .attr("fill", color)
+        .attr("opacity", 0.85);
+      g.append("text")
+        .attr("x", barStartX + w + 4)
+        .attr("y", barY + barH - 1)
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "8px")
+        .attr("font-family", "var(--font-mono)")
+        .text(label + " " + _formatBarVal(val, key));
+      return barH + miniGap;
+    };
+
+    // Group rows
+    var origEstV = data.orig && data.orig.metrics.estimate ? data.orig.metrics.estimate[key] : null;
+    var origActV = data.orig && data.orig.metrics.actual ? data.orig.metrics.actual[key] : null;
+    var eqEstV = data.eq && data.eq.metrics.estimate ? data.eq.metrics.estimate[key] : null;
+    var eqActV = data.eq && data.eq.metrics.actual ? data.eq.metrics.actual[key] : null;
+
+    if (hasBoth) {
+      // Original side
+      var origLabel = "原始";
+      if (origEstV != null) barY += drawBar(origEstV, "#58a6ff", origLabel + "估");
+      if (origActV != null) barY += drawBar(origActV, "#3fb950", origLabel + "仿");
+      // Equivalent side
+      var eqLabel = "等效";
+      if (eqEstV != null) barY += drawBar(eqEstV, "#79c0ff", eqLabel + "估");
+      if (eqActV != null) barY += drawBar(eqActV, "#7ee787", eqLabel + "仿");
+    } else {
+      if (origEstV != null) barY += drawBar(origEstV, "#58a6ff", "估");
+      if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
+      if (eqEstV != null && !data.orig) barY += drawBar(eqEstV, "#58a6ff", "估");
+      if (eqActV != null && !data.orig) barY += drawBar(eqActV, "#3fb950", "仿");
+    }
+
+    if (barY === y + 2) {
+      // No data for this metric, draw placeholder
+      st.barG
+        .append("text")
+        .attr("x", barStartX)
+        .attr("y", y + 13)
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "9px")
+        .attr("font-family", "var(--font-sans)")
+        .text("—");
+      barY += rowH;
+    }
+
+    y = Math.max(y + rowH, barY + 2);
+    y += groupGap;
   });
 }
 
@@ -2212,10 +2499,11 @@ document
   .addEventListener("click", function (e) {
     if (e.target.tagName === "svg" || e.target.id === "canvas-svg-wrap") {
       _clearBothTooltips();
+      modelRebuild();
     }
   });
 
-// ── Escape key dismisses detail panels first, then pinned tooltip ──
+// ── Escape key dismisses detail panels first, then pinned rank ──
 
 document.addEventListener("keydown", function (e) {
   if (e.key === "Escape") {
@@ -2223,6 +2511,7 @@ document.addEventListener("keydown", function (e) {
       _closeDetailPanels();
     } else if (meshPinnedRank) {
       _clearBothTooltips();
+      modelRebuild();
     }
   }
 });
@@ -2232,6 +2521,20 @@ document.addEventListener("keydown", function (e) {
 // ═══════════════════════════════════════════════════════════════════
 
 var tooltipDetailState = null; // { metricType, origRank, eqRank }
+
+// ── Center panel state (bar chart + collapsible formulas) ──
+var _centerPanelState = {
+  g: null,
+  barG: null,
+  barW: 0,
+  barY: 0,
+  barH: 0,
+  cardX: 0,
+  formulasCollapsed: false,
+  toggleG: null,
+  formulaG: null,
+  rankData: null, // { orig: {globalRank, metrics}, eq: {globalRank, metrics} }
+};
 
 function _metricTypeLabel(type) {
   var map = {
