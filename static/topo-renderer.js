@@ -2411,8 +2411,6 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
     { color: MODEL_COLORS.layer_norm.stroke, label: 'Layer Norm' },
     { color: MODEL_COLORS.mha.stroke, label: 'Self-Attention' },
     { color: MODEL_COLORS.ffn.stroke, label: 'FFN' },
-    { color: skipColor, label: 'Skip Connection' },
-    { color: '#ff8f40', label: 'Tensor' },
   ];
   var lx = D.TENSOR_X;
   var LEGEND_ROW = 20;
