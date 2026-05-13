@@ -515,8 +515,8 @@ function _meshBuildView(parentG, data, dpSelectId, switchFn, viewX, viewY, viewW
   var dpX = viewX + (viewW - dpW * scale) / 2;
   var dpY = viewY + 8 * scale;
 
-  // DP Stack shadows — 5 layers for original, 3 for equivalent
-  var dpStackCount = isOrig ? 5 : 3;
+  // DP Stack shadows — 5 layers for original, 2 for equivalent
+  var dpStackCount = isOrig ? 5 : 2;
   var dpMaxOff = 90, dpMinOff = isOrig ? 10 : 30;
   var dpShadows = [];
   for (var si = 0; si < dpStackCount; si++) {
@@ -2096,7 +2096,7 @@ function _renderOneModel(g, model, x0, topY, areaW, showHeader, forceScale, _unu
   var isOriginalModel = (model === modelOriginal);
   var stackOffsets = isOriginalModel
     ? [[24, 20], [20, 16], [16, 12], [12, 8], [8, 4]]   // 5 layers
-    : [[24, 20], [16, 14], [8, 7]];                       // 3 layers
+    : [[24, 20], [8, 7]];                                  // 2 layers
   stackOffsets.forEach(function (off, i) {
     sg.append('rect')
       .attr('x', D.CX - D.BOX_W / 2 + off[0])
