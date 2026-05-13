@@ -1142,15 +1142,16 @@ function _updateDpSelect(selId, activeDp) {
 
 // ── DP switch handlers (exposed globally for inline onchange) ──
 
-// ── Center Panel (collapsible formula card + rank bar chart) ──
+// ── Center Panel: independent formula card + bar chart card ──
 
 function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var cardG = parentG.append("g").attr("class", "formula-card-group");
   var pad = 14;
   var titleFont = 16;
   var toggleSize = 16;
+  var cardGap = 8; // gap between the two cards
 
-  // Section definitions (same as before)
+  // Section definitions
   var sections = [
     {
       label: "▸ 单卡FLOPs",
@@ -1182,32 +1183,32 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var lineH_desc = 14;
   var sectGap = 8;
 
-  // Compute formula content height
   var formulaContentH = 0;
   sections.forEach(function (sec) {
     formulaContentH += lineH_label;
     formulaContentH += sec.lines.length * lineH_formula;
     formulaContentH += lineH_desc + sectGap;
   });
-  formulaContentH += pad - sectGap; // bottom pad
+  formulaContentH += pad - sectGap;
 
   var headerH = pad + titleFont + 10;
+  var formulaCardFullH = headerH + formulaContentH;
 
-  // Card background (full height)
-  cardG
+  // ═══ Formula card (top) ═══
+  var formulaCardG = cardG.append("g").attr("class", "formula-card-inner");
+
+  var formulaCardRect = formulaCardG
     .append("rect")
     .attr("x", viewX)
     .attr("y", viewY)
     .attr("width", viewW)
-    .attr("height", viewH)
+    .attr("height", formulaCardFullH)
     .attr("rx", 8)
     .attr("ry", 8)
     .attr("class", "formula-card-rect");
 
-  // ── Header row: title + collapse toggle ──
-  var headerG = cardG.append("g").attr("class", "center-panel-header");
-
-  headerG
+  // Title
+  formulaCardG
     .append("text")
     .attr("x", viewX + pad)
     .attr("y", viewY + pad + titleFont)
@@ -1217,10 +1218,11 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("font-family", "var(--font-sans)")
     .text("📐 等效机制分析");
 
+  // Toggle
   var toggleCX = viewX + viewW - pad - toggleSize / 2;
   var toggleCY = viewY + pad + titleFont / 2;
 
-  var toggleG = headerG
+  var toggleG = formulaCardG
     .append("g")
     .attr("class", "formula-toggle")
     .attr("transform", "translate(" + toggleCX + "," + toggleCY + ")")
@@ -1251,8 +1253,8 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("pointer-events", "none")
     .text("▼");
 
-  // ── Formula content group (collapsible) ──
-  var formulaG = cardG
+  // Formula content
+  var formulaG = formulaCardG
     .append("g")
     .attr("class", "formula-content-group");
 
@@ -1292,28 +1294,44 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     curY += lineH_desc + sectGap;
   });
 
-  // ── Separator line ──
-  var sepY = viewY + headerH + formulaContentH;
-  cardG
-    .append("line")
-    .attr("x1", viewX + pad)
-    .attr("y1", sepY)
-    .attr("x2", viewX + viewW - pad)
-    .attr("y2", sepY)
-    .attr("stroke", "var(--border)")
-    .attr("stroke-width", 1)
-    .attr("class", "formula-sep");
+  // ═══ Bar chart card (bottom) ═══
+  var barCardY = viewY + formulaCardFullH + cardGap;
+  var barCardH = viewY + viewH - barCardY;
 
-  // ── Bar chart area (relative to card top-left) ──
-  var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
-  var barAreaY = headerH + formulaContentH + 8;
-  var barAreaH = viewH - barAreaY - 8;
+  var barCardG = cardG.append("g").attr("class", "bar-card-inner");
 
-  // Placeholder text
+  barCardG
+    .append("rect")
+    .attr("x", viewX)
+    .attr("y", barCardY)
+    .attr("width", viewW)
+    .attr("height", Math.max(0, barCardH))
+    .attr("rx", 8)
+    .attr("ry", 8)
+    .attr("class", "formula-card-rect");
+
+  // Bar card title
+  barCardG
+    .append("text")
+    .attr("x", viewX + pad)
+    .attr("y", barCardY + pad + titleFont)
+    .attr("fill", "#39bae6")
+    .attr("font-weight", "bold")
+    .attr("font-size", titleFont + "px")
+    .attr("font-family", "var(--font-sans)")
+    .text("📊 Rank 性能详情");
+
+  var barHeaderH = pad + titleFont + 10;
+  var barAreaY = barCardY + barHeaderH;
+  var barAreaH = Math.max(0, barCardH - barHeaderH - pad);
+
+  var barG = barCardG.append("g").attr("class", "rank-bar-chart-group");
+
+  // Placeholder
   barG
     .append("text")
     .attr("x", viewX + viewW / 2)
-    .attr("y", viewY + barAreaY + barAreaH / 2)
+    .attr("y", barAreaY + barAreaH / 2)
     .attr("text-anchor", "middle")
     .attr("fill", "var(--text-muted)")
     .attr("font-size", "11px")
@@ -1325,7 +1343,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   _centerPanelState.g = cardG;
   _centerPanelState.barG = barG;
   _centerPanelState.barW = viewW - pad * 2;
-  _centerPanelState.barY = barAreaY;
+  _centerPanelState.barY = formulaCardFullH + cardGap + barHeaderH;
   _centerPanelState.barH = barAreaH;
   _centerPanelState.cardX = viewX;
   _centerPanelState.cardY = viewY;
@@ -1334,38 +1352,70 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   _centerPanelState.formulaG = formulaG;
   _centerPanelState.formulaContentH = formulaContentH;
   _centerPanelState.headerH = headerH;
-  _centerPanelState.formulasCollapsed = false;
-  _centerPanelState.sepLine = cardG.select(".formula-sep");
+  _centerPanelState.formulasCollapsed = _centerPanelState.formulasCollapsed || false;
+  _centerPanelState.formulaCardRect = formulaCardRect;
+  _centerPanelState.formulaCardFullH = formulaCardFullH;
+  _centerPanelState.barCardRect = barCardG.select("rect");
+  _centerPanelState.barCardG = barCardG;
+  _centerPanelState.barCardTitle = barCardG.select("text");
+  _centerPanelState.barAreaY = barAreaY;
+  _centerPanelState.barHeaderH = barHeaderH;
+  _centerPanelState.cardGap = cardGap;
 
   // Restore bar chart if rank was pinned before rebuild
   if (_centerPanelState.rankData) {
     _drawRankBars(_centerPanelState.rankData);
+  }
+  // Re-apply collapse state after rebuild
+  if (_centerPanelState.formulasCollapsed) {
+    _updateFormulaCollapse();
   }
 }
 
 function _updateFormulaCollapse() {
   var st = _centerPanelState;
   if (!st.formulaG) return;
+
+  var dH = st.formulaContentH; // amount to shift
+
   if (st.formulasCollapsed) {
+    // Collapse: hide formulas, shrink formula card, move bar card up
     st.formulaG.attr("display", "none");
-    st.sepLine.attr("display", "none");
     st.toggleChev.text("▶");
+    st.formulaCardRect.attr("height", st.headerH);
+    st.barCardRect
+      .attr("y", Number(st.barCardRect.attr("y")) - dH)
+      .attr("height", Number(st.barCardRect.attr("height")) + dH);
+    st.barCardTitle.attr("y", Number(st.barCardTitle.attr("y")) - dH);
+    st.barY = st.barY - dH;
+    st.barH = st.barH + dH;
   } else {
+    // Expand: show formulas, restore formula card, move bar card down
     st.formulaG.attr("display", null);
-    st.sepLine.attr("display", null);
     st.toggleChev.text("▼");
+    st.formulaCardRect.attr("height", st.formulaCardFullH);
+    st.barCardRect
+      .attr("y", Number(st.barCardRect.attr("y")) + dH)
+      .attr("height", Number(st.barCardRect.attr("height")) - dH);
+    st.barCardTitle.attr("y", Number(st.barCardTitle.attr("y")) + dH);
+    st.barY = st.barY + dH;
+    st.barH = st.barH - dH;
   }
-  _centerPanelBarRecalc();
+
+  // Redraw bars if data exists
+  if (st.rankData) {
+    _drawRankBars(st.rankData);
+  }
 }
 
 function _centerPanelBarRecalc() {
   var st = _centerPanelState;
   if (!st.barG) return;
-  // Recalculate bar area Y based on collapse state
+  // Recalculate bar area Y relative to cardY based on collapse state
   if (st.formulasCollapsed) {
-    st.barY = st.headerH + 8;
+    st.barY = st.headerH + st.cardGap + st.barHeaderH;
   } else {
-    st.barY = st.headerH + st.formulaContentH + 8;
+    st.barY = st.formulaCardFullH + st.cardGap + st.barHeaderH;
   }
   // Redraw bars if data exists
   if (st.rankData) {
