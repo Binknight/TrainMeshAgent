@@ -893,27 +893,43 @@ def workflow_step2_stream(session_id: str):
         yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'strategy', 'section_done': True, 'line': ''})}\n\n"
 
         # ═══ Phase 2: 指标分析 ═══
-        # Compute approximate values for display
         h2 = H_val * H_val
         s2 = S_val * S_val
         flops_per_card = (72 * B_val * S_val * h2 + 12 * B_val * s2 * H_val) / tp * L_orig / pp
         flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
-        hbm_gb = (L_orig * (12 * h2 + 4 * H_val) / (tp * pp) + B_val * S_val * H_val * L_orig / pp + L_orig * (12 * h2 + 4 * H_val) / (tp * pp)) * 2 / 1e9
-        tp_comm = L_orig / pp * 32 * B_val * S_val * H_val / 1e6
-        dp_comm = 8 * L_orig * (4 * h2 + 12 * h2) / (tp * pp) / 1e9
-        pp_comm = 4 * B_val * S_val * H_val / 1e9
+
+        # HBM: params_per_card × opt_bytes + activations
+        # opt_bytes = 16 (fp16 weights 2B + fp32 Adam m/v 8B + fp32 master 4B + fp16 grads 2B)
+        params_per_card = L_orig * (12 * h2 + 4 * H_val) / (tp * pp)
+        activations_bytes = B_val * S_val * H_val * L_orig / pp * 2  # fp16 activations
+        hbm_gb = (params_per_card * 16 + activations_bytes) / 1e9
+
+        # Communication (bidirectional all-reduce, fp16)
+        tp_comm = L_orig / pp * 32 * B_val * S_val * H_val / 1e9  # GB/micro-step
+        dp_comm = 4 * params_per_card / 1e9  # GB/step
+        pp_comm = 4 * B_val * S_val * H_val / 1e9  # GB/step (per boundary)
 
         lines_metrics = [
             f"▸ 单卡计算量 (FLOPs)",
             f"  FLOPs = (72·B·S·H² + 12·B·S²·H) / TP × L/PP",
             f"  = (72×{B_val}×{S_val}×{H_val}² + 12×{B_val}×{S_val}²×{H_val}) / {tp} × {L_orig}/{pp}",
             f"  ≈ {flops_str} FLOPs",
-            f"▸ 显存占用 (HBM)  — 含权重/激活/缓冲 ×2",
+            f"▸ 显存占用 (HBM)",
+            f"  HBM = (params × opt_bytes + activations) / 1e9",
+            f"  params = L·(12H²+4H)/(TP·PP) = {L_orig}×({12}×{H_val}²+{4}×{H_val})/({tp}×{pp})",
+            f"  opt_bytes = 16B  (fp16 w+g + fp32 Adam m,v + fp32 master)",
+            f"  activations = B·S·H·L/PP × 2B = {B_val}×{S_val}×{H_val}×{L_orig}/{pp} × 2",
             f"  HBM ≈ {hbm_gb:.1f} GB",
             f"▸ 通信流量 (GB / step)",
-            f"  TP 通信 ≈ {tp_comm:.2f} GB/micro-step",
-            f"  DP 通信 ≈ {dp_comm:.2f} GB/step",
-            f"  PP 通信 ≈ {pp_comm:.2f} GB/step",
+            f"  TP 通信 = L/PP · 32·B·S·H / 1e9",
+            f"  = {L_orig}/{pp} × 32 × {B_val} × {S_val} × {H_val} / 1e9",
+            f"  ≈ {tp_comm:.2f} GB/micro-step  (TP 全规约)",
+            f"  DP 通信 = 4 × params / 1e9  (梯度 all-reduce)",
+            f"  = 4 × {params_per_card:.0f} / 1e9",
+            f"  ≈ {dp_comm:.2f} GB/step",
+            f"  PP 通信 = 4·B·S·H / 1e9  (激活值 send/recv)",
+            f"  = 4 × {B_val} × {S_val} × {H_val} / 1e9",
+            f"  ≈ {pp_comm:.2f} GB/step  (per PP boundary)",
         ]
         for line in lines_metrics:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'line': line})}\n\n"
