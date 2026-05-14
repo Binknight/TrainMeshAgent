@@ -613,8 +613,14 @@ function hideTooltip() {
 function _clearBothTooltips() {
   var tip = document.getElementById("rank-tooltip");
   var tipMapped = document.getElementById("rank-tooltip-mapped");
-  if (tip) { tip.classList.remove("visible", "pinned"); tip.innerHTML = ""; }
-  if (tipMapped) { tipMapped.classList.remove("visible", "pinned"); tipMapped.innerHTML = ""; }
+  if (tip) {
+    tip.classList.remove("visible", "pinned");
+    tip.innerHTML = "";
+  }
+  if (tipMapped) {
+    tipMapped.classList.remove("visible", "pinned");
+    tipMapped.innerHTML = "";
+  }
   _closeDetailPanels();
   d3.selectAll(".tp-rect.pinned").classed("pinned", false);
   meshPinnedRank = null;
@@ -734,15 +740,42 @@ function _meshBuildView(
     var braceCurl = Math.min(14 * scale, braceLen / 5);
     var braceMid = braceLen / 2;
     var braceCenterX = dpX + dpW * scale + stackOffset / 2 + 30 * scale;
-    var braceCenterY = dpY + MESH_CARD.headerH * scale + stackOffset / 2 - 50 * scale;
+    var braceCenterY =
+      dpY + MESH_CARD.headerH * scale + stackOffset / 2 - 50 * scale;
     var braceStartX = braceCenterX - stackOffset / 2;
     var braceStartY = braceCenterY - stackOffset / 2;
     var bracePathParts = [
-      "M", 0, braceW,
-      "C", 0, 0, braceCurl, 0, braceCurl * 2, 0,
-      "C", braceMid - braceCurl, 0, braceMid - braceCurl, -braceW, braceMid, -braceW,
-      "C", braceMid + braceCurl, -braceW, braceMid + braceCurl, 0, braceLen - braceCurl * 2, 0,
-      "C", braceLen - braceCurl, 0, braceLen, 0, braceLen, braceW,
+      "M",
+      0,
+      braceW,
+      "C",
+      0,
+      0,
+      braceCurl,
+      0,
+      braceCurl * 2,
+      0,
+      "C",
+      braceMid - braceCurl,
+      0,
+      braceMid - braceCurl,
+      -braceW,
+      braceMid,
+      -braceW,
+      "C",
+      braceMid + braceCurl,
+      -braceW,
+      braceMid + braceCurl,
+      0,
+      braceLen - braceCurl * 2,
+      0,
+      "C",
+      braceLen - braceCurl,
+      0,
+      braceLen,
+      0,
+      braceLen,
+      braceW,
     ];
     var bracePath = bracePathParts.join(" ");
     var braceG = parentG.append("g").attr("class", "dp-layer-brace-group");
@@ -750,7 +783,10 @@ function _meshBuildView(
     braceG
       .append("path")
       .attr("d", bracePath)
-      .attr("transform", "translate(" + braceStartX + "," + braceStartY + ") rotate(45)")
+      .attr(
+        "transform",
+        "translate(" + braceStartX + "," + braceStartY + ") rotate(45)",
+      )
       .attr("fill", "none")
       .attr("stroke", braceColor)
       .attr("stroke-width", Math.max(1.8, 2.4 * scale))
@@ -1352,7 +1388,8 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   _centerPanelState.formulaG = formulaG;
   _centerPanelState.formulaContentH = formulaContentH;
   _centerPanelState.headerH = headerH;
-  _centerPanelState.formulasCollapsed = _centerPanelState.formulasCollapsed || false;
+  _centerPanelState.formulasCollapsed =
+    _centerPanelState.formulasCollapsed || false;
   _centerPanelState.formulaCardRect = formulaCardRect;
   _centerPanelState.formulaCardFullH = formulaCardFullH;
   _centerPanelState.barCardRect = barCardG.select("rect");
@@ -1444,18 +1481,28 @@ function _formatBarVal(v, key) {
 function _updateCenterBarChart(globalRank, side) {
   var st = _centerPanelState;
   if (!st.barG) return; // no center panel (single mode)
-  var isCompare = !!(meshOriginal && meshEquivalent && meshPinnedRank && meshPinnedRank.mappedRank != null);
+  var isCompare = !!(
+    meshOriginal &&
+    meshEquivalent &&
+    meshPinnedRank &&
+    meshPinnedRank.mappedRank != null
+  );
   var data = {};
 
   if (isCompare) {
     var pinned = meshPinnedRank;
-    var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
+    var origRank =
+      pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
     var eqRank = pinned.side === "orig" ? pinned.mappedRank : pinned.globalRank;
     data.orig = { globalRank: origRank, metrics: _getMetrics(origRank, true) };
     data.eq = { globalRank: eqRank, metrics: _getMetrics(eqRank, false) };
   } else {
     var m = _getMetrics(globalRank, side === "orig" || !meshEquivalent);
-    if (side === "orig" || !meshEquivalent || (meshOriginal && !meshEquivalent)) {
+    if (
+      side === "orig" ||
+      !meshEquivalent ||
+      (meshOriginal && !meshEquivalent)
+    ) {
       data.orig = { globalRank: globalRank, metrics: m };
     } else {
       data.eq = { globalRank: globalRank, metrics: m };
@@ -1478,8 +1525,14 @@ function _drawRankBars(data) {
   var barAreaW = st.barW;
   var y = st.cardY + st.barY + 4;
   var hasBoth = !!(data.orig && data.eq);
-  var hasActualOrig = data.orig && data.orig.metrics.actual && Object.keys(data.orig.metrics.actual).length > 0;
-  var hasActualEq = data.eq && data.eq.metrics.actual && Object.keys(data.eq.metrics.actual).length > 0;
+  var hasActualOrig =
+    data.orig &&
+    data.orig.metrics.actual &&
+    Object.keys(data.orig.metrics.actual).length > 0;
+  var hasActualEq =
+    data.eq &&
+    data.eq.metrics.actual &&
+    Object.keys(data.eq.metrics.actual).length > 0;
   var hasAnyActual = hasActualOrig || hasActualEq;
 
   var rowH = hasAnyActual ? 14 : 22; // tighter when compare rows
@@ -1491,7 +1544,12 @@ function _drawRankBars(data) {
   // Header
   var headerText = "";
   if (hasBoth) {
-    headerText = "Rank " + data.orig.globalRank + " (原始) vs Rank " + data.eq.globalRank + " (等效)";
+    headerText =
+      "Rank " +
+      data.orig.globalRank +
+      " (原始) vs Rank " +
+      data.eq.globalRank +
+      " (等效)";
   } else if (data.orig) {
     headerText = "Rank " + data.orig.globalRank + " · 原始组网";
   } else if (data.eq) {
@@ -1541,7 +1599,13 @@ function _drawRankBars(data) {
   }
   y += 14;
 
+  var metricBase = 0;
+  var animDuration = 600;
+  var animStagger = 50;
+  var interMetricGap = 10;
+
   _BAR_METRICS.forEach(function (m, mi) {
+    var barIdx = 0;
     var key = m.key;
 
     // Collect values for normalization
@@ -1580,41 +1644,65 @@ function _drawRankBars(data) {
     var barH = hasAnyActual ? 7 : 14;
     var miniGap = hasAnyActual ? 3 : 4;
 
-    // Helper to draw a bar
+    // Helper to draw a bar with staggered grow animation
     var drawBar = function (val, color, label) {
       if (val == null) return;
       var w = scaleFn(val);
       if (w < 2) w = 2;
       var g = st.barG.append("g");
+      var delay = metricBase + barIdx * animStagger;
+      barIdx++;
       g.append("rect")
         .attr("x", barStartX)
         .attr("y", barY)
-        .attr("width", w)
+        .attr("width", 0)
         .attr("height", barH)
         .attr("rx", 2)
         .attr("fill", color)
-        .attr("opacity", 0.85);
+        .attr("opacity", 0.85)
+        .transition()
+        .delay(delay)
+        .duration(animDuration)
+        .ease(d3.easeCubicOut)
+        .attr("width", w);
       g.append("text")
         .attr("x", barStartX + w + 4)
         .attr("y", barY + barH - 1)
         .attr("fill", "var(--text-muted)")
         .attr("font-size", "8px")
         .attr("font-family", "var(--font-mono)")
-        .text(label + " " + _formatBarVal(val, key));
+        .attr("opacity", 0)
+        .text(label + " " + _formatBarVal(val, key))
+        .transition()
+        .delay(delay + animDuration * 0.6)
+        .duration(animDuration * 0.4)
+        .attr("opacity", 1);
       return barH + miniGap;
     };
 
     // Group rows
-    var origEstV = data.orig && data.orig.metrics.estimate ? data.orig.metrics.estimate[key] : null;
-    var origActV = data.orig && data.orig.metrics.actual ? data.orig.metrics.actual[key] : null;
-    var eqEstV = data.eq && data.eq.metrics.estimate ? data.eq.metrics.estimate[key] : null;
-    var eqActV = data.eq && data.eq.metrics.actual ? data.eq.metrics.actual[key] : null;
+    var origEstV =
+      data.orig && data.orig.metrics.estimate
+        ? data.orig.metrics.estimate[key]
+        : null;
+    var origActV =
+      data.orig && data.orig.metrics.actual
+        ? data.orig.metrics.actual[key]
+        : null;
+    var eqEstV =
+      data.eq && data.eq.metrics.estimate
+        ? data.eq.metrics.estimate[key]
+        : null;
+    var eqActV =
+      data.eq && data.eq.metrics.actual ? data.eq.metrics.actual[key] : null;
 
     if (hasBoth) {
       // Original side
       var origLabel = "原始";
-      if (origEstV != null) barY += drawBar(origEstV, "#58a6ff", origLabel + "估");
-      if (origActV != null) barY += drawBar(origActV, "#3fb950", origLabel + "仿");
+      if (origEstV != null)
+        barY += drawBar(origEstV, "#58a6ff", origLabel + "估");
+      if (origActV != null)
+        barY += drawBar(origActV, "#3fb950", origLabel + "仿");
       // Equivalent side
       var eqLabel = "等效";
       if (eqEstV != null) barY += drawBar(eqEstV, "#79c0ff", eqLabel + "估");
@@ -1622,8 +1710,10 @@ function _drawRankBars(data) {
     } else {
       if (origEstV != null) barY += drawBar(origEstV, "#58a6ff", "估");
       if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
-      if (eqEstV != null && !data.orig) barY += drawBar(eqEstV, "#58a6ff", "估");
-      if (eqActV != null && !data.orig) barY += drawBar(eqActV, "#3fb950", "仿");
+      if (eqEstV != null && !data.orig)
+        barY += drawBar(eqEstV, "#58a6ff", "估");
+      if (eqActV != null && !data.orig)
+        barY += drawBar(eqActV, "#3fb950", "仿");
     }
 
     if (barY === y + 2) {
@@ -1641,6 +1731,7 @@ function _drawRankBars(data) {
 
     y = Math.max(y + rowH, barY + 2);
     y += groupGap;
+    if (barIdx > 0) metricBase += (barIdx - 1) * animStagger + interMetricGap;
   });
 }
 
