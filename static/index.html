@@ -2908,8 +2908,8 @@
                             if (event.type === "done") {
                                 step2Done = true;
                                 eventSource.close();
-                                // Auto-trigger Step 3 after Step 2 SSE stream ends
-                                setTimeout(function() { submitStep3(); }, 300);
+                                // Auto-trigger Step 3 after Step 2 SSE stream ends (with visible pause)
+                                setTimeout(function() { submitStep3(); }, 1500);
                             }
                             if (event.type === "error") {
                                 eventSource.close();
@@ -2949,13 +2949,21 @@
                     }
                     var data = await resp.json();
                     console.log("[DEBUG] step3 data:", Object.keys(data), "has eq_mesh:", !!data.equivalent_mesh, "has eq_model:", !!data.equivalent_model);
+
+                    // Staged rendering: mesh first, pause, then model, pause, then done
                     if (data.equivalent_mesh) {
                         console.log("[DEBUG] dispatching mesh_json for equivalent");
                         handleWorkflowEvent({ type: "mesh_json", data: data.equivalent_mesh });
+                        canvasRebuild();
+                        if (typeof canvasRecenter === "function") canvasRecenter();
+                        await renderThenSleep(800);
                     }
                     if (data.equivalent_model) {
                         console.log("[DEBUG] dispatching model_json for equivalent");
                         handleWorkflowEvent({ type: "model_json", data: data.equivalent_model });
+                        canvasRebuild();
+                        if (typeof canvasRecenter === "function") canvasRecenter();
+                        await renderThenSleep(800);
                     }
                     console.log("[DEBUG] dispatching done stage=step3");
                     handleWorkflowEvent({ type: "done", data: { stage: "step3" } });
@@ -3057,7 +3065,8 @@
 
                 // ── Stage "step2": 等效计算完成 → sub-steps already done via equiv_formula_line ──
                 if (stage === "step2" || (stage === "auto" && workflowNodeStates["equiv_calc_sub3"] === "completed")) {
-                    // All equiv_calc sub-steps completed, mark parent and advance
+                    // All equiv_calc sub-steps completed, mark parent with visible pause
+                    await renderThenSleep(STAGE_DELAY_MS);
                     if (workflowNodeStates["equiv_calc"] !== "completed") {
                         updateWorkflowNode("equiv_calc", "completed");
                     }
