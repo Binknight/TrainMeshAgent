@@ -148,7 +148,7 @@ class ComparisonReport(BaseModel):
 
 class AgentEvent(BaseModel):
     """SSE event emitted during agent processing."""
-    event_type: str  # thinking | tool_call | guard_check | mesh_json | message | error | done
+    event_type: str  # thinking | tool_call | guard_check | mesh_json | model_json | equiv_formula_line | sim_data | workflow_state | message | error | done
     data: dict[str, Any] = Field(default_factory=dict)
     message: str = ""
 
@@ -253,7 +253,7 @@ class SessionState(BaseModel):
     original_task_id: str | None = None
     equivalent_task_id: str | None = None
     simulation_params: SimulationParams | None = None
-    step: str = "idle"  # idle | params_collected | topology_generated | simulating | completed
+    step: str = "idle"  # idle | params_collected | equiv_calculating | equiv_generated | simulating | completed
     history: list[dict[str, Any]] = Field(default_factory=list)
     # Step1 form metadata captured from frontend
     original_model_name: str | None = None
