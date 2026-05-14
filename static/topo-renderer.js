@@ -1716,13 +1716,14 @@ function _renderDetailCharts() {
   var chartH = Math.max(40, allocH - 30);
   var chartY = st.detailY + 16;
 
+  var typeLabel = detailType === "flops" ? "FLOPs" : "HBM";
   if (detailData.orig) {
     _drawOneDetailChart(g, st.cardX + pad, chartY, chartW, chartH,
-      detailType, detailData.orig, "原始组网", 0);
+      detailType, detailData.orig, "原始仿真" + typeLabel + "组成", 0);
   }
   if (detailData.eq) {
     _drawOneDetailChart(g, st.cardX + pad + chartW + pad, chartY, chartW, chartH,
-      detailType, detailData.eq, "等效组网", 1);
+      detailType, detailData.eq, "等效仿真" + typeLabel + "组成", 1);
   }
 }
 
@@ -1757,16 +1758,16 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
   });
   if (total === 0) return;
 
-  var legendItemH = 8;
-  var legendGap = 3;
-  var overhead = 1 + legendGap + (subs.length - 1) * legendItemH + 7;
+  var legendItemH = 7;
+  var legendGap = 2;
+  var overhead = 0 + legendGap + (subs.length - 1) * legendItemH + 6;
   var maxRbyW = cw / 2 - 4;
   var maxRbyH = (ch - overhead) / 2;
   var radius = Math.floor(Math.min(maxRbyW, maxRbyH));
   radius = Math.max(18, radius);
   var centerX = cx + cw / 2;
-  var centerY = cy + radius + 1;
-  var innerR = radius * 0.5;
+  var centerY = cy + radius;
+  var innerR = radius * 0.4;
 
   var pie = d3.pie().value(function (d) { return d.value; });
   var arc = d3.arc().innerRadius(innerR).outerRadius(radius);
@@ -1813,42 +1814,71 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
 
   var subLabelText = g.append("text")
     .attr("x", centerX)
-    .attr("y", centerY + 8)
+    .attr("y", centerY + 9)
     .attr("text-anchor", "middle")
     .attr("fill", "var(--text-muted)")
     .attr("font-size", "7px")
     .attr("font-family", "var(--font-sans)")
     .text("合计");
 
+  // Tooltip flyout box
+  var tipW = 90, tipH = 28;
+  var tipG = g.append("g").attr("display", "none");
+  tipG.append("rect")
+    .attr("x", centerX - tipW / 2)
+    .attr("y", cy + 1)
+    .attr("width", tipW)
+    .attr("height", tipH)
+    .attr("rx", 4)
+    .attr("fill", "rgba(13,17,23,0.95)")
+    .attr("stroke", "var(--border)");
+  var tipLabel = tipG.append("text")
+    .attr("x", centerX)
+    .attr("y", cy + 13)
+    .attr("text-anchor", "middle")
+    .attr("fill", "#fff")
+    .attr("font-size", "9px")
+    .attr("font-weight", "600")
+    .attr("font-family", "var(--font-sans)");
+  var tipVal = tipG.append("text")
+    .attr("x", centerX)
+    .attr("y", cy + 24)
+    .attr("text-anchor", "middle")
+    .attr("fill", "var(--teal)")
+    .attr("font-size", "9px")
+    .attr("font-family", "var(--font-mono)");
+
   arcs.on("mouseover", function (event, d) {
     d3.select(this)
       .transition().duration(200)
       .attr("d", arcOver)
       .attr("opacity", 1);
-    totalText.text(_formatPieVal(d.data.value));
-    subLabelText.text(d.data.label);
+    tipG.attr("display", null);
+    tipLabel.text(d.data.label);
+    tipVal.text(_formatPieVal(d.data.value));
   });
   arcs.on("mouseout", function () {
     d3.select(this)
       .transition().duration(200)
       .attr("d", arc)
       .attr("opacity", 0.85);
-    totalText.text(_formatPieVal(total));
-    subLabelText.text("合计");
+    tipG.attr("display", "none");
   });
 
+  // Legend centered below pie
   var legStartY = centerY + radius + 3;
+  var dotBaseX = centerX - 30;
   subs.forEach(function (sub, i) {
     var ly = legStartY + i * legendItemH;
     g.append("rect")
-      .attr("x", cx + 4)
+      .attr("x", dotBaseX)
       .attr("y", ly)
       .attr("width", 7)
       .attr("height", 7)
       .attr("rx", 1.5)
       .attr("fill", _DETAIL_COLORS[i % _DETAIL_COLORS.length]);
     g.append("text")
-      .attr("x", cx + 14)
+      .attr("x", dotBaseX + 10)
       .attr("y", ly + 7)
       .attr("fill", "var(--text-muted)")
       .attr("font-size", "7px")
