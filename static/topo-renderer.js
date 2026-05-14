@@ -1713,10 +1713,14 @@ function _renderDetailCharts() {
   var pad = 8;
   var chartW = (st.barW - pad * 3) / 2;
   var allocH = st._allocDetailH || st.detailH;
-  var chartH = Math.max(40, allocH - 30);
+  var subs = _getDetailSubs(detailType);
+  var isPieDetail = detailType === "flops" || detailType === "hbm";
+  var legendItemH = 10;
+  var legendH = isPieDetail ? subs.length * legendItemH + 8 : 0;
+  var chartH = Math.max(60, allocH - 24 - legendH);
   var chartY = st.detailY + 16;
 
-  var typeLabel = detailType === "flops" ? "FLOPs" : "HBM";
+  var typeLabel = detailType === "flops" ? "FLOPs" : detailType === "hbm" ? "HBM" : "通信";
   if (detailData.orig) {
     _drawOneDetailChart(g, st.cardX + pad, chartY, chartW, chartH,
       detailType, detailData.orig, "原始仿真" + typeLabel + "组成", 0);
@@ -1724,6 +1728,33 @@ function _renderDetailCharts() {
   if (detailData.eq) {
     _drawOneDetailChart(g, st.cardX + pad + chartW + pad, chartY, chartW, chartH,
       detailType, detailData.eq, "等效仿真" + typeLabel + "组成", 1);
+  }
+
+  // Shared legend centered below both charts (pie charts only)
+  if (isPieDetail) {
+    var legendY = chartY + chartH + 6;
+    var hasBoth = !!(detailData.orig && detailData.eq);
+    var legendCenterX = hasBoth
+      ? st.cardX + pad + chartW + pad / 2
+      : st.cardX + pad + chartW / 2;
+    var dotBaseX = legendCenterX - 28;
+    subs.forEach(function (sub, i) {
+      var ly = legendY + i * legendItemH;
+      g.append("rect")
+        .attr("x", dotBaseX)
+        .attr("y", ly)
+        .attr("width", 8)
+        .attr("height", 8)
+        .attr("rx", 2)
+        .attr("fill", _DETAIL_COLORS[i % _DETAIL_COLORS.length]);
+      g.append("text")
+        .attr("x", dotBaseX + 11)
+        .attr("y", ly + 8)
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "8px")
+        .attr("font-family", "var(--font-mono)")
+        .text(sub.label);
+    });
   }
 }
 
@@ -1758,15 +1789,12 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
   });
   if (total === 0) return;
 
-  var legendItemH = 7;
-  var legendGap = 2;
-  var overhead = 0 + legendGap + (subs.length - 1) * legendItemH + 6;
   var maxRbyW = cw / 2 - 4;
-  var maxRbyH = (ch - overhead) / 2;
+  var maxRbyH = ch / 2 - 2;
   var radius = Math.floor(Math.min(maxRbyW, maxRbyH));
   radius = Math.max(18, radius);
   var centerX = cx + cw / 2;
-  var centerY = cy + radius;
+  var centerY = cy + radius + 2;
   var innerR = radius * 0.4;
 
   var pie = d3.pie().value(function (d) { return d.value; });
@@ -1807,17 +1835,17 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
     .attr("y", centerY - 7)
     .attr("text-anchor", "middle")
     .attr("fill", "var(--text-primary)")
-    .attr("font-size", "10px")
+    .attr("font-size", "11px")
     .attr("font-weight", "600")
     .attr("font-family", "var(--font-mono)")
     .text(_formatPieVal(total));
 
   var subLabelText = g.append("text")
     .attr("x", centerX)
-    .attr("y", centerY + 9)
+    .attr("y", centerY + 10)
     .attr("text-anchor", "middle")
     .attr("fill", "var(--text-muted)")
-    .attr("font-size", "7px")
+    .attr("font-size", "8px")
     .attr("font-family", "var(--font-sans)")
     .text("合计");
 
@@ -1865,26 +1893,6 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
     tipG.attr("display", "none");
   });
 
-  // Legend centered below pie
-  var legStartY = centerY + radius + 3;
-  var dotBaseX = centerX - 30;
-  subs.forEach(function (sub, i) {
-    var ly = legStartY + i * legendItemH;
-    g.append("rect")
-      .attr("x", dotBaseX)
-      .attr("y", ly)
-      .attr("width", 7)
-      .attr("height", 7)
-      .attr("rx", 1.5)
-      .attr("fill", _DETAIL_COLORS[i % _DETAIL_COLORS.length]);
-    g.append("text")
-      .attr("x", dotBaseX + 10)
-      .attr("y", ly + 7)
-      .attr("fill", "var(--text-muted)")
-      .attr("font-size", "7px")
-      .attr("font-family", "var(--font-mono)")
-      .text(sub.label + "  " + _formatSubVal(data[sub.key], detailType));
-  });
 }
 
 function _drawDetailBars(g, cx, cy, cw, ch, subs, data, detailType) {
@@ -1981,7 +1989,6 @@ function _drawRankBars(data) {
     Object.keys(data.eq.metrics.actual).length > 0;
   var hasAnyActual = hasActualOrig || hasActualEq;
 
-  var rowH = hasAnyActual ? 14 : 22; // tighter when compare rows
   var groupGap = 6;
   var labelW = 54;
   var barStartX = x0 + labelW + 6;
@@ -2082,13 +2089,25 @@ function _drawRankBars(data) {
     st.barG
       .append("text")
       .attr("x", x0)
-      .attr("y", y + 12)
+      .attr("y", y + 10)
       .attr("fill", "var(--text-secondary)")
       .attr("font-size", "10px")
       .attr("font-family", "var(--font-mono)")
       .text(m.label);
+    // Unit below label (left side, bars on right side — no overlap)
+    if (m.unit) {
+      st.barG
+        .append("text")
+        .attr("x", x0)
+        .attr("y", y + 19)
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "7px")
+        .attr("font-family", "var(--font-mono)")
+        .text(m.unit);
+    }
 
     var barY = y + 2;
+    var rowH = hasAnyActual ? 18 : 28;
     var barH = hasAnyActual ? 10 : 14;
     var miniGap = hasAnyActual ? 4 : 4;
 
@@ -2130,7 +2149,7 @@ function _drawRankBars(data) {
         .attr("font-size", "8px")
         .attr("font-family", "var(--font-mono)")
         .attr("opacity", 0)
-        .text(label + " " + _formatBarVal(val, key));
+        .text(_formatBarVal(val, key));
       valText.transition()
         .delay(delay + animDuration * 0.6)
         .duration(animDuration * 0.4)
