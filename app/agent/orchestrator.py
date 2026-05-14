@@ -35,19 +35,22 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """你是 TrainMesh Agent，一个专为 AI 训练组网仿真测试设计的智能助手。
 
 你的职责：
-1. 帮助测试人员输入原始组网和等效组网的参数（设备类型 A2/A3/A5、DP/TP/PP）
-2. 调用 training-mesh-gen-skill 生成结构化 JSON 组网图
-3. 调用 training-model-gen-skill 生成等效 Transformer 训练模型结构
+1. 帮助测试人员输入原始组网参数（设备类型 A2/A3/A5、DP/TP/PP、模型参数）
+2. 调用 training-mesh-gen-skill 生成原始组网拓扑 JSON，再调用 training-model-gen-skill 生成原始模型结构
+3. 用户确认等效计算后，逐条推送等效策略、计算指标、公式（equiv_formula_line），然后生成等效组网和等效模型
 4. 通过 MCP 客户端向仿真系统下发仿真任务
 5. 调用 training-mesh-profiler-skill 分析仿真结果
 6. 对比原始组网和等效组网的仿真结果，判断等效性
 
-工作流程：
-- 收集参数 → 护栏校验 → 生成拓扑 → 生成模型结构 → 前端渲染 → 用户确认 → 仿真 → 分析 → 对比
+分阶段工作流程：
+- Step 1 (等效参数输入): 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
+- Step 2 (等效计算): 用户确认 → 逐条推送等效策略/指标/公式 → 完成等效计算
+- Step 3 (等效组网及模型结构生成): 生成等效组网 → 生成等效模型结构 → 前端渲染
+- Step 4 (仿真验证): 用户确认 → 下发仿真 → 切换到仿真验证tab
+- Step 5 (结果分析): 自动对比 → 输出等效性结论
 
-请用中文与用户交互。当用户提供参数时，主动进行护栏校验。
-当拓扑生成完成，提醒用户在前端检查并确认。
-当仿真完成，自动进行对比分析并给出结论。"""
+护栏校验在后端静默执行，不在工作流节点中展示。校验通过则继续，失败则返回错误提示用户修正参数。
+请用中文与用户交互。每次只执行当前阶段的任务，等待用户确认后再进入下一阶段。"""
 
 # ── Utility tool schemas (non-skill operations) ──
 
@@ -105,6 +108,22 @@ _UTILITY_TOOLS = [
                 "type": "object",
                 "properties": {},
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "emit_formula_line",
+            "description": "逐行推送等效计算分析内容（等效策略、计算指标、公式）。每条调用发送一行，前端逐行动态加载。三个section: strategy(等效策略), metrics(计算指标), formula(等效公式)。每个section结束时设置section_done=true。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "section": {"type": "string", "description": "所属区域: strategy, metrics, formula"},
+                    "line": {"type": "string", "description": "单行文本内容"},
+                    "section_done": {"type": "boolean", "description": "该section是否完成，最后一行为true"},
+                },
+                "required": ["section", "line"],
             },
         },
     },
@@ -169,6 +188,17 @@ def _execute_utility_tool(tool_name: str, arguments: dict, session: SessionState
         session.step = "completed"
         return report.model_dump(exclude={"original", "equivalent"})
 
+    elif tool_name == "emit_formula_line":
+        section = arguments.get("section", "")
+        line = arguments.get("line", "")
+        section_done = arguments.get("section_done", False)
+        return {
+            "_event_type": "equiv_formula_line",
+            "section": section,
+            "line": line,
+            "section_done": section_done,
+        }
+
     return {"error": f"Unknown utility tool: {tool_name}"}
 
 
@@ -198,10 +228,11 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
         if "原始" in data.name:
             session.original_topology = data
             session.original_params = params
+            session.step = "params_collected"
         else:
             session.equivalent_topology = data
             session.equivalent_params = params
-        session.step = "topology_generated"
+            session.step = "equiv_generated"
         # Return lightweight summary (full data via REST GET /api/session/<id>/topology)
         return {
             "name": data.name,
@@ -317,6 +348,7 @@ _SSE_EVENT_MAP = {
     "training-model-gen-skill": "model_json",
     "run_simulation": "message",
     "compare_results": "message",
+    "emit_formula_line": "equiv_formula_line",
 }
 
 
@@ -429,6 +461,10 @@ async def agent_stream(
             logger.info(f"[agent_stream] tool={tool_name} result_size={len(json.dumps(result, ensure_ascii=False))} chars")
 
             event_type = _SSE_EVENT_MAP.get(tool_name, "message")
+
+            # Override event type if result specifies one
+            if result.get("_event_type"):
+                event_type = result.pop("_event_type")
 
             if "error" in result:
                 event_type = "error"
