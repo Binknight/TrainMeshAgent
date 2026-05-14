@@ -1093,6 +1093,7 @@ function _meshBuildView(
               globalRank: globalRank,
             };
 
+            _centerPanelState.formulasCollapsed = true;
             _updateCenterBarChart(globalRank, side);
             modelRebuild();
           }
