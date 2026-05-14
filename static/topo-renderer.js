@@ -1372,12 +1372,11 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var barHeaderH = pad + titleFont + 10;
   var barAreaY = barCardY + barHeaderH;
   var st2 = _centerPanelState;
-  // Allocate space between bars and detail charts; ensure bars don't overflow
+  // Allocate space: bars get 55%, detail charts get 45% (capped at detailH)
   var availH = barCardH - barHeaderH - pad;
-  var minBarH = 150;
   var detailH = 0;
   if (st2.detailVisible) {
-    detailH = Math.min(st2.detailH, Math.max(0, availH - minBarH));
+    detailH = Math.min(st2.detailH, Math.floor(availH * 0.45));
   }
   var barAreaH = Math.max(0, availH - detailH);
 
@@ -1426,6 +1425,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   st2.cardGap = cardGap;
   st2.detailG = detailG;
   st2.detailY = detailY;
+  st2._allocDetailH = detailH;
   st2._totalAvailableH = viewH;
 
   // Hide bar card if no rank is pinned
@@ -1450,7 +1450,6 @@ function _updateFormulaCollapse() {
   if (!st.formulaG) return;
 
   var pad = 14;
-  var minBarH = 150;
   var totalBottom = st.cardY + st._totalAvailableH;
   var effFormulaH, newBarCardY, newBarH;
 
@@ -1485,10 +1484,11 @@ function _updateFormulaCollapse() {
   var availH = newBarH - st.barHeaderH - pad;
   var detailH = 0;
   if (st.detailVisible) {
-    detailH = Math.min(st.detailH, Math.max(0, availH - minBarH));
+    detailH = Math.min(st.detailH, Math.floor(availH * 0.45));
   }
   st.barH = Math.max(0, availH - detailH);
   st.detailY = newBarAreaY + st.barH + 8;
+  st._allocDetailH = detailH;
 
   // Reposition detail charts if visible
   if (st.detailVisible && st.detailData) {
@@ -1505,7 +1505,6 @@ function _centerPanelBarRecalc() {
   var st = _centerPanelState;
   if (!st.barG) return;
   var pad = 14;
-  var minBarH = 150;
   var effFormulaH = st.formulasCollapsed ? st.headerH : st.formulaCardFullH;
   var barCardY = st.cardY + effFormulaH + st.cardGap;
   var barCardH = Number(st.barCardRect.attr("height"));
@@ -1514,10 +1513,11 @@ function _centerPanelBarRecalc() {
   var availH = barCardH - st.barHeaderH - pad;
   var detailH = 0;
   if (st.detailVisible) {
-    detailH = Math.min(st.detailH, Math.max(0, availH - minBarH));
+    detailH = Math.min(st.detailH, Math.floor(availH * 0.45));
   }
   st.barH = Math.max(0, availH - detailH);
   st.detailY = st.barAreaY + st.barH + 8;
+  st._allocDetailH = detailH;
   if (st.barCardVisible && st.rankData) {
     _drawRankBars(st.rankData);
   }
@@ -1711,7 +1711,8 @@ function _renderDetailCharts() {
 
   var pad = 8;
   var chartW = (st.barW - pad * 3) / 2;
-  var chartH = st.detailH - 30;
+  var allocH = st._allocDetailH || st.detailH;
+  var chartH = Math.max(40, allocH - 30);
   var chartY = st.detailY + 16;
 
   if (detailData.orig) {
@@ -1755,9 +1756,15 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
   });
   if (total === 0) return;
 
-  var radius = Math.min(cw, ch * 1.2) / 2 - 6;
+  var legendItemH = 8;
+  var legendGap = 3;
+  var overhead = 1 + legendGap + (subs.length - 1) * legendItemH + 7;
+  var maxRbyW = cw / 2 - 4;
+  var maxRbyH = (ch - overhead) / 2;
+  var radius = Math.floor(Math.min(maxRbyW, maxRbyH));
+  radius = Math.max(18, radius);
   var centerX = cx + cw / 2;
-  var centerY = cy + radius + 8;
+  var centerY = cy + radius + 1;
   var innerR = radius * 0.5;
 
   var pie = d3.pie().value(function (d) { return d.value; });
@@ -1789,20 +1796,11 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
       return function (t) { return arc(i(t)); };
     });
 
-  arcs.on("mouseover", function () {
-    d3.select(this)
-      .transition().duration(200)
-      .attr("d", arcOver)
-      .attr("opacity", 1);
-  });
-  arcs.on("mouseout", function () {
-    d3.select(this)
-      .transition().duration(200)
-      .attr("d", arc)
-      .attr("opacity", 0.85);
-  });
+  function _formatPieVal(v) {
+    return detailType === "flops" ? formatFlops(v) : Number(v).toFixed(2) + " GB";
+  }
 
-  g.append("text")
+  var totalText = g.append("text")
     .attr("x", centerX)
     .attr("y", centerY - 7)
     .attr("text-anchor", "middle")
@@ -1810,9 +1808,9 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
     .attr("font-size", "10px")
     .attr("font-weight", "600")
     .attr("font-family", "var(--font-mono)")
-    .text(detailType === "flops" ? formatFlops(total) : Number(total).toFixed(2) + " GB");
+    .text(_formatPieVal(total));
 
-  g.append("text")
+  var subLabelText = g.append("text")
     .attr("x", centerX)
     .attr("y", centerY + 8)
     .attr("text-anchor", "middle")
@@ -1821,9 +1819,26 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
     .attr("font-family", "var(--font-sans)")
     .text("合计");
 
-  var legStartY = centerY + radius + 14;
+  arcs.on("mouseover", function (event, d) {
+    d3.select(this)
+      .transition().duration(200)
+      .attr("d", arcOver)
+      .attr("opacity", 1);
+    totalText.text(_formatPieVal(d.data.value));
+    subLabelText.text(d.data.label);
+  });
+  arcs.on("mouseout", function () {
+    d3.select(this)
+      .transition().duration(200)
+      .attr("d", arc)
+      .attr("opacity", 0.85);
+    totalText.text(_formatPieVal(total));
+    subLabelText.text("合计");
+  });
+
+  var legStartY = centerY + radius + 3;
   subs.forEach(function (sub, i) {
-    var ly = legStartY + i * 13;
+    var ly = legStartY + i * legendItemH;
     g.append("rect")
       .attr("x", cx + 4)
       .attr("y", ly)
@@ -1990,8 +2005,8 @@ function _drawRankBars(data) {
   };
   if (hasBoth) {
     drawLegend("#58a6ff", "原始估算");
-    drawLegend("#3fb950", "原始仿真");
     drawLegend("#79c0ff", "等效估算");
+    drawLegend("#3fb950", "原始仿真");
     drawLegend("#7ee787", "等效仿真");
   } else {
     drawLegend("#58a6ff", "理论估算");
@@ -2041,50 +2056,79 @@ function _drawRankBars(data) {
       .text(m.label);
 
     var barY = y + 2;
-    var barH = hasAnyActual ? 7 : 14;
-    var miniGap = hasAnyActual ? 3 : 4;
+    var barH = hasAnyActual ? 10 : 14;
+    var miniGap = hasAnyActual ? 2 : 4;
 
     // Helper to draw a bar with staggered grow animation
     var drawBar = function (val, color, label) {
       if (val == null) return;
       var w = scaleFn(val);
       if (w < 2) w = 2;
+      var thisBarY = barY; // capture now — barY mutates after each call
       var g = st.barG.append("g");
       var delay = metricBase + barIdx * animStagger;
       barIdx++;
       var isActual = color === "#3fb950" || color === "#7ee787";
-      g.append("rect")
+      var rect = g.append("rect")
         .attr("x", barStartX)
-        .attr("y", barY)
+        .attr("y", thisBarY)
         .attr("width", 0)
         .attr("height", barH)
-        .attr("rx", 2)
+        .attr("rx", 3)
         .attr("fill", color)
         .attr("opacity", 0.85)
-        .attr("cursor", isActual ? "pointer" : null)
-        .on("click", function (event) {
-          if (!isActual) return;
+        .attr("cursor", isActual ? "pointer" : "default");
+      if (isActual) {
+        rect.on("click", function (event) {
           event.stopPropagation();
           var dt = _DETAIL_MAP[key];
           if (dt) _toggleDetailCharts(dt);
-        })
-        .transition()
+        });
+      }
+      rect.transition()
         .delay(delay)
         .duration(animDuration)
         .ease(d3.easeCubicOut)
         .attr("width", w);
-      g.append("text")
+      var valText = g.append("text")
         .attr("x", barStartX + w + 4)
-        .attr("y", barY + barH - 1)
+        .attr("y", thisBarY + barH - 1)
         .attr("fill", "var(--text-muted)")
         .attr("font-size", "8px")
         .attr("font-family", "var(--font-mono)")
         .attr("opacity", 0)
-        .text(label + " " + _formatBarVal(val, key))
-        .transition()
+        .text(label + " " + _formatBarVal(val, key));
+      valText.transition()
         .delay(delay + animDuration * 0.6)
         .duration(animDuration * 0.4)
         .attr("opacity", 1);
+      // Aggressive hover: lift + thicken + highlight text
+      rect.on("mouseover", function () {
+        d3.select(this)
+          .interrupt()
+          .transition().duration(100)
+          .attr("y", thisBarY - 3)
+          .attr("height", barH + 6)
+          .attr("opacity", 1);
+        valText.interrupt()
+          .transition().duration(100)
+          .attr("fill", "#fff")
+          .attr("font-weight", "700")
+          .attr("font-size", "10px");
+      });
+      rect.on("mouseout", function () {
+        d3.select(this)
+          .interrupt()
+          .transition().duration(100)
+          .attr("y", thisBarY)
+          .attr("height", barH)
+          .attr("opacity", 0.85);
+        valText.interrupt()
+          .transition().duration(100)
+          .attr("fill", "var(--text-muted)")
+          .attr("font-weight", "normal")
+          .attr("font-size", "8px");
+      });
       return barH + miniGap;
     };
 
@@ -2105,16 +2149,14 @@ function _drawRankBars(data) {
       data.eq && data.eq.metrics.actual ? data.eq.metrics.actual[key] : null;
 
     if (hasBoth) {
-      // Original side
-      var origLabel = "原始";
+      // Estimate bars first
       if (origEstV != null)
-        barY += drawBar(origEstV, "#58a6ff", origLabel + "估");
+        barY += drawBar(origEstV, "#58a6ff", "原始估");
+      if (eqEstV != null) barY += drawBar(eqEstV, "#79c0ff", "等效估");
+      // Simulation bars
       if (origActV != null)
-        barY += drawBar(origActV, "#3fb950", origLabel + "仿");
-      // Equivalent side
-      var eqLabel = "等效";
-      if (eqEstV != null) barY += drawBar(eqEstV, "#79c0ff", eqLabel + "估");
-      if (eqActV != null) barY += drawBar(eqActV, "#7ee787", eqLabel + "仿");
+        barY += drawBar(origActV, "#3fb950", "原始仿");
+      if (eqActV != null) barY += drawBar(eqActV, "#7ee787", "等效仿");
     } else {
       if (origEstV != null) barY += drawBar(origEstV, "#58a6ff", "估");
       if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
