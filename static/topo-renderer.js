@@ -1187,6 +1187,82 @@ function _updateDpSelect(selId, activeDp) {
 
 // ── Center Panel: independent formula card + bar chart card ──
 
+// ── Formula loading animation (glow border + staggered text reveal) ──
+function _animateFormulaLoad(cardG, textSelections, cardX, cardY, cardW, cardH) {
+  // Remove any existing glow
+  cardG.selectAll(".formula-glow-group").remove();
+
+  // Glow group
+  var glowG = cardG.insert("g", ".formula-content-group")
+    .attr("class", "formula-glow-group");
+
+  // Wide ambient glow
+  glowG.append("rect")
+    .attr("x", cardX)
+    .attr("y", cardY)
+    .attr("width", cardW)
+    .attr("height", cardH)
+    .attr("rx", 8)
+    .attr("ry", 8)
+    .attr("fill", "none")
+    .attr("stroke", "#39bae6")
+    .attr("stroke-width", 5)
+    .attr("stroke-dasharray", "6 78")
+    .attr("stroke-dashoffset", 0)
+    .attr("opacity", 0.18)
+    .attr("pointer-events", "none");
+
+  // Core bright glow
+  var glowCore = glowG.append("rect")
+    .attr("x", cardX)
+    .attr("y", cardY)
+    .attr("width", cardW)
+    .attr("height", cardH)
+    .attr("rx", 8)
+    .attr("ry", 8)
+    .attr("fill", "none")
+    .attr("stroke", "#39bae6")
+    .attr("stroke-width", 2.5)
+    .attr("stroke-dasharray", "14 78")
+    .attr("stroke-dashoffset", 0)
+    .attr("opacity", 0.8)
+    .attr("filter", "url(#flow-neon-glow)")
+    .attr("pointer-events", "none");
+
+  // Continuous flowing animation
+  function _loopGlow() {
+    glowCore.transition()
+      .duration(1000)
+      .ease(d3.easeLinear)
+      .attrTween("stroke-dashoffset", function () {
+        return d3.interpolate(0, -92);
+      })
+      .on("end", _loopGlow);
+  }
+  _loopGlow();
+
+  // Staggered text reveal
+  if (!textSelections || textSelections.length === 0) {
+    glowG.transition().duration(300).attr("opacity", 0).remove();
+    return;
+  }
+
+  textSelections.forEach(function (text, i) {
+    var isLast = i === textSelections.length - 1;
+    text.attr("opacity", 0);
+    var t = text
+      .transition()
+      .delay(200 + i * 150)
+      .duration(400)
+      .attr("opacity", 1);
+    if (isLast) {
+      t.on("end", function () {
+        glowG.transition().duration(350).attr("opacity", 0).remove();
+      });
+    }
+  });
+}
+
 function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var cardG = parentG.append("g").attr("class", "formula-card-group");
   var pad = 14;
@@ -1304,9 +1380,10 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     formulaG.attr("display", "none");
   }
 
+  var formulaTexts = [];
   var curY = viewY + headerH;
   sections.forEach(function (sec) {
-    formulaG
+    var lt = formulaG
       .append("text")
       .attr("x", viewX + pad)
       .attr("y", curY + 15)
@@ -1315,10 +1392,11 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
       .attr("font-size", "12px")
       .attr("font-family", "var(--font-sans)")
       .text(sec.label);
+    formulaTexts.push(lt);
     curY += lineH_label;
 
     sec.lines.forEach(function (line) {
-      formulaG
+      var ft = formulaG
         .append("text")
         .attr("x", viewX + pad + 4)
         .attr("y", curY + 14)
@@ -1326,10 +1404,11 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
         .attr("font-size", "11px")
         .attr("font-family", "var(--font-mono)")
         .text(line);
+      formulaTexts.push(ft);
       curY += lineH_formula;
     });
 
-    formulaG
+    var dt = formulaG
       .append("text")
       .attr("x", viewX + pad + 4)
       .attr("y", curY + 12)
@@ -1337,8 +1416,13 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
       .attr("font-size", "10px")
       .attr("font-family", "var(--font-sans)")
       .text(sec.desc);
+    formulaTexts.push(dt);
     curY += lineH_desc + sectGap;
   });
+
+  if (!_centerPanelState.formulasCollapsed) {
+    _animateFormulaLoad(formulaCardG, formulaTexts, viewX, viewY, viewW, formulaCardFullH);
+  }
 
   // ═══ Bar chart card (bottom) ═══
   var effFormulaH = _centerPanelState.formulasCollapsed ? headerH : formulaCardFullH;
@@ -1430,6 +1514,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   st2.formulaContentH = formulaContentH;
   st2.headerH = headerH;
   st2.formulasCollapsed = st2.formulasCollapsed || false;
+  st2._formulaTexts = formulaTexts;
   st2.formulaCardRect = formulaCardRect;
   st2.formulaCardFullH = formulaCardFullH;
   st2.barCardRect = barCardG.select("rect");
@@ -1473,17 +1558,28 @@ function _updateFormulaCollapse() {
     st.formulaG.attr("display", "none");
     st.toggleChev.text("▶");
     st.formulaCardRect.attr("height", st.headerH);
+    st.g.selectAll(".formula-glow-group").remove();
 
     effFormulaH = st.headerH;
     newBarCardY = st.cardY + effFormulaH + st.cardGap;
   } else {
     // Expand: show formulas, restore formula card, move bar card down
-    st.formulaG.attr("display", null);
-    st.toggleChev.text("▼");
     st.formulaCardRect.attr("height", st.formulaCardFullH);
-
     effFormulaH = st.formulaCardFullH;
     newBarCardY = st.cardY + effFormulaH + st.cardGap;
+
+    // Pre-set opacity 0 to avoid flash before animation
+    if (st._formulaTexts && st._formulaTexts.length > 0) {
+      st._formulaTexts.forEach(function (t) { t.attr("opacity", 0); });
+    }
+    st.formulaG.attr("display", null);
+    st.toggleChev.text("▼");
+
+    // Animate text reveal with flowing glow border
+    if (st._formulaTexts && st._formulaTexts.length > 0) {
+      var cardW = Number(st.formulaCardRect.attr("width"));
+      _animateFormulaLoad(st.g, st._formulaTexts, st.cardX, st.cardY, cardW, st.formulaCardFullH);
+    }
   }
 
   // Determine bar card height
@@ -2588,6 +2684,26 @@ function canvasRebuild() {
       .attr("stdDeviation", 4)
       .attr("flood-color", "#ff8f40")
       .attr("flood-opacity", 0.6);
+
+    // Neon glow filter for formula loading border
+    var flowFilter = defs
+      .append("filter")
+      .attr("id", "flow-neon-glow")
+      .attr("x", "-50%")
+      .attr("y", "-50%")
+      .attr("width", "200%")
+      .attr("height", "200%");
+    flowFilter
+      .append("feGaussianBlur")
+      .attr("stdDeviation", "3")
+      .attr("result", "blur");
+    flowFilter
+      .append("feMerge")
+      .selectAll("feMergeNode")
+      .data(["blur", "SourceGraphic"])
+      .enter()
+      .append("feMergeNode")
+      .attr("in", function (d) { return d; });
 
     defs
       .append("style")
