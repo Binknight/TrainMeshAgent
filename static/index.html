@@ -2897,6 +2897,10 @@
                 setStatus("thinking");
                 addMessage("system", "📡 [API] 开始等效计算...");
                 updateWorkflowNode("equiv_calc_sub1", "active");
+                // Show formula card only after user confirms step2
+                _formulaCardReady = true;
+                canvasRebuild();
+                if (typeof canvasRecenter === "function") canvasRecenter();
                 try {
                     // trigger backend computation
                     var triggerResp = await fetch(API + "/session/" + sessionId + "/workflow/step2", {
@@ -3009,6 +3013,12 @@
                             var stepMap = { strategy: "equiv_calc_sub1", metrics: "equiv_calc_sub2", formula: "equiv_calc_sub3" };
                             var stepId = stepMap[event.section];
                             if (stepId) updateWorkflowNode(stepId, "completed");
+                            // Persist formula lines on last section so refresh doesn't lose them
+                            if (event.section === "formula" && sessionId && window._pendingFormulaLines && window._pendingFormulaLines.length) {
+                                try {
+                                    sessionStorage.setItem("formulaLines_" + sessionId, JSON.stringify(window._pendingFormulaLines));
+                                } catch (e) { /* ignore quota errors */ }
+                            }
                         }
                         break;
                     case "done":
@@ -3581,6 +3591,18 @@
                     updateWorkflowNode("equiv_calc", "active");
                 }
                 // else: nodes remain in initWorkflow() default state (waiting_input / pending)
+
+                // Restore formula lines from sessionStorage if step2 was already completed
+                if (workflowNodeStates["equiv_calc"] === "completed"
+                    || workflowNodeStates["equiv_calc_sub3"] === "completed") {
+                    try {
+                        var saved = sessionStorage.getItem("formulaLines_" + sessionId);
+                        if (saved) {
+                            window._pendingFormulaLines = JSON.parse(saved);
+                            _formulaCardReady = true;
+                        }
+                    } catch (e) { /* ignore parse errors */ }
+                }
             }
 
             // ── Workflow Parameter Panel ──
@@ -4009,14 +4031,14 @@
                     // Restore topology data
                     if (data.original_topology) {
                         await loadMeshData(data.original_topology);
-                        _formulaCardReady = true;
                     }
                     if (data.equivalent_topology)
                         await loadMeshData(data.equivalent_topology);
-                    if (meshOriginal || meshEquivalent) canvasRebuild();
 
-                    // Sync workflow from session state
+                    // Sync workflow from session state (may restore formula lines + set _formulaCardReady)
                     syncWorkflowFromSession(data);
+
+                    if (meshOriginal || meshEquivalent) canvasRebuild();
 
                     // Restore chat message for topology summaries
                     const parts = [];
