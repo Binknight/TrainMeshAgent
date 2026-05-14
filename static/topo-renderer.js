@@ -27,12 +27,9 @@ async function fetchEstimates(
   numLayers,
   hiddenDim,
 ) {
-  // Cancel any in-flight request for this side
-  if (_estimateFetchAbort[side]) {
-    _estimateFetchAbort[side].abort();
-  }
   var ctrl = new AbortController();
-  _estimateFetchAbort[side] = ctrl;
+  var sideKey = side + "_" + Date.now();
+  _estimateFetchAbort[sideKey] = ctrl;
   var timeout = setTimeout(function () {
     ctrl.abort();
   }, 10000);
@@ -64,8 +61,8 @@ async function fetchEstimates(
     return est;
   } finally {
     clearTimeout(timeout);
-    if (_estimateFetchAbort[side] === ctrl) {
-      delete _estimateFetchAbort[side];
+    if (_estimateFetchAbort[sideKey] === ctrl) {
+      delete _estimateFetchAbort[sideKey];
     }
   }
 }
@@ -2741,9 +2738,11 @@ function canvasRebuild() {
   // ── Layout dimensions used by both topology and model sections ──
   var _topoLayout = null; // { mode, origW, cardW, eqW, gap1, gap2, titleH, contentH }
 
+  var _isSimulation = (typeof window !== "undefined" && window._renderMode === "simulation");
+
   // ═══ Render topology ═══
   if (hasTopo) {
-    if (meshOriginal && meshEquivalent) {
+    if (meshOriginal && meshEquivalent && !_isSimulation) {
       // ── Three-Part Mode: Orig + Card + Eq ──
       document.getElementById("mesh-tpInput").parentElement.style.display =
         "none";
@@ -2823,6 +2822,7 @@ function canvasRebuild() {
         _cardW,
         _contentH,
       );
+      _replayFormulaLines();
 
       _meshBuildView(
         zoomLayer.append("g"),
@@ -2861,6 +2861,44 @@ function canvasRebuild() {
       _renderState.eq.pp = meshEquivalent.pp;
       _renderState.eq.dp = meshEquivalent.dp;
       _renderState.eq.activeDp = meshEqDp;
+    } else if (meshOriginal && meshEquivalent && _isSimulation) {
+      // ── Simulation Mode: Orig + Eq side-by-side (no formula card, no model) ──
+      document.getElementById("mesh-tpInput").parentElement.style.display = "none";
+      document.getElementById("mesh-ppInput").parentElement.style.display = "none";
+      document.getElementById("mesh-dpInput").parentElement.style.display = "none";
+      if (toolbar.querySelector("button")) toolbar.querySelector("button").style.display = "none";
+      document.getElementById("mesh-npu-count").textContent =
+        "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs";
+      document.getElementById("canvas-label").textContent =
+        (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "等效组网");
+
+      var _sTH = 26, _sGap = 16;
+      var _availW = meshWidth - _sGap;
+      var _sW = _availW / 2;
+      var _sContentH = topoH - _sTH;
+      var _sScale = 0.5;
+
+      if (meshOrigDp >= meshOriginal.dp) meshOrigDp = meshOriginal.dp - 1;
+      if (meshEqDp >= meshEquivalent.dp) meshEqDp = meshEquivalent.dp - 1;
+
+      _meshBuildView(
+        zoomLayer.append("g"),
+        meshBuildData(meshOriginal.tp, meshOriginal.pp, meshOriginal.dp, meshOrigDp),
+        "mesh-dp-sel-orig", "meshSwitchDpOrig",
+        0, _sTH, _sW, _sContentH, _sScale, true,
+      );
+      _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
+
+      _meshBuildView(
+        zoomLayer.append("g"),
+        meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
+        "mesh-dp-sel-eq", "meshSwitchDpEq",
+        _sW + _sGap, _sTH, _sW, _sContentH, _sScale, false,
+      );
+      _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
+
+      _topoLayout = { mode: "simulation", origW: _sW, eqW: _sW, gap: _sGap, titleH: _sTH };
+      _renderState.mode = "simulation";
     } else if (_formulaCardReady && meshOriginal) {
       // ── Two-Part Mode: Orig + Card ──
       var _tH2 = 26,
@@ -2925,6 +2963,7 @@ function canvasRebuild() {
         _cardW2,
         _contentH2,
       );
+      _replayFormulaLines();
 
       _topoLayout = {
         mode: "two",
@@ -2985,8 +3024,8 @@ function canvasRebuild() {
     }
   }
 
-  // ═══ Render model ═══
-  if (hasModel) {
+  // ═══ Render model ═══ (skip in simulation mode)
+  if (hasModel && !_isSimulation) {
     var modelTopY = topoH + sectionGap;
 
     // ── Calculate model layout aligned to DP card ──
@@ -3217,6 +3256,7 @@ async function loadMeshData(topoData) {
   if (isOrig) {
     meshOriginal = entry;
     meshOrigDp = 0;
+    _formulaCardReady = true;
   } else {
     meshEquivalent = entry;
     meshEqDp = 0;
@@ -3228,17 +3268,18 @@ async function loadMeshData(topoData) {
   if (Object.keys(existing).length === 0 || existing[0] == null) {
     try {
       var modelSide = isOrig ? modelOriginal : modelEquivalent;
+      var meshModel = isOrig ? meshModelOrig : meshModelEq;
       var numLayers =
         topoData.num_layers != null
           ? topoData.num_layers
-          : (isOrig ? meshModelOrig : meshModelEq).num_layers ||
+          : (meshModel && meshModel.num_layers) ||
             (modelSide && modelSide.config
               ? modelSide.config.num_layers
               : null);
       var hiddenDim =
         topoData.hidden_dim != null
           ? topoData.hidden_dim
-          : (isOrig ? meshModelOrig : meshModelEq).hidden_dim ||
+          : (meshModel && meshModel.hidden_dim) ||
             (modelSide && modelSide.config ? modelSide.config.d_model : null);
       var estimates = await fetchEstimates(
         deviceType,
@@ -3268,11 +3309,193 @@ async function loadMeshData(topoData) {
   // canvasRebuild is called by the caller after loadMeshData completes
 }
 
+// ── canvasRecenter: fit content to viewport center ──
+
+var _canvasZoomBehavior = null;
+
+function canvasRecenter() {
+  var svgEl = document.querySelector("#canvas-section svg");
+  if (!svgEl) return;
+  var svg = d3.select(svgEl);
+  var zoomLayer = svg.select(".zoom-layer");
+  if (zoomLayer.empty()) return;
+
+  // Get or create zoom behavior
+  if (!_canvasZoomBehavior) {
+    _canvasZoomBehavior = d3
+      .zoom()
+      .scaleExtent([0.3, 3])
+      .filter(function (event) {
+        if (event.type === "wheel" && !event.ctrlKey) return false;
+        return event.type !== "dblclick";
+      })
+      .wheelDelta(function (event) {
+        var factor = event.deltaMode === 1 ? 0.02 : 0.001;
+        return -event.deltaY * factor;
+      })
+      .on("zoom", function (event) {
+        zoomLayer.attr("transform", event.transform);
+      });
+  }
+
+  var svgNode = svgEl;
+  var viewW = svgNode.clientWidth;
+  var viewH = svgNode.clientHeight;
+  if (!viewW || !viewH) return;
+
+  // Compute content bounding box
+  var bbox;
+  try {
+    bbox = zoomLayer.node().getBBox();
+  } catch (e) {
+    return;
+  }
+  if (!bbox || bbox.width === 0 || bbox.height === 0) return;
+
+  var pad = 40;
+  var scaleW = (viewW - pad * 2) / bbox.width;
+  var scaleH = (viewH - pad * 2) / bbox.height;
+  var scale = Math.min(scaleW, scaleH, 1.5); // cap scale at 1.5x
+  if (scale < 0.3) scale = 0.3;
+
+  var centerX = bbox.x + bbox.width / 2;
+  var centerY = bbox.y + bbox.height / 2;
+  var tx = viewW / 2 - centerX * scale;
+  var ty = viewH / 2 - centerY * scale;
+
+  var transform = d3.zoomIdentity.translate(tx, ty).scale(scale);
+  svg
+    .transition()
+    .duration(400)
+    .ease(d3.easeCubicOut)
+    .call(_canvasZoomBehavior.transform, transform);
+}
+
+// ── _appendFormulaLine: append one line to the formula card with animation ──
+
+var _formulaLineY = 0;       // current Y position for appending
+var _formulaCardG = null;    // reference to formula card group
+var _formulaCardRect = null; // reference to formula card rect
+var _formulaCardPad = 14;
+var _formulaCardHeaderH = 0;
+
+function _appendFormulaLine(section, line) {
+  // Always buffer so lines survive SVG rebuilds (e.g. Two-Part → Three-Part)
+  if (!window._pendingFormulaLines) window._pendingFormulaLines = [];
+  window._pendingFormulaLines.push({ section: section, line: line });
+
+  var cardGroups = d3.selectAll(".formula-card-inner");
+  if (cardGroups.empty()) return;
+
+  var cardG = d3.select(cardGroups.nodes()[0]);
+  _formulaCardG = cardG;
+  _formulaCardRect = cardG.select("rect.formula-card-rect");
+
+  if (_formulaLineY === 0) {
+    // Initialize Y from header
+    _formulaCardHeaderH = _formulaCardPad + 16 + 10; // pad + titleFont + gap
+    _formulaLineY = _formulaCardHeaderH;
+  }
+
+  var contentG = cardG.select(".formula-content-group");
+  if (contentG.empty()) {
+    contentG = cardG.append("g").attr("class", "formula-content-group");
+  }
+  if (contentG.attr("display") === "none") {
+    contentG.attr("display", null);
+  }
+
+  var isSectionLabel = line.indexOf("▸") === 0;
+  var fontSize = isSectionLabel ? "12px" : "11px";
+  var fontFamily = isSectionLabel ? "var(--font-sans)" : "var(--font-mono)";
+  var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
+  var fontWeight = isSectionLabel ? "600" : "400";
+  var lineH = isSectionLabel ? 20 : 16;
+  var textX = isSectionLabel ? _formulaCardPad : _formulaCardPad + 4;
+
+  var textEl = contentG
+    .append("text")
+    .attr("x", textX)
+    .attr("y", _formulaLineY + (isSectionLabel ? 15 : 14))
+    .attr("fill", fontColor)
+    .attr("font-weight", fontWeight)
+    .attr("font-size", fontSize)
+    .attr("font-family", fontFamily)
+    .attr("opacity", 0)
+    .text(line);
+
+  textEl
+    .transition()
+    .duration(350)
+    .ease(d3.easeCubicOut)
+    .attr("opacity", 1);
+
+  _formulaLineY += lineH;
+
+  // Expand card rect
+  if (_formulaCardRect && !_formulaCardRect.empty()) {
+    var newH = _formulaLineY + _formulaCardPad;
+    _formulaCardRect
+      .transition()
+      .duration(300)
+      .ease(d3.easeCubicOut)
+      .attr("height", newH);
+  }
+
+  // Recenter canvas after each line
+  canvasRecenter();
+}
+
+function _replayFormulaLines() {
+  var cardGroups = d3.selectAll(".formula-card-inner");
+  if (cardGroups.empty()) return;
+  var cardG = d3.select(cardGroups.nodes()[0]);
+  _formulaCardG = cardG;
+  _formulaCardRect = cardG.select("rect.formula-card-rect");
+
+  // Reset
+  _formulaCardHeaderH = _formulaCardPad + 16 + 10;
+  _formulaLineY = _formulaCardHeaderH;
+  cardG.select(".formula-content-group").remove();
+
+  var lines = window._pendingFormulaLines || [];
+  if (!lines.length) return;
+
+  var contentG = cardG.append("g").attr("class", "formula-content-group");
+  lines.forEach(function (item) {
+    var isSectionLabel = item.line.indexOf("▸") === 0;
+    var fontSize = isSectionLabel ? "12px" : "11px";
+    var fontFamily = isSectionLabel ? "var(--font-sans)" : "var(--font-mono)";
+    var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
+    var fontWeight = isSectionLabel ? "600" : "400";
+    var lineH = isSectionLabel ? 20 : 16;
+    var textX = isSectionLabel ? _formulaCardPad : _formulaCardPad + 4;
+    contentG
+      .append("text")
+      .attr("x", textX)
+      .attr("y", _formulaLineY + (isSectionLabel ? 15 : 14))
+      .attr("fill", fontColor)
+      .attr("font-weight", fontWeight)
+      .attr("font-size", fontSize)
+      .attr("font-family", fontFamily)
+      .attr("opacity", 1)
+      .text(item.line);
+    _formulaLineY += lineH;
+  });
+
+  if (_formulaCardRect && !_formulaCardRect.empty()) {
+    _formulaCardRect.attr("height", _formulaLineY + _formulaCardPad);
+  }
+}
+
 // ── Attach to window for inline onclick / onchange handlers ──
 
 window.loadMeshData = loadMeshData;
 window.meshRebuild = meshRebuild;
 window.canvasRebuild = canvasRebuild;
+window.canvasRecenter = canvasRecenter;
+window._appendFormulaLine = _appendFormulaLine;
+window._replayFormulaLines = _replayFormulaLines;
 window.meshSwitchDp = meshSwitchDp;
 window.meshSwitchDpOrig = meshSwitchDpOrig;
 window.meshSwitchDpEq = meshSwitchDpEq;
