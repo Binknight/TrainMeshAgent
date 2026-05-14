@@ -2844,6 +2844,12 @@
                         workflowNodeStates[step.id] = "pending";
                     }
                 });
+                // Reset formula card state for new session
+                _formulaCardReady = false;
+                _pendingFormulaLines = [];
+                _formulaLineY = 0;
+                _formulaCardG = null;
+                _formulaCardRect = null;
                 renderWorkflow();
             }
 
