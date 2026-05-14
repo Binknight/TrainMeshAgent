@@ -4942,6 +4942,14 @@
                         document.getElementById("tab-btn-simulation");
                     if (simTabBtn) simTabBtn.disabled = false;
                 }
+
+                // Render canvas BEFORE switching panels so the container has
+                // correct dimensions (switching first would hide the target)
+                if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
+                    window._renderMode = "simulation";
+                    if (typeof canvasRebuild === "function") canvasRebuild();
+                }
+
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
                     t.classList.toggle(
                         "active",
@@ -4956,6 +4964,22 @@
                             p.id === "tab-panel-" + tabName,
                         );
                     });
+
+                // Rebuild after switching to modeling — panel is now visible,
+                // restore normal render mode
+                if (tabName === "modeling") {
+                    window._renderMode = null;
+                    if ((meshOriginal || meshEquivalent) && typeof canvasRebuild === "function") {
+                        canvasRebuild();
+                        if (typeof canvasRecenter === "function") canvasRecenter();
+                    }
+                }
+
+                // Rebuild simulation canvas placeholder
+                if (tabName === "simulation") {
+                    _renderSimulationCanvas();
+                }
+
                 // Toggle right chat panel: visible on modeling, hidden on simulation/results
                 var rightPanel = document.querySelector(".panel-right");
                 if (rightPanel)
@@ -4971,77 +4995,19 @@
                     renderResultsData();
                     updateRankSwitcher();
                 }
-                if (tabName === "simulation") {
-                    // Render simulation mode canvas in sim-topo-area if data loaded
-                    if (meshOriginal || meshEquivalent) {
-                        _renderSimulationCanvas();
-                    }
-                }
             }
 
-            // ── Simulation Canvas Rendering (topology only, no formula/model) ──
+            // ── Simulation Canvas Rendering (placeholder management) ──
 
             function _renderSimulationCanvas() {
+                // The simulation rendering is done by canvasRebuild() into #canvas-section
+                // before the tab switch (see switchCanvasTab). Here we just update the
+                // sim panel's own placeholder state.
                 var container = document.getElementById("sim-canvas-section");
-                var placeholder = document.getElementById(
-                    "sim-topo-placeholder",
-                );
+                var placeholder = document.getElementById("sim-topo-placeholder");
                 if (!container) return;
                 container.style.display = "";
                 if (placeholder) placeholder.style.display = "none";
-
-                var W = container.clientWidth || 800;
-                var topoH = 0;
-                if (meshOriginal && meshEquivalent) {
-                    var dO =
-                        typeof _meshCalcDims === "function"
-                            ? _meshCalcDims(meshOriginal.tp, meshOriginal.pp)
-                            : { dpH: 200 };
-                    var dE =
-                        typeof _meshCalcDims === "function"
-                            ? _meshCalcDims(
-                                  meshEquivalent.tp,
-                                  meshEquivalent.pp,
-                              )
-                            : { dpH: 200 };
-                    var maxDpH = Math.max(dO.dpH, dE.dpH);
-                    topoH = 26 + Math.ceil((maxDpH + 90) * 0.5) + 4;
-                } else {
-                    var entry = meshOriginal || meshEquivalent;
-                    if (entry && typeof _meshCalcDims === "function") {
-                        var dims = _meshCalcDims(entry.tp, entry.pp);
-                        topoH = Math.ceil((dims.dpH + 90) * 0.5) + 8;
-                    } else {
-                        topoH = 200;
-                    }
-                }
-                var H = Math.max(topoH + 20, container.clientHeight || 300);
-
-                var svg = d3.select(container).selectAll("svg").data([1]);
-                svg.exit().remove();
-                svg = svg.enter().append("svg").merge(svg);
-                svg.attr("viewBox", "0 0 " + W + " " + H).attr(
-                    "preserveAspectRatio",
-                    "xMidYMid meet",
-                );
-
-                var zoomLayer = svg.selectAll("g.zoom-layer").data([1]);
-                zoomLayer.exit().remove();
-                zoomLayer = zoomLayer
-                    .enter()
-                    .append("g")
-                    .attr("class", "zoom-layer")
-                    .merge(zoomLayer);
-
-                // Delegate to topo-renderer's _renderTopologyCompare or similar
-                // For now, use canvasRebuild which handles all modes
-                if (typeof canvasRebuild === "function") {
-                    // Save current render context, set simulation mode
-                    var prevMode = window._renderMode;
-                    window._renderMode = "simulation";
-                    canvasRebuild();
-                    window._renderMode = prevMode;
-                }
             }
 
             // ── Rank Switcher (Results page) ──
