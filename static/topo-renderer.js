@@ -1589,6 +1589,7 @@ var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
 
 function _toggleDetailCharts(detailType) {
   var st = _centerPanelState;
+  st._skipBarAnim = true;
   if (st.detailVisible && st.detailMetric === detailType) {
     st.detailVisible = false;
     st.detailMetric = null;
@@ -2015,8 +2016,10 @@ function _drawRankBars(data) {
   y += 14;
 
   var metricBase = 0;
-  var animDuration = 600;
-  var animStagger = 50;
+  var skipAnim = st._skipBarAnim;
+  st._skipBarAnim = false;
+  var animDuration = skipAnim ? 0 : 600;
+  var animStagger = skipAnim ? 0 : 50;
   var interMetricGap = 10;
 
   _BAR_METRICS.forEach(function (m, mi) {
@@ -2057,7 +2060,7 @@ function _drawRankBars(data) {
 
     var barY = y + 2;
     var barH = hasAnyActual ? 10 : 14;
-    var miniGap = hasAnyActual ? 2 : 4;
+    var miniGap = hasAnyActual ? 4 : 4;
 
     // Helper to draw a bar with staggered grow animation
     var drawBar = function (val, color, label) {
