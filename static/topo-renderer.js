@@ -1351,12 +1351,14 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     barCardH = maxBarCardH;
   } else {
     // No detail: compact height based on bar content
-    var hasSim = !!(_centerPanelState.rankData &&
-      ((_centerPanelState.rankData.orig && _centerPanelState.rankData.orig.metrics.actual && Object.keys(_centerPanelState.rankData.orig.metrics.actual).length > 0) ||
-       (_centerPanelState.rankData.eq && _centerPanelState.rankData.eq.metrics.actual && Object.keys(_centerPanelState.rankData.eq.metrics.actual).length > 0)));
-    var estBarsPerMetric = hasSim ? 2 : 1;
-    var estMetricH = estBarsPerMetric > 1 ? 50 : 44;
-    var contentH = 20 + 14 + _BAR_METRICS.length * estMetricH + pad;
+    var rd = _centerPanelState.rankData;
+    var hasBoth = !!(rd && rd.orig && rd.eq);
+    var hasSim = !!(rd &&
+      ((rd.orig && rd.orig.metrics.actual && Object.keys(rd.orig.metrics.actual).length > 0) ||
+       (rd.eq && rd.eq.metrics.actual && Object.keys(rd.eq.metrics.actual).length > 0)));
+    var estBarsPerMetric = hasBoth && hasSim ? 4 : (hasBoth || hasSim ? 2 : 1);
+    var estMetricH = estBarsPerMetric > 2 ? 74 : (estBarsPerMetric > 1 ? 46 : 44);
+    var contentH = 4 + 20 + 14 + _BAR_METRICS.length * estMetricH + 6 + pad;
     barCardH = Math.min(barHeaderH + contentH, maxBarCardH);
   }
 
@@ -1488,11 +1490,14 @@ function _updateFormulaCollapse() {
   if (st.detailVisible) {
     newBarH = totalBottom - newBarCardY;
   } else {
-    var hasSim = !!(st.rankData &&
-      ((st.rankData.orig && st.rankData.orig.metrics.actual && Object.keys(st.rankData.orig.metrics.actual).length > 0) ||
-       (st.rankData.eq && st.rankData.eq.metrics.actual && Object.keys(st.rankData.eq.metrics.actual).length > 0)));
-    var estMetricH = hasSim ? 50 : 44;
-    var contentH = 20 + 14 + _BAR_METRICS.length * estMetricH + pad;
+    var rd = st.rankData;
+    var hasBoth = !!(rd && rd.orig && rd.eq);
+    var hasSim = !!(rd &&
+      ((rd.orig && rd.orig.metrics.actual && Object.keys(rd.orig.metrics.actual).length > 0) ||
+       (rd.eq && rd.eq.metrics.actual && Object.keys(rd.eq.metrics.actual).length > 0)));
+    var estBarsPerMetric = hasBoth && hasSim ? 4 : (hasBoth || hasSim ? 2 : 1);
+    var estMetricH = estBarsPerMetric > 2 ? 74 : (estBarsPerMetric > 1 ? 46 : 44);
+    var contentH = 4 + 20 + 14 + _BAR_METRICS.length * estMetricH + 6 + pad;
     newBarH = Math.min(st.barHeaderH + contentH, totalBottom - newBarCardY);
   }
 
