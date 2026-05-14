@@ -1,10 +1,12 @@
 """REST endpoints for session management."""
+import asyncio
 import importlib
+import json
 import logging
 import math
 import random
 import uuid
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 
 logger = logging.getLogger(__name__)
 
@@ -13,12 +15,17 @@ logger = logging.getLogger(__name__)
 SERVER_BOOT_ID = str(uuid.uuid4())[:8]
 
 from app.agent.session import session_manager
+from app.agent.guardrails import validate_input_params
+from app.config import config
 from app.mcp.client import mcp_client
 from app.models.schemas import (
     CardMetrics, CommDetail, DeviceType, DeviceSimulationDetail,
     HbmDetail, OperatorTrace, SessionState, TimelineSummary,
-    SimulationResult, ComparisonReport,
+    SimulationResult, ComparisonReport, MeshTopology, TrainingModel,
+    TopologyParams,
 )
+from app.skills.base import SkillContext, SkillResult
+from app.skills.registry import registry
 
 session_bp = Blueprint("session", __name__, url_prefix="/api/session")
 
@@ -721,3 +728,266 @@ def get_dp_comm_detail(session_id: str, side: str, global_rank: int):
     dp = topo.dp_size if topo else 4
     detail = _generate_mock_comm_detail(global_rank, "dp", tp, pp, dp)
     return jsonify(detail.model_dump())
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Workflow API — direct skill calls (API mode, bypasses Agent)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@session_bp.route("/<session_id>/workflow/step1", methods=["POST"])
+def workflow_step1(session_id: str):
+    """Step 1: Receive original params → generate original mesh + model. Returns JSON."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+
+    data = request.get_json(silent=True) or {}
+    device_type_str = data.get("device_type", "A3")
+    dp = data.get("dp", 8)
+    tp = data.get("tp", 16)
+    pp = data.get("pp", 8)
+    model_name = data.get("model_name", "Qwen3-32B")
+    L = data.get("L", 64)
+    H = data.get("H", 4096)
+    A = data.get("A", 32)
+    S = data.get("S", 2048)
+    B = data.get("B", 32)
+    strategy = data.get("strategy", "min_equiv")
+
+    # 1. Guardrail validation (silent — no workflow node)
+    validation = validate_input_params(
+        device_type=device_type_str,
+        dp=dp, tp=tp, pp=pp,
+    )
+    if not validation.passed:
+        return {
+            "error": "guardrail_failed",
+            "message": "; ".join(validation.errors),
+            "warnings": validation.warnings,
+        }, 400
+
+    context = SkillContext(session=session, mcp_client=mcp_client, config=config)
+
+    # 2. Generate original mesh topology
+    mesh_args = {
+        "name": "原始组网 (" + device_type_str + " DP" + str(dp) + " TP" + str(tp) + " PP" + str(pp) + ")",
+        "device_type": device_type_str,
+        "dp": dp, "tp": tp, "pp": pp,
+    }
+    mesh_result: SkillResult = registry.execute_tool("training-mesh-gen-skill", mesh_args, context)
+    if not mesh_result.success:
+        return {"error": "mesh_gen_failed", "message": mesh_result.error}, 500
+
+    orig_mesh = mesh_result.data
+    session.original_topology = orig_mesh
+    session.original_params = TopologyParams(
+        device_type=DeviceType(device_type_str) if device_type_str in [d.value for d in DeviceType] else DeviceType.A3,
+        dp=dp, tp=tp, pp=pp,
+    )
+
+    # 3. Generate original model structure
+    model_args = {
+        "num_layers": L,
+        "d_model": H,
+        "num_heads": A,
+        "pp": pp,
+        "is_equivalent": False,
+    }
+    model_result: SkillResult = registry.execute_tool("training-model-gen-skill", model_args, context)
+    if not model_result.success:
+        return {"error": "model_gen_failed", "message": model_result.error}, 500
+
+    orig_model = model_result.data
+    session.original_training_model = orig_model
+
+    # Store equivalent params for later steps (based on strategy)
+    eq_pp = max(1, min(pp - 1, 3)) if pp > 3 else pp
+    eq_dp = max(1, dp // 4) if dp > 1 else 1
+    eq_L = L if pp <= 3 else (L // pp) * 3
+    session.equivalent_params = TopologyParams(
+        device_type=DeviceType(device_type_str) if device_type_str in [d.value for d in DeviceType] else DeviceType.A3,
+        dp=eq_dp, tp=tp, pp=eq_pp,
+    )
+    # Store model params for equivalent model
+    session._equiv_model_params = {
+        "L": eq_L, "H": H, "A": A, "S": S, "B": B,
+        "strategy": strategy,
+        "L_orig": L,  # original layer count for SSE formula display
+    }
+
+    session.step = "params_collected"
+    session_manager.save_session(session)
+
+    # Build response with topology/model as dicts
+    return jsonify({
+        "original_mesh": orig_mesh.model_dump() if hasattr(orig_mesh, "model_dump") else orig_mesh,
+        "original_model": orig_model.model_dump() if hasattr(orig_model, "model_dump") else orig_model,
+        "equivalent_params": session.equivalent_params.model_dump() if hasattr(session.equivalent_params, "model_dump") else session.equivalent_params,
+        "step": session.step,
+    })
+
+
+@session_bp.route("/<session_id>/workflow/step2", methods=["POST"])
+def workflow_step2(session_id: str):
+    """Step 2: Trigger equivalent calculation. Returns task_id for SSE streaming."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+
+    if not session.original_topology:
+        return {"error": "original topology not found — run step1 first"}, 400
+
+    session.step = "equiv_calculating"
+    session_manager.save_session(session)
+
+    return jsonify({
+        "task_id": session_id,
+        "status": "started",
+    })
+
+
+@session_bp.route("/<session_id>/workflow/step2/stream", methods=["GET"])
+def workflow_step2_stream(session_id: str):
+    """Step 2 SSE stream: push formula lines one by one for dynamic loading."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return Response("data: " + json.dumps({"type": "error", "message": "session not found"}) + "\n\n",
+                        mimetype="text/event-stream")
+
+    orig = session.original_topology
+    eq_params = session.equivalent_params if hasattr(session, "equivalent_params") else None
+    model_meta = getattr(session, "_equiv_model_params", {}) or {}
+
+    orig_dp = orig.dp_size if orig else 8
+    tp = orig.tp_size if orig else 8
+    pp = orig.pp_size if orig else 8
+    eq_pp = eq_params.pp if eq_params else 3
+    eq_tp = eq_params.tp if eq_params else 16
+    eq_dp = eq_params.dp if eq_params else 2
+    eq_L = model_meta.get("L", 24)
+    H_val = model_meta.get("H", 4096)
+    A_val = model_meta.get("A", 32)
+    S_val = model_meta.get("S", 2048)
+    B_val = model_meta.get("B", 32)
+    L_orig = model_meta.get("L_orig", eq_L)  # fallback to eq_L if not stored
+    strategy = model_meta.get("strategy", "min_equiv")
+    strategy_label = "最小等效分析" if strategy == "min_equiv" else strategy
+
+    # Pre-compute numeric values for richer display
+    npu_orig = orig_dp * tp * pp
+    npu_eq = eq_dp * eq_tp * eq_pp
+    comp_ratio = round(npu_orig / npu_eq, 1) if npu_eq else 0
+
+    def generate():
+        # ═══ Phase 1: 策略加载 ═══
+        lines_strategy = [
+            f"▸ 等效策略: {strategy_label} ({strategy})",
+            f"  原始组网  {orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}  →  {npu_orig} NPU",
+            f"  等效组网  {eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}  →  {npu_eq} NPU",
+            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  S={S_val}  B={B_val}",
+            f"  NPU 压缩比  {npu_orig} : {npu_eq}  ≈  {comp_ratio} : 1",
+        ]
+        for line in lines_strategy:
+            yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'strategy', 'line': line})}\n\n"
+            import time; time.sleep(0.45)
+        yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'strategy', 'section_done': True, 'line': ''})}\n\n"
+
+        # ═══ Phase 2: 指标分析 ═══
+        # Compute approximate values for display
+        h2 = H_val * H_val
+        s2 = S_val * S_val
+        flops_per_card = (72 * B_val * S_val * h2 + 12 * B_val * s2 * H_val) / tp * L_orig / pp
+        flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
+        hbm_gb = (L_orig * (12 * h2 + 4 * H_val) / (tp * pp) + B_val * S_val * H_val * L_orig / pp + L_orig * (12 * h2 + 4 * H_val) / (tp * pp)) * 2 / 1e9
+        tp_comm = L_orig / pp * 32 * B_val * S_val * H_val / 1e6
+        dp_comm = 8 * L_orig * (4 * h2 + 12 * h2) / (tp * pp) / 1e9
+        pp_comm = 4 * B_val * S_val * H_val / 1e9
+
+        lines_metrics = [
+            f"▸ 单卡计算量 (FLOPs)",
+            f"  FLOPs = (72·B·S·H² + 12·B·S²·H) / TP × L/PP",
+            f"  = (72×{B_val}×{S_val}×{H_val}² + 12×{B_val}×{S_val}²×{H_val}) / {tp} × {L_orig}/{pp}",
+            f"  ≈ {flops_str} FLOPs",
+            f"▸ 显存占用 (HBM)  — 含权重/激活/缓冲 ×2",
+            f"  HBM ≈ {hbm_gb:.1f} GB",
+            f"▸ 通信流量 (GB / step)",
+            f"  TP 通信 ≈ {tp_comm:.2f} GB/micro-step",
+            f"  DP 通信 ≈ {dp_comm:.2f} GB/step",
+            f"  PP 通信 ≈ {pp_comm:.2f} GB/step",
+        ]
+        for line in lines_metrics:
+            yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'line': line})}\n\n"
+            import time; time.sleep(0.4)
+        yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'section_done': True, 'line': ''})}\n\n"
+
+        # ═══ Phase 3: 公式计算 ═══
+        lines_formula = [
+            f"▸ 等效变换推导",
+            f"  TP 保持:  TP_eq = TP = {tp}",
+            f"  PP 降维:  PP_eq = min(PP-1, 3) = {eq_pp}",
+            f"  DP 缩减:  DP_eq = max(DP/4, 1) = {eq_dp}",
+            f"  层数调整:  L_eq = (L/PP) × PP_eq = ({L_orig}/{pp}) × {eq_pp} = {eq_L}",
+            f"▸ 等效结果:  {npu_orig} NPU → {npu_eq} NPU  (压缩 {comp_ratio}:1)",
+        ]
+        for line in lines_formula:
+            yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'formula', 'line': line})}\n\n"
+            import time; time.sleep(0.35)
+        yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'formula', 'section_done': True, 'line': ''})}\n\n"
+
+        # Signal done
+        yield f"data: {json.dumps({'type': 'done', 'data': {'stage': 'step2'}})}\n\n"
+
+    return Response(generate(), mimetype="text/event-stream")
+
+
+@session_bp.route("/<session_id>/workflow/step3", methods=["POST"])
+def workflow_step3(session_id: str):
+    """Step 3: Generate equivalent mesh + model. Returns JSON."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+
+    eq_params = session.equivalent_params if hasattr(session, "equivalent_params") else None
+    if not eq_params:
+        return {"error": "equivalent params not computed — run step2 first"}, 400
+
+    model_meta = getattr(session, "_equiv_model_params", {}) or {}
+    context = SkillContext(session=session, mcp_client=mcp_client, config=config)
+
+    # 1. Generate equivalent mesh
+    eq_dev = eq_params.device_type.value if hasattr(eq_params.device_type, "value") else str(eq_params.device_type)
+    eq_mesh_args = {
+        "name": "等效组网 (" + eq_dev + " DP" + str(eq_params.dp) + " TP" + str(eq_params.tp) + " PP" + str(eq_params.pp) + ")",
+        "device_type": eq_dev,
+        "dp": eq_params.dp, "tp": eq_params.tp, "pp": eq_params.pp,
+    }
+    eq_mesh_result: SkillResult = registry.execute_tool("training-mesh-gen-skill", eq_mesh_args, context)
+    if not eq_mesh_result.success:
+        return {"error": "eq_mesh_gen_failed", "message": eq_mesh_result.error}, 500
+
+    eq_mesh = eq_mesh_result.data
+    session.equivalent_topology = eq_mesh
+
+    # 2. Generate equivalent model
+    eq_model_args = {
+        "num_layers": model_meta.get("L", 24),
+        "d_model": model_meta.get("H", 4096),
+        "num_heads": model_meta.get("A", 32),
+        "pp": eq_params.pp,
+        "is_equivalent": True,
+    }
+    eq_model_result: SkillResult = registry.execute_tool("training-model-gen-skill", eq_model_args, context)
+    if not eq_model_result.success:
+        return {"error": "eq_model_gen_failed", "message": eq_model_result.error}, 500
+
+    eq_model = eq_model_result.data
+    session.equivalent_training_model = eq_model
+
+    session.step = "equiv_generated"
+    session_manager.save_session(session)
+
+    return jsonify({
+        "equivalent_mesh": eq_mesh.model_dump() if hasattr(eq_mesh, "model_dump") else eq_mesh,
+        "equivalent_model": eq_model.model_dump() if hasattr(eq_model, "model_dump") else eq_model,
+        "step": session.step,
+    })

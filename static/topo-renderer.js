@@ -1268,30 +1268,28 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var toggleSize = 16;
   var cardGap = 8; // gap between the two cards
 
-  // Section definitions
+  // Section definitions — template layout, replaced by SSE lines at runtime
   var sections = [
     {
-      label: "▸ 单卡FLOPs",
-      lines: ["[(72·B·S·H² + 12·B·S²·H) ÷ TP] · L÷PP"],
-      desc: "计算量与 TP 成反比，与 L/PP 成正比",
+      label: "▸ 策略加载",
+      lines: ["原始组网 vs 等效组网参数对比 · NPU 压缩比"],
+      desc: "确定等效策略目标，建立参数映射关系",
     },
     {
-      label: "▸ HBM 占用",
+      label: "▸ 指标分析",
       lines: [
-        "[L·(12H²+4H)÷(TP·PP) + B·S·H·L÷PP",
-        " + L·(12H²+4H)÷(TP·PP)] · a ÷ 1e9",
+        "单卡 FLOPs / HBM 占用 / 通信流量",
+        "逐项代入原始参数，计算理论指标",
       ],
-      desc: "权重+梯度+优化器 / 激活值 / 通信缓冲",
+      desc: "基于原始组网参数推导计算、显存与通信开销",
     },
     {
-      label: "▸ 通信流量",
+      label: "▸ 公式计算",
       lines: [
-        "TP: L÷PP · 32·B·S·H ÷ 1e6 GB/micro",
-        "DP: 8·L·(4H²+12H²)÷(TP·PP)",
-        "    ÷ 1e9 GB/step",
-        "PP: 4·B·S·H ÷ 1e9 GB/step",
+        "TP 保持 · PP 降维 · DP 缩减 · 层数调整",
+        "推导等效组网的各项参数取值",
       ],
-      desc: "TP/DP通信与 TP·PP 成反比，PP通信仅取决于模型规模",
+      desc: "应用最小等效算法，逐项计算等效参数并输出结果",
     },
   ];
 
@@ -1333,7 +1331,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("font-weight", "bold")
     .attr("font-size", titleFont + "px")
     .attr("font-family", "var(--font-sans)")
-    .text("\u{1F4D0} 等效机制分析");
+    .text("\u{1F4D0} 等效计算分析");
 
   // Toggle
   var toggleCX = viewX + viewW - pad - toggleSize / 2;
@@ -2754,13 +2752,14 @@ function canvasRebuild() {
       document.getElementById("mesh-npu-count").textContent =
         "原始组网 " +
         _meshNpuTotal(meshOriginal) +
-        " NPUs  |  最小等效组网 " +
+        " NPUs  |  " +
+        (meshEquivalent.name || "等效组网") + " " +
         _meshNpuTotal(meshEquivalent) +
         " NPUs";
       document.getElementById("canvas-label").textContent =
         (meshOriginal.name || "原始组网") +
         "  vs  " +
-        (meshEquivalent.name || "最小等效组网");
+        (meshEquivalent.name || "等效组网");
 
       var _tH = 26,
         _gap = 10;
@@ -2794,7 +2793,7 @@ function canvasRebuild() {
         .attr("font-family", "sans-serif")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
-        .text(meshEquivalent.name || "最小等效组网");
+        .text(meshEquivalent.name || "等效组网");
 
       _meshBuildView(
         zoomLayer.append("g"),
@@ -3140,7 +3139,7 @@ function canvasRebuild() {
         .attr("font-size", "13px")
         .attr("font-family", "var(--font-sans)")
         .attr("font-weight", 600)
-        .text("最小等效模型");
+        .text("等效模型");
 
       var sharedScale = Math.min(
         Math.min(1, (modelAreaW - 16) / _TM_DESIGN.W),
@@ -3224,7 +3223,7 @@ async function loadMeshData(topoData) {
     rawName.indexOf("原始") !== -1
       ? "原始组网"
       : rawName.indexOf("等效") !== -1
-        ? "最小等效组网"
+        ? rawName
         : rawName;
   var entry = {
     name: name,
