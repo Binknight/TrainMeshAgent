@@ -1421,9 +1421,9 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     curY += lineH_desc + sectGap;
   });
 
-  if (!_centerPanelState.formulasCollapsed && !_centerPanelState._formulaAnimPlayed) {
+  if (!_centerPanelState.formulasCollapsed && !sessionStorage.getItem("fxAnimDone")) {
     _animateFormulaLoad(formulaCardG, formulaTexts, viewX, viewY, viewW, formulaCardFullH);
-    _centerPanelState._formulaAnimPlayed = true;
+    sessionStorage.setItem("fxAnimDone", "1");
   }
 
   // ═══ Bar chart card (bottom) ═══
@@ -1583,10 +1583,10 @@ function _updateFormulaCollapse() {
 
     // Animate text reveal on first expand only; subsequent expands show instantly
     if (st._formulaTexts && st._formulaTexts.length > 0) {
-      if (!st._formulaAnimPlayed) {
+      if (!sessionStorage.getItem("fxAnimDone")) {
         var cardW = Number(st.formulaCardRect.attr("width"));
         _animateFormulaLoad(st.g, st._formulaTexts, st.cardX, st.cardY, cardW, st.formulaCardFullH);
-        st._formulaAnimPlayed = true;
+        sessionStorage.setItem("fxAnimDone", "1");
       } else {
         st._formulaTexts.forEach(function (t) { t.interrupt().attr("opacity", 1); });
       }
@@ -3337,7 +3337,6 @@ var _centerPanelState = {
   toggleG: null,
   formulaG: null,
   barCardVisible: false,
-  _formulaAnimPlayed: false,
   rankData: null, // { orig: {globalRank, metrics}, eq: {globalRank, metrics} }
   detailVisible: false,
   detailMetric: null,
