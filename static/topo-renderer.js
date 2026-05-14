@@ -3255,7 +3255,6 @@ async function loadMeshData(topoData) {
   if (isOrig) {
     meshOriginal = entry;
     meshOrigDp = 0;
-    _formulaCardReady = true;
   } else {
     meshEquivalent = entry;
     meshEqDp = 0;
