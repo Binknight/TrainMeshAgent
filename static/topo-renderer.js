@@ -1341,10 +1341,24 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   });
 
   // ═══ Bar chart card (bottom) ═══
-  // Bar card fills down to the topology diagram's bottom edge (viewY + viewH).
   var effFormulaH = _centerPanelState.formulasCollapsed ? headerH : formulaCardFullH;
   var barCardY = viewY + effFormulaH + cardGap;
-  var barCardH = viewY + viewH - barCardY;
+  var maxBarCardH = viewY + viewH - barCardY;
+  var barHeaderH = pad + titleFont + 10;
+  var barCardH;
+  if (_centerPanelState.detailVisible) {
+    // Detail charts visible: fill down to topology bottom
+    barCardH = maxBarCardH;
+  } else {
+    // No detail: compact height based on bar content
+    var hasSim = !!(_centerPanelState.rankData &&
+      ((_centerPanelState.rankData.orig && _centerPanelState.rankData.orig.metrics.actual && Object.keys(_centerPanelState.rankData.orig.metrics.actual).length > 0) ||
+       (_centerPanelState.rankData.eq && _centerPanelState.rankData.eq.metrics.actual && Object.keys(_centerPanelState.rankData.eq.metrics.actual).length > 0)));
+    var estBarsPerMetric = hasSim ? 2 : 1;
+    var estMetricH = estBarsPerMetric > 1 ? 50 : 44;
+    var contentH = 20 + 14 + _BAR_METRICS.length * estMetricH + pad;
+    barCardH = Math.min(barHeaderH + contentH, maxBarCardH);
+  }
 
   var barCardG = cardG.append("g").attr("class", "bar-card-inner");
 
@@ -1369,7 +1383,6 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("font-family", "var(--font-sans)")
     .text("📊 Rank 性能详情");
 
-  var barHeaderH = pad + titleFont + 10;
   var barAreaY = barCardY + barHeaderH;
   var st2 = _centerPanelState;
   // Allocate space: bars get 55%, detail charts get 45% (capped at detailH)
@@ -1461,7 +1474,6 @@ function _updateFormulaCollapse() {
 
     effFormulaH = st.headerH;
     newBarCardY = st.cardY + effFormulaH + st.cardGap;
-    newBarH = totalBottom - newBarCardY;
   } else {
     // Expand: show formulas, restore formula card, move bar card down
     st.formulaG.attr("display", null);
@@ -1470,7 +1482,18 @@ function _updateFormulaCollapse() {
 
     effFormulaH = st.formulaCardFullH;
     newBarCardY = st.cardY + effFormulaH + st.cardGap;
+  }
+
+  // Determine bar card height
+  if (st.detailVisible) {
     newBarH = totalBottom - newBarCardY;
+  } else {
+    var hasSim = !!(st.rankData &&
+      ((st.rankData.orig && st.rankData.orig.metrics.actual && Object.keys(st.rankData.orig.metrics.actual).length > 0) ||
+       (st.rankData.eq && st.rankData.eq.metrics.actual && Object.keys(st.rankData.eq.metrics.actual).length > 0)));
+    var estMetricH = hasSim ? 50 : 44;
+    var contentH = 20 + 14 + _BAR_METRICS.length * estMetricH + pad;
+    newBarH = Math.min(st.barHeaderH + contentH, totalBottom - newBarCardY);
   }
 
   // Update bar card rect
