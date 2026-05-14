@@ -3062,7 +3062,6 @@
                 if (stage === "step1" || stage === "auto") {
                     if (origMesh) {
                         await loadMeshData(origMesh);
-                        updateWorkflowNode("equiv_calc_sub1", "completed");
                         canvasRebuild();
                         if (typeof canvasRecenter === "function") canvasRecenter();
                         await renderThenSleep(STAGE_DELAY_MS);
@@ -3516,9 +3515,8 @@
             }
 
             function _syncEquivCalcSubsteps(hasOrig, hasEq) {
-                if (hasOrig) {
-                    updateWorkflowNode("equiv_calc_sub1", "completed");
-                }
+                // Sub-steps are marked by SSE equiv_formula_line events during step2.
+                // Only bulk-complete when equivalent data confirms step2 ran to completion.
                 if (hasEq) {
                     updateWorkflowNode("equiv_calc_sub1", "completed");
                     updateWorkflowNode("equiv_calc_sub2", "completed");
