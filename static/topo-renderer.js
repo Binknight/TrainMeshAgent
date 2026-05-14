@@ -627,6 +627,9 @@ function _clearBothTooltips() {
   meshPinnedTpInfo = null;
   // Clear center panel bar chart
   _centerPanelState.barCardVisible = false;
+  _centerPanelState.detailVisible = false;
+  _centerPanelState.detailMetric = null;
+  _centerPanelState.detailData = null;
   if (_centerPanelState.barG) {
     _centerPanelState.rankData = null;
     _centerPanelState.barG.selectAll("*").remove();
@@ -1242,7 +1245,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("x", viewX)
     .attr("y", viewY)
     .attr("width", viewW)
-    .attr("height", formulaCardFullH)
+    .attr("height", _centerPanelState.formulasCollapsed ? headerH : formulaCardFullH)
     .attr("rx", 8)
     .attr("ry", 8)
     .attr("class", "formula-card-rect");
@@ -1256,7 +1259,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("font-weight", "bold")
     .attr("font-size", titleFont + "px")
     .attr("font-family", "var(--font-sans)")
-    .text("📐 等效机制分析");
+    .text("\u{1F4D0} 等效机制分析");
 
   // Toggle
   var toggleCX = viewX + viewW - pad - toggleSize / 2;
@@ -1291,12 +1294,15 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("fill", "var(--text-secondary)")
     .attr("font-size", "11px")
     .attr("pointer-events", "none")
-    .text("▼");
+    .text(_centerPanelState.formulasCollapsed ? "▶" : "▼");
 
   // Formula content
   var formulaG = formulaCardG
     .append("g")
     .attr("class", "formula-content-group");
+  if (_centerPanelState.formulasCollapsed) {
+    formulaG.attr("display", "none");
+  }
 
   var curY = viewY + headerH;
   sections.forEach(function (sec) {
@@ -1335,7 +1341,9 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   });
 
   // ═══ Bar chart card (bottom) ═══
-  var barCardY = viewY + formulaCardFullH + cardGap;
+  // Bar card fills down to the topology diagram's bottom edge (viewY + viewH).
+  var effFormulaH = _centerPanelState.formulasCollapsed ? headerH : formulaCardFullH;
+  var barCardY = viewY + effFormulaH + cardGap;
   var barCardH = viewY + viewH - barCardY;
 
   var barCardG = cardG.append("g").attr("class", "bar-card-inner");
@@ -1345,7 +1353,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("x", viewX)
     .attr("y", barCardY)
     .attr("width", viewW)
-    .attr("height", Math.max(0, barCardH))
+    .attr("height", barCardH)
     .attr("rx", 8)
     .attr("ry", 8)
     .attr("class", "formula-card-rect");
@@ -1363,7 +1371,15 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
 
   var barHeaderH = pad + titleFont + 10;
   var barAreaY = barCardY + barHeaderH;
-  var barAreaH = Math.max(0, barCardH - barHeaderH - pad);
+  var st2 = _centerPanelState;
+  // Allocate space between bars and detail charts; ensure bars don't overflow
+  var availH = barCardH - barHeaderH - pad;
+  var minBarH = 150;
+  var detailH = 0;
+  if (st2.detailVisible) {
+    detailH = Math.min(st2.detailH, Math.max(0, availH - minBarH));
+  }
+  var barAreaH = Math.max(0, availH - detailH);
 
   var barG = barCardG.append("g").attr("class", "rank-bar-chart-group");
 
@@ -1371,7 +1387,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   barG
     .append("text")
     .attr("x", viewX + viewW / 2)
-    .attr("y", barAreaY + barAreaH / 2)
+    .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
     .attr("text-anchor", "middle")
     .attr("fill", "var(--text-muted)")
     .attr("font-size", "11px")
@@ -1379,29 +1395,38 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     .attr("class", "bar-placeholder")
     .text("点击拓扑中的 Rank 查看性能详情");
 
+  // Detail charts area (below bar chart)
+  var detailG = barCardG.append("g").attr("class", "detail-charts-group");
+  var detailY = barAreaY + barAreaH + 8;
+  if (!st2.detailVisible) {
+    detailG.attr("display", "none");
+  }
+
   // ── Store state ──
-  _centerPanelState.g = cardG;
-  _centerPanelState.barG = barG;
-  _centerPanelState.barW = viewW - pad * 2;
-  _centerPanelState.barY = formulaCardFullH + cardGap + barHeaderH;
-  _centerPanelState.barH = barAreaH;
-  _centerPanelState.cardX = viewX;
-  _centerPanelState.cardY = viewY;
-  _centerPanelState.toggleG = toggleG;
-  _centerPanelState.toggleChev = toggleChev;
-  _centerPanelState.formulaG = formulaG;
-  _centerPanelState.formulaContentH = formulaContentH;
-  _centerPanelState.headerH = headerH;
-  _centerPanelState.formulasCollapsed =
-    _centerPanelState.formulasCollapsed || false;
-  _centerPanelState.formulaCardRect = formulaCardRect;
-  _centerPanelState.formulaCardFullH = formulaCardFullH;
-  _centerPanelState.barCardRect = barCardG.select("rect");
-  _centerPanelState.barCardG = barCardG;
-  _centerPanelState.barCardTitle = barCardG.select("text");
-  _centerPanelState.barAreaY = barAreaY;
-  _centerPanelState.barHeaderH = barHeaderH;
-  _centerPanelState.cardGap = cardGap;
+  st2.g = cardG;
+  st2.barG = barG;
+  st2.barW = viewW - pad * 2;
+  st2.barY = effFormulaH + cardGap + barHeaderH;
+  st2.barH = barAreaH;
+  st2.cardX = viewX;
+  st2.cardY = viewY;
+  st2.toggleG = toggleG;
+  st2.toggleChev = toggleChev;
+  st2.formulaG = formulaG;
+  st2.formulaContentH = formulaContentH;
+  st2.headerH = headerH;
+  st2.formulasCollapsed = st2.formulasCollapsed || false;
+  st2.formulaCardRect = formulaCardRect;
+  st2.formulaCardFullH = formulaCardFullH;
+  st2.barCardRect = barCardG.select("rect");
+  st2.barCardG = barCardG;
+  st2.barCardTitle = barCardG.select("text");
+  st2.barAreaY = barAreaY;
+  st2.barHeaderH = barHeaderH;
+  st2.cardGap = cardGap;
+  st2.detailG = detailG;
+  st2.detailY = detailY;
+  st2._totalAvailableH = viewH;
 
   // Hide bar card if no rank is pinned
   if (!_centerPanelState.barCardVisible) {
@@ -1412,40 +1437,62 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   if (_centerPanelState.barCardVisible && _centerPanelState.rankData) {
     _drawRankBars(_centerPanelState.rankData);
   }
-  // Re-apply collapse state after rebuild
-  if (_centerPanelState.formulasCollapsed) {
-    _updateFormulaCollapse();
+  // Restore detail charts if visible
+  if (_centerPanelState.detailVisible && _centerPanelState.detailData) {
+    _renderDetailCharts();
   }
+  // NOTE: initial collapse state is already applied during render above;
+  // _updateFormulaCollapse is only called from the toggle click handler.
 }
 
 function _updateFormulaCollapse() {
   var st = _centerPanelState;
   if (!st.formulaG) return;
 
-  var dH = st.formulaContentH; // amount to shift
+  var pad = 14;
+  var minBarH = 150;
+  var totalBottom = st.cardY + st._totalAvailableH;
+  var effFormulaH, newBarCardY, newBarH;
 
   if (st.formulasCollapsed) {
-    // Collapse: hide formulas, shrink formula card, move bar card up
+    // Collapse: hide formulas, shrink formula card, grow bar card
     st.formulaG.attr("display", "none");
     st.toggleChev.text("▶");
     st.formulaCardRect.attr("height", st.headerH);
-    st.barCardRect
-      .attr("y", Number(st.barCardRect.attr("y")) - dH)
-      .attr("height", Number(st.barCardRect.attr("height")) + dH);
-    st.barCardTitle.attr("y", Number(st.barCardTitle.attr("y")) - dH);
-    st.barY = st.barY - dH;
-    st.barH = st.barH + dH;
+
+    effFormulaH = st.headerH;
+    newBarCardY = st.cardY + effFormulaH + st.cardGap;
+    newBarH = totalBottom - newBarCardY;
   } else {
     // Expand: show formulas, restore formula card, move bar card down
     st.formulaG.attr("display", null);
     st.toggleChev.text("▼");
     st.formulaCardRect.attr("height", st.formulaCardFullH);
-    st.barCardRect
-      .attr("y", Number(st.barCardRect.attr("y")) + dH)
-      .attr("height", Number(st.barCardRect.attr("height")) - dH);
-    st.barCardTitle.attr("y", Number(st.barCardTitle.attr("y")) + dH);
-    st.barY = st.barY + dH;
-    st.barH = st.barH - dH;
+
+    effFormulaH = st.formulaCardFullH;
+    newBarCardY = st.cardY + effFormulaH + st.cardGap;
+    newBarH = totalBottom - newBarCardY;
+  }
+
+  // Update bar card rect
+  st.barCardRect.attr("y", newBarCardY).attr("height", newBarH);
+  st.barCardTitle.attr("y", newBarCardY + st.barHeaderH - 10);
+
+  // Recalculate derived positions with the same allocation as _renderFormulaCard
+  st.barY = effFormulaH + st.cardGap + st.barHeaderH;
+  var newBarAreaY = newBarCardY + st.barHeaderH;
+  st.barAreaY = newBarAreaY;
+  var availH = newBarH - st.barHeaderH - pad;
+  var detailH = 0;
+  if (st.detailVisible) {
+    detailH = Math.min(st.detailH, Math.max(0, availH - minBarH));
+  }
+  st.barH = Math.max(0, availH - detailH);
+  st.detailY = newBarAreaY + st.barH + 8;
+
+  // Reposition detail charts if visible
+  if (st.detailVisible && st.detailData) {
+    _renderDetailCharts();
   }
 
   // Redraw bars if data exists and card is visible
@@ -1457,13 +1504,20 @@ function _updateFormulaCollapse() {
 function _centerPanelBarRecalc() {
   var st = _centerPanelState;
   if (!st.barG) return;
-  // Recalculate bar area Y relative to cardY based on collapse state
-  if (st.formulasCollapsed) {
-    st.barY = st.headerH + st.cardGap + st.barHeaderH;
-  } else {
-    st.barY = st.formulaCardFullH + st.cardGap + st.barHeaderH;
+  var pad = 14;
+  var minBarH = 150;
+  var effFormulaH = st.formulasCollapsed ? st.headerH : st.formulaCardFullH;
+  var barCardY = st.cardY + effFormulaH + st.cardGap;
+  var barCardH = Number(st.barCardRect.attr("height"));
+  st.barY = effFormulaH + st.cardGap + st.barHeaderH;
+  st.barAreaY = barCardY + st.barHeaderH;
+  var availH = barCardH - st.barHeaderH - pad;
+  var detailH = 0;
+  if (st.detailVisible) {
+    detailH = Math.min(st.detailH, Math.max(0, availH - minBarH));
   }
-  // Redraw bars if data exists and card is visible
+  st.barH = Math.max(0, availH - detailH);
+  st.detailY = st.barAreaY + st.barH + 8;
   if (st.barCardVisible && st.rankData) {
     _drawRankBars(st.rankData);
   }
@@ -1522,6 +1576,343 @@ function _updateCenterBarChart(globalRank, side) {
   _drawRankBars(data);
 }
 
+// ═══ Detail chart config and functions ═══
+
+var _DETAIL_MAP = {
+  flops_per_card: "flops",
+  hbm_gb: "hbm",
+  tp_comm_gb_per_micro: "tp-comm",
+  pp_comm_mb_per_micro: "pp-comm",
+  dp_comm_gb_per_step: "dp-comm",
+};
+var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
+
+function _toggleDetailCharts(detailType) {
+  var st = _centerPanelState;
+  if (st.detailVisible && st.detailMetric === detailType) {
+    st.detailVisible = false;
+    st.detailMetric = null;
+    st.detailData = null;
+    canvasRebuild();
+  } else {
+    st.detailVisible = true;
+    st.detailMetric = detailType;
+    st.detailData = null;
+    _fetchDetailChartData(detailType).then(function () {
+      canvasRebuild();
+    });
+  }
+}
+
+async function _fetchDetailChartData(detailType) {
+  var st = _centerPanelState;
+  var data = st.rankData;
+  if (!data) return;
+  var origRank = data.orig ? data.orig.globalRank : null;
+  var eqRank = data.eq ? data.eq.globalRank : null;
+  var result = { orig: null, eq: null };
+
+  if (detailType === "flops") {
+    if (origRank != null) {
+      var flops =
+        ((data.orig.metrics.estimate || {}).flops_per_card ||
+          (data.orig.metrics.actual || {}).flops_per_card) || 0;
+      result.orig = _generateFlopsMockData(flops);
+    }
+    if (eqRank != null) {
+      var flopsEq =
+        ((data.eq.metrics.estimate || {}).flops_per_card ||
+          (data.eq.metrics.actual || {}).flops_per_card) || 0;
+      result.eq = _generateFlopsMockData(flopsEq);
+    }
+  } else {
+    var promises = [];
+    if (origRank != null) {
+      promises.push(
+        fetch(
+          API +
+            "/session/" +
+            sessionId +
+            "/simulation/original/" +
+            origRank +
+            "/" +
+            detailType +
+            "-detail",
+        )
+          .then(function (r) {
+            return r.ok ? r.json() : null;
+          })
+          .then(function (d) {
+            result.orig = d;
+          }),
+      );
+    }
+    if (eqRank != null) {
+      promises.push(
+        fetch(
+          API +
+            "/session/" +
+            sessionId +
+            "/simulation/equivalent/" +
+            eqRank +
+            "/" +
+            detailType +
+            "-detail",
+        )
+          .then(function (r) {
+            return r.ok ? r.json() : null;
+          })
+          .then(function (d) {
+            result.eq = d;
+          }),
+      );
+    }
+    try {
+      await Promise.all(promises);
+    } catch (e) {
+      console.warn("Fetch detail chart data error:", e);
+    }
+  }
+  st.detailData = result;
+}
+
+function _getDetailSubs(detailType) {
+  if (detailType === "flops") {
+    return [
+      { key: "forward_flops", label: "前向计算" },
+      { key: "backward_B_flops", label: "反向传播B" },
+      { key: "backward_W_flops", label: "反向传播W" },
+    ];
+  }
+  if (detailType === "hbm") {
+    return [
+      { key: "weights_gb", label: "模型权重" },
+      { key: "gradients_gb", label: "梯度" },
+      { key: "optimizer_gb", label: "优化器状态" },
+      { key: "activations_gb", label: "激活值" },
+    ];
+  }
+  return [
+    { key: "comm_count", label: "通信次数", unit: "次", isInt: true },
+    { key: "comm_cards", label: "通信卡数", unit: "张", isInt: true },
+    { key: "comm_size_per_time_gb", label: "单次通信量", unit: "GB" },
+  ];
+}
+
+function _renderDetailCharts() {
+  var st = _centerPanelState;
+  var g = st.detailG;
+  if (!g) return;
+  g.selectAll("*").remove();
+
+  var detailType = st.detailMetric;
+  var detailData = st.detailData;
+  if (!detailType || !detailData) return;
+
+  var pad = 8;
+  var chartW = (st.barW - pad * 3) / 2;
+  var chartH = st.detailH - 30;
+  var chartY = st.detailY + 16;
+
+  if (detailData.orig) {
+    _drawOneDetailChart(g, st.cardX + pad, chartY, chartW, chartH,
+      detailType, detailData.orig, "原始组网", 0);
+  }
+  if (detailData.eq) {
+    _drawOneDetailChart(g, st.cardX + pad + chartW + pad, chartY, chartW, chartH,
+      detailType, detailData.eq, "等效组网", 1);
+  }
+}
+
+function _drawOneDetailChart(g, cx, cy, cw, ch, detailType, data, title, sideIdx) {
+  var subs = _getDetailSubs(detailType);
+  var isPie = detailType === "flops" || detailType === "hbm";
+
+  g.append("text")
+    .attr("x", cx + cw / 2)
+    .attr("y", cy - 2)
+    .attr("text-anchor", "middle")
+    .attr("fill", sideIdx === 0 ? "#58a6ff" : "#79c0ff")
+    .attr("font-weight", "600")
+    .attr("font-size", "9px")
+    .attr("font-family", "var(--font-sans)")
+    .text(title);
+
+  if (isPie) {
+    _drawPieChart(g, cx, cy + 6, cw, ch - 6, subs, data, detailType);
+  } else {
+    _drawDetailBars(g, cx, cy + 6, cw, ch - 6, subs, data, detailType);
+  }
+}
+
+function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
+  var total = 0;
+  var items = [];
+  subs.forEach(function (sub) {
+    var v = Number(data[sub.key]) || 0;
+    total += v;
+    items.push({ label: sub.label, value: v });
+  });
+  if (total === 0) return;
+
+  var radius = Math.min(cw, ch * 1.2) / 2 - 6;
+  var centerX = cx + cw / 2;
+  var centerY = cy + radius + 8;
+  var innerR = radius * 0.5;
+
+  var pie = d3.pie().value(function (d) { return d.value; });
+  var arc = d3.arc().innerRadius(innerR).outerRadius(radius);
+  var arcOver = d3.arc().innerRadius(innerR * 0.88).outerRadius(radius * 1.1);
+
+  var arcs = g.append("g")
+    .attr("transform", "translate(" + centerX + "," + centerY + ")")
+    .selectAll("path")
+    .data(pie(items))
+    .enter()
+    .append("path")
+    .attr("d", arc)
+    .attr("fill", function (d, i) { return _DETAIL_COLORS[i % _DETAIL_COLORS.length]; })
+    .attr("opacity", 0)
+    .attr("stroke", "var(--bg-darker)")
+    .attr("stroke-width", 1)
+    .attr("cursor", "pointer");
+
+  arcs.transition()
+    .delay(function (d, i) { return i * 100; })
+    .duration(500)
+    .attr("opacity", 0.85)
+    .attrTween("d", function (d) {
+      var i = d3.interpolate(
+        { startAngle: d.startAngle, endAngle: d.startAngle },
+        { startAngle: d.startAngle, endAngle: d.endAngle }
+      );
+      return function (t) { return arc(i(t)); };
+    });
+
+  arcs.on("mouseover", function () {
+    d3.select(this)
+      .transition().duration(200)
+      .attr("d", arcOver)
+      .attr("opacity", 1);
+  });
+  arcs.on("mouseout", function () {
+    d3.select(this)
+      .transition().duration(200)
+      .attr("d", arc)
+      .attr("opacity", 0.85);
+  });
+
+  g.append("text")
+    .attr("x", centerX)
+    .attr("y", centerY - 7)
+    .attr("text-anchor", "middle")
+    .attr("fill", "var(--text-primary)")
+    .attr("font-size", "10px")
+    .attr("font-weight", "600")
+    .attr("font-family", "var(--font-mono)")
+    .text(detailType === "flops" ? formatFlops(total) : Number(total).toFixed(2) + " GB");
+
+  g.append("text")
+    .attr("x", centerX)
+    .attr("y", centerY + 8)
+    .attr("text-anchor", "middle")
+    .attr("fill", "var(--text-muted)")
+    .attr("font-size", "7px")
+    .attr("font-family", "var(--font-sans)")
+    .text("合计");
+
+  var legStartY = centerY + radius + 14;
+  subs.forEach(function (sub, i) {
+    var ly = legStartY + i * 13;
+    g.append("rect")
+      .attr("x", cx + 4)
+      .attr("y", ly)
+      .attr("width", 7)
+      .attr("height", 7)
+      .attr("rx", 1.5)
+      .attr("fill", _DETAIL_COLORS[i % _DETAIL_COLORS.length]);
+    g.append("text")
+      .attr("x", cx + 14)
+      .attr("y", ly + 7)
+      .attr("fill", "var(--text-muted)")
+      .attr("font-size", "7px")
+      .attr("font-family", "var(--font-mono)")
+      .text(sub.label + "  " + _formatSubVal(data[sub.key], detailType));
+  });
+}
+
+function _drawDetailBars(g, cx, cy, cw, ch, subs, data, detailType) {
+  var pad = 8;
+  var vals = subs.map(function (s) { return Math.abs(Number(data[s.key]) || 0); });
+  var maxV = Math.max.apply(null, vals);
+  if (maxV === 0) maxV = 1;
+  var barH = 14;
+  var barGap = 8;
+  var labelW = 52;
+  var barMaxW = cw - labelW - pad - 38;
+  var colors = ["#f4a261", "#6abecd", "#8fc93a"];
+
+  subs.forEach(function (sub, i) {
+    var by = cy + i * (barH + barGap);
+    var v = Number(data[sub.key]) || 0;
+    var w = Math.max(2, (Math.abs(v) / maxV) * barMaxW);
+
+    g.append("text")
+      .attr("x", cx + 2)
+      .attr("y", by + barH - 3)
+      .attr("fill", "var(--text-muted)")
+      .attr("font-size", "7px")
+      .attr("font-family", "var(--font-mono)")
+      .text(sub.label);
+
+    var rect = g.append("rect")
+      .attr("x", cx + labelW)
+      .attr("y", by)
+      .attr("width", 0)
+      .attr("height", barH)
+      .attr("rx", 3)
+      .attr("fill", colors[i % colors.length])
+      .attr("opacity", 0.8)
+      .attr("cursor", "pointer");
+
+    rect.transition()
+      .delay(100 + i * 80)
+      .duration(400)
+      .ease(d3.easeCubicOut)
+      .attr("width", w);
+
+    rect.on("mouseover", function () {
+      d3.select(this)
+        .transition().duration(150)
+        .attr("opacity", 1);
+    });
+    rect.on("mouseout", function () {
+      d3.select(this)
+        .transition().duration(150)
+        .attr("opacity", 0.8);
+    });
+
+    g.append("text")
+      .attr("x", cx + labelW + w + 5)
+      .attr("y", by + barH - 3)
+      .attr("fill", "var(--text-muted)")
+      .attr("font-size", "7px")
+      .attr("font-family", "var(--font-mono)")
+      .attr("opacity", 0)
+      .text(sub.isInt ? Math.round(v).toString() : _formatSubVal(v, detailType))
+      .transition()
+      .delay(200 + i * 80)
+      .duration(250)
+      .attr("opacity", 1);
+  });
+}
+
+function _formatSubVal(v, detailType) {
+  if (v == null) return "—";
+  if (detailType === "flops") return formatFlops(v);
+  return Number(v).toFixed(2);
+}
+
 function _drawRankBars(data) {
   var st = _centerPanelState;
   if (!st.barG) return;
@@ -1548,7 +1939,7 @@ function _drawRankBars(data) {
   var groupGap = 6;
   var labelW = 54;
   var barStartX = x0 + labelW + 6;
-  var barMaxW = barAreaW - labelW - 50; // reserve right side for values
+  var barMaxW = barAreaW - labelW - 68; // reserve right side for value text
 
   // Header
   var headerText = "";
@@ -1661,6 +2052,7 @@ function _drawRankBars(data) {
       var g = st.barG.append("g");
       var delay = metricBase + barIdx * animStagger;
       barIdx++;
+      var isActual = color === "#3fb950" || color === "#7ee787";
       g.append("rect")
         .attr("x", barStartX)
         .attr("y", barY)
@@ -1669,6 +2061,13 @@ function _drawRankBars(data) {
         .attr("rx", 2)
         .attr("fill", color)
         .attr("opacity", 0.85)
+        .attr("cursor", isActual ? "pointer" : null)
+        .on("click", function (event) {
+          if (!isActual) return;
+          event.stopPropagation();
+          var dt = _DETAIL_MAP[key];
+          if (dt) _toggleDetailCharts(dt);
+        })
         .transition()
         .delay(delay)
         .duration(animDuration)
@@ -1784,6 +2183,9 @@ function meshRebuild() {
   meshPinnedTpInfo = null;
   _centerPanelState.barCardVisible = false;
   _centerPanelState.rankData = null;
+  _centerPanelState.detailVisible = false;
+  _centerPanelState.detailMetric = null;
+  _centerPanelState.detailData = null;
   meshUpdateSize();
 
   var hasTopo = !!(meshOriginal || meshEquivalent);
@@ -2114,7 +2516,7 @@ function canvasRebuild() {
 
       var _tH = 26,
         _gap = 10;
-      var _cardW = 340; // fixed card width, centered between topologies
+      var _cardW = 380; // fixed card width, centered between topologies
       var _availForTopos = meshWidth - _cardW - _gap * 2;
       var dimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
       var dimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
@@ -2214,7 +2616,7 @@ function canvasRebuild() {
       // ── Two-Part Mode: Orig + Card ──
       var _tH2 = 26,
         _gap2 = 10;
-      var _cardW2 = 340; // fixed card width
+      var _cardW2 = 380; // fixed card width
       var _origW2 = meshWidth - _cardW2 - _gap2;
       var _contentH2 = topoH - _tH2;
       var _sharedScale2 = 0.5;
@@ -2687,6 +3089,11 @@ var _centerPanelState = {
   formulaG: null,
   barCardVisible: false,
   rankData: null, // { orig: {globalRank, metrics}, eq: {globalRank, metrics} }
+  detailVisible: false,
+  detailMetric: null,
+  detailData: null,
+  detailG: null,
+  detailH: 155,
 };
 
 function _metricTypeLabel(type) {
