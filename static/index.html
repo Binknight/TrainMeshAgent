@@ -4463,6 +4463,7 @@
                 meshActualEq = {};
                 _renderState.mode = null;
                 _formulaCardReady = false;
+                sessionStorage.removeItem("fxAnimDone");
                 d3.select("#canvas-section").selectAll("svg").remove();
                 document.getElementById("canvas-section").style.display =
                     "none";
