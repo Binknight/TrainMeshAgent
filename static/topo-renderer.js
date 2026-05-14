@@ -3391,6 +3391,10 @@ function _appendFormulaLine(section, line) {
   _formulaCardG = cardG;
   _formulaCardRect = cardG.select("rect.formula-card-rect");
 
+  // Read card origin from the rect to offset text into card coordinate space
+  var cardX = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("x")) || 0;
+  var cardY = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("y")) || 0;
+
   if (_formulaLineY === 0) {
     // Initialize Y from header
     _formulaCardHeaderH = _formulaCardPad + 16 + 10; // pad + titleFont + gap
@@ -3411,12 +3415,12 @@ function _appendFormulaLine(section, line) {
   var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
   var fontWeight = isSectionLabel ? "600" : "400";
   var lineH = isSectionLabel ? 20 : 16;
-  var textX = isSectionLabel ? _formulaCardPad : _formulaCardPad + 4;
+  var textX = cardX + (isSectionLabel ? _formulaCardPad : _formulaCardPad + 4);
 
   var textEl = contentG
     .append("text")
     .attr("x", textX)
-    .attr("y", _formulaLineY + (isSectionLabel ? 15 : 14))
+    .attr("y", cardY + _formulaLineY + (isSectionLabel ? 15 : 14))
     .attr("fill", fontColor)
     .attr("font-weight", fontWeight)
     .attr("font-size", fontSize)
@@ -3453,6 +3457,9 @@ function _replayFormulaLines() {
   _formulaCardG = cardG;
   _formulaCardRect = cardG.select("rect.formula-card-rect");
 
+  var cardX = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("x")) || 0;
+  var cardY = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("y")) || 0;
+
   // Reset
   _formulaCardHeaderH = _formulaCardPad + 16 + 10;
   _formulaLineY = _formulaCardHeaderH;
@@ -3469,11 +3476,11 @@ function _replayFormulaLines() {
     var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
     var fontWeight = isSectionLabel ? "600" : "400";
     var lineH = isSectionLabel ? 20 : 16;
-    var textX = isSectionLabel ? _formulaCardPad : _formulaCardPad + 4;
+    var textX = cardX + (isSectionLabel ? _formulaCardPad : _formulaCardPad + 4);
     contentG
       .append("text")
       .attr("x", textX)
-      .attr("y", _formulaLineY + (isSectionLabel ? 15 : 14))
+      .attr("y", cardY + _formulaLineY + (isSectionLabel ? 15 : 14))
       .attr("fill", fontColor)
       .attr("font-weight", fontWeight)
       .attr("font-size", fontSize)
