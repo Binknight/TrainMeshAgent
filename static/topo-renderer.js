@@ -3402,6 +3402,11 @@ function _appendFormulaLine(section, line) {
   var contentG = cardG.select(".formula-content-group");
   if (contentG.empty()) {
     contentG = cardG.append("g").attr("class", "formula-content-group");
+    // Re-register with _centerPanelState so collapse toggle affects this group
+    if (typeof _centerPanelState !== "undefined") {
+      _centerPanelState.formulaG = contentG;
+      _centerPanelState._formulaTexts = [];
+    }
   }
   if (contentG.attr("display") === "none") {
     contentG.attr("display", null);
@@ -3467,6 +3472,7 @@ function _replayFormulaLines() {
   if (!lines.length) return;
 
   var contentG = cardG.append("g").attr("class", "formula-content-group");
+  var formulaTexts = [];
   lines.forEach(function (item) {
     var isSectionLabel = item.line.indexOf("▸") === 0;
     var fontSize = isSectionLabel ? "12px" : "11px";
@@ -3475,7 +3481,7 @@ function _replayFormulaLines() {
     var fontWeight = isSectionLabel ? "600" : "400";
     var lineH = isSectionLabel ? 20 : 16;
     var textX = cardX + (isSectionLabel ? _formulaCardPad : _formulaCardPad + 4);
-    contentG
+    var textEl = contentG
       .append("text")
       .attr("x", textX)
       .attr("y", cardY + _formulaLineY + (isSectionLabel ? 15 : 14))
@@ -3485,11 +3491,25 @@ function _replayFormulaLines() {
       .attr("font-family", fontFamily)
       .attr("opacity", 1)
       .text(item.line);
+    formulaTexts.push(textEl);
     _formulaLineY += lineH;
   });
 
+  // Update collapsed height and respect current collapse state
+  var newFullH = _formulaLineY + _formulaCardPad;
+  var st = typeof _centerPanelState !== "undefined" ? _centerPanelState : null;
   if (_formulaCardRect && !_formulaCardRect.empty()) {
-    _formulaCardRect.attr("height", _formulaLineY + _formulaCardPad);
+    _formulaCardRect.attr("height", st && st.formulasCollapsed ? (st.headerH || 40) : newFullH);
+  }
+  if (st && st.formulasCollapsed) {
+    contentG.attr("display", "none");
+  }
+
+  // Update _centerPanelState so collapse/expand toggle works with new content
+  if (st) {
+    st.formulaG = contentG;
+    st._formulaTexts = formulaTexts;
+    st.formulaCardFullH = newFullH;
   }
 }
 
