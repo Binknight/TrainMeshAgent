@@ -212,7 +212,9 @@
                 border-radius: 3px;
                 padding: 0;
                 opacity: 0;
-                transition: opacity var(--transition), color var(--transition);
+                transition:
+                    opacity var(--transition),
+                    color var(--transition);
             }
             .history-item:hover .history-delete {
                 opacity: 1;
@@ -1073,7 +1075,9 @@
                 background: var(--bg-input);
                 position: relative;
                 outline: none;
-                transition: background 0.15s, border-color 0.15s;
+                transition:
+                    background 0.15s,
+                    border-color 0.15s;
             }
             .workflow-param-row input[type="checkbox"]:checked {
                 background: var(--cyan);
@@ -2295,16 +2299,56 @@
                 <div class="canvas-tab-panel" id="tab-panel-simulation">
                     <div class="sim-panel-wrap">
                         <div class="sim-topo-area" id="sim-topo-area">
-                            <div class="sim-topo-placeholder" id="sim-topo-placeholder">
-                                <svg width="120" height="100" viewBox="0 0 120 100">
-                                    <rect width="120" height="100" rx="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4"/>
-                                    <text x="60" y="48" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="11" opacity="0.6">Sim Topo</text>
-                                    <text x="60" y="66" text-anchor="middle" fill="currentColor" font-family="JetBrains Mono,monospace" font-size="9" opacity="0.35">等待仿真验证...</text>
+                            <div
+                                class="sim-topo-placeholder"
+                                id="sim-topo-placeholder"
+                            >
+                                <svg
+                                    width="120"
+                                    height="100"
+                                    viewBox="0 0 120 100"
+                                >
+                                    <rect
+                                        width="120"
+                                        height="100"
+                                        rx="6"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-dasharray="6 4"
+                                        opacity="0.4"
+                                    />
+                                    <text
+                                        x="60"
+                                        y="48"
+                                        text-anchor="middle"
+                                        fill="currentColor"
+                                        font-family="JetBrains Mono,monospace"
+                                        font-size="11"
+                                        opacity="0.6"
+                                    >
+                                        Sim Topo
+                                    </text>
+                                    <text
+                                        x="60"
+                                        y="66"
+                                        text-anchor="middle"
+                                        fill="currentColor"
+                                        font-family="JetBrains Mono,monospace"
+                                        font-size="9"
+                                        opacity="0.35"
+                                    >
+                                        等待仿真验证...
+                                    </text>
                                 </svg>
                                 <p>等效仿真组网图</p>
                                 <span>仿真开始后在此展示原始与等效组网</span>
                             </div>
-                            <div class="canvas-section sim-canvas-section" id="sim-canvas-section" style="display:none"></div>
+                            <div
+                                class="canvas-section sim-canvas-section"
+                                id="sim-canvas-section"
+                                style="display: none"
+                            ></div>
                         </div>
                         <div class="sim-results-area" id="sim-results-area">
                             <!-- populated dynamically -->
@@ -2405,9 +2449,16 @@
                 <div class="workflow-panel">
                     <div class="panel-header">
                         <span>⚡ 执行流程</span>
-                        <label class="ai-toggle" title="切换 Agent 对话驱动模式">
+                        <label
+                            class="ai-toggle"
+                            title="切换 Agent 对话驱动模式"
+                        >
                             <span class="ai-toggle-label">AI</span>
-                            <input type="checkbox" id="ai-mode-toggle" onchange="toggleWorkflowMode()" />
+                            <input
+                                type="checkbox"
+                                id="ai-mode-toggle"
+                                onchange="toggleWorkflowMode()"
+                            />
                             <span class="ai-toggle-slider"></span>
                         </label>
                     </div>
@@ -2534,26 +2585,67 @@
                                             max="1048576"
                                         />
                                     </div>
-                                    <div class="workflow-param-section" style="margin-top: 16px;">
+                                    <div
+                                        class="workflow-param-section"
+                                        style="margin-top: 16px"
+                                    >
                                         默认等效策略
                                     </div>
                                     <div class="workflow-param-row">
                                         <label>策略</label>
                                         <select id="wf-equiv-strategy">
-                                            <option value="min_equiv">最小等效分析</option>
+                                            <option value="min_equiv">
+                                                最小等效分析
+                                            </option>
                                         </select>
                                     </div>
 
                                     <!-- hidden equivalent topology params (auto-synced from original) -->
-                                    <input type="hidden" id="wf-equiv-device" value="A3" />
-                                    <input type="hidden" id="wf-equiv-dp" value="2" />
-                                    <input type="hidden" id="wf-equiv-tp" value="16" />
-                                    <input type="hidden" id="wf-equiv-pp" value="3" />
-                                    <input type="hidden" id="wf-equiv-model-l" value="24" />
-                                    <input type="hidden" id="wf-equiv-model-h" value="4096" />
-                                    <input type="hidden" id="wf-equiv-model-a" value="32" />
-                                    <input type="hidden" id="wf-equiv-model-s" value="2048" />
-                                    <input type="hidden" id="wf-equiv-model-b" value="32" />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-device"
+                                        value="A3"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-dp"
+                                        value="2"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-tp"
+                                        value="16"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-pp"
+                                        value="3"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-model-l"
+                                        value="24"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-model-h"
+                                        value="4096"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-model-a"
+                                        value="32"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-model-s"
+                                        value="2048"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        id="wf-equiv-model-b"
+                                        value="32"
+                                    />
                                 </div>
                             </div>
 
@@ -2574,83 +2666,149 @@
                         </div>
                     </div>
 
-                <!-- ── Step 4 仿真参数 Overlay ── -->
-                <div
-                    class="workflow-param-overlay"
-                    id="sim-param-overlay"
-                    style="display: none"
-                >
-                    <div class="workflow-param-card sim-param-card">
-                        <div class="workflow-param-title">
-                            Step 4 — 仿真参数
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Epoch Num</label>
-                            <input id="sim-epoch-num" type="number" value="1" min="1" max="1000" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Model Name</label>
-                            <input id="sim-model-name" type="text" value="" readonly placeholder="从 Step1 自动获取" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Device Type</label>
-                            <input id="sim-device-type" type="text" value="" readonly placeholder="从 Step1 自动获取" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Vocab Size</label>
-                            <input id="sim-vocab-size" type="text" value="18277" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Frame</label>
-                            <select id="sim-frame">
-                                <option value="Mindspeed">Mindspeed</option>
-                                <option value="Megatron-LM">Megatron-LM</option>
-                                <option value="DeepSpeed">DeepSpeed</option>
-                            </select>
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Rank</label>
-                            <input id="sim-rank" type="number" value="0" min="0" max="65535" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Rank Range</label>
-                            <input id="sim-rank-range" type="number" value="1023" min="0" max="65535" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Comp Filepath</label>
-                            <input id="sim-comp-filepath" type="text" value="/opt/traffic_modeling/aicm/default.txt" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>No Time Accumulation</label>
-                            <input type="checkbox" id="sim-no-time-acc" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Visual JSON Output</label>
-                            <input type="checkbox" id="sim-visual-json" checked />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Comm Group Output</label>
-                            <input type="checkbox" id="sim-comm-group" checked />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Debug Time</label>
-                            <input type="checkbox" id="sim-debug-time" />
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Level0 Config (JSON)</label>
-                            <textarea id="sim-level0-config" rows="2" placeholder='可选，JSON 对象，如 {"key":"value"}'></textarea>
-                        </div>
-                        <div class="workflow-param-row">
-                            <label>Level1 Config (JSON)</label>
-                            <textarea id="sim-level1-config" rows="2" placeholder='可选，JSON 对象，如 {"key":"value"}'></textarea>
-                        </div>
-                        <div class="workflow-param-actions">
-                            <button class="btn-wf-cancel" onclick="closeSimParams()">取消</button>
-                            <button class="btn-wf-submit" onclick="submitSimParams()">开始仿真</button>
+                    <!-- ── Step 4 仿真参数 Overlay ── -->
+                    <div
+                        class="workflow-param-overlay"
+                        id="sim-param-overlay"
+                        style="display: none"
+                    >
+                        <div class="workflow-param-card sim-param-card">
+                            <div class="workflow-param-title">
+                                Step 4 — 仿真参数
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Epoch Num</label>
+                                <input
+                                    id="sim-epoch-num"
+                                    type="number"
+                                    value="1"
+                                    min="1"
+                                    max="1000"
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Model Name</label>
+                                <input
+                                    id="sim-model-name"
+                                    type="text"
+                                    value=""
+                                    readonly
+                                    placeholder="从 Step1 自动获取"
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Device Type</label>
+                                <input
+                                    id="sim-device-type"
+                                    type="text"
+                                    value=""
+                                    readonly
+                                    placeholder="从 Step1 自动获取"
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Vocab Size</label>
+                                <input
+                                    id="sim-vocab-size"
+                                    type="text"
+                                    value="18277"
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Frame</label>
+                                <select id="sim-frame">
+                                    <option value="Mindspeed">Mindspeed</option>
+                                    <option value="Megatron-LM">
+                                        Megatron-LM
+                                    </option>
+                                    <option value="DeepSpeed">DeepSpeed</option>
+                                </select>
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Rank</label>
+                                <input
+                                    id="sim-rank"
+                                    type="number"
+                                    value="0"
+                                    min="0"
+                                    max="65535"
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Rank Range</label>
+                                <input
+                                    id="sim-rank-range"
+                                    type="number"
+                                    value="1023"
+                                    min="0"
+                                    max="65535"
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Comp Filepath</label>
+                                <input
+                                    id="sim-comp-filepath"
+                                    type="text"
+                                    value="/opt/traffic_modeling/aicm/default.txt"
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>No Time Accumulation</label>
+                                <input type="checkbox" id="sim-no-time-acc" />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Visual JSON Output</label>
+                                <input
+                                    type="checkbox"
+                                    id="sim-visual-json"
+                                    checked
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Comm Group Output</label>
+                                <input
+                                    type="checkbox"
+                                    id="sim-comm-group"
+                                    checked
+                                />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Debug Time</label>
+                                <input type="checkbox" id="sim-debug-time" />
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Level0 Config (JSON)</label>
+                                <textarea
+                                    id="sim-level0-config"
+                                    rows="2"
+                                    placeholder='可选，JSON 对象，如 {"key":"value"}'
+                                ></textarea>
+                            </div>
+                            <div class="workflow-param-row">
+                                <label>Level1 Config (JSON)</label>
+                                <textarea
+                                    id="sim-level1-config"
+                                    rows="2"
+                                    placeholder='可选，JSON 对象，如 {"key":"value"}'
+                                ></textarea>
+                            </div>
+                            <div class="workflow-param-actions">
+                                <button
+                                    class="btn-wf-cancel"
+                                    onclick="closeSimParams()"
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    class="btn-wf-submit"
+                                    onclick="submitSimParams()"
+                                >
+                                    开始仿真
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
                 <div class="wf-resize-handle" id="wf-resize-handle"></div>
 
@@ -2666,12 +2824,18 @@
                     <div class="chat-messages" id="chat-messages">
                         <div class="msg-group fade-in">
                             <span class="msg-label agent">TrainMesh Agent</span>
-                            <div class="msg-bubble agent">欢迎使用 TrainMesh Agent。输入组网参数开始仿真测试。</div>
+                            <div class="msg-bubble agent">
+                                欢迎使用 TrainMesh
+                                Agent。输入组网参数开始仿真测试。
+                            </div>
                         </div>
 
                         <div class="msg-group fade-in">
                             <span class="msg-label system">建议</span>
-                            <div class="msg-bubble system">试试下方的快捷操作，或直接输入组网参数（设备类型 + DP/TP/PP）</div>
+                            <div class="msg-bubble system">
+                                试试下方的快捷操作，或直接输入组网参数（设备类型
+                                + DP/TP/PP）
+                            </div>
                         </div>
                         <div class="quick-actions" id="quick-actions">
                             <span
@@ -2794,7 +2958,7 @@
                 },
                 {
                     id: "equiv_gen",
-                    label: "等效组网及模型结构生成",
+                    label: "等效组网及模型渲染",
                     icon: "\u{1F9E0}",
                     requiresInput: false,
                     requiresConfirm: false,
@@ -2867,25 +3031,46 @@
 
             async function submitStep1(params) {
                 setStatus("thinking");
-                addMessage("system", "📡 [API] 提交参数，生成原始组网与模型...");
+                addMessage(
+                    "system",
+                    "📡 [API] 提交参数，生成原始组网与模型...",
+                );
                 try {
-                    var resp = await fetch(API + "/session/" + sessionId + "/workflow/step1", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(params),
-                    });
+                    var resp = await fetch(
+                        API + "/session/" + sessionId + "/workflow/step1",
+                        {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(params),
+                        },
+                    );
                     if (!resp.ok) {
-                        var err = await resp.json().catch(function() { return {}; });
-                        throw new Error(err.message || err.error || "Step1 请求失败 (" + resp.status + ")");
+                        var err = await resp.json().catch(function () {
+                            return {};
+                        });
+                        throw new Error(
+                            err.message ||
+                                err.error ||
+                                "Step1 请求失败 (" + resp.status + ")",
+                        );
                     }
                     var data = await resp.json();
                     if (data.original_mesh) {
-                        handleWorkflowEvent({ type: "mesh_json", data: data.original_mesh });
+                        handleWorkflowEvent({
+                            type: "mesh_json",
+                            data: data.original_mesh,
+                        });
                     }
                     if (data.original_model) {
-                        handleWorkflowEvent({ type: "model_json", data: data.original_model });
+                        handleWorkflowEvent({
+                            type: "model_json",
+                            data: data.original_model,
+                        });
                     }
-                    handleWorkflowEvent({ type: "done", data: { stage: "step1" } });
+                    handleWorkflowEvent({
+                        type: "done",
+                        data: { stage: "step1" },
+                    });
                 } catch (e) {
                     setStatus("error");
                     addMessage("error", "Step 1 失败: " + e.message);
@@ -2903,15 +3088,25 @@
                 if (typeof canvasRecenter === "function") canvasRecenter();
                 try {
                     // trigger backend computation
-                    var triggerResp = await fetch(API + "/session/" + sessionId + "/workflow/step2", {
-                        method: "POST",
-                    });
-                    if (!triggerResp.ok) throw new Error("Step2 触发失败 (" + triggerResp.status + ")");
+                    var triggerResp = await fetch(
+                        API + "/session/" + sessionId + "/workflow/step2",
+                        {
+                            method: "POST",
+                        },
+                    );
+                    if (!triggerResp.ok)
+                        throw new Error(
+                            "Step2 触发失败 (" + triggerResp.status + ")",
+                        );
                     // connect SSE stream for line-by-line loading
-                    var url = API + "/session/" + sessionId + "/workflow/step2/stream";
+                    var url =
+                        API +
+                        "/session/" +
+                        sessionId +
+                        "/workflow/step2/stream";
                     var eventSource = new EventSource(url);
                     var step2Done = false;
-                    eventSource.onmessage = function(e) {
+                    eventSource.onmessage = function (e) {
                         try {
                             var event = JSON.parse(e.data);
                             handleWorkflowEvent(event);
@@ -2919,7 +3114,9 @@
                                 step2Done = true;
                                 eventSource.close();
                                 // Auto-trigger Step 3 after Step 2 SSE stream ends (with visible pause)
-                                setTimeout(function() { submitStep3(); }, 1500);
+                                setTimeout(function () {
+                                    submitStep3();
+                                }, 1500);
                             }
                             if (event.type === "error") {
                                 eventSource.close();
@@ -2928,7 +3125,7 @@
                             console.warn("Step2 SSE parse error:", parseErr);
                         }
                     };
-                    eventSource.onerror = function() {
+                    eventSource.onerror = function () {
                         eventSource.close();
                         if (!step2Done) {
                             setStatus("error");
@@ -2949,34 +3146,65 @@
                 addMessage("system", "📡 [API] 生成等效组网与模型结构...");
                 updateWorkflowNode("equiv_gen", "active");
                 try {
-                    var resp = await fetch(API + "/session/" + sessionId + "/workflow/step3", {
-                        method: "POST",
-                    });
+                    var resp = await fetch(
+                        API + "/session/" + sessionId + "/workflow/step3",
+                        {
+                            method: "POST",
+                        },
+                    );
                     console.log("[DEBUG] step3 response status:", resp.status);
                     if (!resp.ok) {
-                        var err = await resp.json().catch(function() { return {}; });
-                        throw new Error(err.message || err.error || "Step3 请求失败 (" + resp.status + ")");
+                        var err = await resp.json().catch(function () {
+                            return {};
+                        });
+                        throw new Error(
+                            err.message ||
+                                err.error ||
+                                "Step3 请求失败 (" + resp.status + ")",
+                        );
                     }
                     var data = await resp.json();
-                    console.log("[DEBUG] step3 data:", Object.keys(data), "has eq_mesh:", !!data.equivalent_mesh, "has eq_model:", !!data.equivalent_model);
+                    console.log(
+                        "[DEBUG] step3 data:",
+                        Object.keys(data),
+                        "has eq_mesh:",
+                        !!data.equivalent_mesh,
+                        "has eq_model:",
+                        !!data.equivalent_model,
+                    );
 
                     // Staged rendering: mesh first, pause, then model, pause, then done
                     if (data.equivalent_mesh) {
-                        console.log("[DEBUG] dispatching mesh_json for equivalent");
-                        handleWorkflowEvent({ type: "mesh_json", data: data.equivalent_mesh });
+                        console.log(
+                            "[DEBUG] dispatching mesh_json for equivalent",
+                        );
+                        handleWorkflowEvent({
+                            type: "mesh_json",
+                            data: data.equivalent_mesh,
+                        });
                         canvasRebuild();
-                        if (typeof canvasRecenter === "function") canvasRecenter();
+                        if (typeof canvasRecenter === "function")
+                            canvasRecenter();
                         await renderThenSleep(800);
                     }
                     if (data.equivalent_model) {
-                        console.log("[DEBUG] dispatching model_json for equivalent");
-                        handleWorkflowEvent({ type: "model_json", data: data.equivalent_model });
+                        console.log(
+                            "[DEBUG] dispatching model_json for equivalent",
+                        );
+                        handleWorkflowEvent({
+                            type: "model_json",
+                            data: data.equivalent_model,
+                        });
                         canvasRebuild();
-                        if (typeof canvasRecenter === "function") canvasRecenter();
+                        if (typeof canvasRecenter === "function")
+                            canvasRecenter();
                         await renderThenSleep(800);
                     }
                     console.log("[DEBUG] dispatching done stage=step3");
-                    handleWorkflowEvent({ type: "done", data: { stage: "step3" } });
+                    handleWorkflowEvent({
+                        type: "done",
+                        data: { stage: "step3" },
+                    });
                 } catch (e) {
                     console.error("[DEBUG] step3 error:", e);
                     setStatus("error");
@@ -2996,10 +3224,18 @@
                     case "model_json":
                         var modelPayload = event.data;
                         if (!modelPayload._role) {
-                            var modelName = (modelPayload.name || "").toLowerCase();
-                            if (modelName.indexOf("原始") !== -1 || modelName.indexOf("original") !== -1) {
+                            var modelName = (
+                                modelPayload.name || ""
+                            ).toLowerCase();
+                            if (
+                                modelName.indexOf("原始") !== -1 ||
+                                modelName.indexOf("original") !== -1
+                            ) {
                                 modelPayload._role = "original";
-                            } else if (modelName.indexOf("等效") !== -1 || modelName.indexOf("equivalent") !== -1) {
+                            } else if (
+                                modelName.indexOf("等效") !== -1 ||
+                                modelName.indexOf("equivalent") !== -1
+                            ) {
                                 modelPayload._role = "equivalent";
                             }
                         }
@@ -3010,14 +3246,30 @@
                             _appendFormulaLine(event.section, event.line);
                         }
                         if (event.section_done) {
-                            var stepMap = { strategy: "equiv_calc_sub1", metrics: "equiv_calc_sub2", formula: "equiv_calc_sub3" };
+                            var stepMap = {
+                                strategy: "equiv_calc_sub1",
+                                metrics: "equiv_calc_sub2",
+                                formula: "equiv_calc_sub3",
+                            };
                             var stepId = stepMap[event.section];
                             if (stepId) updateWorkflowNode(stepId, "completed");
                             // Persist formula lines on last section so refresh doesn't lose them
-                            if (event.section === "formula" && sessionId && window._pendingFormulaLines && window._pendingFormulaLines.length) {
+                            if (
+                                event.section === "formula" &&
+                                sessionId &&
+                                window._pendingFormulaLines &&
+                                window._pendingFormulaLines.length
+                            ) {
                                 try {
-                                    sessionStorage.setItem("formulaLines_" + sessionId, JSON.stringify(window._pendingFormulaLines));
-                                } catch (e) { /* ignore quota errors */ }
+                                    sessionStorage.setItem(
+                                        "formulaLines_" + sessionId,
+                                        JSON.stringify(
+                                            window._pendingFormulaLines,
+                                        ),
+                                    );
+                                } catch (e) {
+                                    /* ignore quota errors */
+                                }
                             }
                         }
                         break;
@@ -3042,12 +3294,20 @@
             }
 
             async function handleDone(doneData) {
-                console.log("[DEBUG] handleDone stage:", doneData.stage, "pendingMeshList:", _pendingMeshList.length, "pendingModelList:", _pendingModelList.length);
+                console.log(
+                    "[DEBUG] handleDone stage:",
+                    doneData.stage,
+                    "pendingMeshList:",
+                    _pendingMeshList.length,
+                    "pendingModelList:",
+                    _pendingModelList.length,
+                );
                 setStatus("idle");
                 fetchSimulationData();
 
                 var stage = doneData.stage || "auto";
-                var origMesh = null, eqMesh = null;
+                var origMesh = null,
+                    eqMesh = null;
 
                 // Sort pending mesh list into orig/eq
                 if (_pendingMeshList.length) {
@@ -3063,7 +3323,8 @@
                     if (origMesh) {
                         await loadMeshData(origMesh);
                         canvasRebuild();
-                        if (typeof canvasRecenter === "function") canvasRecenter();
+                        if (typeof canvasRecenter === "function")
+                            canvasRecenter();
                         await renderThenSleep(STAGE_DELAY_MS);
                     }
                     if (_pendingModelList.length) {
@@ -3072,14 +3333,19 @@
                         });
                         _pendingModelList = [];
                         canvasRebuild();
-                        if (typeof canvasRecenter === "function") canvasRecenter();
+                        if (typeof canvasRecenter === "function")
+                            canvasRecenter();
                         await renderThenSleep(STAGE_DELAY_MS);
                     }
                     _pendingMeshList = [];
                 }
 
                 // ── Stage "step2": 等效计算完成 → sub-steps already done via equiv_formula_line ──
-                if (stage === "step2" || (stage === "auto" && workflowNodeStates["equiv_calc_sub3"] === "completed")) {
+                if (
+                    stage === "step2" ||
+                    (stage === "auto" &&
+                        workflowNodeStates["equiv_calc_sub3"] === "completed")
+                ) {
                     // All equiv_calc sub-steps completed, mark parent with visible pause
                     await renderThenSleep(STAGE_DELAY_MS);
                     if (workflowNodeStates["equiv_calc"] !== "completed") {
@@ -3089,23 +3355,37 @@
 
                 // ── Stage "step3": 等效组网 + 模型结构 → compare mode, centered ──
                 if (stage === "step3" || (stage === "auto" && eqMesh)) {
-                    console.log("[DEBUG] handleDone stage=step3, eqMesh:", !!eqMesh, "window.meshOriginal:", !!window.meshOriginal, "window.meshEquivalent:", !!window.meshEquivalent);
+                    console.log(
+                        "[DEBUG] handleDone stage=step3, eqMesh:",
+                        !!eqMesh,
+                        "window.meshOriginal:",
+                        !!window.meshOriginal,
+                        "window.meshEquivalent:",
+                        !!window.meshEquivalent,
+                    );
                     if (eqMesh) {
                         console.log("[DEBUG] loading mesh from pending list");
                         await loadMeshData(eqMesh);
                         canvasRebuild();
-                        if (typeof canvasRecenter === "function") canvasRecenter();
+                        if (typeof canvasRecenter === "function")
+                            canvasRecenter();
                         await renderThenSleep(STAGE_DELAY_MS);
                     }
                     if (_pendingModelList.length) {
-                        console.log("[DEBUG] loading", _pendingModelList.length, "models from pending list");
+                        console.log(
+                            "[DEBUG] loading",
+                            _pendingModelList.length,
+                            "models from pending list",
+                        );
                         _pendingModelList.forEach(function (d) {
                             loadModelData(d, d._role);
                         });
                         _pendingModelList = [];
                     }
                     _pendingMeshList = [];
-                    console.log("[DEBUG] updating nodes, calling canvasRebuild + canvasRecenter");
+                    console.log(
+                        "[DEBUG] updating nodes, calling canvasRebuild + canvasRecenter",
+                    );
                     updateWorkflowNode("equiv_gen", "completed");
                     canvasRebuild();
                     if (typeof canvasRecenter === "function") canvasRecenter();
@@ -3114,23 +3394,33 @@
                 }
 
                 // ── Stage "step4": 仿真验证完成 → switch to simulation tab ──
-                if (stage === "step4" || (_pendingSimData && stage === "auto")) {
+                if (
+                    stage === "step4" ||
+                    (_pendingSimData && stage === "auto")
+                ) {
                     if (_pendingSimData) {
                         updateWorkflowNode("simulation", "completed");
                         if (typeof switchCanvasTab === "function") {
                             switchCanvasTab("simulation");
                         }
                         canvasRebuild();
-                        if (typeof canvasRecenter === "function") canvasRecenter();
+                        if (typeof canvasRecenter === "function")
+                            canvasRecenter();
                         await renderThenSleep(STAGE_DELAY_MS);
                         _pendingSimData = false;
                     }
                 }
 
                 // ── Stage "step5": 结果分析 ──
-                if (_pendingWorkflowState && _pendingWorkflowState.comparison_report) {
+                if (
+                    _pendingWorkflowState &&
+                    _pendingWorkflowState.comparison_report
+                ) {
                     var isEq = _pendingWorkflowState.comparison_equivalent;
-                    updateWorkflowNode("comparison", isEq === false ? "failed" : "completed");
+                    updateWorkflowNode(
+                        "comparison",
+                        isEq === false ? "failed" : "completed",
+                    );
                     await renderThenSleep(STAGE_DELAY_MS);
                 }
 
@@ -3142,7 +3432,12 @@
                 }
 
                 // Final canvas rebuild to ensure everything is rendered
-                if (meshOriginal || meshEquivalent || modelOriginal || modelEquivalent) {
+                if (
+                    meshOriginal ||
+                    meshEquivalent ||
+                    modelOriginal ||
+                    modelEquivalent
+                ) {
                     canvasRebuild();
                 }
             }
@@ -3370,7 +3665,11 @@
                 }
 
                 // Step 4: simulation → open params form instead of auto-confirm
-                if (step.id === "simulation" && step.requiresConfirm && state === "active") {
+                if (
+                    step.id === "simulation" &&
+                    step.requiresConfirm &&
+                    state === "active"
+                ) {
                     openSimParams();
                     return;
                 }
@@ -3395,7 +3694,10 @@
                             openSimParams();
                         } else {
                             var parts = [];
-                            if (typeof meshOriginal !== "undefined" && meshOriginal)
+                            if (
+                                typeof meshOriginal !== "undefined" &&
+                                meshOriginal
+                            )
                                 parts.push("原始组网");
                             if (
                                 typeof meshEquivalent !== "undefined" &&
@@ -3568,7 +3870,9 @@
                     if (hasEqTopo) {
                         updateWorkflowNode("equiv_gen", "completed");
                         updateWorkflowNode("simulation", "active");
-                    } else if (workflowNodeStates["equiv_calc"] !== "completed") {
+                    } else if (
+                        workflowNodeStates["equiv_calc"] !== "completed"
+                    ) {
                         updateWorkflowNode("equiv_calc", "active");
                     }
                 } else if (hasTopology) {
@@ -3591,15 +3895,21 @@
                 // else: nodes remain in initWorkflow() default state (waiting_input / pending)
 
                 // Restore formula lines from sessionStorage if step2 was already completed
-                if (workflowNodeStates["equiv_calc"] === "completed"
-                    || workflowNodeStates["equiv_calc_sub3"] === "completed") {
+                if (
+                    workflowNodeStates["equiv_calc"] === "completed" ||
+                    workflowNodeStates["equiv_calc_sub3"] === "completed"
+                ) {
                     try {
-                        var saved = sessionStorage.getItem("formulaLines_" + sessionId);
+                        var saved = sessionStorage.getItem(
+                            "formulaLines_" + sessionId,
+                        );
                         if (saved) {
                             window._pendingFormulaLines = JSON.parse(saved);
                             _formulaCardReady = true;
                         }
-                    } catch (e) { /* ignore parse errors */ }
+                    } catch (e) {
+                        /* ignore parse errors */
+                    }
                 }
             }
 
@@ -3680,7 +3990,8 @@
                 var origA = document.getElementById("wf-orig-model-a").value;
                 var origS = document.getElementById("wf-orig-model-s").value;
                 var origB = document.getElementById("wf-orig-model-b").value;
-                var strategy = document.getElementById("wf-equiv-strategy").value;
+                var strategy =
+                    document.getElementById("wf-equiv-strategy").value;
                 closeWorkflowParams();
                 updateWorkflowNode("params", "completed");
                 updateWorkflowNode("equiv_calc", "active");
@@ -3735,9 +4046,15 @@
             // ── Step 4 Simulation Params ──
 
             function getDefaultSimParams() {
-                var modelName = document.getElementById("wf-orig-model-name")?.value || "";
-                var topoDevice = document.getElementById("wf-orig-device")?.value || "A3";
-                var DEVICE_MAP = { A2: "ASCEND_910A", A3: "ASCEND_910B", A5: "ASCEND_310P" };
+                var modelName =
+                    document.getElementById("wf-orig-model-name")?.value || "";
+                var topoDevice =
+                    document.getElementById("wf-orig-device")?.value || "A3";
+                var DEVICE_MAP = {
+                    A2: "ASCEND_910A",
+                    A3: "ASCEND_910B",
+                    A5: "ASCEND_310P",
+                };
                 return {
                     epoch_num: 1,
                     model_name: modelName,
@@ -3757,49 +4074,99 @@
             }
 
             function getSimParamsFromForm() {
-                var level0 = document.getElementById("sim-level0-config").value.trim();
-                var level1 = document.getElementById("sim-level1-config").value.trim();
+                var level0 = document
+                    .getElementById("sim-level0-config")
+                    .value.trim();
+                var level1 = document
+                    .getElementById("sim-level1-config")
+                    .value.trim();
                 // Auto-fill model_name and device_type from Step 1 data
-                var modelName = document.getElementById("wf-orig-model-name")?.value || "";
-                var topoDevice = document.getElementById("wf-orig-device")?.value || "A3";
-                var DEVICE_MAP = { A2: "ASCEND_910A", A3: "ASCEND_910B", A5: "ASCEND_310P" };
+                var modelName =
+                    document.getElementById("wf-orig-model-name")?.value || "";
+                var topoDevice =
+                    document.getElementById("wf-orig-device")?.value || "A3";
+                var DEVICE_MAP = {
+                    A2: "ASCEND_910A",
+                    A3: "ASCEND_910B",
+                    A5: "ASCEND_310P",
+                };
                 return {
-                    epoch_num: parseInt(document.getElementById("sim-epoch-num").value) || 1,
+                    epoch_num:
+                        parseInt(
+                            document.getElementById("sim-epoch-num").value,
+                        ) || 1,
                     model_name: modelName,
                     device_type: DEVICE_MAP[topoDevice] || "ASCEND_910B",
                     vocab_size: document.getElementById("sim-vocab-size").value,
                     frame: document.getElementById("sim-frame").value,
-                    rank: parseInt(document.getElementById("sim-rank").value) || 0,
-                    rank_range: parseInt(document.getElementById("sim-rank-range").value) || 1023,
-                    comp_filepath: document.getElementById("sim-comp-filepath").value,
-                    no_time_accumulation: document.getElementById("sim-no-time-acc").checked,
+                    rank:
+                        parseInt(document.getElementById("sim-rank").value) ||
+                        0,
+                    rank_range:
+                        parseInt(
+                            document.getElementById("sim-rank-range").value,
+                        ) || 1023,
+                    comp_filepath:
+                        document.getElementById("sim-comp-filepath").value,
+                    no_time_accumulation:
+                        document.getElementById("sim-no-time-acc").checked,
                     level0_config: level0 ? JSON.parse(level0) : null,
                     level1_config: level1 ? JSON.parse(level1) : null,
-                    visual_json_output: document.getElementById("sim-visual-json").checked,
-                    comm_group_output: document.getElementById("sim-comm-group").checked,
-                    debug_time: document.getElementById("sim-debug-time").checked,
+                    visual_json_output:
+                        document.getElementById("sim-visual-json").checked,
+                    comm_group_output:
+                        document.getElementById("sim-comm-group").checked,
+                    debug_time:
+                        document.getElementById("sim-debug-time").checked,
                 };
             }
 
             function populateSimForm(params) {
-                document.getElementById("sim-epoch-num").value = params.epoch_num || 1;
+                document.getElementById("sim-epoch-num").value =
+                    params.epoch_num || 1;
                 // Auto-fill model_name and device_type from Step 1 or saved params
-                var modelName = params.model_name || document.getElementById("wf-orig-model-name")?.value || "";
+                var modelName =
+                    params.model_name ||
+                    document.getElementById("wf-orig-model-name")?.value ||
+                    "";
                 document.getElementById("sim-model-name").value = modelName;
-                var topoDevice = document.getElementById("wf-orig-device")?.value || "A3";
-                var DEVICE_MAP = { A2: "ASCEND_910A", A3: "ASCEND_910B", A5: "ASCEND_310P" };
-                document.getElementById("sim-device-type").value = params.device_type || DEVICE_MAP[topoDevice] || "ASCEND_910B";
-                document.getElementById("sim-vocab-size").value = params.vocab_size || "18277";
-                document.getElementById("sim-frame").value = params.frame || "Mindspeed";
+                var topoDevice =
+                    document.getElementById("wf-orig-device")?.value || "A3";
+                var DEVICE_MAP = {
+                    A2: "ASCEND_910A",
+                    A3: "ASCEND_910B",
+                    A5: "ASCEND_310P",
+                };
+                document.getElementById("sim-device-type").value =
+                    params.device_type ||
+                    DEVICE_MAP[topoDevice] ||
+                    "ASCEND_910B";
+                document.getElementById("sim-vocab-size").value =
+                    params.vocab_size || "18277";
+                document.getElementById("sim-frame").value =
+                    params.frame || "Mindspeed";
                 document.getElementById("sim-rank").value = params.rank || 0;
-                document.getElementById("sim-rank-range").value = params.rank_range || 1023;
-                document.getElementById("sim-comp-filepath").value = params.comp_filepath || "/opt/traffic_modeling/aicm/default.txt";
-                document.getElementById("sim-no-time-acc").checked = !!params.no_time_accumulation;
-                document.getElementById("sim-level0-config").value = params.level0_config ? JSON.stringify(params.level0_config) : "";
-                document.getElementById("sim-level1-config").value = params.level1_config ? JSON.stringify(params.level1_config) : "";
-                document.getElementById("sim-visual-json").checked = params.visual_json_output !== false;
-                document.getElementById("sim-comm-group").checked = params.comm_group_output !== false;
-                document.getElementById("sim-debug-time").checked = !!params.debug_time;
+                document.getElementById("sim-rank-range").value =
+                    params.rank_range || 1023;
+                document.getElementById("sim-comp-filepath").value =
+                    params.comp_filepath ||
+                    "/opt/traffic_modeling/aicm/default.txt";
+                document.getElementById("sim-no-time-acc").checked =
+                    !!params.no_time_accumulation;
+                document.getElementById("sim-level0-config").value =
+                    params.level0_config
+                        ? JSON.stringify(params.level0_config)
+                        : "";
+                document.getElementById("sim-level1-config").value =
+                    params.level1_config
+                        ? JSON.stringify(params.level1_config)
+                        : "";
+                document.getElementById("sim-visual-json").checked =
+                    params.visual_json_output !== false;
+                document.getElementById("sim-comm-group").checked =
+                    params.comm_group_output !== false;
+                document.getElementById("sim-debug-time").checked =
+                    !!params.debug_time;
             }
 
             async function openSimParams() {
@@ -3807,7 +4174,9 @@
                 if (!overlay) return;
                 // Try loading saved params from backend
                 try {
-                    var resp = await fetch(API + "/session/" + sessionId + "/simulation-params");
+                    var resp = await fetch(
+                        API + "/session/" + sessionId + "/simulation-params",
+                    );
                     if (resp.ok) {
                         var data = await resp.json();
                         if (data.simulation_params) {
@@ -3891,7 +4260,8 @@
 
             function statusBadge(step) {
                 if (step === "completed") return ["done", "已完成"];
-                if (step === "idle" || step === "draft") return ["draft", "草稿"];
+                if (step === "idle" || step === "draft")
+                    return ["draft", "草稿"];
                 return ["running", "运行中"];
             }
 
@@ -3915,24 +4285,42 @@
                 } catch (e) {
                     _historyCache = [];
                 }
-                document.getElementById("history-count").textContent = _historyCache.length;
+                document.getElementById("history-count").textContent =
+                    _historyCache.length;
                 if (_historyCache.length === 0) {
-                    list.innerHTML = '<div class="history-empty">暂无历史任务</div>';
+                    list.innerHTML =
+                        '<div class="history-empty">暂无历史任务</div>';
                     return;
                 }
                 list.innerHTML = _historyCache
                     .map(function (h) {
                         var badge = statusBadge(h.step);
                         var isActive = h.session_id === sessionId;
-                        return '<div class="history-item ' + (isActive ? "active" : "") + ' fade-in">' +
-                            '<div class="history-item-main" onclick="selectHistory(\'' + h.session_id + '\')">' +
-                            '<div class="history-item-title">' + (h.title || "新建任务") + '</div>' +
+                        return (
+                            '<div class="history-item ' +
+                            (isActive ? "active" : "") +
+                            ' fade-in">' +
+                            '<div class="history-item-main" onclick="selectHistory(\'' +
+                            h.session_id +
+                            "')\">" +
+                            '<div class="history-item-title">' +
+                            (h.title || "新建任务") +
+                            "</div>" +
                             '<div class="history-item-meta">' +
-                            '<span>' + timeAgo(h.updated_at) + '</span>' +
-                            '<span class="history-badge badge-' + badge[0] + '">' + badge[1] + '</span>' +
-                            '</div></div>' +
-                            '<button class="history-delete" onclick="deleteHistory(event, \'' + h.session_id + '\')" title="删除">×</button>' +
-                            '</div>';
+                            "<span>" +
+                            timeAgo(h.updated_at) +
+                            "</span>" +
+                            '<span class="history-badge badge-' +
+                            badge[0] +
+                            '">' +
+                            badge[1] +
+                            "</span>" +
+                            "</div></div>" +
+                            '<button class="history-delete" onclick="deleteHistory(event, \'' +
+                            h.session_id +
+                            '\')" title="删除">×</button>' +
+                            "</div>"
+                        );
                     })
                     .join("");
             }
@@ -3966,10 +4354,13 @@
                 sessionId = data.session_id;
                 document.getElementById("session-id-display").textContent =
                     sessionId;
-                localStorage.setItem("mesh_session", JSON.stringify({
-                    id: sessionId,
-                    boot: data.server_boot_id || "",
-                }));
+                localStorage.setItem(
+                    "mesh_session",
+                    JSON.stringify({
+                        id: sessionId,
+                        boot: data.server_boot_id || "",
+                    }),
+                );
                 return sessionId;
             }
 
@@ -3985,8 +4376,14 @@
                     const data = await resp.json();
 
                     // Detect server restart: if boot id changed, discard old session
-                    const saved = JSON.parse(localStorage.getItem("mesh_session") || "{}");
-                    if (data.server_boot_id && saved.boot && data.server_boot_id !== saved.boot) {
+                    const saved = JSON.parse(
+                        localStorage.getItem("mesh_session") || "{}",
+                    );
+                    if (
+                        data.server_boot_id &&
+                        saved.boot &&
+                        data.server_boot_id !== saved.boot
+                    ) {
                         localStorage.removeItem("mesh_session");
                         return false;
                     }
@@ -3994,10 +4391,13 @@
                     sessionId = id;
                     document.getElementById("session-id-display").textContent =
                         sessionId;
-                    localStorage.setItem("mesh_session", JSON.stringify({
-                        id: sessionId,
-                        boot: data.server_boot_id || saved.boot || "",
-                    }));
+                    localStorage.setItem(
+                        "mesh_session",
+                        JSON.stringify({
+                            id: sessionId,
+                            boot: data.server_boot_id || saved.boot || "",
+                        }),
+                    );
 
                     // Clear old session's topology/model state before restoring new one
                     meshOriginal = null;
@@ -4077,7 +4477,8 @@
                             const role = msg.role || "";
                             if (role === "tool") continue;
                             const content = msg.content || "";
-                            const displayRole = role === "assistant" ? "agent" : role;
+                            const displayRole =
+                                role === "assistant" ? "agent" : role;
                             addMessage(displayRole, content);
                         }
                     } else if (parts.length > 0) {
@@ -4087,7 +4488,9 @@
                         );
                     }
 
-                    _simCompleted = !!(data.original_simulation && data.equivalent_simulation);
+                    _simCompleted = !!(
+                        data.original_simulation && data.equivalent_simulation
+                    );
                     checkSimReady();
                     fetchSimulationData();
                     return true;
@@ -4247,12 +4650,19 @@
                     const serverSid = resp.headers.get("X-Session-Id");
                     if (serverSid && serverSid !== sessionId) {
                         sessionId = serverSid;
-                        document.getElementById("session-id-display").textContent = sessionId;
-                        const saved = JSON.parse(localStorage.getItem("mesh_session") || "{}");
-                        localStorage.setItem("mesh_session", JSON.stringify({
-                            id: sessionId,
-                            boot: saved.boot || "",
-                        }));
+                        document.getElementById(
+                            "session-id-display",
+                        ).textContent = sessionId;
+                        const saved = JSON.parse(
+                            localStorage.getItem("mesh_session") || "{}",
+                        );
+                        localStorage.setItem(
+                            "mesh_session",
+                            JSON.stringify({
+                                id: sessionId,
+                                boot: saved.boot || "",
+                            }),
+                        );
                     }
 
                     const reader = resp.body.getReader();
@@ -4406,7 +4816,11 @@
                             _appendFormulaLine(data.section, data.line);
                         }
                         if (data.section_done) {
-                            var subMap = { strategy: "equiv_calc_sub1", metrics: "equiv_calc_sub2", formula: "equiv_calc_sub3" };
+                            var subMap = {
+                                strategy: "equiv_calc_sub1",
+                                metrics: "equiv_calc_sub2",
+                                formula: "equiv_calc_sub3",
+                            };
                             var subId = subMap[data.section];
                             if (subId) updateWorkflowNode(subId, "completed");
                         }
@@ -4498,7 +4912,9 @@
                         if (workflowNodeStates["simulation"] !== "completed") {
                             updateWorkflowNode("simulation", "active");
                         }
-                    } else if (workflowNodeStates["equiv_calc"] !== "completed") {
+                    } else if (
+                        workflowNodeStates["equiv_calc"] !== "completed"
+                    ) {
                         updateWorkflowNode("equiv_calc", "active");
                     }
                 } else if (hasTopology) {
@@ -4521,7 +4937,8 @@
                 if (tabName === "results" && !meshPinnedRank) return;
                 // Enable simulation tab button once simulation is available
                 if (tabName === "simulation") {
-                    var simTabBtn = document.getElementById("tab-btn-simulation");
+                    var simTabBtn =
+                        document.getElementById("tab-btn-simulation");
                     if (simTabBtn) simTabBtn.disabled = false;
                 }
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
@@ -4542,7 +4959,9 @@
                 var rightPanel = document.querySelector(".panel-right");
                 if (rightPanel)
                     rightPanel.style.display =
-                        (tabName === "simulation" || tabName === "results") ? "none" : "";
+                        tabName === "simulation" || tabName === "results"
+                            ? "none"
+                            : "";
                 // Hide simulation button on non-modeling tabs
                 var simBtn = document.getElementById("btn-start-sim");
                 if (simBtn)
@@ -4563,7 +4982,9 @@
 
             function _renderSimulationCanvas() {
                 var container = document.getElementById("sim-canvas-section");
-                var placeholder = document.getElementById("sim-topo-placeholder");
+                var placeholder = document.getElementById(
+                    "sim-topo-placeholder",
+                );
                 if (!container) return;
                 container.style.display = "";
                 if (placeholder) placeholder.style.display = "none";
@@ -4571,8 +4992,17 @@
                 var W = container.clientWidth || 800;
                 var topoH = 0;
                 if (meshOriginal && meshEquivalent) {
-                    var dO = (typeof _meshCalcDims === "function") ? _meshCalcDims(meshOriginal.tp, meshOriginal.pp) : { dpH: 200 };
-                    var dE = (typeof _meshCalcDims === "function") ? _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp) : { dpH: 200 };
+                    var dO =
+                        typeof _meshCalcDims === "function"
+                            ? _meshCalcDims(meshOriginal.tp, meshOriginal.pp)
+                            : { dpH: 200 };
+                    var dE =
+                        typeof _meshCalcDims === "function"
+                            ? _meshCalcDims(
+                                  meshEquivalent.tp,
+                                  meshEquivalent.pp,
+                              )
+                            : { dpH: 200 };
                     var maxDpH = Math.max(dO.dpH, dE.dpH);
                     topoH = 26 + Math.ceil((maxDpH + 90) * 0.5) + 4;
                 } else {
@@ -4589,12 +5019,18 @@
                 var svg = d3.select(container).selectAll("svg").data([1]);
                 svg.exit().remove();
                 svg = svg.enter().append("svg").merge(svg);
-                svg.attr("viewBox", "0 0 " + W + " " + H)
-                   .attr("preserveAspectRatio", "xMidYMid meet");
+                svg.attr("viewBox", "0 0 " + W + " " + H).attr(
+                    "preserveAspectRatio",
+                    "xMidYMid meet",
+                );
 
                 var zoomLayer = svg.selectAll("g.zoom-layer").data([1]);
                 zoomLayer.exit().remove();
-                zoomLayer = zoomLayer.enter().append("g").attr("class", "zoom-layer").merge(zoomLayer);
+                zoomLayer = zoomLayer
+                    .enter()
+                    .append("g")
+                    .attr("class", "zoom-layer")
+                    .merge(zoomLayer);
 
                 // Delegate to topo-renderer's _renderTopologyCompare or similar
                 // For now, use canvasRebuild which handles all modes
@@ -4796,10 +5232,16 @@
                     if (results.comparison) {
                         if (results.comparison.is_equivalent === false) {
                             updateWorkflowNode("comparison", "failed");
-                            addMessage("system", "⚠️ 仿真完成，等效性对比存在差异，请检查");
+                            addMessage(
+                                "system",
+                                "⚠️ 仿真完成，等效性对比存在差异，请检查",
+                            );
                         } else {
                             updateWorkflowNode("comparison", "completed");
-                            addMessage("system", "✅ 仿真验证已通过，等效性对比一致");
+                            addMessage(
+                                "system",
+                                "✅ 仿真验证已通过，等效性对比一致",
+                            );
                         }
                     } else {
                         updateWorkflowNode("comparison", "active");
@@ -6168,7 +6610,9 @@
             renderHistory();
 
             (async function init() {
-                const saved = JSON.parse(localStorage.getItem("mesh_session") || "{}");
+                const saved = JSON.parse(
+                    localStorage.getItem("mesh_session") || "{}",
+                );
                 const savedId = saved.id || "";
                 if (savedId && (await restoreSession(savedId))) {
                     document.getElementById("chat-input").focus();
