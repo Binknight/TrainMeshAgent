@@ -626,6 +626,7 @@ function _clearBothTooltips() {
   meshPinnedRank = null;
   meshPinnedTpInfo = null;
   // Clear center panel bar chart
+  _centerPanelState.barCardVisible = false;
   if (_centerPanelState.barG) {
     _centerPanelState.rankData = null;
     _centerPanelState.barG.selectAll("*").remove();
@@ -1064,9 +1065,11 @@ function _meshBuildView(
           d3.selectAll(".tp-rect.pinned").classed("pinned", false);
 
           if (alreadyPinned) {
+            _centerPanelState.barCardVisible = false;
             _clearBothTooltips();
             modelRebuild();
           } else {
+            _centerPanelState.barCardVisible = true;
             d3.select(this).classed("pinned", true);
             if (mappedRank != null) {
               d3.selectAll(
@@ -1399,8 +1402,13 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   _centerPanelState.barHeaderH = barHeaderH;
   _centerPanelState.cardGap = cardGap;
 
+  // Hide bar card if no rank is pinned
+  if (!_centerPanelState.barCardVisible) {
+    barCardG.attr("display", "none");
+  }
+
   // Restore bar chart if rank was pinned before rebuild
-  if (_centerPanelState.rankData) {
+  if (_centerPanelState.barCardVisible && _centerPanelState.rankData) {
     _drawRankBars(_centerPanelState.rankData);
   }
   // Re-apply collapse state after rebuild
@@ -1439,8 +1447,8 @@ function _updateFormulaCollapse() {
     st.barH = st.barH - dH;
   }
 
-  // Redraw bars if data exists
-  if (st.rankData) {
+  // Redraw bars if data exists and card is visible
+  if (st.barCardVisible && st.rankData) {
     _drawRankBars(st.rankData);
   }
 }
@@ -1454,8 +1462,8 @@ function _centerPanelBarRecalc() {
   } else {
     st.barY = st.formulaCardFullH + st.cardGap + st.barHeaderH;
   }
-  // Redraw bars if data exists
-  if (st.rankData) {
+  // Redraw bars if data exists and card is visible
+  if (st.barCardVisible && st.rankData) {
     _drawRankBars(st.rankData);
   }
 }
@@ -1773,6 +1781,8 @@ function meshRebuild() {
   _closeDetailPanels();
   meshPinnedRank = null;
   meshPinnedTpInfo = null;
+  _centerPanelState.barCardVisible = false;
+  _centerPanelState.rankData = null;
   meshUpdateSize();
 
   var hasTopo = !!(meshOriginal || meshEquivalent);
@@ -2674,6 +2684,7 @@ var _centerPanelState = {
   formulasCollapsed: false,
   toggleG: null,
   formulaG: null,
+  barCardVisible: false,
   rankData: null, // { orig: {globalRank, metrics}, eq: {globalRank, metrics} }
 };
 
