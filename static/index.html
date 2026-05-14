@@ -4943,11 +4943,10 @@
                     if (simTabBtn) simTabBtn.disabled = false;
                 }
 
-                // Render canvas BEFORE switching panels so the container has
-                // correct dimensions (switching first would hide the target)
+                // Clone modeling SVG into sim canvas BEFORE switching panels,
+                // so the sim tab shows the current topologies.
                 if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
-                    window._renderMode = "simulation";
-                    if (typeof canvasRebuild === "function") canvasRebuild();
+                    _cloneModelingToSimCanvas();
                 }
 
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
@@ -4975,19 +4974,12 @@
                     }
                 }
 
-                // Rebuild simulation canvas placeholder
+                // Populate simulation results when switching to simulation tab
                 if (tabName === "simulation") {
-                    _renderSimulationCanvas();
+                    _renderSimResults();
                 }
 
-                // Toggle right chat panel: visible on modeling, hidden on simulation/results
-                var rightPanel = document.querySelector(".panel-right");
-                if (rightPanel)
-                    rightPanel.style.display =
-                        tabName === "simulation" || tabName === "results"
-                            ? "none"
-                            : "";
-                // Hide simulation button on non-modeling tabs
+                // Keep right panel visible on all tabs
                 var simBtn = document.getElementById("btn-start-sim");
                 if (simBtn)
                     simBtn.style.display = tabName === "modeling" ? "" : "none";
@@ -4997,17 +4989,63 @@
                 }
             }
 
-            // ── Simulation Canvas Rendering (placeholder management) ──
+            // ── Simulation Tab Helpers ──
 
-            function _renderSimulationCanvas() {
-                // The simulation rendering is done by canvasRebuild() into #canvas-section
-                // before the tab switch (see switchCanvasTab). Here we just update the
-                // sim panel's own placeholder state.
-                var container = document.getElementById("sim-canvas-section");
+            function _cloneModelingToSimCanvas() {
+                var srcSvg = document.querySelector("#canvas-section svg");
+                var dstContainer = document.getElementById("sim-canvas-section");
+                if (!srcSvg || !dstContainer) return;
+                dstContainer.innerHTML = "";
+                dstContainer.appendChild(srcSvg.cloneNode(true));
+                dstContainer.style.display = "";
                 var placeholder = document.getElementById("sim-topo-placeholder");
-                if (!container) return;
-                container.style.display = "";
                 if (placeholder) placeholder.style.display = "none";
+            }
+
+            function _renderSimResults() {
+                var area = document.getElementById("sim-results-area");
+                if (!area) return;
+                var hasSim = (
+                    (typeof meshActualOrig !== "undefined" && Object.keys(meshActualOrig || {}).length) ||
+                    (typeof meshActualEq !== "undefined" && Object.keys(meshActualEq || {}).length)
+                );
+                if (!hasSim) {
+                    area.innerHTML =
+                        '<div class="sim-results-placeholder" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-family:var(--font-mono);font-size:13px">'
+                        + '<span>等待仿真数据...</span></div>';
+                    return;
+                }
+
+                // Build summary from simulation card data
+                var origCards = Object.values(meshActualOrig || {}).slice(0, 4);
+                var eqCards = Object.values(meshActualEq || {}).slice(0, 4);
+                var html = '<div class="sim-results-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;overflow-y:auto;height:100%">';
+                html += '<div class="sim-res-col"><h4 style="color:#58a6ff;margin:0 0 8px;font-size:13px">原始组网 仿真结果</h4>';
+                origCards.forEach(function (c) {
+                    html += _simCardHtml(c, "orig");
+                });
+                if (!origCards.length) html += '<span style="color:var(--text-muted);font-size:11px">无数据</span>';
+                html += '</div><div class="sim-res-col"><h4 style="color:var(--teal);margin:0 0 8px;font-size:13px">等效组网 仿真结果</h4>';
+                eqCards.forEach(function (c) {
+                    html += _simCardHtml(c, "eq");
+                });
+                if (!eqCards.length) html += '<span style="color:var(--text-muted);font-size:11px">无数据</span>';
+                html += '</div></div>';
+                area.innerHTML = html;
+            }
+
+            function _simCardHtml(card, side) {
+                var color = side === "orig" ? "#58a6ff" : "var(--teal)";
+                var rank = card.global_rank != null ? card.global_rank : "—";
+                var flops = card.flops_per_card != null ? (typeof card.flops_per_card === "number" ? card.flops_per_card.toExponential(2) : card.flops_per_card) : "—";
+                var hbm = card.hbm_gb != null ? (typeof card.hbm_gb === "number" ? card.hbm_gb.toFixed(1) : card.hbm_gb) : "—";
+                var tpComm = card.tp_comm_gb_per_micro != null ? (typeof card.tp_comm_gb_per_micro === "number" ? card.tp_comm_gb_per_micro.toFixed(2) : card.tp_comm_gb_per_micro) : "—";
+                return '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px">'
+                    + '<div style="color:' + color + ';font-weight:600;margin-bottom:4px">Rank ' + rank + '</div>'
+                    + '<div style="display:flex;justify-content:space-between;color:var(--text-secondary)"><span>FLOPs</span><span style="font-family:var(--font-mono)">' + flops + '</span></div>'
+                    + '<div style="display:flex;justify-content:space-between;color:var(--text-secondary)"><span>HBM</span><span style="font-family:var(--font-mono)">' + hbm + ' GB</span></div>'
+                    + '<div style="display:flex;justify-content:space-between;color:var(--text-secondary)"><span>TP通信</span><span style="font-family:var(--font-mono)">' + tpComm + ' GB/μs</span></div>'
+                    + '</div>';
             }
 
             // ── Rank Switcher (Results page) ──
@@ -5190,9 +5228,10 @@
                         });
                     }
 
-                    // Re-render topology with simulation data
+                    // Re-render topology in simulation mode (no formula, no model)
+                    window._renderMode = "simulation";
                     if (meshOriginal || meshEquivalent) {
-                        meshRebuild();
+                        if (typeof canvasRebuild === "function") canvasRebuild();
                     }
 
                     updateWorkflowNode("simulation", "completed");
