@@ -871,7 +871,7 @@ def workflow_step2_stream(session_id: str):
     B_val = model_meta.get("B", 32)
     L_orig = model_meta.get("L_orig", eq_L)  # fallback to eq_L if not stored
     strategy = model_meta.get("strategy", "min_equiv")
-    strategy_label = "最小等效分析" if strategy == "min_equiv" else strategy
+    strategy_label = "最小集群等效" if strategy == "min_equiv" else ("单卡极限等效" if strategy == "single_card_extreme" else strategy)
 
     # Pre-compute numeric values for richer display
     npu_orig = orig_dp * tp * pp
