@@ -1103,12 +1103,14 @@ function _meshBuildView(
               globalRank: globalRank,
             };
 
-            // On simulation tab: store separate pinned rank so results panel
-            // only responds to sim-canvas clicks. Skip center-panel bar chart
-            // (sim mode has no center panel) and defer to _onSimRankPinned.
+            // On simulation tab: toggle rank pin (click again to dismiss)
             var simPanel = document.getElementById("tab-panel-simulation");
             if (simPanel && simPanel.classList.contains("active")) {
-              window._pinnedSim = rankEntry;
+              if (window._pinnedSim && window._pinnedSim.globalRank === globalRank && window._pinnedSim.side === side) {
+                window._pinnedSim = null; // toggle off
+              } else {
+                window._pinnedSim = rankEntry;
+              }
               if (typeof window._onSimRankPinned === "function") window._onSimRankPinned();
             } else {
               window._pinnedSim = null;
@@ -2941,33 +2943,52 @@ function canvasRebuild(targetSelector) {
       var _cardX = _sW + _sGap;
       var _eqX = _cardX + _cardW + (hasSimPin ? _sGap : 0);
 
-      // Center card for bar charts (only when a rank is pinned on this canvas).
-      // Reuses the same _drawRankBars rendering as the modeling tab.
+      // Center card for bar charts — matches modeling tab card styling and layout.
+      // Reuses _drawRankBars + detail chart rendering via _centerPanelState swap.
       if (hasSimPin) {
-        var barHeaderH = 28;
+        var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
+        var cardH = Math.max(280, _sContentH);
         var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
-        // Card background
+        // Card background — same class as modeling tab for hover glow
         cardG.append("rect")
           .attr("x", _cardX).attr("y", _sTH)
-          .attr("width", _cardW).attr("height", Math.max(240, _sContentH))
+          .attr("width", _cardW).attr("height", cardH)
           .attr("rx", 8).attr("ry", 8)
-          .attr("fill", "var(--bg-card)")
-          .attr("stroke", "var(--border)")
-          .attr("stroke-width", 1);
-        // Title
+          .attr("class", "formula-card-rect");
+        // Title — same style as modeling tab
         cardG.append("text")
-          .attr("x", _cardX + _cardW / 2).attr("y", _sTH + 18)
-          .attr("text-anchor", "middle")
-          .attr("fill", "var(--text-primary)")
-          .attr("font-size", "12px").attr("font-weight", "600")
-          .text("Rank 性能对比");
+          .attr("x", _cardX + pad).attr("y", _sTH + pad + titleFont)
+          .attr("fill", "#39bae6")
+          .attr("font-weight", "bold")
+          .attr("font-size", titleFont + "px")
+          .attr("font-family", "var(--font-sans)")
+          .text("📊 Rank 性能详情");
         // Bar chart container
-        var barG = cardG.append("g").attr("class", "sim-bar-content");
-        // Save layout for _drawRankBars
+        var barAreaY = _sTH + barHeaderH;
+        var availH = cardH - barHeaderH - pad;
+        var detailH = 0;
+        if (_centerPanelState.detailVisible) {
+          detailH = Math.min(_centerPanelState.detailH || 140, Math.floor(availH * 0.45));
+        }
+        var barAreaH = Math.max(0, availH - detailH);
+        var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
+        // Detail charts area
+        var detailG = cardG.append("g").attr("class", "detail-charts-group");
+        if (!_centerPanelState.detailVisible) {
+          detailG.attr("display", "none");
+        }
+        // Save layout
         _simPanelLayout = {
-          barG: barG, cardX: _cardX, cardY: _sTH, barW: _cardW - 16,
-          barY: barHeaderH, barH: Math.max(200, _sContentH) - barHeaderH - 8,
-          barCardVisible: true,
+          g: cardG,
+          barG: barG, barCardG: cardG, barCardRect: cardG.select("rect.formula-card-rect"),
+          barCardTitle: cardG.select("text"),
+          cardX: _cardX, cardY: _sTH, barW: _cardW - pad * 2,
+          barY: barHeaderH, barH: barAreaH, barAreaY: barAreaY,
+          barCardVisible: true, barHeaderH: barHeaderH,
+          detailVisible: _centerPanelState.detailVisible,
+          detailMetric: _centerPanelState.detailMetric,
+          detailData: _centerPanelState.detailData,
+          detailH: detailH, detailY: barAreaY + barAreaH + 8,
         };
       } else {
         _simPanelLayout = null;
