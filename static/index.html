@@ -461,7 +461,7 @@
                 min-height: 150px;
                 max-height: 62%;
                 position: relative;
-                overflow: hidden;
+                overflow: visible;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -2024,7 +2024,11 @@
             #canvas-section {
                 min-height: 200px;
             }
-            #canvas-section svg {
+            #canvas-section svg,
+            #sim-canvas-section svg {
+                min-height: 200px;
+            }
+            #sim-canvas-section {
                 min-height: 200px;
             }
             .dp-shadow {

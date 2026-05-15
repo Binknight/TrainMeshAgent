@@ -1014,7 +1014,8 @@ function _meshBuildView(
             "style",
             "stroke: " +
               ppColorHover +
-              "; stroke-width: 1.5; filter: url(#pp-glow-" +
+              "; stroke-width: 1.5; filter: url(#" +
+              _currentFilterPrefix + "pp-glow-" +
               ppColorIdx +
               ")",
           );
@@ -2537,6 +2538,7 @@ function meshRebuild(targetSelector) {
 function canvasRebuild(targetSelector) {
   targetSelector = targetSelector || "#canvas-section";
   var isSim = targetSelector === "#sim-canvas-section";
+  _currentFilterPrefix = isSim ? "sim-" : "";
   _closeDetailPanels();
   meshUpdateSize(targetSelector);
 
@@ -2663,7 +2665,7 @@ function canvasRebuild(targetSelector) {
     // Hover glow filter for formula card
     var cardFilter = defs
       .append("filter")
-      .attr("id", "formula-card-glow")
+      .attr("id", _currentFilterPrefix + "formula-card-glow")
       .attr("x", "-30%")
       .attr("y", "-30%")
       .attr("width", "160%")
@@ -2679,7 +2681,7 @@ function canvasRebuild(targetSelector) {
     // Hover glow filter for DP card
     var dpCardFilter = defs
       .append("filter")
-      .attr("id", "dp-card-glow")
+      .attr("id", _currentFilterPrefix + "dp-card-glow")
       .attr("x", "-20%")
       .attr("y", "-20%")
       .attr("width", "140%")
@@ -2696,7 +2698,7 @@ function canvasRebuild(targetSelector) {
     _PP_COLORS.forEach(function (color, i) {
       var ppFilter = defs
         .append("filter")
-        .attr("id", "pp-glow-" + i)
+        .attr("id", _currentFilterPrefix + "pp-glow-" + i)
         .attr("x", "-25%")
         .attr("y", "-25%")
         .attr("width", "150%")
@@ -2713,7 +2715,7 @@ function canvasRebuild(targetSelector) {
     // Hover glow filter for TP rank rects
     var tpRectFilter = defs
       .append("filter")
-      .attr("id", "tp-rect-glow")
+      .attr("id", _currentFilterPrefix + "tp-rect-glow")
       .attr("x", "-40%")
       .attr("y", "-40%")
       .attr("width", "180%")
@@ -2729,7 +2731,7 @@ function canvasRebuild(targetSelector) {
     // Hover glow filter for tensor grid cells
     var tensorCellFilter = defs
       .append("filter")
-      .attr("id", "tensor-cell-glow")
+      .attr("id", _currentFilterPrefix + "tensor-cell-glow")
       .attr("x", "-40%")
       .attr("y", "-40%")
       .attr("width", "180%")
@@ -2745,7 +2747,7 @@ function canvasRebuild(targetSelector) {
     // Neon glow filter for formula loading border
     var flowFilter = defs
       .append("filter")
-      .attr("id", "flow-neon-glow")
+      .attr("id", _currentFilterPrefix + "flow-neon-glow")
       .attr("x", "-50%")
       .attr("y", "-50%")
       .attr("width", "200%")
@@ -2769,16 +2771,16 @@ function canvasRebuild(targetSelector) {
         [
           ".model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }",
           ".formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }",
-          ".formula-card-rect:hover { filter: url(#formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }",
+          ".formula-card-rect:hover { filter: url(#" + _currentFilterPrefix + "formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }",
           ".formula-card-group text { pointer-events: none; }",
           ".dp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
-          ".dp-card-group:hover .dp-card { filter: url(#dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }",
-          ".dp-card-group:hover .dp-shadow { filter: url(#dp-card-glow); }",
+          ".dp-card-group:hover .dp-card { filter: url(#" + _currentFilterPrefix + "dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }",
+          ".dp-card-group:hover .dp-shadow { filter: url(#" + _currentFilterPrefix + "dp-card-glow); }",
           ".pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
           ".tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; }",
-          ".tp-rect:hover { filter: url(#tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }",
+          ".tp-rect:hover { filter: url(#" + _currentFilterPrefix + "tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }",
           ".tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; }",
-          ".tensor-cell:hover { filter: url(#tensor-cell-glow); stroke: #ff8f40; stroke-width: 1.2; }",
+          ".tensor-cell:hover { filter: url(#" + _currentFilterPrefix + "tensor-cell-glow); stroke: #ff8f40; stroke-width: 1.2; }",
           ".tensor-cell-label { pointer-events: none; }",
         ].join(" "),
       );
@@ -3454,6 +3456,7 @@ async function loadMeshData(topoData) {
 
 var _canvasZoomBehavior = null;
 var _canvasZoomBehaviorSim = null;
+var _currentFilterPrefix = "";
 
 function canvasRecenter(targetSelector, _retry, skipTransition) {
   targetSelector = targetSelector || "#canvas-section";
