@@ -2559,8 +2559,14 @@ function canvasRebuild(targetSelector) {
       var dO = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
       var dE = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
       var maxDpH = Math.max(dO.dpH, dE.dpH);
-      // DP card at scale 0.5 + shadow offset (90*0.5) + title + small margin
-      topoH = _cmpTitleH + Math.ceil((maxDpH + 90) * 0.5) + 4;
+      // Scale: adaptive for sim canvas, 0.5 for modeling
+      var _sGap = isSim ? 16 : 10;
+      var _sAvailW = meshWidth - _sGap;
+      var _sSW = _sAvailW / 2;
+      var _topoScale = isSim
+        ? Math.min(0.5, _sSW / Math.max(dO.dpW, dE.dpW, 1))
+        : 0.5;
+      topoH = _cmpTitleH + Math.ceil((maxDpH + 90) * _topoScale) + 4;
     } else {
       var entry = meshOriginal || meshEquivalent;
       var dims = _meshCalcDims(entry.tp, entry.pp);
@@ -2900,11 +2906,7 @@ function canvasRebuild(targetSelector) {
       var _availW = meshWidth - _sGap;
       var _sW = _availW / 2;
       var _sContentH = topoH - _sTH;
-      // Adaptive scale: fit both topologies within the available width
-      var dimsO = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
-      var dimsE = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
-      var _neededW = (Math.max(dimsO.dpW, dimsE.dpW)) * 2 + _sGap;
-      var _sScale = Math.min(0.5, _availW / Math.max(_neededW, 1));
+      var _sScale = isSim ? _topoScale : 0.5;
 
       if (meshOrigDp >= meshOriginal.dp) meshOrigDp = meshOriginal.dp - 1;
       if (meshEqDp >= meshEquivalent.dp) meshEqDp = meshEquivalent.dp - 1;
