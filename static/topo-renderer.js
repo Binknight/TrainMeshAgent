@@ -672,7 +672,10 @@ function fetchSimulationData() {
             if (typeof checkSimReady === "function") checkSimReady();
           }
           if (changed && (meshOriginal || meshEquivalent)) {
-            meshRebuild();
+            var activeTab = "modeling";
+            try { activeTab = sessionStorage.getItem("activeCanvasTab") || "modeling"; } catch (e) {}
+            meshRebuild(activeTab === "simulation" ? "#sim-canvas-section" : "#canvas-section");
+            if (typeof _renderSimResults === "function") _renderSimResults();
           }
         });
       })
