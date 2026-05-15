@@ -4845,14 +4845,6 @@
                     if (simTabBtn) simTabBtn.disabled = false;
                 }
 
-                // Render sim canvas BEFORE panel switch so it gets correct dimensions.
-                // Render modeling canvas AFTER panel switch.
-                if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
-                    _showActualData = true;
-                    if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                    if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
-                }
-
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
                     t.classList.toggle("active", t.getAttribute("data-tab") === tabName);
                 });
@@ -4860,7 +4852,14 @@
                     p.classList.toggle("active", p.id === "tab-panel-" + tabName);
                 });
 
-                // Rebuild modeling canvas after panel switch with estimate data
+                // Render AFTER panel switch so containers have correct dimensions
+                if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
+                    _showActualData = true;
+                    if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                    if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
+                    _renderSimResults();
+                }
+
                 if (tabName === "modeling") {
                     _showActualData = false;
                     window._renderMode = null;
@@ -4868,11 +4867,6 @@
                         canvasRebuild();
                         if (typeof canvasRecenter === "function") canvasRecenter();
                     }
-                }
-
-                // Populate simulation results when switching to simulation tab
-                if (tabName === "simulation") {
-                    _renderSimResults();
                 }
 
                 // Keep right panel visible on all tabs
@@ -6379,13 +6373,6 @@
                         results.equivalent.cards.forEach(function (c) {
                             meshActualEq[c.global_rank] = c;
                         });
-                    }
-
-                    // Re-render topology in simulation mode (no formula, no model)
-                    _showActualData = true;
-                    window._renderMode = "simulation";
-                    if (meshOriginal || meshEquivalent) {
-                        if (typeof canvasRebuild === "function") canvasRebuild();
                     }
 
                     updateWorkflowNode("simulation", "completed");
