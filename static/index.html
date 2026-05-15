@@ -6305,7 +6305,7 @@
                 }
                 var hasOriginal = !!(meshOriginal && modelOriginal);
                 var hasEquivalent = !!(meshEquivalent && modelEquivalent);
-                var ready = hasOriginal || hasEquivalent;
+                var ready = hasOriginal && hasEquivalent;
                 if (btn) {
                     btn.disabled = !ready;
                     btn.textContent = "开始仿真";
@@ -6330,6 +6330,9 @@
                 setStatus("thinking");
                 updateWorkflowNode("simulation", "active");
                 addMessage("system", "📊 开始仿真任务...");
+
+                // Switch to simulation tab immediately
+                switchCanvasTab("simulation");
 
                 // Build request body with optional simulation params
                 var body = {};
@@ -6397,8 +6400,11 @@
                     _simCompleted = true;
                     checkSimReady();
                     setStatus("idle");
-                    // Switch to simulation tab
-                    switchCanvasTab("simulation");
+                    // Re-render sim canvas with actual data + refresh results
+                    _showActualData = true;
+                    if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                    if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
+                    _renderSimResults();
                 } catch (e) {
                     setStatus("error");
                     addMessage("error", "仿真异常: " + e.message);
