@@ -457,9 +457,9 @@
                 min-height: 0;
             }
             .sim-topo-area {
-                flex: 0 0 45%;
+                flex: 0 0 48%;
                 min-height: 150px;
-                max-height: 85%;
+                max-height: 62%;
                 position: relative;
                 overflow: hidden;
                 display: flex;
@@ -4365,7 +4365,28 @@
                     // Sync workflow from session state (may restore formula lines + set _formulaCardReady)
                     syncWorkflowFromSession(data);
 
-                    if (meshOriginal || meshEquivalent) canvasRebuild();
+                    // Restore active canvas tab BEFORE canvasRebuild to avoid flash
+                    var savedTab = sessionStorage.getItem("activeCanvasTab");
+                    if (savedTab === "simulation" && (meshOriginal || meshEquivalent)) {
+                        document.querySelectorAll(".canvas-tab").forEach(function (t) {
+                            t.classList.toggle("active", t.getAttribute("data-tab") === "simulation");
+                        });
+                        document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
+                            p.classList.toggle("active", p.id === "tab-panel-simulation");
+                        });
+                        var simTabBtn = document.getElementById("tab-btn-simulation");
+                        if (simTabBtn) simTabBtn.disabled = false;
+                        _showActualData = true;
+                        requestAnimationFrame(function () {
+                            requestAnimationFrame(function () {
+                                if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                                if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
+                                _renderSimResults();
+                            });
+                        });
+                    } else {
+                        if (meshOriginal || meshEquivalent) canvasRebuild();
+                    }
 
                     // Restore chat message for topology summaries
                     const parts = [];
@@ -4423,11 +4444,6 @@
                     checkSimReady();
                     fetchSimulationData();
 
-                    // Restore active canvas tab from sessionStorage
-                    var savedTab = sessionStorage.getItem("activeCanvasTab");
-                    if (savedTab === "simulation" && (meshOriginal || meshEquivalent)) {
-                        setTimeout(function () { switchCanvasTab("simulation"); }, 100);
-                    }
                     return true;
                 } catch (e) {
                     // Network error or parse error — keep cached session
@@ -4884,14 +4900,16 @@
                     p.classList.toggle("active", p.id === "tab-panel-" + tabName);
                 });
 
-                // Render AFTER panel switch — defer to next frame so browser
-                // completes layout reflow and container has correct dimensions.
+                // Render AFTER panel switch — double RAF ensures browser
+                // completes full layout reflow before measuring dimensions.
                 if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
                     _showActualData = true;
                     requestAnimationFrame(function () {
-                        if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                        if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
-                        _renderSimResults();
+                        requestAnimationFrame(function () {
+                            if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                            if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
+                            _renderSimResults();
+                        });
                     });
                 }
 
@@ -6260,7 +6278,7 @@
                     if (!dragging) return;
                     var rect = wrap.getBoundingClientRect();
                     var pct = ((e.clientY - rect.top) / rect.height) * 100;
-                    pct = Math.max(15, Math.min(80, pct));
+                    pct = Math.max(25, Math.min(62, pct));
                     topoArea.style.flex = "0 0 " + pct + "%";
                 });
                 document.addEventListener("mouseup", function () {
@@ -6502,6 +6520,21 @@
             // ── Init ──
             renderHistory();
 
+            // Switch to saved tab BEFORE any async work to avoid modeling-tab flash
+            (function () {
+                var savedTab = sessionStorage.getItem("activeCanvasTab");
+                var hasSession = !!(JSON.parse(localStorage.getItem("mesh_session") || "{}")).id;
+                if (savedTab !== "simulation" || !hasSession) return;
+                document.querySelectorAll(".canvas-tab").forEach(function (t) {
+                    t.classList.toggle("active", t.getAttribute("data-tab") === "simulation");
+                });
+                document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
+                    p.classList.toggle("active", p.id === "tab-panel-simulation");
+                });
+                var simTabBtn = document.getElementById("tab-btn-simulation");
+                if (simTabBtn) simTabBtn.disabled = false;
+            })();
+
             (async function init() {
                 const saved = JSON.parse(
                     localStorage.getItem("mesh_session") || "{}",
@@ -6510,6 +6543,15 @@
                 if (savedId && (await restoreSession(savedId))) {
                     document.getElementById("chat-input").focus();
                     return;
+                }
+                // If restore failed and we pre-switched to simulation tab, revert to modeling
+                if (sessionStorage.getItem("activeCanvasTab") === "simulation") {
+                    document.querySelectorAll(".canvas-tab").forEach(function (t) {
+                        t.classList.toggle("active", t.getAttribute("data-tab") === "modeling");
+                    });
+                    document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
+                        p.classList.toggle("active", p.id === "tab-panel-modeling");
+                    });
                 }
                 await ensureSession();
                 initWorkflow();
