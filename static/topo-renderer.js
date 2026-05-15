@@ -2900,7 +2900,11 @@ function canvasRebuild(targetSelector) {
       var _availW = meshWidth - _sGap;
       var _sW = _availW / 2;
       var _sContentH = topoH - _sTH;
-      var _sScale = 0.5;
+      // Adaptive scale: fit both topologies within the available width
+      var dimsO = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
+      var dimsE = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
+      var _neededW = (Math.max(dimsO.dpW, dimsE.dpW)) * 2 + _sGap;
+      var _sScale = Math.min(0.5, _availW / Math.max(_neededW, 1));
 
       if (meshOrigDp >= meshOriginal.dp) meshOrigDp = meshOriginal.dp - 1;
       if (meshEqDp >= meshEquivalent.dp) meshEqDp = meshEquivalent.dp - 1;
