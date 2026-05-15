@@ -6285,7 +6285,8 @@
                         + '<span>等待仿真数据...<br/><small>点击上方组网图中的 Rank 卡片查看详情</small></span></div>';
                     return;
                 }
-                if (!meshPinnedRank) {
+                var pinned = window._pinnedSim;
+                if (!pinned) {
                     area.innerHTML =
                         '<div class="sim-results-placeholder" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-family:var(--font-mono);font-size:13px">'
                         + '<span>点击上方组网图中的 Rank 卡片<br/>查看原始 vs 等效对比详情</span></div>';
@@ -6293,10 +6294,10 @@
                 }
 
                 // Get rank position info from the pinned side
-                var topo = meshPinnedRank.side === "orig" ? meshOriginal : meshEquivalent;
+                var topo = pinned.side === "orig" ? meshOriginal : meshEquivalent;
                 if (!topo) { area.innerHTML = '<span style="color:var(--text-muted)">无拓扑数据</span>'; return; }
                 var ranksPerDp = topo.tp * topo.pp;
-                var gr = meshPinnedRank.globalRank;
+                var gr = pinned.globalRank;
                 var rankInfo = {
                     globalRank: gr,
                     dpIdx: Math.floor(gr / ranksPerDp),
@@ -6306,7 +6307,7 @@
                 };
 
                 // Map to the other side's corresponding rank at same DP/TP/PP position
-                var otherTopo = meshPinnedRank.side === "orig" ? meshEquivalent : meshOriginal;
+                var otherTopo = pinned.side === "orig" ? meshEquivalent : meshOriginal;
                 var otherRankInfo = null;
                 if (otherTopo) {
                     var oRanksPerDp = otherTopo.tp * otherTopo.pp;
@@ -6321,8 +6322,8 @@
                     };
                 }
 
-                var origInfo = meshPinnedRank.side === "orig" ? rankInfo : otherRankInfo;
-                var eqInfo = meshPinnedRank.side === "orig" ? otherRankInfo : rankInfo;
+                var origInfo = pinned.side === "orig" ? rankInfo : otherRankInfo;
+                var eqInfo = pinned.side === "orig" ? otherRankInfo : rankInfo;
 
                 // Build the two-column layout
                 var sections = [
@@ -6512,9 +6513,13 @@
                 }
                 await ensureSession();
                 initWorkflow();
-                // Callback: rank click on simulation tab updates lower results panel
+                // Callback: rank click on simulation tab refreshes bar chart + results
                 window._onSimRankPinned = function () {
-                    _renderSimResults();
+                    requestAnimationFrame(function () {
+                        if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                        if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
+                        _renderSimResults();
+                    });
                 };
                 document.getElementById("chat-input").focus();
             })();
