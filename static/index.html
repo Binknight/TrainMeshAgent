@@ -4883,12 +4883,15 @@
                     p.classList.toggle("active", p.id === "tab-panel-" + tabName);
                 });
 
-                // Render AFTER panel switch so containers have correct dimensions
+                // Render AFTER panel switch — defer to next frame so browser
+                // completes layout reflow and container has correct dimensions.
                 if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
                     _showActualData = true;
-                    if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                    if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
-                    _renderSimResults();
+                    requestAnimationFrame(function () {
+                        if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                        if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
+                        _renderSimResults();
+                    });
                 }
 
                 if (tabName === "modeling") {
@@ -6464,9 +6467,11 @@
                     setStatus("idle");
                     // Re-render sim canvas with actual data + refresh results
                     _showActualData = true;
-                    if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                    if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
-                    _renderSimResults();
+                    requestAnimationFrame(function () {
+                        if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                        if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
+                        _renderSimResults();
+                    });
                 } catch (e) {
                     setStatus("error");
                     addMessage("error", "仿真异常: " + e.message);
