@@ -4422,6 +4422,12 @@
                     );
                     checkSimReady();
                     fetchSimulationData();
+
+                    // Restore active canvas tab from sessionStorage
+                    var savedTab = sessionStorage.getItem("activeCanvasTab");
+                    if (savedTab === "simulation" && (meshOriginal || meshEquivalent)) {
+                        setTimeout(function () { switchCanvasTab("simulation"); }, 100);
+                    }
                     return true;
                 } catch (e) {
                     // Network error or parse error — keep cached session
@@ -4862,6 +4868,8 @@
             }
 
             function switchCanvasTab(tabName) {
+                // Persist active tab across refreshes
+                try { sessionStorage.setItem("activeCanvasTab", tabName); } catch (e) {}
                 // Enable simulation tab button once simulation is available
                 if (tabName === "simulation") {
                     var simTabBtn =
