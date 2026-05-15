@@ -6322,20 +6322,29 @@
             }
             function checkSimReady() {
                 var btn = document.getElementById("btn-start-sim");
-                if (!btn) return;
+                var simTabBtn = document.getElementById("tab-btn-simulation");
                 // Already completed — show done state
                 if (_simCompleted) {
-                    btn.disabled = true;
-                    btn.textContent = "仿真已完成";
-                    btn.classList.add("sim-done");
+                    if (btn) { btn.disabled = true; btn.textContent = "仿真已完成"; btn.classList.add("sim-done"); }
+                    if (simTabBtn) simTabBtn.disabled = false;
                     return;
                 }
                 var hasOriginal = !!(meshOriginal && modelOriginal);
                 var hasEquivalent = !!(meshEquivalent && modelEquivalent);
                 var ready = hasOriginal || hasEquivalent;
-                btn.disabled = !ready;
-                btn.textContent = "开始仿真";
-                btn.classList.remove("sim-done");
+                if (btn) {
+                    btn.disabled = !ready;
+                    btn.textContent = "开始仿真";
+                    btn.classList.remove("sim-done");
+                }
+                // Enable simulation tab when simulation data exists or has run
+                if (simTabBtn) {
+                    var hasSimData = (
+                        (typeof meshActualOrig !== "undefined" && Object.keys(meshActualOrig || {}).length) ||
+                        (typeof meshActualEq !== "undefined" && Object.keys(meshActualEq || {}).length)
+                    );
+                    simTabBtn.disabled = !(ready || hasSimData || _simCompleted);
+                }
             }
 
             async function startSimulation(simParams) {
