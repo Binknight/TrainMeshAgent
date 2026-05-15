@@ -2583,7 +2583,7 @@ function canvasRebuild(targetSelector) {
       var _sAvailW = meshWidth - _sGap;
       var _sSW = _sAvailW / 2;
       var _topoScale = isSim
-        ? Math.min(0.5, _sSW / Math.max(dO.dpW, dE.dpW, 1))
+        ? Math.min(0.40, _sSW / Math.max(dO.dpW, dE.dpW, 1))
         : 0.5;
       topoH = _cmpTitleH + Math.ceil((maxDpH + 90) * _topoScale) + 4;
     } else {
@@ -2928,8 +2928,33 @@ function canvasRebuild(targetSelector) {
       var _sContentH = topoH - _sTH;
       var _sScale = isSim ? _topoScale : 0.5;
 
+      var _cardX = _sW + _sGap + 150;
+      var _eqX = _cardX + _cardW + _sGap;
+
       if (meshOrigDp >= meshOriginal.dp) meshOrigDp = meshOriginal.dp - 1;
       if (meshEqDp >= meshEquivalent.dp) meshEqDp = meshEquivalent.dp - 1;
+
+      // Mesh name labels — same style as compare/analysis tab
+      zoomLayer
+        .append("text")
+        .attr("x", _sW / 2)
+        .attr("y", _sTH - 8)
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--cyan)")
+        .attr("font-family", "sans-serif")
+        .attr("font-size", "13px")
+        .attr("font-weight", "bold")
+        .text(meshOriginal.name || "原始组网");
+      zoomLayer
+        .append("text")
+        .attr("x", _eqX + _sW / 2)
+        .attr("y", _sTH - 8)
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--teal)")
+        .attr("font-family", "sans-serif")
+        .attr("font-size", "13px")
+        .attr("font-weight", "bold")
+        .text(meshEquivalent.name || "等效组网");
 
       _meshBuildView(
         zoomLayer.append("g"),
@@ -2938,9 +2963,6 @@ function canvasRebuild(targetSelector) {
         0, _sTH, _sW, _sContentH, _sScale, true,
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
-
-      var _cardX = _sW + _sGap + 150;
-      var _eqX = _cardX + _cardW + _sGap;
 
       // Center card — only visible when a rank is pinned
       var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
@@ -3430,7 +3452,7 @@ async function loadMeshData(topoData) {
 var _canvasZoomBehavior = null;
 var _canvasZoomBehaviorSim = null;
 
-function canvasRecenter(targetSelector) {
+function canvasRecenter(targetSelector, _retry) {
   targetSelector = targetSelector || "#canvas-section";
   var svgEl = document.querySelector(targetSelector + " svg");
   if (!svgEl) return;
@@ -3465,7 +3487,12 @@ function canvasRecenter(targetSelector) {
   var svgNode = svgEl;
   var viewW = svgNode.clientWidth;
   var viewH = svgNode.clientHeight;
-  if (!viewW || !viewH) return;
+  if (!viewW || !viewH) {
+    if (!_retry) {
+      requestAnimationFrame(function () { canvasRecenter(targetSelector, true); });
+    }
+    return;
+  }
 
   // Compute content bounding box
   var bbox;
