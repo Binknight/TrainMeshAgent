@@ -2390,74 +2390,8 @@ function _drawRankBars(data) {
   });
 }
 
-// ── Sim canvas bar chart (simplified version of _drawRankBars for simulation mode card) ──
-
-function _drawSimBarChart(cardG, cardX, cardY, cardW, cardH) {
-  var pinned = window._pinnedSim;
-  if (!pinned) return;
-  var isOrig = pinned.side === "orig";
-  var origRank = isOrig ? pinned.globalRank : pinned.mappedRank;
-  var eqRank = isOrig ? pinned.mappedRank : pinned.globalRank;
-  var origM = _getMetrics(origRank, true);
-  var eqM = _getMetrics(eqRank, false);
-
-  var pad = 12, titleH = 30;
-  var plotX = cardX + pad, plotY = cardY + titleH;
-  var plotW = cardW - pad * 2, plotH = cardH - titleH - pad;
-  var metrics = [
-    { key: "flops_per_card", label: "FLOPs", fmt: function(v) { return v != null ? (typeof v === "number" ? v.toExponential(1) : v) : "—"; } },
-    { key: "hbm_gb", label: "HBM (GB)", fmt: function(v) { return v != null ? (typeof v === "number" ? v.toFixed(0) : v) : "—"; } },
-    { key: "tp_comm_gb_per_micro", label: "TP (GB/μs)", fmt: function(v) { return v != null ? (typeof v === "number" ? v.toFixed(2) : v) : "—"; } },
-    { key: "dp_comm_gb_per_step", label: "DP (GB)", fmt: function(v) { return v != null ? (typeof v === "number" ? v.toFixed(2) : v) : "—"; } },
-    { key: "pp_comm_mb_per_micro", label: "PP (MB/μs)", fmt: function(v) { return v != null ? (typeof v === "number" ? v.toFixed(1) : v) : "—"; } },
-  ];
-  var N = metrics.length;
-  var barAreaH = plotH - 20;
-  var barW = Math.max(20, Math.min(60, (plotW - 12) / (N * 2 + 1)));
-
-  // Find max value for scaling
-  var maxV = 0;
-  metrics.forEach(function(m) {
-    var ov = (origM.estimate && origM.estimate[m.key]) || 0;
-    var ev = (eqM.estimate && eqM.estimate[m.key]) || 0;
-    if (typeof ov === "number") maxV = Math.max(maxV, ov);
-    if (typeof ev === "number") maxV = Math.max(maxV, ev);
-  });
-  maxV = maxV * 1.2 || 1;
-
-  metrics.forEach(function(m, i) {
-    var cx = plotX + (i * 2 + 1) * barW + i * 8;
-    var ov = (origM.estimate && origM.estimate[m.key]) || 0;
-    var ev = (eqM.estimate && eqM.estimate[m.key]) || 0;
-    var oh = typeof ov === "number" ? (ov / maxV) * barAreaH : 0;
-    var eh = typeof ev === "number" ? (ev / maxV) * barAreaH : 0;
-    var barY = plotY + barAreaH;
-
-    // Orig bar
-    cardG.append("rect")
-      .attr("x", cx).attr("y", barY - oh)
-      .attr("width", barW).attr("height", Math.max(1, oh))
-      .attr("fill", "#58a6ff").attr("rx", 2);
-    // Eq bar
-    cardG.append("rect")
-      .attr("x", cx + barW + 4).attr("y", barY - eh)
-      .attr("width", barW).attr("height", Math.max(1, eh))
-      .attr("fill", "var(--teal)").attr("rx", 2);
-    // Label
-    cardG.append("text")
-      .attr("x", cx + barW + 2).attr("y", barY + 14)
-      .attr("text-anchor", "middle")
-      .attr("fill", "var(--text-muted)").attr("font-size", "9px")
-      .text(m.label);
-  });
-
-  // Legend
-  var legY = plotY + barAreaH + 36;
-  cardG.append("rect").attr("x", plotX).attr("y", legY).attr("width", 10).attr("height", 10).attr("fill", "#58a6ff").attr("rx", 1);
-  cardG.append("text").attr("x", plotX + 13).attr("y", legY + 9).attr("fill", "var(--text-muted)").attr("font-size", "9px").text("原始");
-  cardG.append("rect").attr("x", plotX + 50).attr("y", legY).attr("width", 10).attr("height", 10).attr("fill", "var(--teal)").attr("rx", 1);
-  cardG.append("text").attr("x", plotX + 63).attr("y", legY + 9).attr("fill", "var(--text-muted)").attr("font-size", "9px").text("等效");
-}
+// ── Sim panel layout (stored during canvasRebuild for _drawRankBars reuse) ──
+var _simPanelLayout = null;
 
 // ── DP switch handlers (exposed globally for inline onchange) ──
 
@@ -3007,34 +2941,36 @@ function canvasRebuild(targetSelector) {
       var _cardX = _sW + _sGap;
       var _eqX = _cardX + _cardW + (hasSimPin ? _sGap : 0);
 
-      // Center card for bar charts (only when a rank is pinned on this canvas)
+      // Center card for bar charts (only when a rank is pinned on this canvas).
+      // Reuses the same _drawRankBars rendering as the modeling tab.
       if (hasSimPin) {
+        var barHeaderH = 28;
         var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
+        // Card background
         cardG.append("rect")
           .attr("x", _cardX).attr("y", _sTH)
-          .attr("width", _cardW).attr("height", Math.max(200, _sContentH))
+          .attr("width", _cardW).attr("height", Math.max(240, _sContentH))
           .attr("rx", 8).attr("ry", 8)
           .attr("fill", "var(--bg-card)")
           .attr("stroke", "var(--border)")
           .attr("stroke-width", 1);
+        // Title
         cardG.append("text")
-          .attr("x", _cardX + _cardW / 2).attr("y", _sTH + 22)
+          .attr("x", _cardX + _cardW / 2).attr("y", _sTH + 18)
           .attr("text-anchor", "middle")
           .attr("fill", "var(--text-primary)")
           .attr("font-size", "12px").attr("font-weight", "600")
           .text("Rank 性能对比");
-        // Store reference for bar chart rendering
-        _centerPanelState.simCardG = cardG;
-        _centerPanelState.simCardX = _cardX;
-        _centerPanelState.simCardY = _sTH;
-        _centerPanelState.simCardW = _cardW;
-        _centerPanelState.simCardH = Math.max(200, _sContentH);
-        // Draw bars if pinned rank data is available
-        if (typeof _drawSimBarChart === "function") {
-          _drawSimBarChart(cardG, _cardX, _sTH, _cardW, Math.max(200, _sContentH));
-        }
+        // Bar chart container
+        var barG = cardG.append("g").attr("class", "sim-bar-content");
+        // Save layout for _drawRankBars
+        _simPanelLayout = {
+          barG: barG, cardX: _cardX, cardY: _sTH, barW: _cardW - 16,
+          barY: barHeaderH, barH: Math.max(200, _sContentH) - barHeaderH - 8,
+          barCardVisible: true,
+        };
       } else {
-        _centerPanelState.simCardG = null;
+        _simPanelLayout = null;
       }
 
       _meshBuildView(
