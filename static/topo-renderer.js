@@ -2922,9 +2922,8 @@ function canvasRebuild(targetSelector) {
       }
 
       var _sTH = 26, _sGap = 8;
-      var hasSimPin = !!(window._pinnedSim);
-      var _cardW = hasSimPin ? 340 : 0;
-      var _availForTopos = meshWidth - _cardW - _sGap * (hasSimPin ? 2 : 1);
+      var _cardW = 340; // always include card area (shows placeholder when no rank pinned)
+      var _availForTopos = meshWidth - _cardW - _sGap * 2;
       var _sW = _availForTopos / 2;
       var _sContentH = topoH - _sTH;
       var _sScale = isSim ? _topoScale : 0.5;
@@ -2941,59 +2940,60 @@ function canvasRebuild(targetSelector) {
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
       var _cardX = _sW + _sGap;
-      var _eqX = _cardX + _cardW + (hasSimPin ? _sGap : 0);
+      var _eqX = _cardX + _cardW + _sGap;
 
-      // Center card for bar charts — matches modeling tab card styling and layout.
-      // Reuses _drawRankBars + detail chart rendering via _centerPanelState swap.
-      if (hasSimPin) {
-        var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
-        var cardH = Math.max(_centerPanelState.detailVisible ? 420 : 280, _sContentH);
-        var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
-        // Card background — same class as modeling tab for hover glow
-        cardG.append("rect")
-          .attr("x", _cardX).attr("y", _sTH)
-          .attr("width", _cardW).attr("height", cardH)
-          .attr("rx", 8).attr("ry", 8)
-          .attr("class", "formula-card-rect");
-        // Title — same style as modeling tab
-        cardG.append("text")
-          .attr("x", _cardX + pad).attr("y", _sTH + pad + titleFont)
-          .attr("fill", "#39bae6")
-          .attr("font-weight", "bold")
-          .attr("font-size", titleFont + "px")
-          .attr("font-family", "var(--font-sans)")
-          .text("📊 Rank 性能详情");
-        // Bar chart container
-        var barAreaY = _sTH + barHeaderH;
-        var availH = cardH - barHeaderH - pad;
-        var detailH = 0;
-        if (_centerPanelState.detailVisible) {
-          detailH = Math.min(_centerPanelState.detailH || 140, Math.floor(availH * 0.45));
-        }
-        var barAreaH = Math.max(0, availH - detailH);
-        var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
-        // Detail charts area
-        var detailG = cardG.append("g").attr("class", "detail-charts-group");
-        if (!_centerPanelState.detailVisible) {
-          detailG.attr("display", "none");
-        }
-        // Save layout
-        _simPanelLayout = {
-          g: cardG,
-          barG: barG, barCardG: cardG, barCardRect: cardG.select("rect.formula-card-rect"),
-          barCardTitle: cardG.select("text"),
-          cardX: _cardX, cardY: _sTH, barW: _cardW - pad * 2,
-          barY: barHeaderH, barH: barAreaH, barAreaY: barAreaY,
-          barCardVisible: true, barHeaderH: barHeaderH,
-          detailG: detailG, detailVisible: _centerPanelState.detailVisible,
-          detailMetric: _centerPanelState.detailMetric,
-          detailData: _centerPanelState.detailData,
-          detailH: detailH, _allocDetailH: detailH,
-          detailY: barAreaY + barAreaH + 8,
-        };
-      } else {
-        _simPanelLayout = null;
+      // Always create center card — shows placeholder or bar chart
+      var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
+      var cardH = Math.max(_centerPanelState.detailVisible ? 420 : 280, _sContentH);
+      var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
+      cardG.append("rect")
+        .attr("x", _cardX).attr("y", _sTH)
+        .attr("width", _cardW).attr("height", cardH)
+        .attr("rx", 8).attr("ry", 8)
+        .attr("class", "formula-card-rect");
+      cardG.append("text")
+        .attr("x", _cardX + pad).attr("y", _sTH + pad + titleFont)
+        .attr("fill", "#39bae6")
+        .attr("font-weight", "bold")
+        .attr("font-size", titleFont + "px")
+        .attr("font-family", "var(--font-sans)")
+        .text("📊 Rank 性能详情");
+      var barAreaY = _sTH + barHeaderH;
+      var availH = cardH - barHeaderH - pad;
+      var detailH = 0;
+      if (_centerPanelState.detailVisible) {
+        detailH = Math.min(_centerPanelState.detailH || 140, Math.floor(availH * 0.45));
       }
+      var barAreaH = Math.max(0, availH - detailH);
+      var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
+      // Placeholder when no rank pinned
+      if (!window._pinnedSim) {
+        barG.append("text")
+          .attr("x", _cardX + _cardW / 2)
+          .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
+          .attr("text-anchor", "middle")
+          .attr("fill", "var(--text-muted)")
+          .attr("font-size", "11px")
+          .attr("font-family", "var(--font-sans)")
+          .text("点击拓扑中的 Rank 查看性能详情");
+      }
+      var detailG = cardG.append("g").attr("class", "detail-charts-group");
+      if (!_centerPanelState.detailVisible) {
+        detailG.attr("display", "none");
+      }
+      _simPanelLayout = {
+        g: cardG,
+        barG: barG, barCardG: cardG, barCardRect: cardG.select("rect.formula-card-rect"),
+        barCardTitle: cardG.select("text"),
+        cardX: _cardX, cardY: _sTH, barW: _cardW - pad * 2,
+        barY: barHeaderH, barH: barAreaH, barAreaY: barAreaY,
+        barCardVisible: true, barHeaderH: barHeaderH,
+        detailG: detailG, detailVisible: _centerPanelState.detailVisible,
+        detailMetric: _centerPanelState.detailMetric,
+        detailData: _centerPanelState.detailData,
+        detailH: detailH, _allocDetailH: detailH,
+        detailY: barAreaY + barAreaH + 8,
+      };
 
       _meshBuildView(
         zoomLayer.append("g"),
