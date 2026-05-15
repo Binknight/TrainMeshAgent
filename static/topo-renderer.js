@@ -1102,9 +1102,16 @@ function _meshBuildView(
               globalRank: globalRank,
             };
 
-            _centerPanelState.formulasCollapsed = true;
-            _updateCenterBarChart(globalRank, side);
-            modelRebuild();
+            // On simulation tab, skip center-panel bar chart (no panel) and
+            // instead notify the results panel via callback.
+            var simPanel = document.getElementById("tab-panel-simulation");
+            if (simPanel && simPanel.classList.contains("active")) {
+              if (typeof window._onSimRankPinned === "function") window._onSimRankPinned();
+            } else {
+              _centerPanelState.formulasCollapsed = true;
+              _updateCenterBarChart(globalRank, side);
+              modelRebuild();
+            }
           }
         });
       ppG
@@ -1681,6 +1688,9 @@ function _formatBarVal(v, key) {
 }
 
 function _updateCenterBarChart(globalRank, side) {
+  // Suppress on simulation tab — no center panel in simulation mode layout
+  var simPanel = document.getElementById("tab-panel-simulation");
+  if (simPanel && simPanel.classList.contains("active")) return;
   var st = _centerPanelState;
   if (!st.barG) return; // no center panel (single mode)
   var isCompare = !!(
