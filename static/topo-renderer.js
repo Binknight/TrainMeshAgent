@@ -3452,7 +3452,7 @@ async function loadMeshData(topoData) {
 var _canvasZoomBehavior = null;
 var _canvasZoomBehaviorSim = null;
 
-function canvasRecenter(targetSelector, _retry) {
+function canvasRecenter(targetSelector, _retry, skipTransition) {
   targetSelector = targetSelector || "#canvas-section";
   var svgEl = document.querySelector(targetSelector + " svg");
   if (!svgEl) return;
@@ -3489,7 +3489,7 @@ function canvasRecenter(targetSelector, _retry) {
   var viewH = svgNode.clientHeight;
   if (!viewW || !viewH) {
     if (!_retry) {
-      requestAnimationFrame(function () { canvasRecenter(targetSelector, true); });
+      requestAnimationFrame(function () { canvasRecenter(targetSelector, true, skipTransition); });
     }
     return;
   }
@@ -3515,11 +3515,15 @@ function canvasRecenter(targetSelector, _retry) {
   var ty = viewH / 2 - centerY * scale;
 
   var transform = d3.zoomIdentity.translate(tx, ty).scale(scale);
-  svg
-    .transition()
-    .duration(400)
-    .ease(d3.easeCubicOut)
-    .call(zoomBehavior.transform, transform);
+  if (skipTransition) {
+    zoomBehavior.transform(svg, transform);
+  } else {
+    svg
+      .transition()
+      .duration(400)
+      .ease(d3.easeCubicOut)
+      .call(zoomBehavior.transform, transform);
+  }
 }
 
 // ── _appendFormulaLine: append one line to the formula card with animation ──
