@@ -4380,7 +4380,6 @@
                         requestAnimationFrame(function () {
                             requestAnimationFrame(function () {
                                 if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                                if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
                                 _renderSimResults();
                             });
                         });
@@ -4907,7 +4906,6 @@
                     requestAnimationFrame(function () {
                         requestAnimationFrame(function () {
                             if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                            if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
                             _renderSimResults();
                         });
                     });
@@ -6489,7 +6487,6 @@
                     _showActualData = true;
                     requestAnimationFrame(function () {
                         if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                        if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
                         _renderSimResults();
                     });
                 } catch (e) {
@@ -6566,7 +6563,6 @@
                         }
                         // Rebuild sim canvas with/without card panel
                         if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                        if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
                         // Draw bars into the sim card using the existing _drawRankBars
                         if (window._pinnedSim && typeof _drawRankBars === "function" && typeof _centerPanelState !== "undefined" && typeof _simPanelLayout !== "undefined" && _simPanelLayout) {
                             var pinned = window._pinnedSim;
