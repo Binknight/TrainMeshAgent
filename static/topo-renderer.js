@@ -2741,7 +2741,7 @@ function canvasRebuild() {
   // ═══ Render topology ═══
   if (hasTopo) {
     if (meshOriginal && meshEquivalent && !_isSimulation) {
-      // ── Compare Mode: Orig + Eq side-by-side (no formula card) ──
+      // ── Three-Part Mode: Orig + Card + Eq ──
       document.getElementById("mesh-tpInput").parentElement.style.display =
         "none";
       document.getElementById("mesh-ppInput").parentElement.style.display =
@@ -2762,15 +2762,17 @@ function canvasRebuild() {
         (meshEquivalent.name || "等效组网");
 
       var _tH = 26,
-        _gap = 16;
-      var _availW = meshWidth - _gap;
-      var _origW = _availW / 2;
-      var _eqW = _availW / 2;
+        _gap = 10;
+      var _cardW = 380; // fixed card width, centered between topologies
+      var _availForTopos = meshWidth - _cardW - _gap * 2;
+      var dimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
+      var dimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
+      var origShare = dimsOrig.dpW / (dimsOrig.dpW + dimsEq.dpW);
+      origShare = Math.max(0.4, Math.min(0.6, origShare));
+      var _origW = _availForTopos * origShare;
+      var _eqW = _availForTopos * (1 - origShare);
       var _contentH = topoH - _tH;
       var _sharedScale = 0.5;
-
-      if (meshOrigDp >= meshOriginal.dp) meshOrigDp = meshOriginal.dp - 1;
-      if (meshEqDp >= meshEquivalent.dp) meshEqDp = meshEquivalent.dp - 1;
 
       zoomLayer
         .append("text")
@@ -2784,10 +2786,10 @@ function canvasRebuild() {
         .text(meshOriginal.name || "原始组网");
       zoomLayer
         .append("text")
-        .attr("x", _origW + _gap + _eqW / 2)
+        .attr("x", _origW + _gap + _cardW + _gap + _eqW / 2)
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
-        .attr("fill", "var(--teal)")
+        .attr("fill", "#58a6ff")
         .attr("font-family", "sans-serif")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
@@ -2795,21 +2797,60 @@ function canvasRebuild() {
 
       _meshBuildView(
         zoomLayer.append("g"),
-        meshBuildData(meshOriginal.tp, meshOriginal.pp, meshOriginal.dp, meshOrigDp),
-        "mesh-dp-sel-orig", "meshSwitchDpOrig",
-        0, _tH, _origW, _contentH, _sharedScale, true,
+        meshBuildData(
+          meshOriginal.tp,
+          meshOriginal.pp,
+          meshOriginal.dp,
+          meshOrigDp,
+        ),
+        "mesh-dp-sel-orig",
+        "meshSwitchDpOrig",
+        0,
+        _tH,
+        _origW,
+        _contentH,
+        _sharedScale,
+        true,
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
+      _renderFormulaCard(
+        zoomLayer.append("g"),
+        _origW + _gap,
+        _tH,
+        _cardW,
+        _contentH,
+      );
+      _replayFormulaLines();
+
       _meshBuildView(
         zoomLayer.append("g"),
-        meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
-        "mesh-dp-sel-eq", "meshSwitchDpEq",
-        _origW + _gap, _tH, _eqW, _contentH, _sharedScale, false,
+        meshBuildData(
+          meshEquivalent.tp,
+          meshEquivalent.pp,
+          meshEquivalent.dp,
+          meshEqDp,
+        ),
+        "mesh-dp-sel-eq",
+        "meshSwitchDpEq",
+        _origW + _gap + _cardW + _gap,
+        _tH,
+        _eqW,
+        _contentH,
+        _sharedScale,
+        false,
       );
       _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
-      _topoLayout = { mode: "compare", origW: _origW, eqW: _eqW, gap: _gap, titleH: _tH };
+      _topoLayout = {
+        mode: "three",
+        origW: _origW,
+        cardW: _cardW,
+        eqW: _eqW,
+        gap: _gap,
+        titleH: _tH,
+        cardX: _origW + _gap,
+      };
       _renderState.mode = "compare";
       _renderState.orig.tp = meshOriginal.tp;
       _renderState.orig.pp = meshOriginal.pp;
@@ -2857,6 +2898,85 @@ function canvasRebuild() {
 
       _topoLayout = { mode: "simulation", origW: _sW, eqW: _sW, gap: _sGap, titleH: _sTH };
       _renderState.mode = "simulation";
+    } else if (_formulaCardReady && meshOriginal) {
+      // ── Two-Part Mode: Orig + Card ──
+      var _tH2 = 26,
+        _gap2 = 10;
+      var _cardW2 = 380; // fixed card width
+      var _origW2 = meshWidth - _cardW2 - _gap2;
+      var _contentH2 = topoH - _tH2;
+      var _sharedScale2 = 0.5;
+      var entry2 = meshOriginal;
+
+      if (meshOrigDp >= entry2.dp) meshOrigDp = entry2.dp - 1;
+
+      document.getElementById("mesh-tpInput").parentElement.style.display =
+        "none";
+      document.getElementById("mesh-ppInput").parentElement.style.display =
+        "none";
+      document.getElementById("mesh-dpInput").parentElement.style.display =
+        "none";
+      toolbar.querySelector("button").style.display = "none";
+      document.getElementById("mesh-npu-count").textContent =
+        "Total NPUs: " + _meshNpuTotal(entry2);
+      document.getElementById("canvas-label").textContent =
+        (entry2.name || "组网拓扑") +
+        " | " +
+        (entry2.device_type || "") +
+        "  DP" +
+        entry2.dp +
+        "×TP" +
+        entry2.tp +
+        "×PP" +
+        entry2.pp;
+
+      zoomLayer
+        .append("text")
+        .attr("x", _origW2 / 2)
+        .attr("y", _tH2 - 8)
+        .attr("text-anchor", "middle")
+        .attr("fill", "#58a6ff")
+        .attr("font-family", "sans-serif")
+        .attr("font-size", "13px")
+        .attr("font-weight", "bold")
+        .text(entry2.name || "原始组网");
+
+      _meshBuildView(
+        zoomLayer.append("g"),
+        meshBuildData(entry2.tp, entry2.pp, entry2.dp, meshOrigDp),
+        "mesh-dp-select",
+        "meshSwitchDp",
+        0,
+        _tH2,
+        _origW2,
+        _contentH2,
+        _sharedScale2,
+        true,
+      );
+      _populateDpSelect("mesh-dp-select", entry2.dp, meshOrigDp);
+
+      _renderFormulaCard(
+        zoomLayer.append("g"),
+        _origW2 + _gap2,
+        _tH2,
+        _cardW2,
+        _contentH2,
+      );
+      _replayFormulaLines();
+
+      _topoLayout = {
+        mode: "two",
+        origW: _origW2,
+        cardW: _cardW2,
+        gap: _gap2,
+        titleH: _tH2,
+        cardX: _origW2 + _gap2,
+      };
+      _renderState.mode = "single_card";
+      _renderState.orig.tp = entry2.tp;
+      _renderState.orig.pp = entry2.pp;
+      _renderState.orig.dp = entry2.dp;
+      _renderState.orig.activeDp = meshOrigDp;
     } else {
       // ── Single View Mode ──
       var entry = meshOriginal || meshEquivalent;

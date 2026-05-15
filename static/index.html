@@ -4845,15 +4845,9 @@
                     if (simTabBtn) simTabBtn.disabled = false;
                 }
 
-                // Track active tab for independent rank interactions
-                _activeCanvasTab = tabName;
-
-                // Move SVG between modeling and sim canvases.
-                // Move (not clone) preserves D3 event handlers so both tabs are interactive.
+                // Clone modeling SVG into sim canvas BEFORE switching panels
                 if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
-                    _moveCanvasToSim();
-                } else if (tabName === "modeling") {
-                    _moveCanvasToModeling();
+                    _cloneModelingToSimCanvas();
                 }
 
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
@@ -4871,11 +4865,9 @@
                         );
                     });
 
-                // Rebuild after switching to modeling — panel is now visible,
-                // restore normal render mode. Clear pinned rank from sim tab.
+                // Rebuild after switching to modeling — panel is now visible
                 if (tabName === "modeling") {
                     window._renderMode = null;
-                    meshPinnedRank = null;
                     if ((meshOriginal || meshEquivalent) && typeof canvasRebuild === "function") {
                         canvasRebuild();
                         if (typeof canvasRecenter === "function") canvasRecenter();
@@ -4893,16 +4885,14 @@
                     simBtn.style.display = tabName === "modeling" ? "" : "none";
             }
 
-            // ── Canvas isolation helpers ──
-            var _activeCanvasTab = "modeling";
+            // ── Simulation Tab Helper ──
 
-            // Move (not clone) SVG from modeling to sim canvas, preserving D3 handlers
-            function _moveCanvasToSim() {
+            function _cloneModelingToSimCanvas() {
                 var srcSvg = document.querySelector("#canvas-section svg");
                 var dstContainer = document.getElementById("sim-canvas-section");
                 if (!srcSvg || !dstContainer) return;
                 dstContainer.innerHTML = "";
-                dstContainer.appendChild(srcSvg); // move, not clone — keeps event handlers
+                dstContainer.appendChild(srcSvg.cloneNode(true));
                 dstContainer.style.display = "";
                 var placeholder = document.getElementById("sim-topo-placeholder");
                 if (placeholder) placeholder.style.display = "none";
