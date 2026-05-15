@@ -2939,13 +2939,14 @@ function canvasRebuild(targetSelector) {
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
-      var _cardX = _sW + _sGap;
+      var _cardX = _sW + _sGap + 150;
       var _eqX = _cardX + _cardW + _sGap;
 
-      // Always create center card — shows placeholder or bar chart
+      // Center card — only visible when a rank is pinned
       var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
       var cardH = Math.max(_centerPanelState.detailVisible ? 420 : 280, _sContentH);
       var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
+      if (!window._pinnedSim) cardG.attr("display", "none");
       cardG.append("rect")
         .attr("x", _cardX).attr("y", _sTH)
         .attr("width", _cardW).attr("height", cardH)
@@ -2987,7 +2988,7 @@ function canvasRebuild(targetSelector) {
         barCardTitle: cardG.select("text"),
         cardX: _cardX, cardY: _sTH, barW: _cardW - pad * 2,
         barY: barHeaderH, barH: barAreaH, barAreaY: barAreaY,
-        barCardVisible: true, barHeaderH: barHeaderH,
+        barCardVisible: !!window._pinnedSim, barHeaderH: barHeaderH,
         detailG: detailG, detailVisible: _centerPanelState.detailVisible,
         detailMetric: _centerPanelState.detailMetric,
         detailData: _centerPanelState.detailData,
