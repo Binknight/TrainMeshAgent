@@ -4845,35 +4845,22 @@
                     if (simTabBtn) simTabBtn.disabled = false;
                 }
 
-                // Render simulation view with actual data, clone to sim canvas,
-                // then restore modeling view with estimate data.
+                // Render sim canvas BEFORE panel switch so it gets correct dimensions.
+                // Render modeling canvas AFTER panel switch.
                 if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
                     _showActualData = true;
-                    window._renderMode = "simulation";
-                    if (typeof canvasRebuild === "function") canvasRebuild();
-                    _cloneModelingToSimCanvas();
-                    // Restore modeling view
-                    _showActualData = false;
-                    window._renderMode = null;
-                    if (typeof canvasRebuild === "function") canvasRebuild();
+                    if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                    if (typeof canvasRecenter === "function") canvasRecenter("#sim-canvas-section");
                 }
 
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
-                    t.classList.toggle(
-                        "active",
-                        t.getAttribute("data-tab") === tabName,
-                    );
+                    t.classList.toggle("active", t.getAttribute("data-tab") === tabName);
                 });
-                document
-                    .querySelectorAll(".canvas-tab-panel")
-                    .forEach(function (p) {
-                        p.classList.toggle(
-                            "active",
-                            p.id === "tab-panel-" + tabName,
-                        );
-                    });
+                document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
+                    p.classList.toggle("active", p.id === "tab-panel-" + tabName);
+                });
 
-                // Rebuild after switching to modeling — panel is now visible
+                // Rebuild modeling canvas after panel switch with estimate data
                 if (tabName === "modeling") {
                     _showActualData = false;
                     window._renderMode = null;
@@ -4892,19 +4879,6 @@
                 var simBtn = document.getElementById("btn-start-sim");
                 if (simBtn)
                     simBtn.style.display = tabName === "modeling" ? "" : "none";
-            }
-
-            // ── Simulation Tab Helper ──
-
-            function _cloneModelingToSimCanvas() {
-                var srcSvg = document.querySelector("#canvas-section svg");
-                var dstContainer = document.getElementById("sim-canvas-section");
-                if (!srcSvg || !dstContainer) return;
-                dstContainer.innerHTML = "";
-                dstContainer.appendChild(srcSvg.cloneNode(true));
-                dstContainer.style.display = "";
-                var placeholder = document.getElementById("sim-topo-placeholder");
-                if (placeholder) placeholder.style.display = "none";
             }
 
 
