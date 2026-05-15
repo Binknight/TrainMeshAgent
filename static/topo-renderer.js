@@ -155,10 +155,15 @@ var meshHeight = 400;
 
 // ── Internal helpers ──
 
-function meshUpdateSize() {
-  var wrap = document.getElementById("canvas-svg-wrap");
-  meshWidth = wrap.clientWidth || 600;
-  meshHeight = Math.max(480, Math.min(wrap.clientHeight * 0.68, 700));
+function meshUpdateSize(targetSelector) {
+  var wrap;
+  if (targetSelector === "#sim-canvas-section") {
+    wrap = document.getElementById("sim-topo-area") || document.getElementById("canvas-svg-wrap");
+  } else {
+    wrap = document.getElementById("canvas-svg-wrap");
+  }
+  meshWidth = (wrap && wrap.clientWidth) || 600;
+  meshHeight = Math.max(480, Math.min((wrap && wrap.clientHeight * 0.68) || 480, 700));
 }
 
 function meshBuildDisplayList(ppList) {
@@ -1007,7 +1012,7 @@ function _meshBuildView(
             "stroke: " +
               ppColorHover +
               "; stroke-width: 1.5; filter: url(#pp-glow-" +
-              ppColorIdx +
+              ppColorIdx + idSuffix +
               ")",
           );
       })
@@ -1227,7 +1232,7 @@ function _animateFormulaLoad(cardG, textSelections, cardX, cardY, cardW, cardH) 
     .attr("stroke-dasharray", "14 78")
     .attr("stroke-dashoffset", 0)
     .attr("opacity", 0.8)
-    .attr("filter", "url(#flow-neon-glow)")
+    .attr("filter", "url(#flow-neon-glow" + idSuffix + ")")
     .attr("pointer-events", "none");
 
   // Continuous flowing animation
@@ -2396,7 +2401,8 @@ function meshSwitchDpEq(dpIndex) {
 
 // ── Main render ──
 
-function meshRebuild() {
+function meshRebuild(targetSelector) {
+  targetSelector = targetSelector || "#canvas-section";
   // Dismiss pinned tooltip on rebuild
   var tip = document.getElementById("rank-tooltip");
   tip.classList.remove("visible", "pinned");
@@ -2414,20 +2420,20 @@ function meshRebuild() {
   _centerPanelState.detailVisible = false;
   _centerPanelState.detailMetric = null;
   _centerPanelState.detailData = null;
-  meshUpdateSize();
+  meshUpdateSize(targetSelector);
 
   var hasTopo = !!(meshOriginal || meshEquivalent);
   var model = modelOriginal || modelEquivalent;
   var hasModel = !!(model && model.layers && model.layers.length);
 
   if (!hasTopo) {
-    canvasRebuild();
+    canvasRebuild(targetSelector);
     return;
   }
 
   // ── Fast path: DP-only switch (same mode, same tp/pp/dp counts, topo-only) ──
   if (!hasModel) {
-    var container = d3.select("#canvas-section");
+    var container = d3.select(targetSelector);
     var newMode = meshOriginal && meshEquivalent ? "compare" : "single";
 
     if (_renderState.mode === newMode) {
@@ -2506,31 +2512,44 @@ function meshRebuild() {
 
 // ── Public API ──
 
-function canvasRebuild() {
+function canvasRebuild(targetSelector) {
+  targetSelector = targetSelector || "#canvas-section";
+  var isSim = targetSelector === "#sim-canvas-section";
+  var idSuffix = isSim ? "-sim" : "";
   _closeDetailPanels();
-  meshUpdateSize();
+  meshUpdateSize(targetSelector);
 
   var hasTopo = !!(meshOriginal || meshEquivalent);
   var model = modelOriginal || modelEquivalent;
   var hasModel = !!(model && model.layers && model.layers.length);
 
   if (!hasTopo && !hasModel) {
-    document.getElementById("canvas-section").style.display = "none";
-    document.getElementById("canvas-placeholder").classList.remove("hidden");
-    document.getElementById("mesh-config-toolbar").classList.remove("visible");
-    document.getElementById("canvas-label").textContent = "等待组网数据...";
+    if (!isSim) {
+      document.getElementById("canvas-section").style.display = "none";
+      document.getElementById("canvas-placeholder").classList.remove("hidden");
+      document.getElementById("mesh-config-toolbar").classList.remove("visible");
+      document.getElementById("canvas-label").textContent = "等待组网数据...";
+    }
     _renderState.mode = null;
     return;
   }
 
-  document.getElementById("canvas-placeholder").classList.add("hidden");
-  var toolbar = document.getElementById("mesh-config-toolbar");
-  if (hasTopo) toolbar.classList.add("visible");
-  else toolbar.classList.remove("visible");
+  if (!isSim) {
+    document.getElementById("canvas-placeholder").classList.add("hidden");
+    var toolbar = document.getElementById("mesh-config-toolbar");
+    if (hasTopo) toolbar.classList.add("visible");
+    else toolbar.classList.remove("visible");
+  }
 
-  var container = d3.select("#canvas-section");
+  var container = d3.select(targetSelector);
   container.selectAll("svg").remove();
-  document.getElementById("canvas-section").style.display = "";
+  if (!isSim) {
+    document.getElementById("canvas-section").style.display = "";
+  }
+  if (isSim) {
+    var simPlaceholder = document.getElementById("sim-topo-placeholder");
+    if (simPlaceholder) simPlaceholder.style.display = "none";
+  }
 
   // ── Calculate topology height (content can exceed meshHeight for large tp/pp) ──
   var topoH = 0;
@@ -2584,7 +2603,7 @@ function canvasRebuild() {
     if (hasModel) {
       defs
         .append("marker")
-        .attr("id", "arrow-dataflow")
+        .attr("id", "arrow-dataflow" + idSuffix)
         .attr("viewBox", "0 0 10 10")
         .attr("refX", 5)
         .attr("refY", 5)
@@ -2599,7 +2618,7 @@ function canvasRebuild() {
       // Hover glow filter for model diagram
       var modelFilter = defs
         .append("filter")
-        .attr("id", "model-hover-glow")
+        .attr("id", "model-hover-glow" + idSuffix)
         .attr("x", "-30%")
         .attr("y", "-30%")
         .attr("width", "160%")
@@ -2616,7 +2635,7 @@ function canvasRebuild() {
     // Hover glow filter for formula card
     var cardFilter = defs
       .append("filter")
-      .attr("id", "formula-card-glow")
+      .attr("id", "formula-card-glow" + idSuffix)
       .attr("x", "-30%")
       .attr("y", "-30%")
       .attr("width", "160%")
@@ -2632,7 +2651,7 @@ function canvasRebuild() {
     // Hover glow filter for DP card
     var dpCardFilter = defs
       .append("filter")
-      .attr("id", "dp-card-glow")
+      .attr("id", "dp-card-glow" + idSuffix)
       .attr("x", "-20%")
       .attr("y", "-20%")
       .attr("width", "140%")
@@ -2649,7 +2668,7 @@ function canvasRebuild() {
     _PP_COLORS.forEach(function (color, i) {
       var ppFilter = defs
         .append("filter")
-        .attr("id", "pp-glow-" + i)
+        .attr("id", "pp-glow-" + i + idSuffix)
         .attr("x", "-25%")
         .attr("y", "-25%")
         .attr("width", "150%")
@@ -2666,7 +2685,7 @@ function canvasRebuild() {
     // Hover glow filter for TP rank rects
     var tpRectFilter = defs
       .append("filter")
-      .attr("id", "tp-rect-glow")
+      .attr("id", "tp-rect-glow" + idSuffix)
       .attr("x", "-40%")
       .attr("y", "-40%")
       .attr("width", "180%")
@@ -2682,7 +2701,7 @@ function canvasRebuild() {
     // Hover glow filter for tensor grid cells
     var tensorCellFilter = defs
       .append("filter")
-      .attr("id", "tensor-cell-glow")
+      .attr("id", "tensor-cell-glow" + idSuffix)
       .attr("x", "-40%")
       .attr("y", "-40%")
       .attr("width", "180%")
@@ -2698,7 +2717,7 @@ function canvasRebuild() {
     // Neon glow filter for formula loading border
     var flowFilter = defs
       .append("filter")
-      .attr("id", "flow-neon-glow")
+      .attr("id", "flow-neon-glow" + idSuffix)
       .attr("x", "-50%")
       .attr("y", "-50%")
       .attr("width", "200%")
@@ -2719,28 +2738,26 @@ function canvasRebuild() {
       .append("style")
       .attr("type", "text/css")
       .text(
-        [
-          ".model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }",
-          ".formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }",
-          ".formula-card-rect:hover { filter: url(#formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }",
-          ".formula-card-group text { pointer-events: none; }",
-          ".dp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
-          ".dp-card-group:hover .dp-card { filter: url(#dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }",
-          ".dp-card-group:hover .dp-shadow { filter: url(#dp-card-glow); }",
-          ".pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
-          ".tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; }",
-          ".tp-rect:hover { filter: url(#tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }",
-          ".tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; }",
-          ".tensor-cell:hover { filter: url(#tensor-cell-glow); stroke: #ff8f40; stroke-width: 1.2; }",
-          ".tensor-cell-label { pointer-events: none; }",
-        ].join(" "),
+        ".model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; } " +
+        ".formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; } " +
+        ".formula-card-rect:hover { filter: url(#formula-card-glow" + idSuffix + "); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); } " +
+        ".formula-card-group text { pointer-events: none; } " +
+        ".dp-card { transition: filter 0.3s ease, stroke 0.3s ease; } " +
+        ".dp-card-group:hover .dp-card { filter: url(#dp-card-glow" + idSuffix + "); stroke: #79c0ff; stroke-width: 2.5; } " +
+        ".dp-card-group:hover .dp-shadow { filter: url(#dp-card-glow" + idSuffix + "); } " +
+        ".pp-card { transition: filter 0.3s ease, stroke 0.3s ease; } " +
+        ".tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; } " +
+        ".tp-rect:hover { filter: url(#tp-rect-glow" + idSuffix + "); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; } " +
+        ".tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; } " +
+        ".tensor-cell:hover { filter: url(#tensor-cell-glow" + idSuffix + "); stroke: #ff8f40; stroke-width: 1.2; } " +
+        ".tensor-cell-label { pointer-events: none; }",
       );
   }
 
   // ── Layout dimensions used by both topology and model sections ──
   var _topoLayout = null; // { mode, origW, cardW, eqW, gap1, gap2, titleH, contentH }
 
-  var _isSimulation = (typeof window !== "undefined" && window._renderMode === "simulation");
+  var _isSimulation = isSim || (typeof window !== "undefined" && window._renderMode === "simulation");
 
   // ═══ Render topology ═══
   if (hasTopo) {
@@ -2866,14 +2883,16 @@ function canvasRebuild() {
       _renderState.eq.activeDp = meshEqDp;
     } else if (meshOriginal && meshEquivalent && _isSimulation) {
       // ── Simulation Mode: Orig + Eq side-by-side (no formula card, no model) ──
-      document.getElementById("mesh-tpInput").parentElement.style.display = "none";
-      document.getElementById("mesh-ppInput").parentElement.style.display = "none";
-      document.getElementById("mesh-dpInput").parentElement.style.display = "none";
-      if (toolbar.querySelector("button")) toolbar.querySelector("button").style.display = "none";
-      document.getElementById("mesh-npu-count").textContent =
-        "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs";
-      document.getElementById("canvas-label").textContent =
-        (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "等效组网");
+      if (!isSim) {
+        document.getElementById("mesh-tpInput").parentElement.style.display = "none";
+        document.getElementById("mesh-ppInput").parentElement.style.display = "none";
+        document.getElementById("mesh-dpInput").parentElement.style.display = "none";
+        if (toolbar.querySelector("button")) toolbar.querySelector("button").style.display = "none";
+        document.getElementById("mesh-npu-count").textContent =
+          "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs";
+        document.getElementById("canvas-label").textContent =
+          (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "等效组网");
+      }
 
       var _sTH = 26, _sGap = 16;
       var _availW = meshWidth - _sGap;
@@ -3314,17 +3333,20 @@ async function loadMeshData(topoData) {
 // ── canvasRecenter: fit content to viewport center ──
 
 var _canvasZoomBehavior = null;
+var _canvasZoomBehaviorSim = null;
 
-function canvasRecenter() {
-  var svgEl = document.querySelector("#canvas-section svg");
+function canvasRecenter(targetSelector) {
+  targetSelector = targetSelector || "#canvas-section";
+  var svgEl = document.querySelector(targetSelector + " svg");
   if (!svgEl) return;
   var svg = d3.select(svgEl);
+  var zoomBehavior = targetSelector === "#sim-canvas-section" ? _canvasZoomBehaviorSim : _canvasZoomBehavior;
   var zoomLayer = svg.select(".zoom-layer");
   if (zoomLayer.empty()) return;
 
-  // Get or create zoom behavior
-  if (!_canvasZoomBehavior) {
-    _canvasZoomBehavior = d3
+  // Get or create zoom behavior (separate instance per canvas)
+  if (!zoomBehavior) {
+    zoomBehavior = d3
       .zoom()
       .scaleExtent([0.3, 3])
       .filter(function (event) {
@@ -3338,6 +3360,11 @@ function canvasRecenter() {
       .on("zoom", function (event) {
         zoomLayer.attr("transform", event.transform);
       });
+    if (targetSelector === "#sim-canvas-section") {
+      _canvasZoomBehaviorSim = zoomBehavior;
+    } else {
+      _canvasZoomBehavior = zoomBehavior;
+    }
   }
 
   var svgNode = svgEl;
@@ -3370,7 +3397,7 @@ function canvasRecenter() {
     .transition()
     .duration(400)
     .ease(d3.easeCubicOut)
-    .call(_canvasZoomBehavior.transform, transform);
+    .call(zoomBehavior.transform, transform);
 }
 
 // ── _appendFormulaLine: append one line to the formula card with animation ──
@@ -4329,7 +4356,7 @@ function _renderOneModel(
       .on("mouseenter", function (event) {
         d3.select(this)
           .attr("stroke-width", origSw * 2.2)
-          .attr("filter", "url(#model-hover-glow)");
+          .attr("filter", "url(#model-hover-glow" + idSuffix + ")");
         showTip(true, tipId, event);
       })
       .on("mousemove", function (event) {
