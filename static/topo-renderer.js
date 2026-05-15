@@ -2546,6 +2546,7 @@ function canvasRebuild(targetSelector) {
     document.getElementById("canvas-section").style.display = "";
   }
   if (isSim) {
+    document.getElementById("sim-canvas-section").style.display = "";
     var simPh = document.getElementById("sim-topo-placeholder");
     if (simPh) simPh.style.display = "none";
   }
