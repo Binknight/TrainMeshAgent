@@ -6512,6 +6512,10 @@
                 }
                 await ensureSession();
                 initWorkflow();
+                // Callback: rank click on simulation tab updates lower results panel
+                window._onSimRankPinned = function () {
+                    _renderSimResults();
+                };
                 document.getElementById("chat-input").focus();
             })();
         </script>
