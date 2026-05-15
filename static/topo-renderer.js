@@ -115,6 +115,7 @@ function _startFlowAnimation() {
 var modelOriginal = null; // TrainingModel from SSE model_json
 var modelEquivalent = null;
 var _formulaCardReady = false; // true when original mesh is loaded, shows formula card between orig and eq
+var _showActualData = false;   // true on simulation tab, false on modeling tab — controls whether simulation actuals appear in tooltips/bars
 
 // Tracks the last rendered configuration for fast DP-switch path
 var _renderState = {
@@ -285,7 +286,9 @@ function _getMetrics(globalRank, isOrig) {
   var estimate = isOrig
     ? meshEstimateOrig[globalRank]
     : meshEstimateEq[globalRank];
-  var actual = isOrig ? meshActualOrig[globalRank] : meshActualEq[globalRank];
+  var actual = _showActualData
+    ? (isOrig ? meshActualOrig[globalRank] : meshActualEq[globalRank])
+    : null;
   var deviceType = isOrig
     ? (meshOriginal || {}).device_type
     : (meshEquivalent || {}).device_type;
@@ -293,6 +296,7 @@ function _getMetrics(globalRank, isOrig) {
 }
 
 function _hasActualData(side) {
+  if (!_showActualData) return false;
   var map = side === "orig" ? meshActualOrig : meshActualEq;
   return Object.keys(map).length > 0;
 }

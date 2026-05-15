@@ -4844,9 +4844,17 @@
                     if (simTabBtn) simTabBtn.disabled = false;
                 }
 
-                // Clone modeling SVG into sim canvas BEFORE switching panels
+                // Render simulation view with actual data, clone to sim canvas,
+                // then restore modeling view with estimate data.
                 if (tabName === "simulation" && (meshOriginal || meshEquivalent)) {
+                    _showActualData = true;
+                    window._renderMode = "simulation";
+                    if (typeof canvasRebuild === "function") canvasRebuild();
                     _cloneModelingToSimCanvas();
+                    // Restore modeling view
+                    _showActualData = false;
+                    window._renderMode = null;
+                    if (typeof canvasRebuild === "function") canvasRebuild();
                 }
 
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
@@ -4866,6 +4874,7 @@
 
                 // Rebuild after switching to modeling — panel is now visible
                 if (tabName === "modeling") {
+                    _showActualData = false;
                     window._renderMode = null;
                     if ((meshOriginal || meshEquivalent) && typeof canvasRebuild === "function") {
                         canvasRebuild();
@@ -6398,6 +6407,7 @@
                     }
 
                     // Re-render topology in simulation mode (no formula, no model)
+                    _showActualData = true;
                     window._renderMode = "simulation";
                     if (meshOriginal || meshEquivalent) {
                         if (typeof canvasRebuild === "function") canvasRebuild();
