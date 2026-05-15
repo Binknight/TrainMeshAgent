@@ -3296,13 +3296,23 @@ function canvasRebuild(targetSelector) {
         singleHlTp = meshPinnedTpInfo.tpIndex;
         singleHlPp = meshPinnedTpInfo.ppIndex;
       }
+      zoomLayer
+        .append("text")
+        .attr("x", modelX0 + modelAreaW / 2)
+        .attr("y", modelTopY + 40)
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--cyan)")
+        .attr("font-size", "13px")
+        .attr("font-family", "var(--font-sans)")
+        .attr("font-weight", 600)
+        .text("原始模型");
       _renderOneModel(
         zoomLayer,
         model,
         modelX0,
-        modelTopY,
+        modelTopY + 44,
         modelAreaW,
-        true,
+        false,
         null,
         null,
         "var(--cyan)",
