@@ -2184,6 +2184,7 @@ function _formatSubVal(v, detailType) {
 function _drawRankBars(data, isSim) {
   var st = _centerPanelState;
   if (!st.barG) return;
+  st.rankData = data;
 
   // Clear previous
   st.barG.selectAll("*").remove();
@@ -2665,6 +2666,8 @@ function canvasRebuild(targetSelector) {
   var modelH = hasModel ? 520 : 0;
   var sectionGap = hasTopo && hasModel ? 6 : 0;
   var totalH = topoH + sectionGap + modelH;
+  // Simulation mode: ensure viewBox is tall enough for the rank detail card
+  if (isSim) totalH = Math.max(totalH, 460);
 
   var svg = container
     .append("svg")
