@@ -4502,6 +4502,7 @@
                 var chatPanel = document.querySelector(".chat-panel");
                 if (chatPanel) chatPanel.style.display = "";
                 _simCompleted = false;
+                _simStarted = false;
                 _pendingWorkflowState = null;
                 _pendingSimData = false;
                 checkSimReady();
@@ -4808,6 +4809,7 @@
                             meshRebuild();
                         }
                         // Defer workflow update to done handler for canvas sync
+                        _simStarted = false;
                         _simCompleted = true;
                         _pendingSimData = true;
                         break;
@@ -6393,13 +6395,13 @@
                     btn.textContent = "开始仿真";
                     btn.classList.remove("sim-done");
                 }
-                // Enable simulation tab only when simulation data exists or has run
+                // Enable simulation tab when simulation started, data exists, or completed
                 if (simTabBtn) {
                     var hasSimData = (
                         (typeof meshActualOrig !== "undefined" && Object.keys(meshActualOrig || {}).length) ||
                         (typeof meshActualEq !== "undefined" && Object.keys(meshActualEq || {}).length)
                     );
-                    simTabBtn.disabled = !(hasSimData || _simCompleted);
+                    simTabBtn.disabled = !(_simStarted || hasSimData || _simCompleted);
                 }
             }
 
@@ -6414,6 +6416,8 @@
                 addMessage("system", "📊 开始仿真任务...");
 
                 // Switch to simulation tab immediately
+                _simStarted = true;
+                checkSimReady();
                 switchCanvasTab("simulation");
 
                 // Build request body with optional simulation params
@@ -6479,6 +6483,7 @@
                         addMessage("system", "📊 仿真任务已提交");
                     }
 
+                    _simStarted = false;
                     _simCompleted = true;
                     checkSimReady();
                     setStatus("idle");
@@ -6489,16 +6494,19 @@
                         _renderSimResults();
                     });
                 } catch (e) {
+                    _simStarted = false;
                     setStatus("error");
                     addMessage("error", "仿真异常: " + e.message);
                     updateWorkflowNode("simulation", "failed");
                     btn.textContent = "开始仿真";
                     btn.disabled = false;
+                    checkSimReady();
                 }
             }
 
             var _resultsRendered = false;
             var _simCompleted = false;
+            var _simStarted = false;
 
             function handleKeyDown(e) {
                 if (e.key === "Enter" && !e.shiftKey) {
