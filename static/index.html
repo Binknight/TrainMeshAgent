@@ -673,16 +673,16 @@
                 z-index: 2;
             }
             .result-op-table th {
-                background: #1a1f29;
-                color: var(--text-muted);
+                background: #161b22;
+                color: #c9d1d9;
                 font-weight: 600;
                 padding: 7px 10px;
                 text-align: left;
                 white-space: nowrap;
                 border-bottom: 2px solid var(--border);
-                font-size: 9px;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
+                font-size: 11px;
             }
             .result-op-table td {
                 padding: 6px 10px;
@@ -5953,8 +5953,11 @@
                     bodyHtml += '<span style="font-size:9px;color:var(--text-muted)">' + sec.sub + '</span>';
                     bodyHtml += '</div>';
                     bodyHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
-                    bodyHtml += '<div class="result-chart" id="orig-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px"></div>';
-                    bodyHtml += '<div class="result-chart" id="eq-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px"></div>';
+                    var chartStyle = sec.id === "opspec"
+                        ? 'min-height:100px;max-height:360px;overflow:auto;padding:0;background:var(--bg-card);border:1px solid var(--border);border-radius:6px'
+                        : 'min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
+                    bodyHtml += '<div class="result-chart" id="orig-' + sec.id + '" style="' + chartStyle + '"></div>';
+                    bodyHtml += '<div class="result-chart" id="eq-' + sec.id + '" style="' + chartStyle + '"></div>';
                     bodyHtml += '</div></div>';
                 });
                 bodyHtml += '</div>';
@@ -5972,7 +5975,10 @@
                         window._scrollSyncing = true;
                         var charts = grid.querySelectorAll(".result-chart");
                         charts.forEach(function (c) {
-                            if (c !== target) c.scrollLeft = target.scrollLeft;
+                            if (c !== target) {
+                                c.scrollLeft = target.scrollLeft;
+                                c.scrollTop = target.scrollTop;
+                            }
                         });
                         window._scrollSyncing = false;
                     }, { capture: true, passive: false });
