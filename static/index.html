@@ -6558,7 +6558,7 @@
                         var savedState = {};
                         for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) savedState[k] = _centerPanelState[k]; }
                         for (var k2 in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2)) _centerPanelState[k2] = _simPanelLayout[k2]; }
-                        _drawRankBars(data);
+                        _drawRankBars(data, true);
                         for (var k3 in _centerPanelState) {
                             if (_centerPanelState.hasOwnProperty(k3) && _simPanelLayout.hasOwnProperty(k3)) {
                                 _simPanelLayout[k3] = _centerPanelState[k3];
