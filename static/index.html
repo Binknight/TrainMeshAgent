@@ -524,6 +524,24 @@
                 padding: 0 20px 16px;
                 min-height: 0;
             }
+            .sim-results-body::-webkit-scrollbar {
+                width: 4px;
+            }
+            .sim-results-body::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            .sim-results-body::-webkit-scrollbar-thumb {
+                background: var(--border);
+                border-radius: 2px;
+                transition: background 0.2s;
+            }
+            .sim-results-body:hover::-webkit-scrollbar {
+                width: 8px;
+            }
+            .sim-results-body:hover::-webkit-scrollbar-thumb {
+                background: var(--cyan);
+                border-radius: 4px;
+            }
 
             /* ── Results Tab ── */
             .results-wrap {
