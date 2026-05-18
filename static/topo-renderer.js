@@ -1779,18 +1779,20 @@ function _toggleDetailCharts(detailType, isSim) {
   var st = isSim ? _simPanelLayout : _centerPanelState;
   if (!st) return;
   st._skipBarAnim = true;
-  var target = isSim ? "#sim-canvas-section" : "#canvas-section";
+  var rebuild = isSim && typeof window._onSimRankPinned === "function"
+    ? window._onSimRankPinned
+    : function () { canvasRebuild("#canvas-section"); };
   if (st.detailVisible && st.detailMetric === detailType) {
     st.detailVisible = false;
     st.detailMetric = null;
     st.detailData = null;
-    canvasRebuild(target);
+    rebuild();
   } else {
     st.detailVisible = true;
     st.detailMetric = detailType;
     st.detailData = null;
     _fetchDetailChartData(detailType, isSim).then(function () {
-      canvasRebuild(target);
+      rebuild();
     });
   }
 }
