@@ -4913,6 +4913,7 @@
                     requestAnimationFrame(function () {
                         requestAnimationFrame(function () {
                             if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                            if (window._pinnedSim && typeof window._onSimRankPinned === "function") window._onSimRankPinned();
                             _renderSimResults();
                         });
                     });
