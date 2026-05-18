@@ -1778,6 +1778,8 @@ var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
 function _rebuildSimWithBars(skipFetch) {
   console.log("[DEBUG] _rebuildSimWithBars | skipFetch:", skipFetch, "| _pinnedSim:", !!window._pinnedSim);
   canvasRebuild("#sim-canvas-section");
+  // Suppress bar grow animation on detail-toggle rebuilds
+  if (_simPanelLayout) _simPanelLayout._skipBarAnim = true;
   if (window._pinnedSim && typeof _drawRankBars === "function" && _centerPanelState && _simPanelLayout) {
     var pinned = window._pinnedSim;
     var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
