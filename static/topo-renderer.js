@@ -1006,6 +1006,7 @@ function _meshBuildView(
       .text(pp.label);
 
     // Hover glow via JS (per-color filters replace the old single #pp-card-glow)
+    var _fp = _currentFilterPrefix;
     ppG
       .on("mouseenter", function () {
         d3.select(this)
@@ -1015,7 +1016,7 @@ function _meshBuildView(
             "stroke: " +
               ppColorHover +
               "; stroke-width: 1.5; filter: url(#" +
-              _currentFilterPrefix + "pp-glow-" +
+              _fp + "pp-glow-" +
               ppColorIdx +
               ")",
           );
@@ -2530,7 +2531,7 @@ function meshRebuild(targetSelector) {
   }
 
   // Full rebuild
-  canvasRebuild();
+  canvasRebuild(targetSelector);
 }
 
 // ── Public API ──
