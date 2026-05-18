@@ -1775,10 +1775,9 @@ var _DETAIL_MAP = {
 };
 var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
 
-function _rebuildSimWithBars() {
-  console.log("[DEBUG] _rebuildSimWithBars | _pinnedSim:", !!window._pinnedSim, "| _simPanelLayout exists:", !!_simPanelLayout);
+function _rebuildSimWithBars(skipFetch) {
+  console.log("[DEBUG] _rebuildSimWithBars | skipFetch:", skipFetch, "| _pinnedSim:", !!window._pinnedSim);
   canvasRebuild("#sim-canvas-section");
-  console.log("[DEBUG] _rebuildSimWithBars after rebuild | _simPanelLayout.detailVisible:", _simPanelLayout && _simPanelLayout.detailVisible, "| _simPanelLayout.detailMetric:", _simPanelLayout && _simPanelLayout.detailMetric, "| _simPanelLayout.detailData:", _simPanelLayout && !!_simPanelLayout.detailData, "| _simPanelLayout.rankData:", _simPanelLayout && !!_simPanelLayout.rankData);
   if (window._pinnedSim && typeof _drawRankBars === "function" && _centerPanelState && _simPanelLayout) {
     var pinned = window._pinnedSim;
     var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
@@ -1791,6 +1790,36 @@ function _rebuildSimWithBars() {
     for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) savedState[k] = _centerPanelState[k]; }
     for (var k2 in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2)) _centerPanelState[k2] = _simPanelLayout[k2]; }
     _drawRankBars(data, true);
+    // After _drawRankBars, _centerPanelState (swapped) has rankData set.
+    // If we need detail data, fetch it now, then rebuild again.
+    if (!skipFetch && _centerPanelState.detailVisible && _centerPanelState.detailMetric) {
+      var _dt = _centerPanelState.detailMetric;
+      console.log("[DEBUG] _rebuildSimWithBars → fetching detail data for:", _dt);
+      _fetchDetailChartData(_dt, true).then(function () {
+        for (var k2b in _centerPanelState) {
+          if (_centerPanelState.hasOwnProperty(k2b) && _simPanelLayout && _simPanelLayout.hasOwnProperty(k2b)) {
+            _simPanelLayout[k2b] = _centerPanelState[k2b];
+          }
+        }
+        for (var k4b in savedState) { if (savedState.hasOwnProperty(k4b)) _centerPanelState[k4b] = savedState[k4b]; }
+        if (_simPanelLayout && _simPanelLayout.detailData) {
+          console.log("[DEBUG] _rebuildSimWithBars → detail data ready, rebuilding again");
+          // Rebuild once more with detailData available — bar animation skipped
+          _simPanelLayout._skipBarAnim = true;
+          var saved2 = {};
+          for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) saved2[k] = _centerPanelState[k]; }
+          for (var k2c in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2c)) _centerPanelState[k2c] = _simPanelLayout[k2c]; }
+          _drawRankBars(data, true);
+          for (var k3c in _centerPanelState) {
+            if (_centerPanelState.hasOwnProperty(k3c) && _simPanelLayout.hasOwnProperty(k3c)) {
+              _simPanelLayout[k3c] = _centerPanelState[k3c];
+            }
+          }
+          for (var k4c in saved2) { if (saved2.hasOwnProperty(k4c)) _centerPanelState[k4c] = saved2[k4c]; }
+        }
+      });
+    }
+    // Restore original _centerPanelState
     for (var k3 in _centerPanelState) {
       if (_centerPanelState.hasOwnProperty(k3) && _simPanelLayout.hasOwnProperty(k3)) {
         _simPanelLayout[k3] = _centerPanelState[k3];
@@ -1805,22 +1834,19 @@ function _toggleDetailCharts(detailType, isSim) {
   console.log("[DEBUG] _toggleDetailCharts | detailType:", detailType, "| isSim:", isSim, "| st exists:", !!st, "| st.rankData:", st && !!st.rankData, "| st.detailVisible:", st && st.detailVisible, "| st.detailMetric:", st && st.detailMetric);
   if (!st) return;
   st._skipBarAnim = true;
-  var rebuild = isSim ? _rebuildSimWithBars : function () { canvasRebuild("#canvas-section"); };
   if (st.detailVisible && st.detailMetric === detailType) {
     console.log("[DEBUG] _toggleDetailCharts → toggle OFF");
     st.detailVisible = false;
     st.detailMetric = null;
     st.detailData = null;
-    rebuild();
+    _rebuildSimWithBars(true);
   } else {
-    console.log("[DEBUG] _toggleDetailCharts → toggle ON, fetching data...");
+    console.log("[DEBUG] _toggleDetailCharts → toggle ON");
     st.detailVisible = true;
     st.detailMetric = detailType;
     st.detailData = null;
-    _fetchDetailChartData(detailType, isSim).then(function () {
-      console.log("[DEBUG] _toggleDetailCharts → fetch done, calling rebuild");
-      rebuild();
-    });
+    // Rebuild first to populate rankData, then fetchDetail will run after
+    _rebuildSimWithBars(false);
   }
 }
 
