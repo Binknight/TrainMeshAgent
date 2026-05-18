@@ -116,6 +116,10 @@
                     opacity: 0.4;
                 }
             }
+            @keyframes pulse-dot {
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.3; transform: scale(0.6); }
+            }
 
             /* ── Main Layout ── */
             .main-container {
@@ -5528,310 +5532,295 @@
             }
 
 
-            function _renderSideDetail(prefix, rankInfo) {
-                var _resultsRenderedBackup = _resultsRendered;
-                _resultsRendered = false;
-                if (rankInfo) {
-                    meshPinnedRank = { side: "orig", globalRank: rankInfo.globalRank };
+            // ── Incremental timeline renderer (top-level, keyed by containerId) ──
+            var _timelineCtx = {};
+
+            function _initTimelineIncr(containerId, ops, totalUs) {
+                var container = document.getElementById(containerId);
+                if (!container) return;
+                var ctx = _timelineCtx[containerId];
+                if (ctx && ctx.svg) { ctx.svg.remove(); ctx = {}; }
+
+                var stages = [], seen = {};
+                ops.forEach(function (o) {
+                    if (!seen[o.stage]) { seen[o.stage] = true; stages.push(o.stage); }
+                });
+
+                var rowH = 24, topM = 10, botM = 38, leftM = 124, rightM = 20;
+                var W = container.clientWidth - 16;
+                var minChartW = 900;
+                var chartW = Math.max(W, minChartW);
+                var plotW = chartW - leftM - rightM;
+                var H = topM + stages.length * rowH + botM;
+
+                container.innerHTML = "";
+                var svg = d3.select(container).append("svg")
+                    .attr("width", chartW).attr("height", H);
+                var g = svg.append("g")
+                    .attr("transform", "translate(" + leftM + "," + topM + ")");
+
+                stages.forEach(function (s, si) {
+                    if (si % 2 === 0) {
+                        g.append("rect").attr("x", 0).attr("y", si * rowH)
+                            .attr("width", plotW).attr("height", rowH)
+                            .attr("fill", "rgba(255,255,255,0.015)");
+                    }
+                });
+
+                var nTicks = 10;
+                for (var i = 0; i <= nTicks; i++) {
+                    var gx = (i / nTicks) * plotW;
+                    g.append("line").attr("x1", gx).attr("x2", gx)
+                        .attr("y1", 0).attr("y2", stages.length * rowH)
+                        .attr("stroke", "#1e2a36")
+                        .attr("stroke-width", i % 5 === 0 ? 0.6 : 0.3);
                 }
-                _oldRenderResults(prefix);
-                _resultsRendered = _resultsRenderedBackup;
+
+                for (var i = 0; i <= nTicks; i++) {
+                    var tv = (totalUs * i) / nTicks;
+                    g.append("text").attr("x", (i / nTicks) * plotW)
+                        .attr("y", stages.length * rowH + 16)
+                        .attr("text-anchor", "middle").attr("fill", "#4a5568")
+                        .attr("font-size", "9px")
+                        .attr("font-family", "JetBrains Mono,monospace")
+                        .text(formatUs(tv));
+                }
+
+                stages.forEach(function (s, si) {
+                    g.append("text").attr("x", -8).attr("y", si * rowH + rowH / 2 + 4)
+                        .attr("text-anchor", "end").attr("fill", "#7b8ca3")
+                        .attr("font-size", "9px")
+                        .attr("font-family", "JetBrains Mono,monospace").text(s);
+                });
+
+                var tooltip = d3.select(container).append("div").attr("class", "result-tooltip");
+
+                var types = ["computation","all_reduce","all_gather","reduce_scatter","broadcast"];
+                var legY = H - 11;
+                types.forEach(function (ct, i) {
+                    var lx = leftM + i * 120;
+                    svg.append("rect").attr("x", lx).attr("y", legY - 8)
+                        .attr("width", 10).attr("height", 10)
+                        .attr("fill", TYPE_COLORS[ct]).attr("rx", 2);
+                    svg.append("text").attr("x", lx + 14).attr("y", legY)
+                        .attr("fill", "#7b8ca3").attr("font-size", "9px")
+                        .attr("font-family", "JetBrains Mono,monospace")
+                        .text(TYPE_LABELS[ct]);
+                });
+
+                ctx = {
+                    containerId: containerId, svg: svg, g: g, tooltip: tooltip,
+                    stages: stages, stageMap: seen,
+                    rowH: rowH, leftM: leftM, topM: topM, plotW: plotW,
+                    totalUs: totalUs, H: H, chartW: chartW
+                };
+                _timelineCtx[containerId] = ctx;
+                return ctx;
             }
 
-            function _oldRenderResults(prefix) {
-                _resultsRendered = false;
+            function _appendTimelineOp(containerId, op) {
+                var ctx = _timelineCtx[containerId];
+                if (!ctx || !ctx.g) return;
+                var si = ctx.stages.indexOf(op.stage);
+                if (si < 0) return;
+                var rx = (op.start_time / ctx.totalUs) * ctx.plotW;
+                var rw = Math.max(2, (op.duration / ctx.totalUs) * ctx.plotW);
+                var ry = si * ctx.rowH + 3;
+                var rh = ctx.rowH - 6;
+                var color = TYPE_COLORS[op.comm_type] || "#7b8ca3";
+                var label = TYPE_LABELS[op.comm_type] || op.comm_type;
 
-                var rankInfo = null;
-                if (meshPinnedRank) {
+                var rect = ctx.g.append("rect")
+                    .attr("x", rx).attr("y", ry)
+                    .attr("width", 0).attr("height", rh)
+                    .attr("fill", color).attr("rx", 3).attr("ry", 3)
+                    .attr("opacity", 0.88);
+                rect.transition().duration(150).attr("width", rw);
+
+                rect.on("mouseover", function (ev) {
+                    var h = '<div style="font-weight:600;margin-bottom:4px">' + op.stage + "</div>";
+                    h += "<div><b>" + op.operator_name + '</b> · <span style="color:' + color + '">' + label + "</span>";
+                    if (op.algo_name) h += " (" + op.algo_name + ")";
+                    h += "</div>";
+                    if (op.data_shape) h += "<div>Shape: " + op.data_shape + "</div>";
+                    if (op.data_type) h += "<div>dtype: " + op.data_type + "</div>";
+                    if (op.data_size != null) h += "<div>Msg size: " + formatBytes(op.data_size) + "</div>";
+                    if (op.comm_group) h += "<div>Group: " + op.comm_group + " &nbsp; size=" + op.comm_group_size + "</div>";
+                    if (op.additional) h += "<div>Info: " + op.additional + "</div>";
+                    h += "<div>Duration: <b>" + formatUs(op.duration) + "</b></div>";
+                    h += '<div style="color:var(--text-muted)">' + formatUs(op.start_time) + " → " + formatUs(op.end_time) + "</div>";
+                    ctx.tooltip.classed("show", true).html(h);
+                }).on("mousemove", function (ev) {
+                    ctx.tooltip.style("left", ev.clientX + 14 + "px")
+                        .style("top", Math.min(ev.clientY - 90, ev.clientY - 10) + "px");
+                }).on("mouseout", function () { ctx.tooltip.classed("show", false); });
+            }
+
+            // ── Incremental opspec table renderer ──
+            function _initOpspecIncr(containerId) {
+                var container = document.getElementById(containerId);
+                if (!container) return;
+                var html = '<table class="result-op-table"><thead><tr>';
+                html += "<th>操作名称</th><th>通信类型</th><th>Stage</th><th>通信组</th><th>组大小</th><th>数据形状/大小</th><th>数据类型</th><th>耗时</th><th>附加信息</th><th>非阻塞</th>";
+                html += "</tr></thead><tbody></tbody></table>";
+                container.innerHTML = html;
+            }
+
+            function _appendOpspecRow(containerId, op) {
+                var container = document.getElementById(containerId);
+                if (!container) return;
+                var tbody = container.querySelector("tbody");
+                if (!tbody) return;
+                var ctColor = TYPE_COLORS[op.comm_type] || "#7b8ca3";
+                var ctLabel = TYPE_LABELS[op.comm_type] || op.comm_type;
+                var tr = document.createElement("tr");
+                tr.innerHTML =
+                    '<td style="color:#c9d1d9">' + op.operator_name + "</td>" +
+                    '<td><span class="phase-badge" style="background:' + ctColor + "22;color:" + ctColor + '">' + ctLabel + "</span></td>" +
+                    '<td class="cell-stage">' + op.stage + "</td>" +
+                    '<td style="color:#baa1ff">' + (op.comm_group || "—") + "</td>" +
+                    '<td style="text-align:center">' + (op.comm_group_size != null ? op.comm_group_size : "—") + "</td>" +
+                    '<td class="cell-shape">' + (op.data_shape || (op.data_size != null ? formatBytes(op.data_size) : "—")) + "</td>" +
+                    '<td style="text-align:center">' + (op.data_type || "—") + "</td>" +
+                    '<td class="cell-flops">' + formatUs(op.duration) + "</td>" +
+                    '<td style="color:var(--text-muted);max-width:140px;overflow:hidden;text-overflow:ellipsis">' + (op.additional || "—") + "</td>" +
+                    '<td style="text-align:center">' + (op.nonblock ? "是" : "否") + "</td>";
+                tbody.appendChild(tr);
+                container.scrollTop = container.scrollHeight;
+            }
+
+            // ── Active stream handles ──
+            var _activeSimStreams = [];
+
+            function _cancelActiveSimStreams() {
+                _activeSimStreams.forEach(function (s) {
+                    if (s) {
+                        s.stream.cancel();
+                        // Clean up progress bar
+                        var progressId = s.prefix + "-stream-progress";
+                        var bar = document.getElementById(progressId);
+                        if (bar) bar.remove();
+                    }
+                });
+                _activeSimStreams = [];
+                _timelineCtx = {};
+            }
+
+            function _renderSideDetail(prefix, rankInfo) {
+                var rankInfoResolved = rankInfo;
+                if (!rankInfoResolved && meshPinnedRank) {
                     var topo = getPinnedTopo();
                     if (topo) {
                         var ranksPerDp = topo.tp * topo.pp;
                         var gr = meshPinnedRank.globalRank;
-                        rankInfo = {
+                        rankInfoResolved = {
                             globalRank: gr,
                             dpIdx: Math.floor(gr / ranksPerDp),
                             ppIdx: Math.floor((gr % ranksPerDp) / topo.tp),
                             tpIdx: (gr % ranksPerDp) % topo.tp,
-                            tpSize: topo.tp,
-                            ppSize: topo.pp,
-                            dpSize: topo.dp,
+                            tpSize: topo.tp, ppSize: topo.pp, dpSize: topo.dp
                         };
                     }
                 }
-                var data = genMockWorkload(rankInfo);
 
-                // ═══ Section 2: 执行时间线 — Gantt chart by stage rows ═══
-                (function () {
-                    var container = document.getElementById(prefix + "-timeline");
-                    if (!container) return;
-                    var ops = data.ops;
-                    var totalUs = data.totalUs;
+                // Generate all ops upfront (mock), then stream them over the 60s window
+                var data;
+                try {
+                    data = genMockWorkload(rankInfoResolved);
+                } catch (e) {
+                    console.error("[_renderSideDetail] genMockWorkload failed:", e);
+                    return;
+                }
+                var ops = data.ops;
+                var totalUs = data.totalUs;
 
-                    // compute unique stages in order
-                    var stages = [];
-                    var seen = {};
-                    ops.forEach(function (o) {
-                        if (!seen[o.stage]) {
-                            seen[o.stage] = true;
-                            stages.push(o.stage);
-                        }
-                    });
+                var timelineId = prefix + "-timeline";
+                var opspecId = prefix + "-opspec";
+                var progressId = prefix + "-stream-progress";
 
-                    var rowH = 24,
-                        topM = 10,
-                        botM = 38,
-                        leftM = 124,
-                        rightM = 20;
-                    var W = container.clientWidth - 16;
-                    var minChartW = 900;
-                    var chartW = Math.max(W, minChartW);
-                    var plotW = chartW - leftM - rightM;
-                    var H = topM + stages.length * rowH + botM;
+                // Init empty shells immediately
+                _initTimelineIncr(timelineId, ops, totalUs);
+                _initOpspecIncr(opspecId);
 
-                    container.innerHTML = "";
-                    var svg = d3
-                        .select(container)
-                        .append("svg")
-                        .attr("width", chartW)
-                        .attr("height", H);
-                    var g = svg
-                        .append("g")
-                        .attr(
-                            "transform",
-                            "translate(" + leftM + "," + topM + ")",
-                        );
-
-                    // stage background bands
-                    stages.forEach(function (s, si) {
-                        if (si % 2 === 0) {
-                            g.append("rect")
-                                .attr("x", 0)
-                                .attr("y", si * rowH)
-                                .attr("width", plotW)
-                                .attr("height", rowH)
-                                .attr("fill", "rgba(255,255,255,0.015)");
-                        }
-                    });
-
-                    // vertical grid lines
-                    var nTicks = 10;
-                    for (var i = 0; i <= nTicks; i++) {
-                        var gx = (i / nTicks) * plotW;
-                        g.append("line")
-                            .attr("x1", gx)
-                            .attr("x2", gx)
-                            .attr("y1", 0)
-                            .attr("y2", stages.length * rowH)
-                            .attr("stroke", "#1e2a36")
-                            .attr("stroke-width", i % 5 === 0 ? 0.6 : 0.3);
+                // If stream countdown expired, render all at once
+                if (_simStreamDone) {
+                    for (var i = 0; i < ops.length; i++) {
+                        _appendTimelineOp(timelineId, ops[i]);
+                        _appendOpspecRow(opspecId, ops[i]);
                     }
+                    _updateStreamProgress(progressId, ops.length, ops.length);
+                    return;
+                }
 
-                    // time axis labels
-                    for (var i = 0; i <= nTicks; i++) {
-                        var tv = (totalUs * i) / nTicks;
-                        g.append("text")
-                            .attr("x", (i / nTicks) * plotW)
-                            .attr("y", stages.length * rowH + 16)
-                            .attr("text-anchor", "middle")
-                            .attr("fill", "#4a5568")
-                            .attr("font-size", "9px")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(formatUs(tv));
+                // ── Streaming mode: progressive loading over the 60s window ──
+                // Add a visible progress bar / counter above the timeline
+                _showStreamProgress(progressId, timelineId);
+
+                var stream = new SimDataStream();
+                var index = 0;
+                var total = ops.length;
+                // Batch size: show N ops per tick for visible progress, faster feedback
+                var batchSize = Math.max(1, Math.floor(total / 30)); // ~30 ticks over 60s
+                var tickDelay = 2000; // tick every 2s — clearly visible progressive loading
+
+                function tick() {
+                    if (stream.isCancelled()) return;
+                    if (_simStreamDone) {
+                        // Timer fired mid-stream — render remaining ops at once
+                        while (index < total) {
+                            _appendTimelineOp(timelineId, ops[index]);
+                            _appendOpspecRow(opspecId, ops[index]);
+                            index++;
+                        }
+                        _updateStreamProgress(progressId, total, total);
+                        return;
                     }
+                    var end = Math.min(index + batchSize, total);
+                    for (var i = index; i < end; i++) {
+                        _appendTimelineOp(timelineId, ops[i]);
+                        _appendOpspecRow(opspecId, ops[i]);
+                    }
+                    index = end;
+                    _updateStreamProgress(progressId, index, total);
+                    if (index >= total) return; // done
+                    setTimeout(tick, tickDelay);
+                }
+                // Start first batch immediately
+                tick();
 
-                    var tooltip = d3
-                        .select(container)
-                        .append("div")
-                        .attr("class", "result-tooltip");
+                _activeSimStreams.push({ stream: stream, prefix: prefix });
+            }
 
-                    ops.forEach(function (o) {
-                        var si = stages.indexOf(o.stage);
-                        if (si < 0) return;
-                        var rx = (o.start_time / totalUs) * plotW;
-                        var rw = Math.max(2, (o.duration / totalUs) * plotW);
-                        var ry = si * rowH + 3;
-                        var rh = rowH - 6;
-                        var color = TYPE_COLORS[o.comm_type] || "#7b8ca3";
-                        var label = TYPE_LABELS[o.comm_type] || o.comm_type;
+            function _showStreamProgress(progressId, timelineContainerId) {
+                var container = document.getElementById(timelineContainerId);
+                if (!container) return;
+                // Insert progress bar at the top of the timeline container
+                var existing = document.getElementById(progressId);
+                if (existing) existing.remove();
+                var bar = document.createElement("div");
+                bar.id = progressId;
+                bar.style.cssText =
+                    "display:flex;align-items:center;gap:8px;margin-bottom:4px;padding:2px 4px;font-size:10px;color:var(--cyan);font-family:var(--font-mono)";
+                bar.innerHTML =
+                    '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--cyan);animation:pulse-dot 0.8s ease-in-out infinite;flex-shrink:0"></span>'
+                    + '<span class="' + progressId + '-text">加载中... 0 / 0</span>';
+                container.insertBefore(bar, container.firstChild);
+            }
 
-                        var rect = g
-                            .append("rect")
-                            .attr("x", rx)
-                            .attr("y", ry)
-                            .attr("width", rw)
-                            .attr("height", rh)
-                            .attr("fill", color)
-                            .attr("rx", 3)
-                            .attr("ry", 3)
-                            .attr("opacity", 0.88);
-
-                        rect.on("mouseover", function (ev) {
-                            var h =
-                                '<div style="font-weight:600;margin-bottom:4px">' +
-                                o.stage +
-                                "</div>";
-                            h +=
-                                "<div><b>" +
-                                o.operator_name +
-                                '</b> · <span style="color:' +
-                                color +
-                                '">' +
-                                label +
-                                "</span>";
-                            if (o.algo_name) h += " (" + o.algo_name + ")";
-                            h += "</div>";
-                            if (o.data_shape)
-                                h += "<div>Shape: " + o.data_shape + "</div>";
-                            if (o.data_type)
-                                h += "<div>dtype: " + o.data_type + "</div>";
-                            if (o.data_size != null)
-                                h +=
-                                    "<div>Msg size: " +
-                                    formatBytes(o.data_size) +
-                                    "</div>";
-                            if (o.comm_group)
-                                h +=
-                                    "<div>Group: " +
-                                    o.comm_group +
-                                    " &nbsp; size=" +
-                                    o.comm_group_size +
-                                    "</div>";
-                            if (o.additional)
-                                h += "<div>Info: " + o.additional + "</div>";
-                            h +=
-                                "<div>Duration: <b>" +
-                                formatUs(o.duration) +
-                                "</b></div>";
-                            h +=
-                                '<div style="color:var(--text-muted)">' +
-                                formatUs(o.start_time) +
-                                " → " +
-                                formatUs(o.end_time) +
-                                "</div>";
-                            tooltip.classed("show", true).html(h);
-                        })
-                            .on("mousemove", function (ev) {
-                                tooltip
-                                    .style("left", ev.clientX + 14 + "px")
-                                    .style(
-                                        "top",
-                                        Math.min(
-                                            ev.clientY - 90,
-                                            ev.clientY - 10,
-                                        ) + "px",
-                                    );
-                            })
-                            .on("mouseout", function () {
-                                tooltip.classed("show", false);
-                            });
-                    });
-
-                    // stage labels
-                    stages.forEach(function (s, si) {
-                        g.append("text")
-                            .attr("x", -8)
-                            .attr("y", si * rowH + rowH / 2 + 4)
-                            .attr("text-anchor", "end")
-                            .attr("fill", "#7b8ca3")
-                            .attr("font-size", "9px")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(s);
-                    });
-
-                    // legend
-                    var types = [
-                        "computation",
-                        "all_reduce",
-                        "all_gather",
-                        "reduce_scatter",
-                        "broadcast",
-                    ];
-                    var legY = H - 11;
-                    types.forEach(function (ct, i) {
-                        var lx = leftM + i * 120;
-                        svg.append("rect")
-                            .attr("x", lx)
-                            .attr("y", legY - 8)
-                            .attr("width", 10)
-                            .attr("height", 10)
-                            .attr("fill", TYPE_COLORS[ct])
-                            .attr("rx", 2);
-                        svg.append("text")
-                            .attr("x", lx + 14)
-                            .attr("y", legY)
-                            .attr("fill", "#7b8ca3")
-                            .attr("font-size", "9px")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(TYPE_LABELS[ct]);
-                    });
-                })();
-
-                // ═══ Section 3: 负载描述文件 — full detail table ═══
-                (function () {
-                    var container = document.getElementById(
-                        prefix + "-opspec",
-                    );
-                    if (!container) return;
-                    var rows = data.ops;
-                    var html = '<table class="result-op-table"><thead><tr>';
-                    html +=
-                        "<th>操作名称</th><th>通信类型</th><th>Stage</th><th>通信组</th><th>组大小</th><th>数据形状/大小</th><th>数据类型</th><th>耗时</th><th>附加信息</th><th>非阻塞</th>";
-                    html += "</tr></thead><tbody>";
-                    rows.forEach(function (r) {
-                        var ctColor = TYPE_COLORS[r.comm_type] || "#7b8ca3";
-                        var ctLabel = TYPE_LABELS[r.comm_type] || r.comm_type;
-                        html += "<tr>";
-                        html +=
-                            '<td style="color:#c9d1d9">' +
-                            r.operator_name +
-                            "</td>";
-                        html +=
-                            '<td><span class="phase-badge" style="background:' +
-                            ctColor +
-                            "22;color:" +
-                            ctColor +
-                            '">' +
-                            ctLabel +
-                            "</span></td>";
-                        html += '<td class="cell-stage">' + r.stage + "</td>";
-                        html +=
-                            '<td style="color:#baa1ff">' +
-                            (r.comm_group || "—") +
-                            "</td>";
-                        html +=
-                            '<td style="text-align:center">' +
-                            (r.comm_group_size != null
-                                ? r.comm_group_size
-                                : "—") +
-                            "</td>";
-                        html +=
-                            '<td class="cell-shape">' +
-                            (r.data_shape ||
-                                (r.data_size != null
-                                    ? formatBytes(r.data_size)
-                                    : "—")) +
-                            "</td>";
-                        html +=
-                            '<td style="text-align:center">' +
-                            (r.data_type || "—") +
-                            "</td>";
-                        html +=
-                            '<td class="cell-flops">' +
-                            formatUs(r.duration) +
-                            "</td>";
-                        html +=
-                            '<td style="color:var(--text-muted);max-width:140px;overflow:hidden;text-overflow:ellipsis">' +
-                            (r.additional || "—") +
-                            "</td>";
-                        html +=
-                            '<td style="text-align:center">' +
-                            (r.nonblock ? "是" : "否") +
-                            "</td>";
-                        html += "</tr>";
-                    });
-                    html += "</tbody></table>";
-                    container.innerHTML = html;
-                })();
+            function _updateStreamProgress(progressId, current, total) {
+                var bar = document.getElementById(progressId);
+                if (!bar) return;
+                var textEl = bar.querySelector("." + progressId + "-text");
+                if (textEl) {
+                    if (current >= total) {
+                        textEl.textContent = "已完成 " + total + " 个算子";
+                        bar.style.color = "var(--teal)";
+                        var dot = bar.querySelector("span");
+                        if (dot) dot.style.display = "none";
+                    } else {
+                        textEl.textContent = "加载中... " + current + " / " + total + " 个算子";
+                    }
+                }
             }
 
             // ── Utility formatters ──
@@ -6002,6 +5991,9 @@
                     }, { capture: true, passive: false });
                 }
 
+                // Cancel any running streams before starting new ones
+                _cancelActiveSimStreams();
+
                 // Render both sides with a tiny delay to allow DOM layout
                 if (origInfo) setTimeout(function() { _renderSideDetail("orig", origInfo); }, 50);
                 if (eqInfo) setTimeout(function() { _renderSideDetail("eq", eqInfo); }, 100);
@@ -6042,6 +6034,9 @@
                 setStatus("thinking");
                 updateWorkflowNode("simulation", "active");
                 addMessage("system", "📊 开始仿真任务...");
+
+                // Cancel any running result streams from previous simulation
+                _cancelActiveSimStreams();
 
                 // Switch to simulation tab immediately
                 _simStarted = true;
@@ -6091,36 +6086,47 @@
                         });
                     }
 
-                    updateWorkflowNode("simulation", "completed");
-                    if (results.comparison) {
-                        if (results.comparison.is_equivalent === false) {
-                            updateWorkflowNode("comparison", "failed");
-                            addMessage(
-                                "system",
-                                "⚠️ 仿真完成，等效性对比存在差异，请检查",
-                            );
-                        } else {
-                            updateWorkflowNode("comparison", "completed");
-                            addMessage(
-                                "system",
-                                "✅ 仿真验证已通过，等效性对比一致",
-                            );
-                        }
-                    } else {
-                        updateWorkflowNode("comparison", "active");
-                        addMessage("system", "📊 仿真任务已提交");
-                    }
+                    // Keep workflow "active" during 60s mock simulation — do NOT complete yet
+                    updateWorkflowNode("simulation", "active");
+                    updateWorkflowNode("comparison", "active");
 
                     _simStarted = false;
-                    _simCompleted = true;
-                    checkSimReady();
-                    setStatus("idle");
-                    // Re-render sim canvas with actual data + refresh results
+                    // Start 60s streaming countdown (mock simulation duration)
+                    _simCompleted = false;
+                    _simStreamDone = false;
                     _showActualData = true;
+                    addMessage("system", "📊 仿真任务已提交，预计60秒后完成...");
                     requestAnimationFrame(function () {
                         if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
                         _renderSimResults();
                     });
+                    // Simulation completes after 60s — all streaming data resolves
+                    setTimeout(function () {
+                        _simStreamDone = true;
+                        _simCompleted = true;
+                        updateWorkflowNode("simulation", "completed");
+                        if (results.comparison) {
+                            if (results.comparison.is_equivalent === false) {
+                                updateWorkflowNode("comparison", "failed");
+                                addMessage(
+                                    "system",
+                                    "⚠️ 仿真完成，等效性对比存在差异，请检查",
+                                );
+                            } else {
+                                updateWorkflowNode("comparison", "completed");
+                                addMessage(
+                                    "system",
+                                    "✅ 仿真验证已通过，等效性对比一致",
+                                );
+                            }
+                        } else {
+                            updateWorkflowNode("comparison", "completed");
+                        }
+                        checkSimReady();
+                        setStatus("idle");
+                        // Re-render to show full results immediately
+                        _renderSimResults();
+                    }, 60000);
                 } catch (e) {
                     _simStarted = false;
                     setStatus("error");
@@ -6134,6 +6140,7 @@
 
             var _resultsRendered = false;
             var _simCompleted = false;
+            var _simStreamDone = false; // true when 60s mock streaming countdown expires
             var _simStarted = false;
 
             function handleKeyDown(e) {
@@ -6222,5 +6229,6 @@
             })();
         </script>
         <script src="/static/topo-renderer.js?v=20260506"></script>
+        <script src="/static/sim-data-stream.js?v=20260506"></script>
     </body>
 </html>
