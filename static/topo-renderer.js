@@ -2605,9 +2605,11 @@ function canvasRebuild(targetSelector) {
 
   var svg = container
     .append("svg")
+    .attr("class", isSim ? "sim-svg" : "modeling-svg")
     .attr("viewBox", "0 0 " + meshWidth + " " + totalH)
     .attr("preserveAspectRatio", "xMidYMid meet");
   var zoomLayer = svg.append("g").attr("class", "zoom-layer");
+  var _svgScope = "." + (isSim ? "sim-svg" : "modeling-svg") + " ";
 
   svg.call(
     d3
@@ -2770,19 +2772,19 @@ function canvasRebuild(targetSelector) {
       .attr("type", "text/css")
       .text(
         [
-          ".model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }",
-          ".formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }",
-          ".formula-card-rect:hover { filter: url(#" + _currentFilterPrefix + "formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }",
-          ".formula-card-group text { pointer-events: none; }",
-          ".dp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
-          ".dp-card-group:hover .dp-card { filter: url(#" + _currentFilterPrefix + "dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }",
-          ".dp-card-group:hover .dp-shadow { filter: url(#" + _currentFilterPrefix + "dp-card-glow); }",
-          ".pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
-          ".tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; }",
-          ".tp-rect:hover { filter: url(#" + _currentFilterPrefix + "tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }",
-          ".tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; }",
-          ".tensor-cell:hover { filter: url(#" + _currentFilterPrefix + "tensor-cell-glow); stroke: #ff8f40; stroke-width: 1.2; }",
-          ".tensor-cell-label { pointer-events: none; }",
+          _svgScope + ".model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }",
+          _svgScope + ".formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }",
+          _svgScope + ".formula-card-rect:hover { filter: url(#" + _currentFilterPrefix + "formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }",
+          _svgScope + ".formula-card-group text { pointer-events: none; }",
+          _svgScope + ".dp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
+          _svgScope + ".dp-card-group:hover .dp-card { filter: url(#" + _currentFilterPrefix + "dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }",
+          _svgScope + ".dp-card-group:hover .dp-shadow { filter: url(#" + _currentFilterPrefix + "dp-card-glow); }",
+          _svgScope + ".pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
+          _svgScope + ".tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; }",
+          _svgScope + ".tp-rect:hover { filter: url(#" + _currentFilterPrefix + "tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }",
+          _svgScope + ".tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; }",
+          _svgScope + ".tensor-cell:hover { filter: url(#" + _currentFilterPrefix + "tensor-cell-glow); stroke: #ff8f40; stroke-width: 1.2; }",
+          _svgScope + ".tensor-cell-label { pointer-events: none; }",
         ].join(" "),
       );
   }
