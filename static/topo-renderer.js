@@ -1817,6 +1817,7 @@ function _rebuildSimWithBars(skipFetch) {
           for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) saved2[k] = _centerPanelState[k]; }
           for (var k2c in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2c)) _centerPanelState[k2c] = _simPanelLayout[k2c]; }
           _drawRankBars(data, true);
+          _renderDetailCharts();
           for (var k3c in _centerPanelState) {
             if (_centerPanelState.hasOwnProperty(k3c) && _simPanelLayout.hasOwnProperty(k3c)) {
               _simPanelLayout[k3c] = _centerPanelState[k3c];
@@ -1960,50 +1961,96 @@ function _renderDetailCharts() {
   if (!detailType || !detailData) { console.log("[DEBUG] _renderDetailCharts → ABORT: no type/data | detailType:", detailType, "| detailData:", !!detailData); return; }
 
   var pad = 8;
-  var chartW = (st.barW - pad * 3) / 2;
-  var allocH = st._allocDetailH || st.detailH;
   var subs = _getDetailSubs(detailType);
   var isPieDetail = detailType === "flops" || detailType === "hbm";
-  var legendItemH = 10;
-  var legendH = isPieDetail ? subs.length * legendItemH + 8 : 0;
-  var chartH = Math.max(60, allocH - 24 - legendH);
-  var chartY = st.detailY + 16;
+  var hasBoth = !!(detailData.orig && detailData.eq);
+
+  // Position below the actual bar content
+  var chartY = (st._barsBottomY || st.detailY) + 12;
 
   var typeLabel = detailType === "flops" ? "FLOPs" : detailType === "hbm" ? "HBM" : "通信";
-  if (detailData.orig) {
-    _drawOneDetailChart(g, st.cardX + pad, chartY, chartW, chartH,
-      detailType, detailData.orig, "原始仿真" + typeLabel + "组成", 0);
-  }
-  if (detailData.eq) {
-    _drawOneDetailChart(g, st.cardX + pad + chartW + pad, chartY, chartW, chartH,
-      detailType, detailData.eq, "等效仿真" + typeLabel + "组成", 1);
-  }
 
-  // Shared legend centered below both charts (pie charts only)
-  if (isPieDetail) {
-    var legendY = chartY + chartH + 6;
-    var hasBoth = !!(detailData.orig && detailData.eq);
-    var legendCenterX = hasBoth
-      ? st.cardX + pad + chartW + pad / 2
-      : st.cardX + pad + chartW / 2;
-    var dotBaseX = legendCenterX - 28;
+  if (isPieDetail && hasBoth) {
+    // Horizontal layout: [Left Pie] [Legend center] [Right Pie]
+    var legendW = 90;
+    var chartW = (st.barW - legendW - pad * 4) / 2;
+    var chartH = Math.max(60, Math.min(140, chartW));
+
+    var leftX = st.cardX + pad;
+    var rightX = st.cardX + pad + chartW + pad + legendW + pad;
+
+    _drawOneDetailChart(g, leftX, chartY, chartW, chartH,
+      detailType, detailData.orig, "原始仿真" + typeLabel + "组成", 0);
+    _drawOneDetailChart(g, rightX, chartY, chartW, chartH,
+      detailType, detailData.eq, "等效仿真" + typeLabel + "组成", 1);
+
+    // Legend horizontally centered between the two pies, vertically centered
+    var legendItemH = 14;
+    var totalLegendH = subs.length * legendItemH;
+    var legendStartY = chartY + 16 + (chartH - totalLegendH) / 2;
+    var gapLeft = leftX + chartW;
+    var gapRight = rightX;
+    var gapCenterX = (gapLeft + gapRight) / 2;
+    var legendItemW = 63;
+    var legendItemX = gapCenterX - legendItemW / 2 + 10;
     subs.forEach(function (sub, i) {
-      var ly = legendY + i * legendItemH;
+      var ly = legendStartY + i * legendItemH;
       g.append("rect")
-        .attr("x", dotBaseX)
+        .attr("x", legendItemX)
         .attr("y", ly)
         .attr("width", 8)
         .attr("height", 8)
         .attr("rx", 2)
         .attr("fill", _DETAIL_COLORS[i % _DETAIL_COLORS.length]);
       g.append("text")
-        .attr("x", dotBaseX + 11)
+        .attr("x", legendItemX + 11)
         .attr("y", ly + 8)
         .attr("fill", "var(--text-muted)")
         .attr("font-size", "8px")
         .attr("font-family", "var(--font-mono)")
         .text(sub.label);
     });
+  } else if (isPieDetail) {
+    // Single pie + legend beside it
+    var chartW2 = (st.barW - pad * 3) / 2;
+    var chartH2 = Math.max(60, Math.min(140, chartW2));
+    var singleData = detailData.orig || detailData.eq;
+    var singleLabel = detailData.orig ? "原始仿真" : "等效仿真";
+    _drawOneDetailChart(g, st.cardX + pad, chartY, chartW2, chartH2,
+      detailType, singleData, singleLabel + typeLabel + "组成", 0);
+
+    var legendItemH2 = 14;
+    var legendStartY2 = chartY + 16 + (chartH2 - subs.length * legendItemH2) / 2;
+    var legX2 = st.cardX + pad + chartW2 + pad * 2;
+    subs.forEach(function (sub, i) {
+      var ly = legendStartY2 + i * legendItemH2;
+      g.append("rect")
+        .attr("x", legX2)
+        .attr("y", ly)
+        .attr("width", 8)
+        .attr("height", 8)
+        .attr("rx", 2)
+        .attr("fill", _DETAIL_COLORS[i % _DETAIL_COLORS.length]);
+      g.append("text")
+        .attr("x", legX2 + 11)
+        .attr("y", ly + 8)
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "8px")
+        .attr("font-family", "var(--font-mono)")
+        .text(sub.label);
+    });
+  } else {
+    // Communication detail bars (non-pie) — original stacked layout
+    var chartW3 = (st.barW - pad * 3) / 2;
+    var chartH3 = Math.max(60, 120);
+    if (detailData.orig) {
+      _drawOneDetailChart(g, st.cardX + pad, chartY, chartW3, chartH3,
+        detailType, detailData.orig, "原始仿真" + typeLabel + "详情", 0);
+    }
+    if (detailData.eq) {
+      _drawOneDetailChart(g, st.cardX + pad + chartW3 + pad, chartY, chartW3, chartH3,
+        detailType, detailData.eq, "等效仿真" + typeLabel + "详情", 1);
+    }
   }
   console.log("[DEBUG] _renderDetailCharts → DONE, charts rendered");
 }
@@ -2491,6 +2538,7 @@ function _drawRankBars(data, isSim) {
     y += groupGap;
     if (barIdx > 0) metricBase += (barIdx - 1) * animStagger + interMetricGap;
   });
+  st._barsBottomY = y;
 }
 
 // ── Sim panel layout (stored during canvasRebuild for _drawRankBars reuse) ──
