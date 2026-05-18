@@ -1790,6 +1790,10 @@ function _rebuildSimWithBars(skipFetch) {
     for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) savedState[k] = _centerPanelState[k]; }
     for (var k2 in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2)) _centerPanelState[k2] = _simPanelLayout[k2]; }
     _drawRankBars(data, true);
+    // Sync rankData to _simPanelLayout so _fetchDetailChartData can read it
+    if (_simPanelLayout && _centerPanelState.rankData) {
+      _simPanelLayout.rankData = _centerPanelState.rankData;
+    }
     // After _drawRankBars, _centerPanelState (swapped) has rankData set.
     // If we need detail data, fetch it now, then rebuild again.
     if (!skipFetch && _centerPanelState.detailVisible && _centerPanelState.detailMetric) {
