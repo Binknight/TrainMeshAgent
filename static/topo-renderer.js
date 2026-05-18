@@ -1775,13 +1775,34 @@ var _DETAIL_MAP = {
 };
 var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
 
+function _rebuildSimWithBars() {
+  canvasRebuild("#sim-canvas-section");
+  if (window._pinnedSim && typeof _drawRankBars === "function" && _centerPanelState && _simPanelLayout) {
+    var pinned = window._pinnedSim;
+    var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
+    var eqRank = pinned.side === "orig" ? pinned.mappedRank : pinned.globalRank;
+    var data = {
+      orig: { globalRank: origRank, metrics: typeof _getMetrics === "function" ? _getMetrics(origRank, true) : {} },
+      eq: { globalRank: eqRank, metrics: typeof _getMetrics === "function" ? _getMetrics(eqRank, false) : {} },
+    };
+    var savedState = {};
+    for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) savedState[k] = _centerPanelState[k]; }
+    for (var k2 in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2)) _centerPanelState[k2] = _simPanelLayout[k2]; }
+    _drawRankBars(data, true);
+    for (var k3 in _centerPanelState) {
+      if (_centerPanelState.hasOwnProperty(k3) && _simPanelLayout.hasOwnProperty(k3)) {
+        _simPanelLayout[k3] = _centerPanelState[k3];
+      }
+    }
+    for (var k4 in savedState) { if (savedState.hasOwnProperty(k4)) _centerPanelState[k4] = savedState[k4]; }
+  }
+}
+
 function _toggleDetailCharts(detailType, isSim) {
   var st = isSim ? _simPanelLayout : _centerPanelState;
   if (!st) return;
   st._skipBarAnim = true;
-  var rebuild = isSim && typeof window._onSimRankPinned === "function"
-    ? window._onSimRankPinned
-    : function () { canvasRebuild("#canvas-section"); };
+  var rebuild = isSim ? _rebuildSimWithBars : function () { canvasRebuild("#canvas-section"); };
   if (st.detailVisible && st.detailMetric === detailType) {
     st.detailVisible = false;
     st.detailMetric = null;
