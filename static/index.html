@@ -5960,6 +5960,24 @@
                 bodyHtml += '</div>';
                 area.innerHTML = headerHtml + bodyHtml;
 
+                // One-time scroll sync setup: linked horizontal scroll for paired charts
+                if (!window._simScrollSyncSetup) {
+                    window._simScrollSyncSetup = true;
+                    area.addEventListener("scroll", function (ev) {
+                        if (window._scrollSyncing) return;
+                        var target = ev.target;
+                        if (!target || !target.classList || !target.classList.contains("result-chart")) return;
+                        var grid = target.parentElement;
+                        if (!grid) return;
+                        window._scrollSyncing = true;
+                        var charts = grid.querySelectorAll(".result-chart");
+                        charts.forEach(function (c) {
+                            if (c !== target) c.scrollLeft = target.scrollLeft;
+                        });
+                        window._scrollSyncing = false;
+                    }, { capture: true, passive: false });
+                }
+
                 // Render both sides with a tiny delay to allow DOM layout
                 if (origInfo) setTimeout(function() { _renderSideDetail("orig", origInfo); }, 50);
                 if (eqInfo) setTimeout(function() { _renderSideDetail("eq", eqInfo); }, 100);
