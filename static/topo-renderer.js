@@ -1795,20 +1795,21 @@ function _rebuildSimWithBars(skipFetch) {
       _simPanelLayout.rankData = _centerPanelState.rankData;
     }
     // After _drawRankBars, _centerPanelState (swapped) has rankData set.
-    // If we need detail data, fetch it now, then rebuild again.
-    if (!skipFetch && _centerPanelState.detailVisible && _centerPanelState.detailMetric) {
-      var _dt = _centerPanelState.detailMetric;
+    // Restore now so that the async callback below sees clean modeling state
+    for (var k3 in _centerPanelState) {
+      if (_centerPanelState.hasOwnProperty(k3) && _simPanelLayout.hasOwnProperty(k3)) {
+        _simPanelLayout[k3] = _centerPanelState[k3];
+      }
+    }
+    for (var k4 in savedState) { if (savedState.hasOwnProperty(k4)) _centerPanelState[k4] = savedState[k4]; }
+
+    // If we need detail data, fetch it now (rankData is already on _simPanelLayout)
+    if (!skipFetch && _simPanelLayout.detailVisible && _simPanelLayout.detailMetric) {
+      var _dt = _simPanelLayout.detailMetric;
       console.log("[DEBUG] _rebuildSimWithBars → fetching detail data for:", _dt);
       _fetchDetailChartData(_dt, true).then(function () {
-        for (var k2b in _centerPanelState) {
-          if (_centerPanelState.hasOwnProperty(k2b) && _simPanelLayout && _simPanelLayout.hasOwnProperty(k2b)) {
-            _simPanelLayout[k2b] = _centerPanelState[k2b];
-          }
-        }
-        for (var k4b in savedState) { if (savedState.hasOwnProperty(k4b)) _centerPanelState[k4b] = savedState[k4b]; }
         if (_simPanelLayout && _simPanelLayout.detailData) {
           console.log("[DEBUG] _rebuildSimWithBars → detail data ready, rebuilding again");
-          // Rebuild once more with detailData available — bar animation skipped
           _simPanelLayout._skipBarAnim = true;
           var saved2 = {};
           for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) saved2[k] = _centerPanelState[k]; }
@@ -1823,13 +1824,6 @@ function _rebuildSimWithBars(skipFetch) {
         }
       });
     }
-    // Restore original _centerPanelState
-    for (var k3 in _centerPanelState) {
-      if (_centerPanelState.hasOwnProperty(k3) && _simPanelLayout.hasOwnProperty(k3)) {
-        _simPanelLayout[k3] = _centerPanelState[k3];
-      }
-    }
-    for (var k4 in savedState) { if (savedState.hasOwnProperty(k4)) _centerPanelState[k4] = savedState[k4]; }
   }
 }
 
