@@ -6539,6 +6539,39 @@
                 if (simTabBtn) simTabBtn.disabled = false;
             })();
 
+            // Callback: rank click on simulation tab refreshes bar chart + results
+            // Must be defined BEFORE restoreSession so it's available on refresh
+            window._onSimRankPinned = function () {
+                requestAnimationFrame(function () {
+                    if (!window._pinnedSim && typeof _centerPanelState !== "undefined") {
+                        _centerPanelState.detailVisible = false;
+                        _centerPanelState.detailMetric = null;
+                        _centerPanelState.detailData = null;
+                    }
+                    if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                    if (window._pinnedSim && typeof _drawRankBars === "function" && typeof _centerPanelState !== "undefined" && typeof _simPanelLayout !== "undefined" && _simPanelLayout) {
+                        var pinned = window._pinnedSim;
+                        var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
+                        var eqRank = pinned.side === "orig" ? pinned.mappedRank : pinned.globalRank;
+                        var data = {
+                            orig: { globalRank: origRank, metrics: typeof _getMetrics === "function" ? _getMetrics(origRank, true) : {} },
+                            eq: { globalRank: eqRank, metrics: typeof _getMetrics === "function" ? _getMetrics(eqRank, false) : {} },
+                        };
+                        var savedState = {};
+                        for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) savedState[k] = _centerPanelState[k]; }
+                        for (var k2 in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2)) _centerPanelState[k2] = _simPanelLayout[k2]; }
+                        _drawRankBars(data);
+                        for (var k3 in _centerPanelState) {
+                            if (_centerPanelState.hasOwnProperty(k3) && _simPanelLayout.hasOwnProperty(k3)) {
+                                _simPanelLayout[k3] = _centerPanelState[k3];
+                            }
+                        }
+                        for (var k4 in savedState) { if (savedState.hasOwnProperty(k4)) _centerPanelState[k4] = savedState[k4]; }
+                    }
+                    _renderSimResults();
+                });
+            };
+
             (async function init() {
                 const saved = JSON.parse(
                     localStorage.getItem("mesh_session") || "{}",
@@ -6559,42 +6592,6 @@
                 }
                 await ensureSession();
                 initWorkflow();
-                // Callback: rank click on simulation tab refreshes bar chart + results
-                window._onSimRankPinned = function () {
-                    requestAnimationFrame(function () {
-                        // Clear detail state on toggle-off so next pin starts fresh
-                        if (!window._pinnedSim && typeof _centerPanelState !== "undefined") {
-                            _centerPanelState.detailVisible = false;
-                            _centerPanelState.detailMetric = null;
-                            _centerPanelState.detailData = null;
-                        }
-                        // Rebuild sim canvas with/without card panel
-                        if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                        // Draw bars into the sim card using the existing _drawRankBars
-                        if (window._pinnedSim && typeof _drawRankBars === "function" && typeof _centerPanelState !== "undefined" && typeof _simPanelLayout !== "undefined" && _simPanelLayout) {
-                            var pinned = window._pinnedSim;
-                            var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
-                            var eqRank = pinned.side === "orig" ? pinned.mappedRank : pinned.globalRank;
-                            var data = {
-                                orig: { globalRank: origRank, metrics: typeof _getMetrics === "function" ? _getMetrics(origRank, true) : {} },
-                                eq: { globalRank: eqRank, metrics: typeof _getMetrics === "function" ? _getMetrics(eqRank, false) : {} },
-                            };
-                            // Swap _centerPanelState with sim layout, call _drawRankBars, restore
-                            var savedState = {};
-                            for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) savedState[k] = _centerPanelState[k]; }
-                            for (var k2 in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2)) _centerPanelState[k2] = _simPanelLayout[k2]; }
-                            _drawRankBars(data);
-                            // Copy back detail state changes for persistence
-                            for (var k3 in _centerPanelState) {
-                                if (_centerPanelState.hasOwnProperty(k3) && _simPanelLayout.hasOwnProperty(k3)) {
-                                    _simPanelLayout[k3] = _centerPanelState[k3];
-                                }
-                            }
-                            for (var k4 in savedState) { if (savedState.hasOwnProperty(k4)) _centerPanelState[k4] = savedState[k4]; }
-                        }
-                        _renderSimResults();
-                    });
-                };
                 document.getElementById("chat-input").focus();
             })();
         </script>

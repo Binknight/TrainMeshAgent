@@ -87,8 +87,10 @@ var meshEstimateOrig = {}; // { global_rank: { flops_per_card, hbm_gb, ... } }
 var meshEstimateEq = {};
 var meshActualOrig = {}; // { global_rank: CardMetrics } from REST simulation data
 var meshActualEq = {};
-var meshPinnedRank = null; // { side: "orig"|"eq", globalRank: number }
-var meshPinnedTpInfo = null; // { side: "orig"|"eq", tpIndex: number, ppIndex: number, globalRank: number }
+var meshPinnedRank = null; // { side: "orig"|"eq", globalRank: number } — modeling canvas
+var meshPinnedTpInfo = null; // { side: "orig"|"eq", tpIndex: number, ppIndex: number, globalRank: number } — modeling canvas
+var _simPinnedRank = null; // simulation canvas counterpart
+var _simPinnedTpInfo = null; // simulation canvas counterpart
 
 // ── Flowing border animation (RAF-based, more reliable than CSS @keyframes on SVG) ──
 var _flowAnimId = null;
@@ -631,6 +633,8 @@ function _clearBothTooltips() {
   d3.selectAll(".tp-rect.pinned").classed("pinned", false);
   meshPinnedRank = null;
   meshPinnedTpInfo = null;
+  _simPinnedRank = null;
+  _simPinnedTpInfo = null;
   // Clear center panel bar chart
   _centerPanelState.barCardVisible = false;
   _centerPanelState.detailVisible = false;
@@ -1033,13 +1037,14 @@ function _meshBuildView(
       var ty = tpY + ti * (MESH_CARD.tpH + MESH_CARD.tpGap) * scale;
       var side = isOrig ? "orig" : "eq";
       var hasActual = _hasActualData(side);
+      var _pinnedRef = _renderingSimCanvas ? _simPinnedRank : meshPinnedRank;
       var isPinned =
-        meshPinnedRank &&
-        ((meshPinnedRank.side === side &&
-          meshPinnedRank.globalRank === tp.globalRank) ||
-          (meshPinnedRank.mappedRank != null &&
-            meshPinnedRank.side !== side &&
-            meshPinnedRank.mappedRank === tp.globalRank));
+        _pinnedRef &&
+        ((_pinnedRef.side === side &&
+          _pinnedRef.globalRank === tp.globalRank) ||
+          (_pinnedRef.mappedRank != null &&
+            _pinnedRef.side !== side &&
+            _pinnedRef.mappedRank === tp.globalRank));
       var rectClass =
         "tp-rect" +
         (hasActual ? " has-data" : "") +
@@ -1056,43 +1061,59 @@ function _meshBuildView(
         .attr("data-rank", tp.globalRank)
         .attr("data-side", side)
         .on("mouseover", function () {
-          if (meshPinnedRank) return;
+          if (_renderingSimCanvas ? _simPinnedRank : meshPinnedRank) return;
           d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
         })
         .on("mouseout", function () {
-          if (meshPinnedRank) return;
+          if (_renderingSimCanvas ? _simPinnedRank : meshPinnedRank) return;
           d3.select(this).attr("stroke", null).attr("stroke-width", null);
         })
         .on("click", function (event) {
           event.stopPropagation();
+          var svgRoot = this.closest("svg");
+          var isSimCanvas = svgRoot && svgRoot.classList.contains("sim-svg");
+          var d3svg = d3.select(svgRoot);
+
           var globalRank = parseInt(this.getAttribute("data-rank"));
           var isCompare = !!(meshOriginal && meshEquivalent);
           var mappedRank = isCompare
             ? _mapRankToOtherSide(side, globalRank)
             : null;
           var otherSide = side === "orig" ? "eq" : "orig";
-          var alreadyPinned =
-            meshPinnedRank &&
-            meshPinnedRank.globalRank === globalRank &&
-            meshPinnedRank.side === side;
 
-          d3.selectAll(".tp-rect.pinned").classed("pinned", false);
+          var pinned = isSimCanvas ? _simPinnedRank : meshPinnedRank;
+          var alreadyPinned =
+            pinned &&
+            pinned.globalRank === globalRank &&
+            pinned.side === side;
+
+          // Un-pin all ranks only within this SVG
+          d3svg.selectAll(".tp-rect.pinned").classed("pinned", false);
 
           if (alreadyPinned) {
-            _centerPanelState.barCardVisible = false;
+            if (!isSimCanvas) _centerPanelState.barCardVisible = false;
+            if (isSimCanvas) {
+              _simPinnedRank = null;
+              _simPinnedTpInfo = null;
+            } else {
+              meshPinnedRank = null;
+              meshPinnedTpInfo = null;
+            }
             _clearBothTooltips();
-            modelRebuild();
+            canvasRebuild(isSimCanvas ? "#sim-canvas-section" : "#canvas-section");
           } else {
-            _centerPanelState.barCardVisible = true;
+            if (!isSimCanvas) _centerPanelState.barCardVisible = true;
             d3.select(this).classed("pinned", true);
             if (mappedRank != null) {
-              d3.selectAll(
-                '.tp-rect[data-rank="' +
-                  mappedRank +
-                  '"][data-side="' +
-                  otherSide +
-                  '"]',
-              ).classed("pinned", true);
+              d3svg
+                .selectAll(
+                  '.tp-rect[data-rank="' +
+                    mappedRank +
+                    '"][data-side="' +
+                    otherSide +
+                    '"]',
+                )
+                .classed("pinned", true);
             }
 
             var rankEntry = {
@@ -1100,17 +1121,19 @@ function _meshBuildView(
               globalRank: globalRank,
               mappedRank: mappedRank,
             };
-            meshPinnedRank = rankEntry;
-            meshPinnedTpInfo = {
-              side: side,
-              tpIndex: ti,
-              ppIndex: pp.id,
-              globalRank: globalRank,
-            };
+            if (isSimCanvas) {
+              _simPinnedRank = rankEntry;
+              _simPinnedTpInfo = {
+                side: side, tpIndex: ti, ppIndex: pp.id, globalRank: globalRank,
+              };
+            } else {
+              meshPinnedRank = rankEntry;
+              meshPinnedTpInfo = {
+                side: side, tpIndex: ti, ppIndex: pp.id, globalRank: globalRank,
+              };
+            }
 
-            // On simulation tab: toggle rank pin (click again to dismiss)
-            var simPanel = document.getElementById("tab-panel-simulation");
-            if (simPanel && simPanel.classList.contains("active")) {
+            if (isSimCanvas) {
               if (window._pinnedSim && window._pinnedSim.globalRank === globalRank && window._pinnedSim.side === side) {
                 window._pinnedSim = null; // toggle off
               } else {
@@ -1121,7 +1144,7 @@ function _meshBuildView(
               window._pinnedSim = null;
               _centerPanelState.formulasCollapsed = true;
               _updateCenterBarChart(globalRank, side);
-              modelRebuild();
+              canvasRebuild("#canvas-section");
             }
           }
         });
@@ -2437,8 +2460,13 @@ function meshRebuild(targetSelector) {
     tipMapped.innerHTML = "";
   }
   _closeDetailPanels();
-  meshPinnedRank = null;
-  meshPinnedTpInfo = null;
+  if (targetSelector === "#sim-canvas-section") {
+    _simPinnedRank = null;
+    _simPinnedTpInfo = null;
+  } else {
+    meshPinnedRank = null;
+    meshPinnedTpInfo = null;
+  }
   _centerPanelState.barCardVisible = false;
   _centerPanelState.rankData = null;
   _centerPanelState.detailVisible = false;
@@ -2540,6 +2568,7 @@ function canvasRebuild(targetSelector) {
   targetSelector = targetSelector || "#canvas-section";
   var isSim = targetSelector === "#sim-canvas-section";
   _currentFilterPrefix = isSim ? "sim-" : "";
+  _renderingSimCanvas = isSim;
   _closeDetailPanels();
   meshUpdateSize(targetSelector);
 
@@ -2636,7 +2665,7 @@ function canvasRebuild(targetSelector) {
     if (hasModel) {
       defs
         .append("marker")
-        .attr("id", "arrow-dataflow")
+        .attr("id", _currentFilterPrefix + "arrow-dataflow")
         .attr("viewBox", "0 0 10 10")
         .attr("refX", 5)
         .attr("refY", 5)
@@ -2651,7 +2680,7 @@ function canvasRebuild(targetSelector) {
       // Hover glow filter for model diagram
       var modelFilter = defs
         .append("filter")
-        .attr("id", "model-hover-glow")
+        .attr("id", _currentFilterPrefix + "model-hover-glow")
         .attr("x", "-30%")
         .attr("y", "-30%")
         .attr("width", "160%")
@@ -3460,6 +3489,7 @@ async function loadMeshData(topoData) {
 var _canvasZoomBehavior = null;
 var _canvasZoomBehaviorSim = null;
 var _currentFilterPrefix = "";
+var _renderingSimCanvas = false;
 
 function canvasRecenter(targetSelector, _retry, skipTransition) {
   targetSelector = targetSelector || "#canvas-section";
@@ -3705,7 +3735,9 @@ window.addEventListener("resize", function () {
   if (_resizeTimer) clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(function () {
     _resizeTimer = null;
-    canvasRebuild();
+    var simPanel = document.getElementById("tab-panel-simulation");
+    var isSim = simPanel && simPanel.classList.contains("active");
+    canvasRebuild(isSim ? "#sim-canvas-section" : "#canvas-section");
   }, 200);
 });
 
@@ -3716,7 +3748,18 @@ document
   .addEventListener("click", function (e) {
     if (e.target.tagName === "svg" || e.target.id === "canvas-svg-wrap") {
       _clearBothTooltips();
-      modelRebuild();
+      canvasRebuild("#canvas-section");
+    }
+  });
+
+document
+  .getElementById("sim-canvas-section")
+  .addEventListener("click", function (e) {
+    if (e.target.tagName === "svg") {
+      _clearBothTooltips();
+      window._pinnedSim = null;
+      if (typeof window._onSimRankPinned === "function") window._onSimRankPinned();
+      canvasRebuild("#sim-canvas-section");
     }
   });
 
@@ -3726,9 +3769,18 @@ document.addEventListener("keydown", function (e) {
   if (e.key === "Escape") {
     if (tooltipDetailState) {
       _closeDetailPanels();
-    } else if (meshPinnedRank) {
-      _clearBothTooltips();
-      modelRebuild();
+    } else {
+      var simPanel = document.getElementById("tab-panel-simulation");
+      var isSim = simPanel && simPanel.classList.contains("active");
+      var pinned = isSim ? _simPinnedRank : meshPinnedRank;
+      if (pinned) {
+        _clearBothTooltips();
+        if (isSim) {
+          window._pinnedSim = null;
+          if (typeof window._onSimRankPinned === "function") window._onSimRankPinned();
+        }
+        canvasRebuild(isSim ? "#sim-canvas-section" : "#canvas-section");
+      }
     }
   }
 });
@@ -4485,13 +4537,14 @@ function _renderOneModel(
   }
 
   // ── Helper: bind hover effect (glow + stroke lift + tooltip) ──
+  var _mfp = _currentFilterPrefix;
   function addHover(rect, origSw, tipId) {
     rect
       .classed("model-node", true)
       .on("mouseenter", function (event) {
         d3.select(this)
           .attr("stroke-width", origSw * 2.2)
-          .attr("filter", "url(#model-hover-glow)");
+          .attr("filter", "url(#" + _mfp + "model-hover-glow)");
         showTip(true, tipId, event);
       })
       .on("mousemove", function (event) {
