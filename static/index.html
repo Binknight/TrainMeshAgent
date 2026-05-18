@@ -510,8 +510,19 @@
             }
             .sim-results-area {
                 flex: 1;
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+            }
+            .sim-results-header {
+                flex-shrink: 0;
+                padding: 10px 20px 8px;
+            }
+            .sim-results-body {
+                flex: 1;
                 overflow-y: auto;
-                padding: 16px 20px;
+                padding: 0 20px 16px;
+                min-height: 0;
             }
 
             /* ── Results Tab ── */
@@ -5520,443 +5531,6 @@
                 }
                 var data = genMockWorkload(rankInfo);
 
-                // ═══ Section 0: HBM Memory 统计 — vertical bar chart (highest priority) ═══
-                (function () {
-                    var container = document.getElementById(prefix + "-hbm");
-                    if (!container) return;
-
-                    var categories = [
-                        { key: "weights", label: "权重", color: "#39bae6" },
-                        { key: "gradients", label: "梯度", color: "#ff8f40" },
-                        { key: "optimizer", label: "优化器", color: "#baa1ff" },
-                        { key: "activations", label: "激活", color: "#ffb454" },
-                        {
-                            key: "comm_buffer",
-                            label: "通信缓冲",
-                            color: "#7fd962",
-                        },
-                    ];
-                    var hbm = data.hbm;
-
-                    var W = container.clientWidth - 16;
-                    var H = 320,
-                        topM = 20,
-                        botM = 80,
-                        leftM = 68,
-                        rightM = 24;
-                    var plotW = W - leftM - rightM;
-                    var plotH = H - topM - botM;
-                    var N = categories.length;
-                    var barGap = Math.max(14, plotW * 0.06);
-                    var barW = Math.max(48, (plotW - barGap * (N + 1)) / N);
-
-                    container.innerHTML = "";
-                    var svg = d3
-                        .select(container)
-                        .append("svg")
-                        .attr("width", W)
-                        .attr("height", H);
-
-                    // Y-axis: Memory Usage (GB)
-                    var maxY = Math.ceil((hbm.total * 1.15) / 5) * 5; // round up to nearest 5 GB
-                    var yScale = function (v) {
-                        return plotH - (v / maxY) * plotH;
-                    };
-
-                    var g = svg
-                        .append("g")
-                        .attr(
-                            "transform",
-                            "translate(" + leftM + "," + topM + ")",
-                        );
-
-                    // ── Grid lines ──
-                    var nGrids = 5;
-                    for (var gi = 0; gi <= nGrids; gi++) {
-                        var gv = (maxY * gi) / nGrids;
-                        var gy = plotH - (gi / nGrids) * plotH;
-                        g.append("line")
-                            .attr("x1", 0)
-                            .attr("x2", plotW)
-                            .attr("y1", gy)
-                            .attr("y2", gy)
-                            .attr("stroke", "#1e2a36")
-                            .attr("stroke-width", gi === 0 ? 1 : 0.5);
-                        g.append("text")
-                            .attr("x", -8)
-                            .attr("y", gy + 4)
-                            .attr("text-anchor", "end")
-                            .attr("fill", "#4a5568")
-                            .attr("font-size", "10px")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(gv.toFixed(0) + " GB");
-                    }
-
-                    // ── Bars ──
-                    var defs = svg.append("defs");
-                    categories.forEach(function (cat) {
-                        var gradId = "hbm-grad-" + cat.key;
-                        var grad = defs
-                            .append("linearGradient")
-                            .attr("id", gradId)
-                            .attr("x1", "0")
-                            .attr("y1", "0")
-                            .attr("x2", "0")
-                            .attr("y2", "1");
-                        grad.append("stop")
-                            .attr("offset", "0%")
-                            .attr("stop-color", cat.color)
-                            .attr("stop-opacity", 0.95);
-                        grad.append("stop")
-                            .attr("offset", "100%")
-                            .attr("stop-color", cat.color)
-                            .attr("stop-opacity", 0.55);
-                    });
-
-                    var tooltip = d3
-                        .select(container)
-                        .append("div")
-                        .attr("class", "result-tooltip");
-
-                    categories.forEach(function (cat, i) {
-                        var val = hbm[cat.key];
-                        var barX = barGap + i * (barW + barGap);
-                        var barH = Math.max(2, (val / maxY) * plotH);
-                        var barY = plotH - barH;
-                        var pct = ((val / hbm.total) * 100).toFixed(1);
-
-                        // Bar with gradient
-                        g.append("rect")
-                            .attr("x", barX)
-                            .attr("y", barY)
-                            .attr("width", barW)
-                            .attr("height", barH)
-                            .attr("rx", 4)
-                            .attr("ry", 4)
-                            .attr("fill", "url(#hbm-grad-" + cat.key + ")");
-
-                        // Value label on top
-                        g.append("text")
-                            .attr("x", barX + barW / 2)
-                            .attr("y", barY - 6)
-                            .attr("text-anchor", "middle")
-                            .attr("fill", cat.color)
-                            .attr("font-size", "12px")
-                            .attr("font-weight", "600")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(val.toFixed(1) + " GB");
-
-                        // Percentage below value
-                        g.append("text")
-                            .attr("x", barX + barW / 2)
-                            .attr("y", barY - 22)
-                            .attr("text-anchor", "middle")
-                            .attr("fill", "#7b8ca3")
-                            .attr("font-size", "10px")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(pct + "%");
-
-                        // X-axis label
-                        g.append("text")
-                            .attr("x", barX + barW / 2)
-                            .attr("y", plotH + 22)
-                            .attr("text-anchor", "middle")
-                            .attr("fill", "#7b8ca3")
-                            .attr("font-size", "11px")
-                            .attr("font-weight", "500")
-                            .attr("font-family", "var(--font-sans)")
-                            .text(cat.label);
-
-                        // Hover overlay
-                        g.append("rect")
-                            .attr("x", barX - 2)
-                            .attr("y", 0)
-                            .attr("width", barW + 4)
-                            .attr("height", plotH)
-                            .attr("fill", "transparent")
-                            .on("mouseover", function (ev) {
-                                tooltip
-                                    .classed("show", true)
-                                    .html(
-                                        '<div style="font-weight:600;margin-bottom:4px;color:' +
-                                            cat.color +
-                                            '">' +
-                                            cat.label +
-                                            "</div>" +
-                                            "<div>Memory: <b>" +
-                                            val.toFixed(2) +
-                                            " GB</b></div>" +
-                                            "<div>占比: <b>" +
-                                            pct +
-                                            "%</b></div>" +
-                                            '<div style="color:var(--text-muted)">总显存: ' +
-                                            hbm.total.toFixed(1) +
-                                            " GB</div>",
-                                    );
-                            })
-                            .on("mousemove", function (ev) {
-                                tooltip
-                                    .style("left", ev.clientX + 14 + "px")
-                                    .style("top", ev.clientY - 60 + "px");
-                            })
-                            .on("mouseout", function () {
-                                tooltip.classed("show", false);
-                            });
-                    });
-
-                    // ── Y-axis label ──
-                    svg.append("text")
-                        .attr("x", 14)
-                        .attr("y", topM + plotH / 2)
-                        .attr("text-anchor", "middle")
-                        .attr("fill", "#4a5568")
-                        .attr("font-size", "10px")
-                        .attr("font-family", "var(--font-sans)")
-                        .attr(
-                            "transform",
-                            "rotate(-90,14," + (topM + plotH / 2) + ")",
-                        )
-                        .text("Memory Usage (GB)");
-
-                    // ── Total line ──
-                    svg.append("text")
-                        .attr("x", leftM + plotW)
-                        .attr("y", topM - 6)
-                        .attr("text-anchor", "end")
-                        .attr("fill", "var(--text-secondary)")
-                        .attr("font-size", "10px")
-                        .attr("font-family", "JetBrains Mono,monospace")
-                        .text("Total: " + hbm.total.toFixed(1) + " GB / GPU");
-                })();
-
-                // ═══ Section 1: 负载序列记录 — stacked bar chart (compute vs comm per stage) ═══
-                (function () {
-                    var container = document.getElementById(
-                        prefix + "-loadseq",
-                    );
-                    if (!container) return;
-                    var W = container.clientWidth - 16;
-                    var stages = data.loadSeq;
-                    var N = stages.length;
-                    var barW = Math.max(40, Math.min(70, (W - 80) / N - 6));
-                    var chartW = Math.max(W, N * (barW + 6) + 100);
-                    var H = 280,
-                        topM = 16,
-                        botM = 72,
-                        leftM = 58,
-                        rightM = 20;
-                    var plotH = H - topM - botM;
-                    var plotW = chartW - leftM - rightM;
-
-                    // find max total time for scaling
-                    var maxTotal = 0;
-                    stages.forEach(function (s) {
-                        var sum = s.compute_us + s.comm_us;
-                        if (sum > maxTotal) maxTotal = sum;
-                    });
-
-                    container.innerHTML = "";
-                    var svg = d3
-                        .select(container)
-                        .append("svg")
-                        .attr("width", chartW)
-                        .attr("height", H);
-
-                    var g = svg
-                        .append("g")
-                        .attr(
-                            "transform",
-                            "translate(" + leftM + "," + topM + ")",
-                        );
-
-                    // grid lines
-                    for (var i = 0; i <= 4; i++) {
-                        g.append("line")
-                            .attr("x1", 0)
-                            .attr("x2", plotW)
-                            .attr("y1", (plotH * i) / 4)
-                            .attr("y2", (plotH * i) / 4)
-                            .attr("stroke", "#1e2a36")
-                            .attr("stroke-width", 0.5);
-                    }
-
-                    var tooltip = d3
-                        .select(container)
-                        .append("div")
-                        .attr("class", "result-tooltip");
-
-                    stages.forEach(function (s, idx) {
-                        var x = idx * (barW + 6);
-                        var hComp = Math.max(
-                            1,
-                            (s.compute_us / maxTotal) * plotH,
-                        );
-                        var hComm = Math.max(0, (s.comm_us / maxTotal) * plotH);
-
-                        // compute bar (top)
-                        g.append("rect")
-                            .attr("x", x)
-                            .attr("y", plotH - hComp - hComm)
-                            .attr("width", barW)
-                            .attr("height", hComp)
-                            .attr("fill", "#39bae6")
-                            .attr("rx", 2)
-                            .attr("ry", 2)
-                            .attr("opacity", 0.9);
-                        // comm bar (bottom, stacked below compute)
-                        if (hComm > 0.5) {
-                            g.append("rect")
-                                .attr("x", x)
-                                .attr("y", plotH - hComm)
-                                .attr("width", barW)
-                                .attr("height", hComm)
-                                .attr("fill", "#ff8f40")
-                                .attr("rx", 2)
-                                .attr("ry", 2)
-                                .attr("opacity", 0.85);
-                            // comm sub-segments (thin colored slices)
-                            var commKeys = Object.keys(s.commBreakdown);
-                            var yOff = plotH;
-                            commKeys.forEach(function (ck) {
-                                var segH = Math.max(
-                                    1,
-                                    (s.commBreakdown[ck] / maxTotal) * plotH,
-                                );
-                                g.append("rect")
-                                    .attr("x", x + 2)
-                                    .attr("y", yOff - segH)
-                                    .attr("width", barW - 4)
-                                    .attr("height", Math.max(0.6, segH))
-                                    .attr("fill", TYPE_COLORS[ck] || "#7b8ca3")
-                                    .attr("rx", 0.5)
-                                    .attr("ry", 0.5)
-                                    .attr("opacity", 0.7);
-                                yOff -= segH;
-                            });
-                        }
-
-                        // hover overlay
-                        var totalUs = s.compute_us + s.comm_us;
-                        g.append("rect")
-                            .attr("x", x)
-                            .attr("y", 0)
-                            .attr("width", barW)
-                            .attr("height", plotH)
-                            .attr("fill", "transparent")
-                            .on("mouseover", function (ev) {
-                                var html =
-                                    '<div style="font-weight:600;margin-bottom:4px;color:var(--cyan)">' +
-                                    s.stage +
-                                    "</div>";
-                                html +=
-                                    "<div>总耗时: <b>" +
-                                    formatUs(totalUs) +
-                                    "</b></div>";
-                                html +=
-                                    '<div style="color:#39bae6">Compute: <b>' +
-                                    formatUs(s.compute_us) +
-                                    "</b> (" +
-                                    (totalUs > 0
-                                        ? (
-                                              (s.compute_us / totalUs) *
-                                              100
-                                          ).toFixed(0)
-                                        : 0) +
-                                    "%)</div>";
-                                html +=
-                                    '<div style="color:#ff8f40">Comm: <b>' +
-                                    formatUs(s.comm_us) +
-                                    "</b> (" +
-                                    (totalUs > 0
-                                        ? ((s.comm_us / totalUs) * 100).toFixed(
-                                              0,
-                                          )
-                                        : 0) +
-                                    "%)</div>";
-                                var commKeys = Object.keys(s.commBreakdown);
-                                if (commKeys.length) {
-                                    html +=
-                                        '<div style="margin-top:3px;border-top:1px solid var(--border);padding-top:3px">';
-                                    commKeys.forEach(function (ck) {
-                                        html +=
-                                            "<div>&nbsp;&nbsp;" +
-                                            ck +
-                                            ": <b>" +
-                                            formatUs(s.commBreakdown[ck]) +
-                                            "</b></div>";
-                                    });
-                                    html += "</div>";
-                                }
-                                tooltip.classed("show", true).html(html);
-                            })
-                            .on("mousemove", function (ev) {
-                                tooltip
-                                    .style("left", ev.clientX + 14 + "px")
-                                    .style("top", ev.clientY - 70 + "px");
-                            })
-                            .on("mouseout", function () {
-                                tooltip.classed("show", false);
-                            });
-                    });
-
-                    // x-axis labels
-                    stages.forEach(function (s, idx) {
-                        var x = idx * (barW + 6) + barW / 2;
-                        g.append("text")
-                            .attr("x", x)
-                            .attr("y", plotH + 14)
-                            .attr("text-anchor", "start")
-                            .attr(
-                                "transform",
-                                "rotate(-32," + x + "," + (plotH + 14) + ")",
-                            )
-                            .attr("fill", "#7b8ca3")
-                            .attr("font-size", "9px")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(s.stage);
-                    });
-
-                    // y-axis labels
-                    for (var i = 0; i <= 4; i++) {
-                        var v = (maxTotal * i) / 4;
-                        g.append("text")
-                            .attr("x", -8)
-                            .attr("y", plotH - (plotH * i) / 4 + 4)
-                            .attr("text-anchor", "end")
-                            .attr("fill", "#4a5568")
-                            .attr("font-size", "9px")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(formatUs(v));
-                    }
-
-                    // legend
-                    var legY = H - 16;
-                    [
-                        { l: "Compute", c: "#39bae6" },
-                        { l: "Comm Total", c: "#ff8f40" },
-                        { l: "AllReduce", c: "#ff8f40" },
-                        { l: "AllGather", c: "#baa1ff" },
-                        { l: "RedScatter", c: "#ffb454" },
-                        { l: "Broadcast", c: "#7fd962" },
-                    ].forEach(function (d, i) {
-                        var lx = leftM + i * 110;
-                        svg.append("rect")
-                            .attr("x", lx)
-                            .attr("y", legY - 8)
-                            .attr("width", 10)
-                            .attr("height", 10)
-                            .attr("fill", d.c)
-                            .attr("rx", 2);
-                        svg.append("text")
-                            .attr("x", lx + 14)
-                            .attr("y", legY)
-                            .attr("fill", "#7b8ca3")
-                            .attr("font-size", "9px")
-                            .attr("font-family", "JetBrains Mono,monospace")
-                            .text(d.l);
-                    });
-                })();
-
                 // ═══ Section 2: 执行时间线 — Gantt chart by stage rows ═══
                 (function () {
                     var container = document.getElementById(prefix + "-timeline");
@@ -6298,14 +5872,14 @@
                 );
                 if (!hasSim) {
                     area.innerHTML =
-                        '<div class="sim-results-placeholder" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-family:var(--font-mono);font-size:13px">'
+                        '<div style="display:flex;align-items:center;justify-content:center;flex:1;height:100%;color:var(--text-muted);font-family:var(--font-mono);font-size:13px">'
                         + '<span>等待仿真数据...<br/><small>点击上方组网图中的 Rank 卡片查看详情</small></span></div>';
                     return;
                 }
                 var pinned = window._pinnedSim;
                 if (!pinned) {
                     area.innerHTML =
-                        '<div class="sim-results-placeholder" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-family:var(--font-mono);font-size:13px">'
+                        '<div style="display:flex;align-items:center;justify-content:center;flex:1;height:100%;color:var(--text-muted);font-family:var(--font-mono);font-size:13px">'
                         + '<span>点击上方组网图中的 Rank 卡片<br/>查看原始 vs 等效对比详情</span></div>';
                     return;
                 }
@@ -6344,35 +5918,36 @@
 
                 // Build the two-column layout
                 var sections = [
-                    { id: "hbm", title: "HBM Memory 统计", sub: "Memory Usage — 权重 · 梯度 · 优化器 · 激活 · 通信缓冲" },
-                    { id: "loadseq", title: "负载序列记录", sub: "Pipeline Load Sequence — 各阶段计算·通信·显存·空闲占比" },
                     { id: "timeline", title: "算子执行时序", sub: "Operator Timeline — 横轴时间 · 颜色区分算子类型" },
                     { id: "opspec", title: "负载描述文件", sub: "Operator Spec — 算子 Shape · Stage · Phase 描述" }
                 ];
 
-                var html = '<div style="padding:6px 10px;overflow-y:auto;height:100%">';
-                // Header bar
-                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;padding:6px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px">';
-                html += '<div><span style="color:#58a6ff;font-weight:600;font-size:12px">原始组网</span>';
-                html += '<span style="color:var(--text-muted);font-size:10px;margin-left:8px">Rank #' + (origInfo?origInfo.globalRank:"—") + ' · TP' + (origInfo?origInfo.tpIdx:"—") + ' PP' + (origInfo?origInfo.ppIdx:"—") + ' DP' + (origInfo?origInfo.dpIdx:"—") + '</span></div>';
-                html += '<span style="color:var(--text-muted);font-size:10px">↔ 对比</span>';
-                html += '<div style="text-align:right"><span style="color:var(--teal);font-weight:600;font-size:12px">等效组网</span>';
-                html += '<span style="color:var(--text-muted);font-size:10px;margin-left:8px">Rank #' + (eqInfo?eqInfo.globalRank:"—") + ' · TP' + (eqInfo?eqInfo.tpIdx:"—") + ' PP' + (eqInfo?eqInfo.ppIdx:"—") + ' DP' + (eqInfo?eqInfo.dpIdx:"—") + '</span></div>';
-                html += '</div>';
+                // Frozen header
+                var headerHtml = '<div class="sim-results-header">';
+                headerHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px">';
+                headerHtml += '<div><span style="color:#58a6ff;font-weight:600;font-size:12px">原始组网</span>';
+                headerHtml += '<span style="color:#58a6ff;font-weight:600;font-size:12px;margin-left:8px">Rank #' + (origInfo?origInfo.globalRank:"—") + ' · TP' + (origInfo?origInfo.tpIdx:"—") + ' PP' + (origInfo?origInfo.ppIdx:"—") + ' DP' + (origInfo?origInfo.dpIdx:"—") + '</span></div>';
+                headerHtml += '<span style="color:var(--text-primary);font-weight:600;font-size:12px">↔ 对比</span>';
+                headerHtml += '<div style="text-align:right"><span style="color:var(--teal);font-weight:600;font-size:12px">等效组网</span>';
+                headerHtml += '<span style="color:var(--teal);font-weight:600;font-size:12px;margin-left:8px">Rank #' + (eqInfo?eqInfo.globalRank:"—") + ' · TP' + (eqInfo?eqInfo.tpIdx:"—") + ' PP' + (eqInfo?eqInfo.ppIdx:"—") + ' DP' + (eqInfo?eqInfo.dpIdx:"—") + '</span></div>';
+                headerHtml += '</div>';
+                headerHtml += '</div>';
 
+                // Scrollable body with sections
+                var bodyHtml = '<div class="sim-results-body">';
                 sections.forEach(function (sec) {
-                    html += '<div style="margin-bottom:6px">';
-                    html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">';
-                    html += '<span style="font-size:11px;font-weight:600;color:var(--text-primary)">' + sec.title + '</span>';
-                    html += '<span style="font-size:9px;color:var(--text-muted)">' + sec.sub + '</span>';
-                    html += '</div>';
-                    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
-                    html += '<div class="result-chart" id="orig-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden"></div>';
-                    html += '<div class="result-chart" id="eq-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden"></div>';
-                    html += '</div></div>';
+                    bodyHtml += '<div style="margin-bottom:6px">';
+                    bodyHtml += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">';
+                    bodyHtml += '<span style="font-size:11px;font-weight:600;color:var(--text-primary)">' + sec.title + '</span>';
+                    bodyHtml += '<span style="font-size:9px;color:var(--text-muted)">' + sec.sub + '</span>';
+                    bodyHtml += '</div>';
+                    bodyHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+                    bodyHtml += '<div class="result-chart" id="orig-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden"></div>';
+                    bodyHtml += '<div class="result-chart" id="eq-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden"></div>';
+                    bodyHtml += '</div></div>';
                 });
-                html += '</div>';
-                area.innerHTML = html;
+                bodyHtml += '</div>';
+                area.innerHTML = headerHtml + bodyHtml;
 
                 // Render both sides with a tiny delay to allow DOM layout
                 if (origInfo) setTimeout(function() { _renderSideDetail("orig", origInfo); }, 50);
