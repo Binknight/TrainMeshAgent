@@ -2232,8 +2232,6 @@ function _drawRankBars(data) {
   if (hasBoth) {
     drawLegend("#58a6ff", "原始估算");
     drawLegend("#79c0ff", "等效估算");
-    drawLegend("#3fb950", "原始仿真");
-    drawLegend("#7ee787", "等效仿真");
   } else {
     drawLegend("#58a6ff", "理论估算");
     if (hasAnyActual) drawLegend("#3fb950", "仿真验证");
