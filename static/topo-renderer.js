@@ -704,6 +704,7 @@ function _meshBuildView(
   viewH,
   sharedScale,
   isOrig,
+  isSimCanvas,
 ) {
   if (isOrig === undefined) isOrig = !!meshOriginal;
   var cfg = data.config;
@@ -1037,7 +1038,7 @@ function _meshBuildView(
       var ty = tpY + ti * (MESH_CARD.tpH + MESH_CARD.tpGap) * scale;
       var side = isOrig ? "orig" : "eq";
       var hasActual = _hasActualData(side);
-      var _pinnedRef = _renderingSimCanvas ? _simPinnedRank : meshPinnedRank;
+      var _pinnedRef = isSimCanvas ? _simPinnedRank : meshPinnedRank;
       var isPinned =
         _pinnedRef &&
         ((_pinnedRef.side === side &&
@@ -1061,11 +1062,11 @@ function _meshBuildView(
         .attr("data-rank", tp.globalRank)
         .attr("data-side", side)
         .on("mouseover", function () {
-          if (_renderingSimCanvas ? _simPinnedRank : meshPinnedRank) return;
+          if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
           d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
         })
         .on("mouseout", function () {
-          if (_renderingSimCanvas ? _simPinnedRank : meshPinnedRank) return;
+          if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
           d3.select(this).attr("stroke", null).attr("stroke-width", null);
         })
         .on("click", function (event) {
@@ -2900,6 +2901,7 @@ function canvasRebuild(targetSelector) {
         _contentH,
         _sharedScale,
         true,
+        false,
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
@@ -2927,6 +2929,7 @@ function canvasRebuild(targetSelector) {
         _eqW,
         _contentH,
         _sharedScale,
+        false,
         false,
       );
       _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
@@ -3001,7 +3004,7 @@ function canvasRebuild(targetSelector) {
         zoomLayer.append("g"),
         meshBuildData(meshOriginal.tp, meshOriginal.pp, meshOriginal.dp, meshOrigDp),
         "mesh-dp-sel-orig", "meshSwitchDpOrig",
-        0, _sTH, _sW, _sContentH, _sScale, true,
+        0, _sTH, _sW, _sContentH, _sScale, true, true,
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
@@ -3063,7 +3066,7 @@ function canvasRebuild(targetSelector) {
         zoomLayer.append("g"),
         meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
         "mesh-dp-sel-eq", "meshSwitchDpEq",
-        _eqX, _sTH, _sW, _sContentH, _sScale, false,
+        _eqX, _sTH, _sW, _sContentH, _sScale, false, true,
       );
       _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
@@ -3123,6 +3126,7 @@ function canvasRebuild(targetSelector) {
         _contentH2,
         _sharedScale2,
         true,
+        false,
       );
       _populateDpSelect("mesh-dp-select", entry2.dp, meshOrigDp);
 
@@ -3174,6 +3178,7 @@ function canvasRebuild(targetSelector) {
         entry.pp;
 
       var data = meshBuildData(entry.tp, entry.pp, entry.dp, meshOrigDp);
+      var _isEntryOrig = !!(entry === meshOriginal);
       _meshBuildView(
         zoomLayer,
         data,
@@ -3183,6 +3188,9 @@ function canvasRebuild(targetSelector) {
         0,
         meshWidth,
         topoH,
+        0.5,
+        _isEntryOrig,
+        false,
       );
       _populateDpSelect("mesh-dp-select", entry.dp, meshOrigDp);
 
