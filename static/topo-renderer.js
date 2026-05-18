@@ -1095,12 +1095,17 @@ function _meshBuildView(
             if (isSimCanvas) {
               _simPinnedRank = null;
               _simPinnedTpInfo = null;
+              window._pinnedSim = null;
             } else {
               meshPinnedRank = null;
               meshPinnedTpInfo = null;
             }
             _clearBothTooltips();
-            canvasRebuild(isSimCanvas ? "#sim-canvas-section" : "#canvas-section");
+            if (isSimCanvas && typeof window._onSimRankPinned === "function") {
+              window._onSimRankPinned();
+            } else {
+              canvasRebuild("#canvas-section");
+            }
           } else {
             if (!isSimCanvas) _centerPanelState.barCardVisible = true;
             d3.select(this).classed("pinned", true);
