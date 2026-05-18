@@ -1971,26 +1971,26 @@ function _renderDetailCharts() {
   var typeLabel = detailType === "flops" ? "FLOPs" : detailType === "hbm" ? "HBM" : "通信";
 
   if (isPieDetail && hasBoth) {
-    // Horizontal layout: [Left Pie] [Legend center] [Right Pie]
+    // Horizontal layout centered in card: [Left Pie] [Legend center] [Right Pie]
     var legendW = 90;
     var chartW = (st.barW - legendW - pad * 4) / 2;
     var chartH = Math.max(60, Math.min(140, chartW));
+    var totalW = chartW + pad + legendW + pad + chartW;
+    var startX = st.cardX + (st.barW - totalW) / 2;
 
-    var leftX = st.cardX + pad;
-    var rightX = st.cardX + pad + chartW + pad + legendW + pad;
+    var leftX = startX;
+    var rightX = startX + chartW + pad + legendW + pad;
 
     _drawOneDetailChart(g, leftX, chartY, chartW, chartH,
       detailType, detailData.orig, "原始仿真" + typeLabel + "组成", 0);
     _drawOneDetailChart(g, rightX, chartY, chartW, chartH,
       detailType, detailData.eq, "等效仿真" + typeLabel + "组成", 1);
 
-    // Legend horizontally centered between the two pies, vertically centered
+    // Legend centered between the two pies, vertically centered
     var legendItemH = 14;
     var totalLegendH = subs.length * legendItemH;
     var legendStartY = chartY + 16 + (chartH - totalLegendH) / 2;
-    var gapLeft = leftX + chartW;
-    var gapRight = rightX;
-    var gapCenterX = (gapLeft + gapRight) / 2;
+    var gapCenterX = leftX + chartW + (rightX - leftX - chartW) / 2;
     var legendItemW = 63;
     var legendItemX = gapCenterX - legendItemW / 2 + 10;
     subs.forEach(function (sub, i) {
@@ -2011,17 +2011,20 @@ function _renderDetailCharts() {
         .text(sub.label);
     });
   } else if (isPieDetail) {
-    // Single pie + legend beside it
-    var chartW2 = (st.barW - pad * 3) / 2;
+    // Single pie + legend beside it, centered in card
+    var legendItemW2 = 63;
+    var chartW2 = (st.barW - pad * 4 - legendItemW2) / 2;
     var chartH2 = Math.max(60, Math.min(140, chartW2));
+    var totalW2 = chartW2 + pad + legendItemW2;
+    var startX2 = st.cardX + (st.barW - totalW2) / 2;
     var singleData = detailData.orig || detailData.eq;
     var singleLabel = detailData.orig ? "原始仿真" : "等效仿真";
-    _drawOneDetailChart(g, st.cardX + pad, chartY, chartW2, chartH2,
+    _drawOneDetailChart(g, startX2, chartY, chartW2, chartH2,
       detailType, singleData, singleLabel + typeLabel + "组成", 0);
 
     var legendItemH2 = 14;
     var legendStartY2 = chartY + 16 + (chartH2 - subs.length * legendItemH2) / 2;
-    var legX2 = st.cardX + pad + chartW2 + pad * 2;
+    var legX2 = startX2 + chartW2 + pad;
     subs.forEach(function (sub, i) {
       var ly = legendStartY2 + i * legendItemH2;
       g.append("rect")
@@ -2040,15 +2043,18 @@ function _renderDetailCharts() {
         .text(sub.label);
     });
   } else {
-    // Communication detail bars (non-pie) — original stacked layout
+    // Communication detail bars — centered in card
     var chartW3 = (st.barW - pad * 3) / 2;
     var chartH3 = Math.max(60, 120);
+    var hasBothComm = !!(detailData.orig && detailData.eq);
+    var totalW3 = hasBothComm ? chartW3 + pad + chartW3 : chartW3;
+    var startX3 = st.cardX + (st.barW - totalW3) / 2;
     if (detailData.orig) {
-      _drawOneDetailChart(g, st.cardX + pad, chartY, chartW3, chartH3,
+      _drawOneDetailChart(g, startX3, chartY, chartW3, chartH3,
         detailType, detailData.orig, "原始仿真" + typeLabel + "详情", 0);
     }
     if (detailData.eq) {
-      _drawOneDetailChart(g, st.cardX + pad + chartW3 + pad, chartY, chartW3, chartH3,
+      _drawOneDetailChart(g, hasBothComm ? startX3 + chartW3 + pad : startX3, chartY, chartW3, chartH3,
         detailType, detailData.eq, "等效仿真" + typeLabel + "详情", 1);
     }
   }
