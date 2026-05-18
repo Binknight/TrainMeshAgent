@@ -1776,7 +1776,9 @@ var _DETAIL_MAP = {
 var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
 
 function _rebuildSimWithBars() {
+  console.log("[DEBUG] _rebuildSimWithBars | _pinnedSim:", !!window._pinnedSim, "| _simPanelLayout exists:", !!_simPanelLayout);
   canvasRebuild("#sim-canvas-section");
+  console.log("[DEBUG] _rebuildSimWithBars after rebuild | _simPanelLayout.detailVisible:", _simPanelLayout && _simPanelLayout.detailVisible, "| _simPanelLayout.detailMetric:", _simPanelLayout && _simPanelLayout.detailMetric, "| _simPanelLayout.detailData:", _simPanelLayout && !!_simPanelLayout.detailData, "| _simPanelLayout.rankData:", _simPanelLayout && !!_simPanelLayout.rankData);
   if (window._pinnedSim && typeof _drawRankBars === "function" && _centerPanelState && _simPanelLayout) {
     var pinned = window._pinnedSim;
     var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
@@ -1800,19 +1802,23 @@ function _rebuildSimWithBars() {
 
 function _toggleDetailCharts(detailType, isSim) {
   var st = isSim ? _simPanelLayout : _centerPanelState;
+  console.log("[DEBUG] _toggleDetailCharts | detailType:", detailType, "| isSim:", isSim, "| st exists:", !!st, "| st.rankData:", st && !!st.rankData, "| st.detailVisible:", st && st.detailVisible, "| st.detailMetric:", st && st.detailMetric);
   if (!st) return;
   st._skipBarAnim = true;
   var rebuild = isSim ? _rebuildSimWithBars : function () { canvasRebuild("#canvas-section"); };
   if (st.detailVisible && st.detailMetric === detailType) {
+    console.log("[DEBUG] _toggleDetailCharts → toggle OFF");
     st.detailVisible = false;
     st.detailMetric = null;
     st.detailData = null;
     rebuild();
   } else {
+    console.log("[DEBUG] _toggleDetailCharts → toggle ON, fetching data...");
     st.detailVisible = true;
     st.detailMetric = detailType;
     st.detailData = null;
     _fetchDetailChartData(detailType, isSim).then(function () {
+      console.log("[DEBUG] _toggleDetailCharts → fetch done, calling rebuild");
       rebuild();
     });
   }
@@ -1820,9 +1826,10 @@ function _toggleDetailCharts(detailType, isSim) {
 
 async function _fetchDetailChartData(detailType, isSim) {
   var st = isSim ? _simPanelLayout : _centerPanelState;
-  if (!st) return;
+  console.log("[DEBUG] _fetchDetailChartData | detailType:", detailType, "| isSim:", isSim, "| st exists:", !!st, "| st.rankData:", st && !!st.rankData);
+  if (!st) { console.log("[DEBUG] _fetchDetailChartData → ABORT: no st"); return; }
   var data = st.rankData;
-  if (!data) return;
+  if (!data) { console.log("[DEBUG] _fetchDetailChartData → ABORT: no rankData"); return; }
   var origRank = data.orig ? data.orig.globalRank : null;
   var eqRank = data.eq ? data.eq.globalRank : null;
   var result = { orig: null, eq: null };
@@ -1889,6 +1896,7 @@ async function _fetchDetailChartData(detailType, isSim) {
     }
   }
   st.detailData = result;
+  console.log("[DEBUG] _fetchDetailChartData → result assigned | result.orig:", !!result.orig, "| result.eq:", !!result.eq);
 }
 
 function _getDetailSubs(detailType) {
@@ -1916,13 +1924,14 @@ function _getDetailSubs(detailType) {
 
 function _renderDetailCharts() {
   var st = _centerPanelState;
+  console.log("[DEBUG] _renderDetailCharts | st.detailG:", !!st.detailG, "| st.detailMetric:", st.detailMetric, "| st.detailData:", !!st.detailData);
   var g = st.detailG;
-  if (!g) return;
+  if (!g) { console.log("[DEBUG] _renderDetailCharts → ABORT: no detailG"); return; }
   g.selectAll("*").remove();
 
   var detailType = st.detailMetric;
   var detailData = st.detailData;
-  if (!detailType || !detailData) return;
+  if (!detailType || !detailData) { console.log("[DEBUG] _renderDetailCharts → ABORT: no type/data | detailType:", detailType, "| detailData:", !!detailData); return; }
 
   var pad = 8;
   var chartW = (st.barW - pad * 3) / 2;
@@ -1970,6 +1979,7 @@ function _renderDetailCharts() {
         .text(sub.label);
     });
   }
+  console.log("[DEBUG] _renderDetailCharts → DONE, charts rendered");
 }
 
 function _drawOneDetailChart(g, cx, cy, cw, ch, detailType, data, title, sideIdx) {
@@ -2183,6 +2193,7 @@ function _formatSubVal(v, detailType) {
 
 function _drawRankBars(data, isSim) {
   var st = _centerPanelState;
+  console.log("[DEBUG] _drawRankBars | isSim:", isSim, "| st.barG:", !!st.barG, "| st.detailVisible:", st.detailVisible, "| st.detailMetric:", st.detailMetric, "| data.orig:", !!(data && data.orig), "| data.eq:", !!(data && data.eq));
   if (!st.barG) return;
   st.rankData = data;
 
@@ -2352,6 +2363,7 @@ function _drawRankBars(data, isSim) {
         rect.on("click", function (event) {
           event.stopPropagation();
           var dt = _DETAIL_MAP[key];
+          console.log("[DEBUG] bar-click | key:", key, "| dt:", dt, "| isSim:", isSim);
           if (dt) _toggleDetailCharts(dt, isSim);
         });
       }
