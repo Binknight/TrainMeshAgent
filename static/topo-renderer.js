@@ -1761,7 +1761,7 @@ function _updateCenterBarChart(globalRank, side) {
   }
 
   st.rankData = data;
-  _drawRankBars(data);
+  _drawRankBars(data, false);
 }
 
 // ═══ Detail chart config and functions ═══
@@ -1775,26 +1775,29 @@ var _DETAIL_MAP = {
 };
 var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
 
-function _toggleDetailCharts(detailType) {
-  var st = _centerPanelState;
+function _toggleDetailCharts(detailType, isSim) {
+  var st = isSim ? _simPanelLayout : _centerPanelState;
+  if (!st) return;
   st._skipBarAnim = true;
+  var target = isSim ? "#sim-canvas-section" : "#canvas-section";
   if (st.detailVisible && st.detailMetric === detailType) {
     st.detailVisible = false;
     st.detailMetric = null;
     st.detailData = null;
-    canvasRebuild();
+    canvasRebuild(target);
   } else {
     st.detailVisible = true;
     st.detailMetric = detailType;
     st.detailData = null;
-    _fetchDetailChartData(detailType).then(function () {
-      canvasRebuild();
+    _fetchDetailChartData(detailType, isSim).then(function () {
+      canvasRebuild(target);
     });
   }
 }
 
-async function _fetchDetailChartData(detailType) {
-  var st = _centerPanelState;
+async function _fetchDetailChartData(detailType, isSim) {
+  var st = isSim ? _simPanelLayout : _centerPanelState;
+  if (!st) return;
   var data = st.rankData;
   if (!data) return;
   var origRank = data.orig ? data.orig.globalRank : null;
@@ -2155,7 +2158,7 @@ function _formatSubVal(v, detailType) {
   return Number(v).toFixed(2);
 }
 
-function _drawRankBars(data) {
+function _drawRankBars(data, isSim) {
   var st = _centerPanelState;
   if (!st.barG) return;
 
@@ -2325,7 +2328,7 @@ function _drawRankBars(data) {
         rect.on("click", function (event) {
           event.stopPropagation();
           var dt = _DETAIL_MAP[key];
-          if (dt) _toggleDetailCharts(dt);
+          if (dt) _toggleDetailCharts(dt, isSim);
         });
       }
       rect.transition()
