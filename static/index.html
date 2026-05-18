@@ -4381,8 +4381,6 @@
                         document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
                             p.classList.toggle("active", p.id === "tab-panel-simulation");
                         });
-                        var simTabBtn = document.getElementById("tab-btn-simulation");
-                        if (simTabBtn) simTabBtn.disabled = false;
                         _showActualData = true;
                         requestAnimationFrame(function () {
                             requestAnimationFrame(function () {
@@ -4892,13 +4890,6 @@
             function switchCanvasTab(tabName) {
                 // Persist active tab across refreshes
                 try { sessionStorage.setItem("activeCanvasTab", tabName); } catch (e) {}
-                // Enable simulation tab button once simulation is available
-                if (tabName === "simulation") {
-                    var simTabBtn =
-                        document.getElementById("tab-btn-simulation");
-                    if (simTabBtn) simTabBtn.disabled = false;
-                }
-
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
                     t.classList.toggle("active", t.getAttribute("data-tab") === tabName);
                 });
@@ -6402,13 +6393,13 @@
                     btn.textContent = "开始仿真";
                     btn.classList.remove("sim-done");
                 }
-                // Enable simulation tab when simulation data exists or has run
+                // Enable simulation tab only when simulation data exists or has run
                 if (simTabBtn) {
                     var hasSimData = (
                         (typeof meshActualOrig !== "undefined" && Object.keys(meshActualOrig || {}).length) ||
                         (typeof meshActualEq !== "undefined" && Object.keys(meshActualEq || {}).length)
                     );
-                    simTabBtn.disabled = !(ready || hasSimData || _simCompleted);
+                    simTabBtn.disabled = !(hasSimData || _simCompleted);
                 }
             }
 
@@ -6536,8 +6527,6 @@
                 document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
                     p.classList.toggle("active", p.id === "tab-panel-simulation");
                 });
-                var simTabBtn = document.getElementById("tab-btn-simulation");
-                if (simTabBtn) simTabBtn.disabled = false;
             })();
 
             // Callback: rank click on simulation tab refreshes bar chart + results
