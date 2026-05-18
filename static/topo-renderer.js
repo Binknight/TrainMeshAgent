@@ -2980,7 +2980,7 @@ function canvasRebuild(targetSelector) {
         .attr("font-family", "sans-serif")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
-        .text(meshOriginal.name || "原始组网");
+        .text((meshOriginal.name || "原始组网").replace(/\s*\(.*\)$/, ""));
       zoomLayer
         .append("text")
         .attr("x", _eqX + _sW / 2)
@@ -2990,7 +2990,7 @@ function canvasRebuild(targetSelector) {
         .attr("font-family", "sans-serif")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
-        .text(meshEquivalent.name || "等效组网");
+        .text((meshEquivalent.name || "等效组网").replace(/\s*\(.*\)$/, ""));
 
       _meshBuildView(
         zoomLayer.append("g"),
