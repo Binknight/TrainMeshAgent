@@ -3015,8 +3015,20 @@ function canvasRebuild(targetSelector) {
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
       // Center card — only visible when a rank is pinned
+      // Preserve sim-specific detail state across rebuilds (not from _centerPanelState)
+      var _simDetail = _simPanelLayout ? {
+        detailVisible: _simPanelLayout.detailVisible,
+        detailMetric: _simPanelLayout.detailMetric,
+        detailData: _simPanelLayout.detailData,
+        detailH: _simPanelLayout.detailH,
+        _allocDetailH: _simPanelLayout._allocDetailH,
+      } : {};
+      var _detailVisible = _simDetail.detailVisible || _centerPanelState.detailVisible;
+      var _detailMetric = _simDetail.detailMetric || _centerPanelState.detailMetric;
+      var _detailData = _simDetail.detailData || _centerPanelState.detailData;
+
       var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
-      var cardH = Math.max(_centerPanelState.detailVisible ? 420 : 280, _sContentH);
+      var cardH = Math.max(_detailVisible ? 420 : 280, _sContentH);
       var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
       if (!window._pinnedSim) cardG.attr("display", "none");
       cardG.append("rect")
@@ -3034,8 +3046,9 @@ function canvasRebuild(targetSelector) {
       var barAreaY = _sTH + barHeaderH;
       var availH = cardH - barHeaderH - pad;
       var detailH = 0;
-      if (_centerPanelState.detailVisible) {
-        detailH = Math.min(_centerPanelState.detailH || 140, Math.floor(availH * 0.45));
+      if (_detailVisible) {
+        var _prevDetailH = _simDetail.detailH || _simDetail._allocDetailH || _centerPanelState.detailH || 140;
+        detailH = Math.min(_prevDetailH, Math.floor(availH * 0.45));
       }
       var barAreaH = Math.max(0, availH - detailH);
       var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
@@ -3051,7 +3064,7 @@ function canvasRebuild(targetSelector) {
           .text("点击拓扑中的 Rank 查看性能详情");
       }
       var detailG = cardG.append("g").attr("class", "detail-charts-group");
-      if (!_centerPanelState.detailVisible) {
+      if (!_detailVisible) {
         detailG.attr("display", "none");
       }
       _simPanelLayout = {
@@ -3061,9 +3074,9 @@ function canvasRebuild(targetSelector) {
         cardX: _cardX, cardY: _sTH, barW: _cardW - pad * 2,
         barY: barHeaderH, barH: barAreaH, barAreaY: barAreaY,
         barCardVisible: !!window._pinnedSim, barHeaderH: barHeaderH,
-        detailG: detailG, detailVisible: _centerPanelState.detailVisible,
-        detailMetric: _centerPanelState.detailMetric,
-        detailData: _centerPanelState.detailData,
+        detailG: detailG, detailVisible: _detailVisible,
+        detailMetric: _detailMetric,
+        detailData: _detailData,
         detailH: detailH, _allocDetailH: detailH,
         detailY: barAreaY + barAreaH + 8,
       };
