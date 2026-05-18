@@ -633,6 +633,17 @@
             .result-chart::-webkit-scrollbar-thumb {
                 background: var(--border);
                 border-radius: 2px;
+                transition: background 0.2s;
+            }
+            .result-chart::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            .result-chart:hover::-webkit-scrollbar {
+                height: 8px;
+            }
+            .result-chart:hover::-webkit-scrollbar-thumb {
+                background: var(--cyan);
+                border-radius: 4px;
             }
 
             /* operator spec table */
@@ -5942,8 +5953,8 @@
                     bodyHtml += '<span style="font-size:9px;color:var(--text-muted)">' + sec.sub + '</span>';
                     bodyHtml += '</div>';
                     bodyHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
-                    bodyHtml += '<div class="result-chart" id="orig-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden"></div>';
-                    bodyHtml += '<div class="result-chart" id="eq-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden"></div>';
+                    bodyHtml += '<div class="result-chart" id="orig-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px"></div>';
+                    bodyHtml += '<div class="result-chart" id="eq-' + sec.id + '" style="min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px"></div>';
                     bodyHtml += '</div></div>';
                 });
                 bodyHtml += '</div>';
