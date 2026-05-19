@@ -409,7 +409,7 @@ submitted  →  running  →  completed
 | M3 | `app/routes/session.py:_generate_mock_comm_detail` | TP/PP/DP 通信详情（次数/参与卡数/单次量/总量） | `GET /api/session/<id>/simulation/<side>/<rank>/tp-comm-detail` |
 | M4 | 同上 | PP 通信详情 | `GET /api/session/<id>/simulation/<side>/<rank>/pp-comm-detail` |
 | M5 | 同上 | DP 通信详情 | `GET /api/session/<id>/simulation/<side>/<rank>/dp-comm-detail` |
-| M6 | `app/routes/session.py:614` | `task_id = "mock_task_id"`（无真实任务时占位）| 兜底值，不需单独接口 |
+| M6 | `app/routes/session.py:638` | `task_id = "mock_task_id"`（无真实任务时占位）| 兜底值，不需单独接口 |
 | M7 | `app/skills/training-mesh-profiler-skill/__init__.py` + `app/routes/session.py:_run_simulation_for_topology` | 无 task_id 时使用本地估算公式代替仿真结果（两处独立副本） | 估算模式，不需接口 |
 
 ### 12.2 接口类型归属
