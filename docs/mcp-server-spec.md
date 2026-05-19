@@ -334,21 +334,37 @@
 - 不传 `offset` → 全量返回，`next_offset` 可省略，`is_complete` 默认 `true`，现有逻辑不受影响
 - 传 `offset=0` → 等价于不传，全量返回，但必须返回 `next_offset` 和 `is_complete`
 
-**OperatorTrace** 每条记录（比一次性模式多一个 `index` 字段用于 offset 对齐）：
+**OperatorTrace** 每条记录。字段以仿真系统 CSV 输出为基准，MCP Server 负责直传 CSV 字段 + 补充少量计算字段：
+
+#### CSV 直传字段（MCP Server 从仿真 CSV 读取后原样返回）
+
+| 字段 | 类型 | CSV 列 | 说明 |
+|------|------|--------|------|
+| `comm_type` | string | ✅ | 算子/通信类型，如 `computation`、`all_reduce`、`send`、`recv` |
+| `comm_group` | string\|null | ✅ | 通信组名，如 `tp_group`、`dp_group`；计算类算子为 null |
+| `comm_group_size` | int\|null | ✅ | 通信组参与卡数；计算类算子为 null |
+| `msg_size` | float\|null | ✅ | 通信消息大小 (bytes)；计算类算子为 null |
+| `stage` | string | ✅ | 执行阶段，如 `forward/layer0`、`backward/layer14`、`optimizer`、`init` |
+| `dst` | string\|null | ✅ | 目标 rank 或组；计算类算子为 null |
+| `src` | string\|null | ✅ | 源 rank 或组；计算类算子为 null |
+| `additional` | string\|null | ✅ | 附加说明，如 `matmul`、`seed-sync` |
+| `nonblock` | int | ✅ | 是否非阻塞：`1` = 非阻塞，`0` = 阻塞 |
+| `wait_n` | int\|null | ✅ | 等待数量 |
+| `_elapsed_time` | float | ✅ | 仿真系统原始耗时 (微秒) |
+| `start_time` | float | ✅ | 算子开始时间 (微秒) |
+| `end_time` | float | ✅ | 算子结束时间 (微秒) |
+| `single_flops` | float\|null | ✅ | 单算子 FLOPs；通信类算子为 null |
+
+#### MCP Server 计算补充字段（从上述字段推导）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `index` | integer | 算子序号（从 0 递增），用于增量 offset 对齐 |
-| `op_name` | string | 算子名称，如 `MHA_QKV_Proj`、`AllReduce` |
-| `op_type` | string | 类型枚举：`computation` / `communication` / `collective` |
-| `category` | string | 阶段分类：`fwd` / `bwd` / `optimizer` |
-| `start_us` | float | 开始时间 (微秒) |
-| `duration_us` | float | 持续时间 (微秒) |
-| `flops` | float | 计算量 (FLOPs)，计算类算子填充 |
-| `comm_bytes` | float | 通信量 (bytes)，通信类算子填充 |
-| `parent_op` | string | 父算子名称，用于 tracing 层次 |
-| `depth` | integer | 层次深度 |
-| `details` | object | 额外信息键值对 |
+| `operator_name` | string | 算子可读名称，如 `qkv_projection`、`AllReduce_grad`，由 MCP 根据 `comm_type` + `stage` 推导 |
+| `data_shape` | string\|null | 数据形状描述，如 `[32,4096,4096] → [32,4096,12288]` |
+| `data_type` | string\|null | 数据类型，如 `bf16`、`fp32` |
+| `algo_name` | string\|null | 算法名，如 `linear`、`Ring` |
+| `duration` | float | = `end_time - start_time` (微秒)，方便前端直接使用 |
 
 **TimelineSummary**：
 

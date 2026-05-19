@@ -384,198 +384,177 @@ def run_simulation(session_id: str):
     })
 
 
-# ── Mock operator trace generation ──
+# ── Mock operator trace generation (aligned with CSV headers + MCP computed fields) ──
 
-_OP_NAMES_FWD = [
-    ("Embedding", "computation", "fwd", 0, {"shape": "vocab×d_model"}),
-    ("LayerNorm0", "computation", "fwd", 1, {}),
-    ("MHA_QKV_Proj", "computation", "fwd", 1, {"heads": "32", "d_head": "128"}),
-    ("MHA_Reshape", "computation", "fwd", 2, {}),
-    ("MHA_Attention", "computation", "fwd", 2, {}),
-    ("MHA_OutProj", "computation", "fwd", 2, {}),
-    ("TP_AllReduce_MHA", "communication", "fwd", 2, {"size": "≈24MB"}),
-    ("LayerNorm1", "computation", "fwd", 1, {}),
-    ("FFN_FC1", "computation", "fwd", 1, {"d_ffn": "11008"}),
-    ("FFN_GELU", "computation", "fwd", 2, {}),
-    ("FFN_FC2", "computation", "fwd", 2, {}),
-    ("TP_AllReduce_FFN", "communication", "fwd", 2, {"size": "≈32MB"}),
+# Operator templates: (operator_name, comm_type, stage_suffix, [op-specific fields])
+# stage_suffix is combined with layer index at generation time, e.g. "forward/layer0"
+_FWD_OPS = [
+    ("embedding",        "computation",   "forward",  dict(data_shape="[B,S,vocab] → [B,S,d_model]", data_type="bf16", algo_name="lookup")),
+    ("qkv_projection",   "computation",   "forward",  dict(data_shape="[B,S,d_model] → [B,S,3*d_model]", data_type="bf16", algo_name="linear")),
+    ("mha_reshape",      "computation",   "forward",  dict(data_shape="[B,S,3*d_model] → [3,B,heads,S,d_head]", data_type="bf16")),
+    ("mha_attention",    "computation",   "forward",  dict(data_shape="[B,heads,S,S]", data_type="bf16", algo_name="softmax")),
+    ("mha_outproj",      "computation",   "forward",  dict(data_shape="[B,S,d_model] → [B,S,d_model]", data_type="bf16", algo_name="linear")),
+    ("all_reduce",       "all_reduce",    "forward",  dict(comm_group="tp_group", data_shape="[B,S,d_model]", data_type="bf16", additional="≈24MB")),
+    ("ffn_fc1",          "computation",   "forward",  dict(data_shape="[B,S,d_model] → [B,S,d_ffn]", data_type="bf16", algo_name="linear")),
+    ("ffn_gelu",         "computation",   "forward",  dict(data_shape="[B,S,d_ffn]", data_type="bf16", algo_name="GELU")),
+    ("ffn_fc2",          "computation",   "forward",  dict(data_shape="[B,S,d_ffn] → [B,S,d_model]", data_type="bf16", algo_name="linear")),
+    ("all_reduce",       "all_reduce",    "forward",  dict(comm_group="tp_group", data_shape="[B,S,d_model]", data_type="bf16", additional="≈32MB")),
 ]
 
-_OP_NAMES_BWD = [
-    ("Grad_FFN_FC2", "computation", "bwd", 1, {}),
-    ("Grad_GELU", "computation", "bwd", 2, {}),
-    ("Grad_FFN_FC1", "computation", "bwd", 2, {}),
-    ("TP_ReduceScatter_FFN", "communication", "bwd", 2, {"size": "≈32MB"}),
-    ("Grad_LayerNorm1", "computation", "bwd", 1, {}),
-    ("Grad_MHA_OutProj", "computation", "bwd", 1, {}),
-    ("Grad_Attention", "computation", "bwd", 2, {}),
-    ("Grad_MHA_Reshape", "computation", "bwd", 2, {}),
-    ("Grad_QKV_Proj", "computation", "bwd", 2, {}),
-    ("TP_ReduceScatter_MHA", "communication", "bwd", 2, {"size": "≈24MB"}),
-    ("Grad_LayerNorm0", "computation", "bwd", 1, {}),
-    ("Grad_Embedding", "computation", "bwd", 0, {"shape": "vocab×d_model"}),
+_BWD_OPS = [
+    ("grad_ffn_fc2",        "computation",    "backward", dict(data_shape="[B,S,d_model] → [B,S,d_ffn]", data_type="bf16")),
+    ("grad_gelu",           "computation",    "backward", dict(data_shape="[B,S,d_ffn]", data_type="bf16")),
+    ("grad_ffn_fc1",        "computation",    "backward", dict(data_shape="[B,S,d_ffn] → [B,S,d_model]", data_type="bf16", algo_name="linear")),
+    ("reduce_scatter",      "reduce_scatter", "backward", dict(comm_group="tp_group", data_shape="[B,S,d_model]", data_type="bf16", additional="≈32MB")),
+    ("grad_mha_outproj",    "computation",    "backward", dict(data_shape="[B,S,d_model] → [B,S,d_model]", data_type="bf16", algo_name="linear")),
+    ("grad_attention",      "computation",    "backward", dict(data_shape="[B,heads,S,S]", data_type="bf16")),
+    ("grad_mha_reshape",    "computation",    "backward", dict(data_shape="[3,B,heads,S,d_head] → [B,S,3*d_model]", data_type="bf16")),
+    ("grad_qkv_projection", "computation",    "backward", dict(data_shape="[B,S,3*d_model] → [B,S,d_model]", data_type="bf16", algo_name="linear")),
+    ("reduce_scatter",      "reduce_scatter", "backward", dict(comm_group="tp_group", data_shape="[B,S,d_model]", data_type="bf16", additional="≈24MB")),
+    ("grad_embedding",      "computation",    "backward", dict(data_shape="[B,S,d_model] → [B,S,vocab]", data_type="bf16")),
 ]
 
-_OP_NAMES_OPT = [
-    ("DP_AllReduce_Grads", "collective", "optimizer", 0, {"size": "≈134MB"}),
-    ("Adam_Update", "computation", "optimizer", 0, {}),
+_OPT_OPS = [
+    ("all_reduce",  "all_reduce",  "optimizer", dict(comm_group="dp_group", data_shape="≈134MB per param", additional="≈134MB")),
+    ("adam_update", "computation", "optimizer", dict(data_shape="per-param", data_type="fp32", algo_name="Adam")),
 ]
 
 
 def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_pp: int) -> tuple[list[OperatorTrace], TimelineSummary]:
-    """Generate realistic mock operator traces for a training step on one device."""
+    """Generate mock operator traces aligned with CSV schema + MCP computed fields."""
     rng = random.Random(global_rank * 137 + tp * 7 + pp * 13)
     operators: list[OperatorTrace] = []
     current_time_us: float = 0.0
     total_flops: float = 0.0
     total_comm_bytes: float = 0.0
     comm_time_us: float = 0.0
+    op_index: int = 0
 
-    # Scale durations based on device type context (subtle variation per rank)
-    dur_scale = 0.85 + rng.random() * 0.3  # 0.85-1.15
+    dur_scale = 0.85 + rng.random() * 0.3
+    dp = max(1, tp * pp)  # approximate DP
 
-    # Embedding (first PP stage only, rank 0 of PP group)
+    def _make_op(name, comm_type, stage, extra, start_us, dur, flops_val, msg_bytes):
+        nonlocal op_index
+        is_comm = comm_type not in ("computation",)
+        op = OperatorTrace(
+            index=op_index,
+            operator_name=name,
+            comm_type=comm_type,
+            stage=stage,
+            start_time=start_us,
+            end_time=start_us + dur,
+            duration=dur,
+            _elapsed_time=dur,
+            single_flops=flops_val if flops_val > 0 else None,
+            msg_size=msg_bytes if msg_bytes > 0 else None,
+            comm_group=extra.get("comm_group") if is_comm else None,
+            comm_group_size=(tp if extra.get("comm_group") == "tp_group" else dp if extra.get("comm_group") == "dp_group" else None) if is_comm else None,
+            data_shape=extra.get("data_shape"),
+            data_type=extra.get("data_type"),
+            algo_name=extra.get("algo_name"),
+            additional=extra.get("additional"),
+            nonblock=0 if comm_type in ("all_reduce",) else 1,
+            dst=None,
+            src=None,
+            wait_n=None,
+        )
+        op_index += 1
+        return op
+
+    # Embedding (first PP stage only)
     if pp == 1 or global_rank % pp == 0:
-        for op_name, op_type, cat, depth, details in _OP_NAMES_FWD[:1]:
-            dur = 1200 * dur_scale
-            if depth == 0:
-                dur = 800 * dur_scale
-            ops = _OP_NAMES_FWD[0][3]  # depth for Embedding is 0
-            operators.append(OperatorTrace(
-                op_name=op_name, op_type=op_type, category=cat,
-                start_us=current_time_us, duration_us=dur,
-                flops=1.5e12 * dur_scale,
-                parent_op="Forward" if depth > 0 else "",
-                depth=0, details=dict(details),
-            ))
-            total_flops += 1.5e12 * dur_scale
-            current_time_us += dur
+        emb_op = _FWD_OPS[0]
+        dur = 800 * dur_scale
+        flops = 1.5e12 * dur_scale
+        operators.append(_make_op(
+            emb_op[0], emb_op[1], f"{emb_op[2]}/layer0", emb_op[3],
+            current_time_us, dur, flops, 0,
+        ))
+        total_flops += flops
+        current_time_us += dur
 
-    # Per-layer operators (forward + backward)
+    # Per-layer operators
     for layer_idx in range(num_layers_per_pp):
-        layer_prefix = f"TransformerBlock_{layer_idx}"
+        stage_fwd = f"forward/layer{layer_idx}"
+        stage_bwd = f"backward/layer{layer_idx}"
 
         # Forward pass
-        for op_name, op_type, cat, depth, details in _OP_NAMES_FWD:
-            if op_name == "Embedding":
-                continue  # Already handled
-            if depth == 1:
-                parent = f"{layer_prefix}/Fwd"
-            elif depth >= 2:
-                parent = f"{layer_prefix}/Fwd/{op_name.split('_')[0]}"
-            else:
-                parent = f"{layer_prefix}/Fwd"
-
-            if op_type == "communication":
+        for name, comm_type, _suffix, extra in _FWD_OPS:
+            if name == "embedding":
+                continue
+            is_comm = comm_type != "computation"
+            if is_comm:
                 dur = rng.uniform(80, 200) * dur_scale
-                comm_bytes = rng.uniform(8e6, 40e6)
+                msg_bytes = rng.uniform(8e6, 40e6)
                 flops = 0
             else:
                 dur = rng.uniform(200, 1800) * dur_scale
-                comm_bytes = 0
+                msg_bytes = 0
                 flops = rng.uniform(0.1e12, 3e12) * dur_scale
 
-            operators.append(OperatorTrace(
-                op_name=op_name, op_type=op_type, category=cat,
-                start_us=current_time_us, duration_us=dur,
-                flops=flops, comm_bytes=comm_bytes,
-                parent_op=parent, depth=depth,
-                details=dict(details) if details else {},
-            ))
+            operators.append(_make_op(name, comm_type, stage_fwd, extra, current_time_us, dur, flops, msg_bytes))
             current_time_us += dur
             total_flops += flops
-            total_comm_bytes += comm_bytes
-            if op_type == "communication":
+            if is_comm:
+                total_comm_bytes += msg_bytes
                 comm_time_us += dur
 
-        # PP Send activations (if not last PP stage)
+        # PP Send (if not last PP stage)
         if pp > 1 and global_rank % pp != pp - 1:
             dur = rng.uniform(50, 150) * dur_scale
-            comm_bytes = rng.uniform(20e6, 60e6)
-            operators.append(OperatorTrace(
-                op_name="PP_Send_Activations", op_type="communication", category="fwd",
-                start_us=current_time_us, duration_us=dur,
-                comm_bytes=comm_bytes,
-                parent_op=f"{layer_prefix}/Fwd", depth=0,
-                details={"direction": "fwd", "size": f"{comm_bytes/1e6:.1f}MB"},
-            ))
+            msg_bytes = rng.uniform(20e6, 60e6)
+            extra_send = {"data_shape": "[B,S,d_model]", "data_type": "bf16", "comm_group": "pp_group", "additional": f"{msg_bytes/1e6:.1f}MB"}
+            operators.append(_make_op("send", "send", stage_fwd, extra_send, current_time_us, dur, 0, msg_bytes))
             current_time_us += dur
-            total_comm_bytes += comm_bytes
+            total_comm_bytes += msg_bytes
             comm_time_us += dur
 
         # Backward pass
-        for op_name, op_type, cat, depth, details in _OP_NAMES_BWD:
-            if depth == 1:
-                parent = f"{layer_prefix}/Bwd"
-            elif depth >= 2:
-                parent = f"{layer_prefix}/Bwd/{op_name.split('_')[0]}"
-            else:
-                parent = f"{layer_prefix}/Bwd"
-
-            if op_type == "communication":
+        for name, comm_type, _suffix, extra in _BWD_OPS:
+            is_comm = comm_type != "computation"
+            if is_comm:
                 dur = rng.uniform(80, 200) * dur_scale
-                comm_bytes = rng.uniform(8e6, 40e6)
+                msg_bytes = rng.uniform(8e6, 40e6)
                 flops = 0
             else:
                 dur = rng.uniform(300, 2500) * dur_scale
-                comm_bytes = 0
+                msg_bytes = 0
                 flops = rng.uniform(0.15e12, 4e12) * dur_scale
 
-            operators.append(OperatorTrace(
-                op_name=op_name, op_type=op_type, category=cat,
-                start_us=current_time_us, duration_us=dur,
-                flops=flops, comm_bytes=comm_bytes,
-                parent_op=parent, depth=depth,
-                details=dict(details) if details else {},
-            ))
+            operators.append(_make_op(name, comm_type, stage_bwd, extra, current_time_us, dur, flops, msg_bytes))
             current_time_us += dur
             total_flops += flops
-            total_comm_bytes += comm_bytes
-            if op_type == "communication":
+            if is_comm:
+                total_comm_bytes += msg_bytes
                 comm_time_us += dur
 
-        # PP Recv gradients (if not first PP stage)
+        # PP Recv (if not first PP stage)
         if pp > 1 and global_rank % pp != 0:
             dur = rng.uniform(50, 150) * dur_scale
-            comm_bytes = rng.uniform(20e6, 60e6)
-            operators.append(OperatorTrace(
-                op_name="PP_Recv_Grads", op_type="communication", category="bwd",
-                start_us=current_time_us, duration_us=dur,
-                comm_bytes=comm_bytes,
-                parent_op=f"{layer_prefix}/Bwd", depth=0,
-                details={"direction": "bwd", "size": f"{comm_bytes/1e6:.1f}MB"},
-            ))
+            msg_bytes = rng.uniform(20e6, 60e6)
+            extra_recv = {"data_shape": "[B,S,d_model]", "data_type": "bf16", "comm_group": "pp_group", "additional": f"{msg_bytes/1e6:.1f}MB"}
+            operators.append(_make_op("recv", "recv", stage_bwd, extra_recv, current_time_us, dur, 0, msg_bytes))
             current_time_us += dur
-            total_comm_bytes += comm_bytes
+            total_comm_bytes += msg_bytes
             comm_time_us += dur
 
     # Optimizer step
-    for op_name, op_type, cat, depth, details in _OP_NAMES_OPT:
-        if op_type == "collective" and tp <= 1 and pp <= 1:
-            # AllReduce only for DP
-            dur = rng.uniform(500, 2000) * dur_scale
-            comm_bytes = rng.uniform(100e6, 200e6)
-            flops = 0
-        elif op_type == "collective":
-            dur = rng.uniform(200, 1000) * dur_scale
-            comm_bytes = rng.uniform(50e6, 150e6)
+    for name, comm_type, _suffix, extra in _OPT_OPS:
+        is_comm = comm_type != "computation"
+        if comm_type == "all_reduce":
+            dur = rng.uniform(200, 2000) * dur_scale
+            msg_bytes = rng.uniform(50e6, 200e6)
             flops = 0
         else:
             dur = rng.uniform(300, 1000) * dur_scale
-            comm_bytes = 0
+            msg_bytes = 0
             flops = rng.uniform(0.5e12, 1.5e12) * dur_scale
 
-        operators.append(OperatorTrace(
-            op_name=op_name, op_type=op_type, category=cat,
-            start_us=current_time_us, duration_us=dur,
-            flops=flops, comm_bytes=comm_bytes,
-            parent_op="Optimizer", depth=depth,
-            details=dict(details) if details else {},
-        ))
+        operators.append(_make_op(name, comm_type, "optimizer", extra, current_time_us, dur, flops, msg_bytes))
         current_time_us += dur
         total_flops += flops
-        total_comm_bytes += comm_bytes
-        if op_type in ("communication", "collective"):
+        if is_comm:
+            total_comm_bytes += msg_bytes
             comm_time_us += dur
 
     total_time_ms = current_time_us / 1000.0
