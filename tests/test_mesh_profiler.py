@@ -19,8 +19,8 @@ _skill = importlib.import_module("app.skills.training-mesh-profiler-skill")
 _estimate_flops = _skill._estimate_flops
 _estimate_hbm_gb = _skill._estimate_hbm_gb
 _estimate_dp_comm_gb = _skill._estimate_dp_comm_gb
-_estimate_tp_comm_mb = _skill._estimate_tp_comm_mb
-_estimate_pp_comm_gb = _skill._estimate_pp_comm_gb
+_estimate_tp_comm_gb = _skill._estimate_tp_comm_gb
+_estimate_pp_comm_mb = _skill._estimate_pp_comm_mb
 _MODEL_CONFIG = _skill._MODEL_CONFIG
 
 S = 2048
@@ -35,7 +35,7 @@ topologies = [
 ]
 
 print(
-    f"{'Topology':<12} {'L':>4} {'H':>6} {'FLOPs/card':>22} {'HBM(GB)':>10} {'DP(GB/s)':>10} {'TP(MB/m)':>12} {'PP(GB/s)':>10}"
+    f"{'Topology':<12} {'L':>4} {'H':>6} {'FLOPs/card':>22} {'HBM(GB)':>10} {'DP(GB/s)':>10} {'TP(GB/m)':>12} {'PP(MB/m)':>10}"
 )
 print("-" * 100)
 
@@ -47,8 +47,8 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     f = _estimate_flops(L, H, S, B, dp, tp, pp)
     h = _estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
     dp_c = _estimate_dp_comm_gb(L, H, tp, pp)
-    tp_c = _estimate_tp_comm_mb(L, H, S, B, pp)
-    pp_c = _estimate_pp_comm_gb(H, S, B)
+    tp_c = _estimate_tp_comm_gb(L, H, S, B, pp)
+    pp_c = _estimate_pp_comm_mb(H, S, B)
     print(
         f"{name:<12} {L:>4} {H:>6} {f:>22.4e} {h:>10.4f} {dp_c:>10.4f} {tp_c:>12.2f} {pp_c:>10.4f}"
     )
