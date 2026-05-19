@@ -1,7 +1,7 @@
 # 仿真系统 MCP Server 需求规格
 
-> 更新时间：2026-05-09  
-> 依据代码：`app/mcp/client.py`、`app/routes/session.py`、`app/routes/simulation.py`、`app/skills/training-mesh-profiler-skill/__init__.py`
+> 更新时间：2026-05-18  
+> 依据代码：`app/mcp/client.py`、`app/routes/session.py`、`app/routes/simulation.py`、`app/skills/training-mesh-profiler-skill/__init__.py`、`app/agent/orchestrator.py`
 
 ---
 
@@ -85,6 +85,8 @@
 | | `num_heads` | integer | ✅ | 注意力头数 A |
 | **运行时参数** | `seq_len` | integer | ✅ | 序列长度 S |
 | | `batch_size` | integer | ✅ | 总批次大小 B |
+
+> **额外字段**：`MeshTopology.model_dump()` 还会输出 `nodes`（`MeshNode[]`）和 `communication_groups`（通信组列表）。这些是组网拓扑的内部结构，MCP Server 可忽略，但 `execute_task` 的 `topology` 参数中可能包含。后续版本考虑剥离。
 
 ---
 
@@ -301,8 +303,8 @@ submitted  →  running  →  completed
 | M3 | `app/routes/session.py:_generate_mock_comm_detail` | TP/PP/DP 通信详情（次数/参与卡数/单次量/总量） | `GET /api/session/<id>/simulation/<side>/<rank>/tp-comm-detail` |
 | M4 | 同上 | PP 通信详情 | `GET /api/session/<id>/simulation/<side>/<rank>/pp-comm-detail` |
 | M5 | 同上 | DP 通信详情 | `GET /api/session/<id>/simulation/<side>/<rank>/dp-comm-detail` |
-| M6 | `app/routes/session.py:540` | `task_id = "mock_task_id"`（无真实任务时占位）| 兜底值，不需单独接口 |
-| M7 | `app/skills/training-mesh-profiler-skill/__init__.py` | 无 task_id 时使用本地估算公式代替仿真结果 | 估算模式，不需接口 |
+| M6 | `app/routes/session.py:614` | `task_id = "mock_task_id"`（无真实任务时占位）| 兜底值，不需单独接口 |
+| M7 | `app/skills/training-mesh-profiler-skill/__init__.py` + `app/routes/session.py:_run_simulation_for_topology` | 无 task_id 时使用本地估算公式代替仿真结果（两处独立副本） | 估算模式，不需接口 |
 
 ### 9.2 接口类型归属
 
@@ -311,13 +313,13 @@ submitted  →  running  →  completed
 | 接口 | 说明 |
 |------|------|
 | `POST /api/session` | 创建 session，生成 session_id |
-| `GET /api/session` | 列出所有 session |
+| `GET /api/session/summaries` | 列出所有 session 摘要 |
 | `GET /api/session/<id>` | 获取 session 状态 |
 | `DELETE /api/session/<id>` | 删除 session |
 | `GET /api/session/<id>/topology` | 获取已生成的拓扑 JSON（本地 session 数据）|
 | `GET /api/session/<id>/simulation` | 获取比较报告（本地计算结果）|
 | `POST /api/session/estimate` | 用本地估算公式计算指标（无需外部系统）|
-| `POST /chat/stream` (SSE) | Agent 对话流（本地 orchestrator 驱动）|
+| `POST /api/chat/stream` (SSE) | Agent 对话流（本地 orchestrator 驱动）|
 
 #### 类型二：纯 MCP Tool（调用外部仿真系统，无前端直连）
 
