@@ -86,7 +86,7 @@ class OperatorTrace(BaseModel):
     additional: str | None = Field(default=None, description="附加说明, e.g. 'matmul', 'seed-sync'")
     nonblock: int = Field(default=0, description="是否非阻塞: 1=非阻塞, 0=阻塞")
     wait_n: int | None = Field(default=None, description="等待数量")
-    _elapsed_time: float = Field(default=0, description="仿真系统原始耗时 (微秒)")
+    elapsed_time: float = Field(default=0, description="仿真系统原始耗时 (微秒), CSV列 _elapsed_time")
     start_time: float = Field(description="算子开始时间 (微秒)")
     end_time: float = Field(description="算子结束时间 (微秒)")
     single_flops: float | None = Field(default=None, description="单算子 FLOPs; 通信类为 null")

@@ -5031,7 +5031,7 @@
                         start_time: t,
                         end_time: t + dur,
                         duration: dur,
-                        _elapsed_time: dur,
+                        elapsed_time: dur,
                     });
                     t += dur;
                     return dur;
@@ -5077,7 +5077,7 @@
                         start_time: t,
                         end_time: t + dur,
                         duration: dur,
-                        _elapsed_time: dur,
+                        elapsed_time: dur,
                     });
                     t += dur;
                     return dur;
@@ -5446,7 +5446,7 @@
                         o2.duration = Math.round(
                             o2.duration * (0.9 + myTp * 0.07),
                         );
-                        o2._elapsed_time = o2.duration;
+                        o2.elapsed_time = o2.duration;
                     }
                 }
 
