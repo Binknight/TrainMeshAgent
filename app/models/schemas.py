@@ -74,17 +74,30 @@ class SimulationResult(BaseModel):
 
 
 class OperatorTrace(BaseModel):
-    """Single operator execution trace record."""
-    op_name: str = Field(description="算子名称, e.g. 'MHA_QKV_Proj', 'FFN_FC1', 'AllReduce'")
-    op_type: str = Field(description="算子类型: computation | communication | collective")
-    category: str = Field(description="算子分类: fwd | bwd | optimizer")
-    start_us: float = Field(description="开始时间 (微秒)")
-    duration_us: float = Field(description="持续时间 (微秒)")
-    flops: float = Field(default=0, description="计算量 (FLOPs)")
-    comm_bytes: float = Field(default=0, description="通信量 (bytes)")
-    parent_op: str = Field(default="", description="父算子名称，用于tracing层次")
-    depth: int = Field(default=0, description="tracing层次深度")
-    details: dict[str, str] = Field(default_factory=dict, description="额外信息")
+    """Single operator execution trace record — aligned with simulation CSV output + MCP computed fields."""
+    # ── CSV passthrough ──
+    comm_type: str = Field(description="算子/通信类型, e.g. 'computation', 'all_reduce', 'send', 'recv'")
+    comm_group: str | None = Field(default=None, description="通信组名, e.g. 'tp_group', 'dp_group'")
+    comm_group_size: int | None = Field(default=None, description="通信组参与卡数")
+    msg_size: float | None = Field(default=None, description="通信消息大小 (bytes)")
+    stage: str = Field(description="执行阶段, e.g. 'forward/layer0', 'backward/layer14', 'optimizer', 'init'")
+    dst: str | None = Field(default=None, description="目标 rank 或组")
+    src: str | None = Field(default=None, description="源 rank 或组")
+    additional: str | None = Field(default=None, description="附加说明, e.g. 'matmul', 'seed-sync'")
+    nonblock: int = Field(default=0, description="是否非阻塞: 1=非阻塞, 0=阻塞")
+    wait_n: int | None = Field(default=None, description="等待数量")
+    _elapsed_time: float = Field(default=0, description="仿真系统原始耗时 (微秒)")
+    start_time: float = Field(description="算子开始时间 (微秒)")
+    end_time: float = Field(description="算子结束时间 (微秒)")
+    single_flops: float | None = Field(default=None, description="单算子 FLOPs; 通信类为 null")
+
+    # ── MCP computed ──
+    index: int = Field(default=0, description="算子序号, 从0递增, 用于增量offset对齐")
+    operator_name: str = Field(default="", description="算子可读名称, 由MCP根据comm_type+stage推导")
+    data_shape: str | None = Field(default=None, description="数据形状描述, e.g. '[32,4096,4096] → [32,4096,12288]'")
+    data_type: str | None = Field(default=None, description="数据类型, e.g. 'bf16', 'fp32'")
+    algo_name: str | None = Field(default=None, description="算法名, e.g. 'linear', 'Ring'")
+    duration: float = Field(default=0, description="= end_time - start_time (微秒), 方便前端使用")
 
 
 class TimelineSummary(BaseModel):
