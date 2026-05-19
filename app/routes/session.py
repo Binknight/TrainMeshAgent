@@ -99,14 +99,21 @@ def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
-def _topo_with_model(topo, training_model):
-    """Attach num_layers / hidden_dim from a training model onto a topology dict."""
+def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None):
+    """Attach model config + runtime params onto a topology dict for MCP execute_task."""
     if topo is None:
         return None
     d = topo.model_dump()
     if training_model:
         d["num_layers"] = training_model.config.num_layers
         d["hidden_dim"] = training_model.config.d_model
+        d["num_heads"] = training_model.config.num_heads
+    if seq_len is not None:
+        d["seq_len"] = seq_len
+    if batch_size is not None:
+        d["batch_size"] = batch_size
+    if model_name is not None:
+        d["model_name"] = model_name
     return d
 
 
@@ -120,8 +127,18 @@ def get_topology(session_id: str):
     return jsonify({
         "session_id": session_id,
         "server_boot_id": SERVER_BOOT_ID,
-        "original_topology": _topo_with_model(session.original_topology, session.original_training_model),
-        "equivalent_topology": _topo_with_model(session.equivalent_topology, session.equivalent_training_model),
+        "original_topology": _topo_with_model(
+            session.original_topology, session.original_training_model,
+            seq_len=session.original_seq_len,
+            batch_size=session.original_batch_size,
+            model_name=session.original_model_name,
+        ),
+        "equivalent_topology": _topo_with_model(
+            session.equivalent_topology, session.equivalent_training_model,
+            seq_len=session.equivalent_seq_len,
+            batch_size=session.equivalent_batch_size,
+            model_name=session.original_model_name,  # model is the same, just different topo
+        ),
         "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
         "equivalent_training_model": session.equivalent_training_model.model_dump() if session.equivalent_training_model else None,
         "original_simulation": session.original_simulation is not None,
@@ -202,7 +219,7 @@ def estimate_metrics():
     })
 
 
-def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None) -> tuple[str | None, SimulationResult | None]:
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None) -> tuple[str | None, SimulationResult | None]:
     """Submit MCP task + run estimation profiler for a single topology. Returns (task_id, SimulationResult)."""
     if not topo:
         return task_id_in, None
@@ -211,18 +228,19 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     cfg = _est._MODEL_CONFIG[device_type]
     L = training_model.config.num_layers if training_model else cfg["num_layers"]
     H = training_model.config.d_model if training_model else cfg["hidden_dim"]
-    S = int(_est._SEQ_LEN)
-    B = int(_est._TOTAL_BATCH)
+    # Use user-provided values; fall back to profiler defaults
+    S = int(seq_len) if seq_len is not None else int(_est._SEQ_LEN)
+    B = int(batch_size) if batch_size is not None else int(_est._TOTAL_BATCH)
     a = float(_est._QUANT_COEFF)
     dp, tp, pp = topo.dp_size, topo.tp_size, topo.pp_size
     total_nodes = dp * tp * pp
 
     # Submit MCP task (fire-and-forget)
-    # Use _topo_with_model to include num_layers / hidden_dim in the payload
+    # Forward L, H, A, S, B, model_name in the topology payload for execute_task
     task_id = task_id_in
     if not task_id:
         try:
-            topo_payload = _topo_with_model(topo, training_model) or topo.model_dump()
+            topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name) or topo.model_dump()
             task_id = mcp_client.execute_task(topo_payload, params=sim_params)
             if not task_id:
                 logger.warning(f"[run_simulation] MCP execute_task returned empty task_id for {label}")
@@ -317,7 +335,10 @@ def run_simulation(session_id: str):
     # ── Original topology ──
     orig_tid, orig_sim = _run_simulation_for_topology(
         session.original_topology, session.original_training_model,
-        session.original_task_id, "original", sim_params_dict
+        session.original_task_id, "original", sim_params_dict,
+        seq_len=session.original_seq_len,
+        batch_size=session.original_batch_size,
+        model_name=session.original_model_name,
     )
     if orig_sim:
         session.original_simulation = orig_sim
@@ -327,7 +348,10 @@ def run_simulation(session_id: str):
     # ── Equivalent topology ──
     eq_tid, eq_sim = _run_simulation_for_topology(
         session.equivalent_topology, session.equivalent_training_model,
-        session.equivalent_task_id, "equivalent", sim_params_dict
+        session.equivalent_task_id, "equivalent", sim_params_dict,
+        seq_len=session.equivalent_seq_len,
+        batch_size=session.equivalent_batch_size,
+        model_name=session.original_model_name,
     )
     if eq_sim:
         session.equivalent_simulation = eq_sim
