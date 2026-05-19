@@ -16,6 +16,9 @@ class TopologyParams(BaseModel):
     dp: int = Field(ge=1, le=1024, description="数据并行度 (Data Parallel)")
     tp: int = Field(ge=1, le=32, description="张量并行度 (Tensor Parallel)")
     pp: int = Field(ge=1, le=128, description="流水线并行度 (Pipeline Parallel)")
+    seq_len: int | None = Field(default=None, description="序列长度 S")
+    batch_size: int | None = Field(default=None, description="批次大小 B")
+    model_name: str | None = Field(default=None, description="模型名称")
 
 
 class MeshNode(BaseModel):
@@ -68,11 +71,6 @@ class SimulationResult(BaseModel):
     device_type: DeviceType
     total_nodes: int
     cards: list[CardMetrics]
-    aggregate_flops: float
-    aggregate_hbm_gb: float
-    aggregate_tp_comm_gb_per_micro: float
-    aggregate_pp_comm_mb_per_micro: float
-    aggregate_dp_comm_gb_per_step: float
 
 
 class OperatorTrace(BaseModel):
@@ -150,7 +148,7 @@ class ComparisonReport(BaseModel):
 
 class AgentEvent(BaseModel):
     """SSE event emitted during agent processing."""
-    event_type: str  # thinking | tool_call | guard_check | mesh_json | message | error | done
+    event_type: str  # thinking | tool_call | guard_check | mesh_json | model_json | equiv_formula_line | sim_data | workflow_state | message | error | done
     data: dict[str, Any] = Field(default_factory=dict)
     message: str = ""
 
@@ -211,6 +209,7 @@ class TrainingModelLayer(BaseModel):
 class TrainingModel(BaseModel):
     """Structured training model definition output."""
     type: str = Field(default="transformer_model")
+    model_name: str | None = Field(default=None, description="User-facing model name, e.g. Llama-3.1-8B")
     config: TrainingModelConfig
     computed: TrainingModelComputed
     layers: list[TrainingModelLayer]
@@ -219,6 +218,24 @@ class TrainingModel(BaseModel):
     def model_dump(self, **kwargs) -> dict[str, Any]:
         kwargs.setdefault("exclude_none", True)
         return super().model_dump(**kwargs)
+
+
+class SimulationParams(BaseModel):
+    """Simulation parameters passed to the MCP simulation system."""
+    epoch_num: int = 1
+    model_name: str = ""
+    device_type: str = "ASCEND_910B"
+    vocab_size: str = "18277"
+    frame: str = "Mindspeed"
+    rank: int = 0
+    rank_range: int = 1023
+    comp_filepath: str = "/opt/traffic_modeling/aicm/default.txt"
+    no_time_accumulation: bool = False
+    level0_config: dict[str, Any] | None = None
+    level1_config: dict[str, Any] | None = None
+    visual_json_output: bool = True
+    comm_group_output: bool = True
+    debug_time: bool = False
 
 
 class SessionState(BaseModel):
@@ -235,5 +252,12 @@ class SessionState(BaseModel):
     equivalent_training_model: TrainingModel | None = None
     original_task_id: str | None = None
     equivalent_task_id: str | None = None
-    step: str = "idle"  # idle | params_collected | topology_generated | simulating | completed
+    simulation_params: SimulationParams | None = None
+    step: str = "idle"  # idle | params_collected | equiv_calculating | equiv_generated | simulating | completed
     history: list[dict[str, Any]] = Field(default_factory=list)
+    # Step1 form metadata captured from frontend
+    original_model_name: str | None = None
+    original_seq_len: int | None = None
+    original_batch_size: int | None = None
+    equivalent_seq_len: int | None = None
+    equivalent_batch_size: int | None = None

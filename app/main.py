@@ -25,6 +25,10 @@ def create_app() -> Flask:
     # CORS support
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 
+    # Run database migration on startup
+    from app.db_migration import init_db
+    init_db()
+
     # Register blueprints
     app.register_blueprint(chat_bp)
     app.register_blueprint(session_bp)
@@ -51,9 +55,11 @@ def create_app() -> Flask:
             "endpoints": {
                 "chat_stream": "POST /api/chat/stream  (SSE)",
                 "create_session": "POST /api/session",
+                "list_summaries": "GET /api/session/summaries",
                 "get_session": "GET /api/session/<id>",
                 "list_sessions": "GET /api/session",
                 "delete_session": "DELETE /api/session/<id>",
+                "estimate_metrics": "POST /api/session/estimate",
                 "get_topology": "GET /api/session/<id>/topology",
                 "get_simulation": "GET /api/session/<id>/simulation",
                 "run_simulation": "POST /api/session/<id>/run-simulation",
