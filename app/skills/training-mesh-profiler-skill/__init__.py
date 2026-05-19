@@ -45,14 +45,14 @@ def _estimate_dp_comm_gb(L: int, H: int, tp: int, pp: int) -> float:
     return 8 * L * (4 * H**2 + 3 * H * 4 * H) / (tp * pp) / 1e9
 
 
-def _estimate_tp_comm_mb(L: int, H: int, S: int, B: int, pp: int) -> float:
-    """TP comm = L/PP*32*B*S*H / 1e6"""
-    return L / pp * 32 * B * S * H / 1e6
+def _estimate_tp_comm_gb(L: int, H: int, S: int, B: int, pp: int) -> float:
+    """TP comm = L/PP*32*B*S*H / 1e9  → GB/micro-step"""
+    return L / pp * 32 * B * S * H / 1e9
 
 
-def _estimate_pp_comm_gb(H: int, S: int, B: int) -> float:
-    """PP comm = 4*B*S*H / 1e9"""
-    return 4 * B * S * H / 1e9
+def _estimate_pp_comm_mb(H: int, S: int, B: int) -> float:
+    """PP comm = 4*B*S*H / 1e6  → MB/micro-step"""
+    return 4 * B * S * H / 1e6
 
 
 class MeshProfilerSkill(BaseSkill):
@@ -189,8 +189,8 @@ class MeshProfilerSkill(BaseSkill):
             flops = _estimate_flops(L, H, S, B, dp, tp, pp)
             hbm = _estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
             dp_comm = _estimate_dp_comm_gb(L, H, tp, pp)
-            tp_comm = _estimate_tp_comm_mb(L, H, S, B, pp)
-            pp_comm = _estimate_pp_comm_gb(H, S, B)
+            tp_comm = _estimate_tp_comm_gb(L, H, S, B, pp)
+            pp_comm = _estimate_pp_comm_mb(H, S, B)
             for rank in range(total_nodes):
                 cards.append(
                     CardMetrics(
