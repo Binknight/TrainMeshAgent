@@ -219,6 +219,8 @@ def _execute_utility_tool(
             "rank_range",
             "comp_filepath",
             "no_time_accumulation",
+            "level0_config",
+            "level1_config",
             "visual_json_output",
             "comm_group_output",
             "debug_time",
@@ -233,8 +235,23 @@ def _execute_utility_tool(
             if session.simulation_params
             else None
         )
-        task_id = mcp_client.execute_task(topology_json, params=sim_params_dict)
         topo_name = arguments.get("topology_name", "")
+        # Enrich topology_json with model config + runtime params that the LLM may have omitted
+        is_original = "原始" in topo_name
+        model = session.original_training_model if is_original else session.equivalent_training_model
+        params = session.original_params if is_original else session.equivalent_params
+        if model:
+            topology_json.setdefault("num_layers", model.config.num_layers)
+            topology_json.setdefault("hidden_dim", model.config.d_model)
+            topology_json.setdefault("num_heads", model.config.num_heads)
+        if params:
+            if params.seq_len is not None:
+                topology_json.setdefault("seq_len", params.seq_len)
+            if params.batch_size is not None:
+                topology_json.setdefault("batch_size", params.batch_size)
+            if params.model_name is not None:
+                topology_json.setdefault("model_name", params.model_name)
+        task_id = mcp_client.execute_task(topology_json, params=sim_params_dict)
         if "原始" in topo_name:
             session.original_task_id = task_id
         else:
