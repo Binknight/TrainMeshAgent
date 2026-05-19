@@ -193,7 +193,7 @@ def estimate_metrics():
 
     flops = _est._estimate_flops(L, H, S, B, dp, tp, pp)
     hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
-    dp_comm = _est._estimate_dp_comm_gb(L, H, tp, pp)
+    dp_comm = _est._estimate_dp_comm_gb(L, H, dp)
     tp_comm = _est._estimate_tp_comm_gb(L, H, S, B, pp)
     pp_comm = _est._estimate_pp_comm_mb(H, S, B)
 
@@ -251,7 +251,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     # Run estimation formulas
     flops = _est._estimate_flops(L, H, S, B, dp, tp, pp)
     hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
-    dp_comm = _est._estimate_dp_comm_gb(L, H, tp, pp)
+    dp_comm = _est._estimate_dp_comm_gb(L, H, dp)
     tp_comm = _est._estimate_tp_comm_gb(L, H, S, B, pp)
     pp_comm = _est._estimate_pp_comm_mb(H, S, B)
 
