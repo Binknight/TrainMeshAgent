@@ -444,7 +444,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
             start_time=start_us,
             end_time=start_us + dur,
             duration=dur,
-            _elapsed_time=dur,
+            elapsed_time=dur,
             single_flops=flops_val if flops_val > 0 else None,
             msg_size=msg_bytes if msg_bytes > 0 else None,
             comm_group=extra.get("comm_group") if is_comm else None,

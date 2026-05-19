@@ -350,7 +350,7 @@
 | `additional` | string\|null | ✅ | 附加说明，如 `matmul`、`seed-sync` |
 | `nonblock` | int | ✅ | 是否非阻塞：`1` = 非阻塞，`0` = 阻塞 |
 | `wait_n` | int\|null | ✅ | 等待数量 |
-| `_elapsed_time` | float | ✅ | 仿真系统原始耗时 (微秒) |
+| `elapsed_time` | float | ✅ | 仿真系统原始耗时 (微秒)，CSV 列为 `_elapsed_time`，MCP Server 返回时去掉前导下划线 |
 | `start_time` | float | ✅ | 算子开始时间 (微秒) |
 | `end_time` | float | ✅ | 算子结束时间 (微秒) |
 | `single_flops` | float\|null | ✅ | 单算子 FLOPs；通信类算子为 null |
