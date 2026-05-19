@@ -1,7 +1,7 @@
 # 仿真系统 MCP Server 需求规格
 
-> 更新时间：2026-05-09  
-> 依据代码：`app/mcp/client.py`、`app/routes/session.py`、`app/routes/simulation.py`、`app/skills/training-mesh-profiler-skill/__init__.py`
+> 更新时间：2026-05-18  
+> 依据代码：`app/mcp/client.py`、`app/routes/session.py`、`app/routes/simulation.py`、`app/skills/training-mesh-profiler-skill/__init__.py`、`app/agent/orchestrator.py`
 
 ---
 
@@ -10,7 +10,7 @@
 本文档定义 TrainMeshAgent 对接"仿真系统 MCP Server"的完整需求规格，覆盖：
 
 - 接口协议与传输约定
-- 必须实现的 MCP tools（含完整入参/出参）
+- 8 个 MCP tools 完整定义（核心 5 + 详情 3，含完整入参/出参）
 - 当前所有 mock 点列举及接入方式分类
 - 各接口类型归属（纯 REST / 纯 MCP / 两者均需）
 - 任务状态机与错误处理约定
@@ -65,7 +65,7 @@
 ```json
 {
   "topology": { <SimulationTaskInput> },
-  "simulation_params": {}
+  "simulation_params": { <SimulationRunnerParams> }
 }
 ```
 
@@ -85,6 +85,8 @@
 | | `num_heads` | integer | ✅ | 注意力头数 A |
 | **运行时参数** | `seq_len` | integer | ✅ | 序列长度 S |
 | | `batch_size` | integer | ✅ | 总批次大小 B |
+
+> **额外字段**：`MeshTopology.model_dump()` 还会输出 `nodes`（`MeshNode[]`）和 `communication_groups`（通信组列表）。这些是组网拓扑的内部结构，MCP Server 可忽略，但 `execute_task` 的 `topology` 参数中可能包含。后续版本考虑剥离。
 
 ---
 
@@ -110,7 +112,23 @@
     "seq_len": 2048,
     "batch_size": 32
   },
-  "simulation_params": {}
+  "simulation_params": {
+    "script_path": "/opt/ascend/script/pretrain_xxxx.sh",
+    "epoch_num": 1,
+    "model_name": "",
+    "device_type": "ASCEND_910B",
+    "vocab_size": "18277",
+    "frame": "Mindspeed",
+    "rank": 0,
+    "rank_range": 1023,
+    "comp_filepath": "/opt/traffic_modeling/aicm/default.txt",
+    "no_time_accumulation": false,
+    "level0_config": null,
+    "level1_config": null,
+    "visual_json_output": true,
+    "comm_group_output": true,
+    "debug_time": false
+  }
 }
 ```
 
@@ -132,7 +150,23 @@
     "seq_len": 2048,
     "batch_size": 32
   },
-  "simulation_params": {}
+  "simulation_params": {
+    "script_path": "/opt/ascend/script/pretrain_xxxx.sh",
+    "epoch_num": 1,
+    "model_name": "",
+    "device_type": "ASCEND_910B",
+    "vocab_size": "18277",
+    "frame": "Mindspeed",
+    "rank": 0,
+    "rank_range": 1023,
+    "comp_filepath": "/opt/traffic_modeling/aicm/default.txt",
+    "no_time_accumulation": false,
+    "level0_config": null,
+    "level1_config": null,
+    "visual_json_output": true,
+    "comm_group_output": true,
+    "debug_time": false
+  }
 }
 ```
 
@@ -241,7 +275,113 @@
 
 ---
 
-## 8. 任务状态机
+## 8. get_device_detail — 获取单卡算子级 Trace
+
+**调用场景**：前端点击 Rank 卡片查看详情时，通过 REST 接口触发。返回该卡全部算子的执行时序和 Timeline 摘要，用于渲染**算子时序图**和**负载描述文件表格**。
+
+> 与 `card_detail` 的区别：`card_detail` 返回卡级别的 7 个汇总指标（轻量，列表页用），`get_device_detail` 返回算子级别的完整 Trace（数据量大，按需点开单个 Rank 时用）。
+
+### 入参
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `task_id` | string | ✅ | 任务 ID |
+| `global_rank` | integer | ✅ | 全局 Rank 编号 |
+
+### 出参
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `card_id` | string | ✅ | 卡标识，如 `card_0` |
+| `global_rank` | integer | ✅ | 全局 Rank |
+| `task_id` | string | ✅ | 回显任务 ID |
+| `topology_name` | string | ✅ | 组网名称 |
+| `device_type` | string | ✅ | 设备类型 |
+| `dp_rank` | integer | ⬜ | DP 维度 rank |
+| `tp_rank` | integer | ⬜ | TP 维度 rank |
+| `pp_rank` | integer | ⬜ | PP 维度 rank |
+| `operators` | array[OperatorTrace] | ✅ | 算子执行列表 |
+| `timeline` | TimelineSummary | ⬜ | 时序汇总统计 |
+
+**OperatorTrace** 每条记录：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `op_name` | string | 算子名称，如 `MHA_QKV_Proj`、`AllReduce` |
+| `op_type` | string | 类型枚举：`computation` / `communication` / `collective` |
+| `category` | string | 阶段分类：`fwd` / `bwd` / `optimizer` |
+| `start_us` | float | 开始时间 (微秒) |
+| `duration_us` | float | 持续时间 (微秒) |
+| `flops` | float | 计算量 (FLOPs)，计算类算子填充 |
+| `comm_bytes` | float | 通信量 (bytes)，通信类算子填充 |
+| `parent_op` | string | 父算子名称，用于 tracing 层次 |
+| `depth` | integer | 层次深度 |
+| `details` | object | 额外信息键值对 |
+
+**TimelineSummary**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `total_time_ms` | float | 总耗时 (ms) |
+| `compute_time_ms` | float | 纯计算耗时 (ms) |
+| `comm_time_ms` | float | 纯通信耗时 (ms) |
+| `compute_pct` | float | 计算占比 (%) |
+| `comm_pct` | float | 通信占比 (%) |
+| `total_flops` | float | 总 FLOPs |
+| `total_comm_gb` | float | 总通信量 (GB) |
+
+---
+
+## 9. get_hbm_detail — 获取单卡 HBM 分项占用
+
+**调用场景**：前端展示单卡 HBM 内存分解（权重 / 梯度 / 优化器 / 激活值）。
+
+### 入参
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `task_id` | string | ✅ | 任务 ID |
+| `global_rank` | integer | ✅ | 全局 Rank 编号 |
+
+### 出参
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `global_rank` | integer | ✅ | 全局 Rank |
+| `weights_gb` | float | ✅ | 权重占用 (GB) |
+| `gradients_gb` | float | ✅ | 梯度占用 (GB) |
+| `optimizer_gb` | float | ✅ | 优化器状态占用 (GB) |
+| `activations_gb` | float | ✅ | 激活值占用 (GB) |
+| `total_hbm_gb` | float | ✅ | HBM 总占用 (GB) |
+
+---
+
+## 10. get_comm_detail — 获取单卡通信详情
+
+**调用场景**：前端展示单卡 TP / PP / DP 通信详情（通信次数、参与卡数、单次/总量）。
+
+### 入参
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `task_id` | string | ✅ | 任务 ID |
+| `global_rank` | integer | ✅ | 全局 Rank 编号 |
+| `comm_type` | string | ✅ | 通信类型枚举：`tp` / `pp` / `dp` |
+
+### 出参
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `global_rank` | integer | ✅ | 全局 Rank |
+| `comm_type` | string | ✅ | 回显通信类型 |
+| `comm_count` | integer | ✅ | 每 step 通信次数 |
+| `comm_cards` | integer | ✅ | 参与通信的卡数 |
+| `comm_size_per_time_gb` | float | ✅ | 单次通信量 (GB) |
+| `total_comm_gb` | float | ✅ | 总通信量 (GB) |
+
+---
+
+## 11. 任务状态机
 
 ```
 submitted  →  running  →  completed
@@ -258,9 +398,9 @@ submitted  →  running  →  completed
 
 ---
 
-## 9. 当前所有 Mock 点及接口归属分析
+## 12. 当前所有 Mock 点及接口归属分析
 
-### 9.1 Mock 点全览
+### 12.1 Mock 点全览
 
 | 编号 | 文件 | Mock 内容 | 对应 REST 接口 |
 |------|------|-----------|---------------|
@@ -269,32 +409,36 @@ submitted  →  running  →  completed
 | M3 | `app/routes/session.py:_generate_mock_comm_detail` | TP/PP/DP 通信详情（次数/参与卡数/单次量/总量） | `GET /api/session/<id>/simulation/<side>/<rank>/tp-comm-detail` |
 | M4 | 同上 | PP 通信详情 | `GET /api/session/<id>/simulation/<side>/<rank>/pp-comm-detail` |
 | M5 | 同上 | DP 通信详情 | `GET /api/session/<id>/simulation/<side>/<rank>/dp-comm-detail` |
-| M6 | `app/routes/session.py:540` | `task_id = "mock_task_id"`（无真实任务时占位）| 兜底值，不需单独接口 |
-| M7 | `app/skills/training-mesh-profiler-skill/__init__.py` | 无 task_id 时使用本地估算公式代替仿真结果 | 估算模式，不需接口 |
+| M6 | `app/routes/session.py:638` | `task_id = "mock_task_id"`（无真实任务时占位）| 兜底值，不需单独接口 |
+| M7 | `app/skills/training-mesh-profiler-skill/__init__.py` + `app/routes/session.py:_run_simulation_for_topology` | 无 task_id 时使用本地估算公式代替仿真结果（两处独立副本） | 估算模式，不需接口 |
 
-### 9.2 接口类型归属
+### 12.2 接口类型归属
 
 #### 类型一：纯 REST API（TrainMeshAgent 内部，无需 MCP）
 
 | 接口 | 说明 |
 |------|------|
 | `POST /api/session` | 创建 session，生成 session_id |
-| `GET /api/session` | 列出所有 session |
+| `GET /api/session/summaries` | 列出所有 session 摘要 |
 | `GET /api/session/<id>` | 获取 session 状态 |
 | `DELETE /api/session/<id>` | 删除 session |
 | `GET /api/session/<id>/topology` | 获取已生成的拓扑 JSON（本地 session 数据）|
 | `GET /api/session/<id>/simulation` | 获取比较报告（本地计算结果）|
 | `POST /api/session/estimate` | 用本地估算公式计算指标（无需外部系统）|
-| `POST /chat/stream` (SSE) | Agent 对话流（本地 orchestrator 驱动）|
+| `POST /api/chat/stream` (SSE) | Agent 对话流（本地 orchestrator 驱动）|
 
-#### 类型二：纯 MCP Tool（调用外部仿真系统，无前端直连）
+#### 类型二：纯 MCP Tool（调用外部仿真系统，8 个）
 
-| MCP Tool | 触发路径 |
-|----------|---------|
-| `execute_task` | `run_simulation` utility → `mcp_client.execute_task()` |
-| `report_status` | WebSocket 轮询 → `mcp_client.get_task_status()` |
-| `sync_logs` | WebSocket 轮询 → `mcp_client.sync_logs()` |
-| `get_result` | WebSocket `completed` 事件 → `mcp_client.get_result()` |
+| MCP Tool | 章节 | 触发路径 |
+|----------|------|---------|
+| `execute_task` | §3 | `run_simulation` utility → `mcp_client.execute_task()` |
+| `report_status` | §4 | WebSocket 轮询 → `mcp_client.get_task_status()` |
+| `sync_logs` | §5 | WebSocket 轮询 → `mcp_client.sync_logs()` |
+| `get_result` | §6 | WebSocket `completed` 事件 → `mcp_client.get_result()` |
+| `card_detail` | §7 | profiler skill → `mcp_client.get_card_details()` |
+| `get_device_detail` | §8 | REST 路由 → `mcp_client.get_device_detail()` |
+| `get_hbm_detail` | §9 | REST 路由 → `mcp_client.get_hbm_detail()` |
+| `get_comm_detail` | §10 | REST 路由 → `mcp_client.get_comm_detail()` |
 
 #### 类型三：需同时满足（REST 入口 + MCP 数据源）
 
@@ -310,19 +454,11 @@ submitted  →  running  →  completed
 | `POST /api/session/<id>/run-simulation`（直接仿真） | `card_detail`（整卡指标） | `task_id`（fire-and-forget）|
 | WebSocket `/ws/simulation/<id>` | `report_status` + `sync_logs` + `get_result` | `task_id` 列表 |
 
-#### 建议新增的 MCP Tools（对接 Mock M1~M5）
-
-| 建议 Tool 名 | 用途 | 入参 | 出参核心字段 |
-|-------------|------|------|------------|
-| `get_device_detail` | 算子 Trace + Timeline（替换 M1） | `task_id`, `global_rank` | `operators[]`, `timeline{}` |
-| `get_hbm_detail` | HBM 分项（替换 M2） | `task_id`, `global_rank` | `weights_gb`, `gradients_gb`, `optimizer_gb`, `activations_gb`, `total_hbm_gb` |
-| `get_comm_detail` | TP/PP/DP 通信详情（替换 M3~M5） | `task_id`, `global_rank`, `comm_type`（tp/pp/dp） | `comm_count`, `comm_cards`, `comm_size_per_time_gb`, `total_comm_gb` |
-
-> 如果仿真系统不方便新增 MCP Tool，也可将上述数据扩展到 `card_detail` 的每个 card 对象中，TrainMeshAgent 侧按需取用。
+> 以下三个 tool 已正式纳入规格，完整定义见 §8 `get_device_detail`、§9 `get_hbm_detail`、§10 `get_comm_detail`。若仿真系统不方便新增独立 Tool，也可将 §8~§10 的数据扩展到 `card_detail` 的每个 card 对象中，TrainMeshAgent 侧按需取用。
 
 ---
 
-## 10. 错误处理与兼容性
+## 13. 错误处理与兼容性
 
 - 参数错误：返回可识别错误信息（字段缺失/类型错误）
 - `task_id` 不存在：明确返回 `task_id not found`
@@ -334,16 +470,16 @@ submitted  →  running  →  completed
 
 ---
 
-## 11. 性能与可靠性建议
+## 14. 性能与可靠性建议
 
 - `report_status`、`sync_logs` 响应建议 < 1s
-- `get_device_detail` 等详情接口响应建议 < 3s
+- `get_device_detail`（§8）、`get_hbm_detail`（§9）、`get_comm_detail`（§10）等详情接口响应建议 < 3s
 - 支持同时查询多个 `task_id`
 - 服务重启后建议能恢复最近任务状态
 
 ---
 
-## 12. 联调验收清单
+## 15. 联调验收清单
 
 **基础连通**
 
@@ -360,9 +496,9 @@ submitted  →  running  →  completed
 
 **详情数据（M1~M5 解 mock）**
 
-- [ ] `get_device_detail` 返回 `operators[]` + `timeline{}`（或扩展 card_detail）
-- [ ] `get_hbm_detail` 返回 HBM 四项分解
-- [ ] `get_comm_detail` 支持 `comm_type: tp/pp/dp` 三种查询
+- [ ] `get_device_detail`（§8）返回 `operators[]` + `timeline{}`（或扩展 card_detail）
+- [ ] `get_hbm_detail`（§9）返回 HBM 四项分解
+- [ ] `get_comm_detail`（§10）支持 `comm_type: tp/pp/dp` 三种查询
 
 **容错**
 
@@ -372,7 +508,7 @@ submitted  →  running  →  completed
 
 ---
 
-## 13. 非目标（当前阶段不要求）
+## 16. 非目标（当前阶段不要求）
 
 - 不强制 MCP Server 主动推送（调用方为轮询模型）
 - 不强制限定 `get_result` 完整 schema（由仿真侧自行扩展）

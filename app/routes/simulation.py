@@ -64,6 +64,7 @@ def _poll_simulation_tasks(ws, task_ids: list[str], interval: float = 1.0, timeo
     """Poll simulation tasks status and stream to WebSocket."""
     start_time = time.time()
     completed = set()
+    log_offsets = {}  # {task_id: next_offset} for incremental log sync
 
     while len(completed) < len(task_ids):
         if time.time() - start_time > timeout:
@@ -89,8 +90,11 @@ def _poll_simulation_tasks(ws, task_ids: list[str], interval: float = 1.0, timeo
                     "progress": progress,
                 }))
 
-                # Sync logs if available
-                logs = mcp_client.sync_logs(task_id)
+                # Sync logs incrementally if available
+                offset = log_offsets.get(task_id, 0)
+                logs = mcp_client.sync_logs(task_id, offset=offset)
+                if logs.get("next_offset") is not None:
+                    log_offsets[task_id] = logs["next_offset"]
                 if logs.get("lines"):
                     for line in logs["lines"]:
                         ws.send(json.dumps({
