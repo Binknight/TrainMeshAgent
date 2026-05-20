@@ -73,6 +73,29 @@ class MCPClient:
         })
         return result.get("cards", [])
 
+    def get_device_detail(self, task_id: str, global_rank: int, offset: int = 0) -> dict[str, Any]:
+        """Get per-device operator trace and timeline. Supports incremental polling via offset."""
+        return self._call_tool("get_device_detail", {
+            "task_id": task_id,
+            "global_rank": global_rank,
+            "offset": offset,
+        })
+
+    def get_hbm_detail(self, task_id: str, global_rank: int) -> dict[str, Any]:
+        """Get per-device HBM usage breakdown."""
+        return self._call_tool("get_hbm_detail", {
+            "task_id": task_id,
+            "global_rank": global_rank,
+        })
+
+    def get_comm_detail(self, task_id: str, global_rank: int, comm_type: str) -> dict[str, Any]:
+        """Get per-device communication detail for TP/PP/DP."""
+        return self._call_tool("get_comm_detail", {
+            "task_id": task_id,
+            "global_rank": global_rank,
+            "comm_type": comm_type,
+        })
+
     def check_health(self) -> bool:
         """Check if MCP server is reachable."""
         try:

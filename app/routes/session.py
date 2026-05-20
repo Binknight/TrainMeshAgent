@@ -605,25 +605,24 @@ def get_device_detail(session_id: str, side: str, global_rank: int):
     pp = topo.pp_size
     dp = topo.dp_size
 
-    # Calculate layers per PP stage
-    total_layers = {"A2": 32, "A3": 48, "A5": 64}.get(topo.device_type.value if hasattr(topo.device_type, 'value') else str(topo.device_type), 32)
-    num_layers_per_pp = max(1, math.ceil(total_layers / pp))
-
-    operators, timeline = _generate_mock_operators(global_rank, tp, pp, num_layers_per_pp)
+    mcp_result = mcp_client.get_device_detail(task_id, global_rank)
+    raw_ops = mcp_result.get("operators", [])
+    operators = [OperatorTrace(**op) if isinstance(op, dict) else op for op in raw_ops]
+    timeline_data = mcp_result.get("timeline")
+    timeline = TimelineSummary(**timeline_data) if timeline_data and isinstance(timeline_data, dict) else None
 
     detail = DeviceSimulationDetail(
-        card_id=f"card_{global_rank}",
-        global_rank=global_rank,
-        task_id=task_id or "mock_task_id",
-        topology_name=topo.name,
-        device_type=topo.device_type.value if hasattr(topo.device_type, 'value') else str(topo.device_type),
-        dp_rank=node.dp_rank,
-        tp_rank=node.tp_rank,
-        pp_rank=node.pp_rank,
+        card_id=mcp_result.get("card_id", f"card_{global_rank}"),
+        global_rank=mcp_result.get("global_rank", global_rank),
+        task_id=mcp_result.get("task_id", task_id),
+        topology_name=mcp_result.get("topology_name", topo.name),
+        device_type=mcp_result.get("device_type", str(topo.device_type.value if hasattr(topo.device_type, 'value') else topo.device_type)),
+        dp_rank=mcp_result.get("dp_rank", node.dp_rank),
+        tp_rank=mcp_result.get("tp_rank", node.tp_rank),
+        pp_rank=mcp_result.get("pp_rank", node.pp_rank),
         operators=operators,
         timeline=timeline,
     )
-
     return jsonify(detail.model_dump())
 
 
@@ -675,62 +674,58 @@ def _generate_mock_comm_detail(global_rank: int, comm_type: str, tp: int, pp: in
 
 @session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/hbm-detail", methods=["GET"])
 def get_hbm_detail(session_id: str, side: str, global_rank: int):
-    """Get HBM usage breakdown for a device (mock data)."""
+    """Get HBM usage breakdown for a device."""
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
     if side not in ("original", "equivalent"):
         return {"error": "side must be 'original' or 'equivalent'"}, 400
-    detail = _generate_mock_hbm_detail(global_rank)
-    return jsonify(detail.model_dump())
+
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    mcp_result = mcp_client.get_hbm_detail(task_id, global_rank)
+    return jsonify(HbmDetail(**mcp_result).model_dump())
 
 
 @session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/tp-comm-detail", methods=["GET"])
 def get_tp_comm_detail(session_id: str, side: str, global_rank: int):
-    """Get TP communication detail for a device (mock data)."""
+    """Get TP communication detail for a device."""
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
     if side not in ("original", "equivalent"):
         return {"error": "side must be 'original' or 'equivalent'"}, 400
     topo = session.original_topology if side == "original" else session.equivalent_topology
-    tp = topo.tp_size if topo else 4
-    pp = topo.pp_size if topo else 4
-    dp = topo.dp_size if topo else 4
-    detail = _generate_mock_comm_detail(global_rank, "tp", tp, pp, dp)
-    return jsonify(detail.model_dump())
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    mcp_result = mcp_client.get_comm_detail(task_id, global_rank, "tp")
+    return jsonify(CommDetail(**mcp_result).model_dump())
 
 
 @session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/pp-comm-detail", methods=["GET"])
 def get_pp_comm_detail(session_id: str, side: str, global_rank: int):
-    """Get PP communication detail for a device (mock data)."""
+    """Get PP communication detail for a device."""
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
     if side not in ("original", "equivalent"):
         return {"error": "side must be 'original' or 'equivalent'"}, 400
     topo = session.original_topology if side == "original" else session.equivalent_topology
-    tp = topo.tp_size if topo else 4
-    pp = topo.pp_size if topo else 4
-    dp = topo.dp_size if topo else 4
-    detail = _generate_mock_comm_detail(global_rank, "pp", tp, pp, dp)
-    return jsonify(detail.model_dump())
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    mcp_result = mcp_client.get_comm_detail(task_id, global_rank, "pp")
+    return jsonify(CommDetail(**mcp_result).model_dump())
 
 
 @session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/dp-comm-detail", methods=["GET"])
 def get_dp_comm_detail(session_id: str, side: str, global_rank: int):
-    """Get DP communication detail for a device (mock data)."""
+    """Get DP communication detail for a device."""
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
     if side not in ("original", "equivalent"):
         return {"error": "side must be 'original' or 'equivalent'"}, 400
     topo = session.original_topology if side == "original" else session.equivalent_topology
-    tp = topo.tp_size if topo else 4
-    pp = topo.pp_size if topo else 4
-    dp = topo.dp_size if topo else 4
-    detail = _generate_mock_comm_detail(global_rank, "dp", tp, pp, dp)
-    return jsonify(detail.model_dump())
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    mcp_result = mcp_client.get_comm_detail(task_id, global_rank, "dp")
+    return jsonify(CommDetail(**mcp_result).model_dump())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
