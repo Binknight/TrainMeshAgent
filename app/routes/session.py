@@ -241,7 +241,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
         if card_details:
             cards = []
             for detail in card_details:
-                c = CardMetrics(
+                cards.append(CardMetrics(
                     card_id=detail.get("card_id", ""),
                     global_rank=detail.get("global_rank", 0),
                     flops_per_card=detail.get("flops_per_card", 0),
@@ -249,11 +249,13 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
                     tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
                     pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
                     dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
-                )
-                cards.append(c)
-                logger.info(f"[run_simulation] card_detail[{c.global_rank}] for {label}: "
-                            f"flops={c.flops_per_card}, hbm={c.hbm_gb}, "
-                            f"tp={c.tp_comm_gb_per_micro}, pp={c.pp_comm_mb_per_micro}, dp={c.dp_comm_gb_per_step}")
+                ))
+            # Log first card as sample
+            if cards:
+                c0 = cards[0]
+                logger.info(f"[run_simulation] card_detail for {label}: {len(cards)} cards. "
+                            f"sample[0]: flops={c0.flops_per_card}, hbm={c0.hbm_gb}, "
+                            f"tp={c0.tp_comm_gb_per_micro}, pp={c0.pp_comm_mb_per_micro}, dp={c0.dp_comm_gb_per_step}")
             device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
             result = SimulationResult(
                 topology_name=topo.name,
@@ -261,7 +263,6 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
                 total_nodes=topo.dp_size * topo.tp_size * topo.pp_size,
                 cards=cards,
             )
-            logger.info(f"[run_simulation] card_detail for {label}: built SimulationResult with {len(cards)} cards")
             return task_id, result
         else:
             logger.warning(f"[run_simulation] card_detail for {label}: falsy result (empty list or None), skipping")
