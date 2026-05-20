@@ -5776,6 +5776,74 @@
                 container.scrollTop = container.scrollHeight;
             }
 
+            // ── HBM detail renderer ──
+            function _renderHbmDetail(prefix, globalRank) {
+                var containerId = prefix + "-hbm";
+                var container = document.getElementById(containerId);
+                if (!container) return;
+                var side = prefix === "orig" ? "original" : "equivalent";
+                fetch(API + "/session/" + sessionId + "/simulation/" + side + "/" + globalRank + "/hbm-detail")
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        var rows = [
+                            ["权重 (Weights)", d.weights_gb],
+                            ["梯度 (Gradients)", d.gradients_gb],
+                            ["优化器 (Optimizer)", d.optimizer_gb],
+                            ["激活值 (Activations)", d.activations_gb],
+                            ["∑ HBM 总计", d.total_hbm_gb, true],
+                        ];
+                        var html = '<table style="width:100%;font-size:10px"><tbody>';
+                        rows.forEach(function (r) {
+                            var bold = r[2] ? "font-weight:600" : "";
+                            html += '<tr><td style="color:var(--text-muted);' + bold + '">' + r[0] + '</td><td style="text-align:right;color:var(--text-primary);' + bold + '">' + (r[1] != null ? r[1].toFixed(2) : "—") + " GB</td></tr>";
+                        });
+                        html += "</tbody></table>";
+                        container.innerHTML = html;
+                    })
+                    .catch(function () { container.innerHTML = '<span style="color:var(--text-muted);font-size:10px">加载失败</span>'; });
+            }
+
+            // ── Comm detail renderer ──
+            function _renderCommDetail(prefix, globalRank) {
+                var containerId = prefix + "-comm";
+                var container = document.getElementById(containerId);
+                if (!container) return;
+                var side = prefix === "orig" ? "original" : "equivalent";
+                var html = '<table style="width:100%;font-size:10px"><thead><tr>' +
+                    '<th style="color:var(--text-muted);text-align:left">类型</th>' +
+                    '<th style="color:var(--text-muted);text-align:right">次数</th>' +
+                    '<th style="color:var(--text-muted);text-align:right">参与卡数</th>' +
+                    '<th style="color:var(--text-muted);text-align:right">单次 (GB)</th>' +
+                    '<th style="color:var(--text-muted);text-align:right">总量 (GB)</th>' +
+                    '</tr></thead><tbody></tbody></table>';
+                container.innerHTML = html;
+                ["tp", "pp", "dp"].forEach(function (ct) {
+                    fetch(API + "/session/" + sessionId + "/simulation/" + side + "/" + globalRank + "/" + ct + "-comm-detail")
+                        .then(function (r) { return r.json(); })
+                        .then(function (d) {
+                            var tbody = container.querySelector("tbody");
+                            if (!tbody) return;
+                            var labels = { tp: "TP 通信", pp: "PP 通信", dp: "DP 通信" };
+                            var tr = document.createElement("tr");
+                            tr.innerHTML =
+                                '<td style="color:#baa1ff">' + (labels[ct] || ct) + '</td>' +
+                                '<td style="text-align:right;color:var(--text-primary)">' + (d.comm_count != null ? d.comm_count : "—") + '</td>' +
+                                '<td style="text-align:right;color:var(--text-primary)">' + (d.comm_cards != null ? d.comm_cards : "—") + '</td>' +
+                                '<td style="text-align:right;color:var(--text-primary)">' + (d.comm_size_per_time_gb != null ? d.comm_size_per_time_gb.toFixed(4) : "—") + '</td>' +
+                                '<td style="text-align:right;color:var(--text-primary);font-weight:600">' + (d.total_comm_gb != null ? d.total_comm_gb.toFixed(4) : "—") + '</td>';
+                            tbody.appendChild(tr);
+                        })
+                        .catch(function () {
+                            var tbody = container.querySelector("tbody");
+                            if (tbody) {
+                                var tr = document.createElement("tr");
+                                tr.innerHTML = '<td style="color:var(--text-muted)">' + ct.toUpperCase() + '</td><td colspan="4" style="color:var(--text-muted)">加载失败</td>';
+                                tbody.appendChild(tr);
+                            }
+                        });
+                });
+            }
+
             // ── Active stream handles ──
             var _activeSimStreams = [];
 
@@ -5835,7 +5903,7 @@
                         })
                         .then(function (detail) {
                             var newOps = detail.operators || [];
-                            // Init timeline/opspec shells on first batch
+                            // Init timeline/opspec shells + fetch HBM/Comm on first batch
                             if (allOps.length === 0) {
                                 var totalUs = newOps.length > 0 ? newOps[newOps.length - 1].end_time : 0;
                                 if (detail.timeline && detail.timeline.total_time_ms) {
@@ -5843,6 +5911,9 @@
                                 }
                                 _initTimelineIncr(timelineId, newOps, totalUs);
                                 _initOpspecIncr(opspecId);
+                                // Fetch secondary (HBM / Comm) details in parallel
+                                _renderHbmDetail(prefix, globalRank);
+                                _renderCommDetail(prefix, globalRank);
                             }
                             // Append new operators
                             for (var i = 0; i < newOps.length; i++) {
@@ -6011,10 +6082,12 @@
                 var origInfo = pinned.side === "orig" ? rankInfo : otherRankInfo;
                 var eqInfo = pinned.side === "orig" ? otherRankInfo : rankInfo;
 
-                // Build the two-column layout
+                // Build the multi-section layout
                 var sections = [
-                    { id: "timeline", title: "算子执行时序", sub: "Operator Timeline — 横轴时间 · 颜色区分算子类型" },
-                    { id: "opspec", title: "负载描述文件", sub: "Operator Spec — 算子 Shape · Stage · Phase 描述" }
+                    { id: "timeline", title: "算子执行时序", sub: "Operator Timeline — 横轴时间 · 颜色区分算子类型", type: "svg" },
+                    { id: "opspec", title: "负载描述文件", sub: "Operator Spec — 算子 Shape · Stage · Phase 描述", type: "table" },
+                    { id: "hbm", title: "HBM 内存分项", sub: "Weights / Gradients / Optimizer / Activations (GB)", type: "hbm" },
+                    { id: "comm", title: "通信详情", sub: "TP / PP / DP — 次数 · 参与卡数 · 单次/总量 (GB)", type: "comm" }
                 ];
 
                 // Frozen header
@@ -6037,9 +6110,14 @@
                     bodyHtml += '<span style="font-size:9px;color:var(--text-muted)">' + sec.sub + '</span>';
                     bodyHtml += '</div>';
                     bodyHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
-                    var chartStyle = sec.id === "opspec"
-                        ? 'min-height:100px;max-height:360px;overflow:auto;padding:0;background:var(--bg-card);border:1px solid var(--border);border-radius:6px'
-                        : 'min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
+                    var chartStyle;
+                    if (sec.id === "opspec") {
+                        chartStyle = 'min-height:100px;max-height:360px;overflow:auto;padding:0;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
+                    } else if (sec.id === "hbm" || sec.id === "comm") {
+                        chartStyle = 'min-height:80px;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text-primary)';
+                    } else {
+                        chartStyle = 'min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
+                    }
                     bodyHtml += '<div class="result-chart" id="orig-' + sec.id + '" style="' + chartStyle + '"></div>';
                     bodyHtml += '<div class="result-chart" id="eq-' + sec.id + '" style="' + chartStyle + '"></div>';
                     bodyHtml += '</div></div>';
