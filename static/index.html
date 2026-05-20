@@ -3021,7 +3021,7 @@
             // ── API mode submit stubs (called when workflowMode === "api") ──
 
             async function submitStep1(params) {
-                setStatus("thinking");
+                setStatus("等效建模中");
                 addMessage(
                     "system",
                     "📡 [API] 提交参数，生成原始组网与模型...",
@@ -3070,7 +3070,7 @@
             }
 
             async function submitStep2() {
-                setStatus("thinking");
+                setStatus("等效建模中");
                 addMessage("system", "📡 [API] 开始等效计算...");
                 updateWorkflowNode("equiv_calc_sub1", "active");
                 // Show formula card only after user confirms step2
@@ -3133,7 +3133,7 @@
 
             async function submitStep3() {
                 console.log("[DEBUG] submitStep3 called");
-                setStatus("thinking");
+                setStatus("等效建模中");
                 addMessage("system", "📡 [API] 生成等效组网与模型结构...");
                 updateWorkflowNode("equiv_gen", "active");
                 try {
@@ -4665,7 +4665,23 @@
             }
 
             function setStatus(text) {
-                document.getElementById("status-text").textContent = text;
+                var el = document.getElementById("status-text");
+                var dot = document.querySelector(".status-indicator");
+                if (el) el.textContent = text;
+                if (dot) {
+                    if (text === "验证失败") {
+                        dot.style.background = "var(--red)";
+                    } else if (text === "验证完成") {
+                        dot.style.background = "var(--teal)";
+                        dot.style.animation = "none";
+                    } else if (text === "仿真验证中") {
+                        dot.style.background = "var(--cyan)";
+                        dot.style.animation = "pulse-status 2s ease-in-out infinite";
+                    } else {
+                        dot.style.background = "var(--yellow)";
+                        dot.style.animation = "pulse-status 2s ease-in-out infinite";
+                    }
+                }
             }
 
             // ── SSE Streaming ──
@@ -6084,7 +6100,7 @@
                 btn.classList.remove("sim-done", "sim-retry");
                 _simFailed = false;
                 _simCompleted = false;
-                setStatus("thinking");
+                setStatus("仿真验证中");
                 updateWorkflowNode("simulation", "active");
                 addMessage("system", "📊 开始仿真任务...");
 
@@ -6122,7 +6138,7 @@
                         btn.textContent = "重试仿真";
                         btn.disabled = false;
                         btn.classList.add("sim-retry");
-                        setStatus("error");
+                        setStatus("验证失败");
                         _simStarted = false;
                         _simFailed = true;
                         checkSimReady();
@@ -6161,15 +6177,16 @@
                             updateWorkflowNode("comparison", "completed");
                             addMessage("system", "✅ 仿真验证已通过，等效性对比一致");
                         }
+                        setStatus("验证完成");
                     } else {
                         // Simulation submitted, waiting for MCP to complete
                         _simCompleted = false;
                         updateWorkflowNode("simulation", "active");
                         updateWorkflowNode("comparison", "active");
                         addMessage("system", "📊 仿真任务已提交 MCP Server，等待仿真完成...");
+                        setStatus("仿真验证中");
                     }
                     checkSimReady();
-                    setStatus("idle");
                     requestAnimationFrame(function () {
                         if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
                         _renderSimResults();
@@ -6177,7 +6194,7 @@
                 } catch (e) {
                     _simStarted = false;
                     _simFailed = true;
-                    setStatus("error");
+                    setStatus("验证失败");
                     addMessage("error", "仿真任务失败: " + (e.message || "MCP Server 不可用"));
                     updateWorkflowNode("simulation", "failed");
                     btn.textContent = "重试仿真";
