@@ -6303,14 +6303,20 @@
 
             function _onSimulationAllComplete() {
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
-                fetch(API + "/session/" + sessionId + "/simulation")
-                    .then(function (r) { return r.json(); })
+                // Re-call run-simulation: backend finds existing task_ids, skips execute_task,
+                // calls card_detail to fetch real MCP results, builds comparison, persists to DB.
+                fetch(API + "/session/" + sessionId + "/run-simulation", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error("HTTP " + r.status);
+                        return r.json();
+                    })
                     .then(function (data) {
+                        var results = data.results || {};
                         _simCompleted = true;
                         setStatus("验证完成");
                         updateWorkflowNode("simulation", "completed");
-                        if (data.comparison_report) {
-                            if (data.comparison_report.is_equivalent === false) {
+                        if (results.comparison) {
+                            if (results.comparison.is_equivalent === false) {
                                 updateWorkflowNode("comparison", "failed");
                                 addMessage("system", "⚠️ 仿真完成，等效性对比存在差异，请检查");
                             } else {
@@ -6318,13 +6324,14 @@
                                 addMessage("system", "✅ 仿真验证已通过，等效性对比一致");
                             }
                         }
-                        if (data.original_simulation && data.original_simulation.cards) {
+                        // Populate real card data from MCP
+                        if (results.original && results.original.cards) {
                             meshActualOrig = {};
-                            data.original_simulation.cards.forEach(function (c) { meshActualOrig[c.global_rank] = c; });
+                            results.original.cards.forEach(function (c) { meshActualOrig[c.global_rank] = c; });
                         }
-                        if (data.equivalent_simulation && data.equivalent_simulation.cards) {
+                        if (results.equivalent && results.equivalent.cards) {
                             meshActualEq = {};
-                            data.equivalent_simulation.cards.forEach(function (c) { meshActualEq[c.global_rank] = c; });
+                            results.equivalent.cards.forEach(function (c) { meshActualEq[c.global_rank] = c; });
                         }
                         checkSimReady();
                         _renderSimResults();
