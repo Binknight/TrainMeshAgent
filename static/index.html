@@ -3655,6 +3655,12 @@
                     return;
                 }
 
+                // Simulation failed → confirm retry
+                if (step.id === "simulation" && state === "failed") {
+                    showSimRetryDialog();
+                    return;
+                }
+
                 // Step 4: simulation → open params form instead of auto-confirm
                 if (
                     step.id === "simulation" &&
@@ -3706,6 +3712,32 @@
                 }
                 // mark as completed immediately for UI responsiveness
                 updateWorkflowNode(step.id, "completed");
+            }
+
+            function showSimRetryDialog() {
+                var overlay = document.createElement("div");
+                overlay.className = "modal-overlay";
+                overlay.style.cssText =
+                    "position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+                overlay.innerHTML =
+                    '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px 24px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.4)">' +
+                    '<div style="font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:8px">\u{1F52C} 仿真任务失败</div>' +
+                    '<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">MCP Server 连接失败或任务执行异常。<br/>请检查 Server 状态后重试。</div>' +
+                    '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+                    '<button id="sim-retry-cancel" style="padding:6px 16px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text-primary);cursor:pointer;font-size:12px">取消</button>' +
+                    '<button id="sim-retry-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:var(--cyan);color:#000;cursor:pointer;font-size:12px;font-weight:600">重试仿真</button>' +
+                    "</div></div>";
+                document.body.appendChild(overlay);
+
+                var close = function () { overlay.remove(); };
+                overlay.querySelector("#sim-retry-cancel").onclick = close;
+                overlay.querySelector("#sim-retry-confirm").onclick = function () {
+                    overlay.remove();
+                    startSimulation(getDefaultSimParams());
+                };
+                overlay.addEventListener("click", function (e) {
+                    if (e.target === overlay) close();
+                });
             }
 
             function updateWorkflowNode(stepId, newState) {
