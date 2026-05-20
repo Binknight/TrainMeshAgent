@@ -235,10 +235,13 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     # Try to get card metrics from MCP (may be empty if simulation not yet complete)
     try:
         card_details = mcp_client.get_card_details(task_id)
+        logger.info(f"[run_simulation] card_detail for {label} (task_id={task_id}): "
+                    f"type={type(card_details).__name__}, len={len(card_details) if hasattr(card_details, '__len__') else 'N/A'}, "
+                    f"truthy={bool(card_details)}, raw_keys={list(card_details[0].keys()) if card_details else 'EMPTY'}")
         if card_details:
             cards = []
             for detail in card_details:
-                cards.append(CardMetrics(
+                c = CardMetrics(
                     card_id=detail.get("card_id", ""),
                     global_rank=detail.get("global_rank", 0),
                     flops_per_card=detail.get("flops_per_card", 0),
@@ -246,7 +249,11 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
                     tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
                     pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
                     dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
-                ))
+                )
+                cards.append(c)
+                logger.info(f"[run_simulation] card_detail[{c.global_rank}] for {label}: "
+                            f"flops={c.flops_per_card}, hbm={c.hbm_gb}, "
+                            f"tp={c.tp_comm_gb_per_micro}, pp={c.pp_comm_mb_per_micro}, dp={c.dp_comm_gb_per_step}")
             device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
             result = SimulationResult(
                 topology_name=topo.name,
@@ -254,9 +261,12 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
                 total_nodes=topo.dp_size * topo.tp_size * topo.pp_size,
                 cards=cards,
             )
+            logger.info(f"[run_simulation] card_detail for {label}: built SimulationResult with {len(cards)} cards")
             return task_id, result
+        else:
+            logger.warning(f"[run_simulation] card_detail for {label}: falsy result (empty list or None), skipping")
     except Exception as exc:
-        logger.warning(f"[run_simulation] MCP card_detail not ready for {label}: {exc}")
+        logger.warning(f"[run_simulation] MCP card_detail failed for {label}: {exc}", exc_info=True)
 
     return task_id, None
 
@@ -314,6 +324,10 @@ def run_simulation(session_id: str):
 
     sim_params_dict = session.simulation_params.model_dump()
 
+    is_retry = bool(session.original_task_id or session.equivalent_task_id)
+    logger.info(f"[run_simulation] session={session_id}, step={session.step}, "
+                f"orig_task={session.original_task_id}, eq_task={session.equivalent_task_id}, "
+                f"is_retry={is_retry}")
     session.history.append({"role": "system", "content": "📊 开始仿真任务..."})
     results = {}
 
