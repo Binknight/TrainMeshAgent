@@ -6284,12 +6284,20 @@
 
                 ws.onclose = function () {
                     if (_simWs === ws) _simWs = null;
+                    // If connection closed before all tasks completed, fall back to HTTP polling
+                    if (!_simCompleted && !_simFailed && Object.keys(completedTasks).length < totalTasks) {
+                        addMessage("system", "⚠️ WebSocket 连接断开，切换为轮询模式...");
+                        _pollSimulationResults();
+                    }
                 };
 
                 ws.onerror = function () {
-                    // WebSocket failed — fall back to HTTP polling
                     if (_simWs === ws) _simWs = null;
-                    _pollSimulationResults();
+                    // Fall back to HTTP polling if not already completed/failed
+                    if (!_simCompleted && !_simFailed && Object.keys(completedTasks).length < totalTasks) {
+                        addMessage("system", "⚠️ WebSocket 连接异常，切换为轮询模式...");
+                        _pollSimulationResults();
+                    }
                 };
             }
 
