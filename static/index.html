@@ -3889,8 +3889,13 @@
                     updateWorkflowNode("comparison", "pending");
                     _simCompleted = false;
                     setStatus("仿真验证中");
-                    // Resume polling for MCP completion
-                    _pollSimulationResults();
+                    // Resume WebSocket connection for real-time status
+                    var taskIds = [sessionData.original_task_id, sessionData.equivalent_task_id].filter(Boolean);
+                    if (taskIds.length > 0) {
+                        _connectSimWebSocket(taskIds);
+                    } else {
+                        _pollSimulationResults();
+                    }
                 } else if (hasComparison) {
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(true, true);
@@ -6073,7 +6078,7 @@
             function checkSimReady() {
                 var btn = document.getElementById("btn-start-sim");
                 var simTabBtn = document.getElementById("tab-btn-simulation");
-                var isPolling = !!(_simPollTimer);
+                var isPolling = !!(_simPollTimer || _simWs);
                 // Already completed — show done state
                 if (_simCompleted) {
                     if (btn) { btn.disabled = true; btn.textContent = "仿真已完成"; btn.classList.add("sim-done"); btn.classList.remove("sim-retry"); }
@@ -6120,6 +6125,7 @@
                 _simFailed = false;
                 _simCompleted = false;
                 if (_simPollTimer) { clearTimeout(_simPollTimer); _simPollTimer = null; }
+                if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
                 setStatus("仿真验证中");
                 updateWorkflowNode("simulation", "active");
                 addMessage("system", "📊 开始仿真任务...");
@@ -6205,8 +6211,9 @@
                         updateWorkflowNode("comparison", "pending");
                         addMessage("system", "📊 仿真任务已提交 MCP Server，等待仿真完成...");
                         setStatus("仿真验证中");
-                        // Start polling for completion
-                        _pollSimulationResults();
+                        // Connect WebSocket for real-time status
+                        var taskIds = [data.original_task_id, data.equivalent_task_id].filter(Boolean);
+                        _connectSimWebSocket(taskIds);
                     }
                     checkSimReady();
                     requestAnimationFrame(function () {
@@ -6230,10 +6237,108 @@
             var _simCompleted = false;
             var _simFailed = false;
             var _simPollTimer = null;
+            var _simWs = null; // WebSocket for simulation status
             var _simStreamDone = false; // true when 60s mock streaming countdown expires
             var _simStarted = false;
 
+            function _connectSimWebSocket(taskIds) {
+                // Close any existing connection
+                if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
+                if (_simPollTimer) { clearTimeout(_simPollTimer); _simPollTimer = null; }
+
+                var wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/simulation/" + sessionId;
+                var ws = new WebSocket(wsUrl);
+                _simWs = ws;
+                var completedTasks = {};
+                var totalTasks = taskIds.length;
+
+                ws.onopen = function () {
+                    ws.send(JSON.stringify({ type: "subscribe", task_ids: taskIds }));
+                };
+
+                ws.onmessage = function (event) {
+                    try {
+                        var msg = JSON.parse(event.data);
+                    } catch (e) { return; }
+
+                    if (msg.type === "status") {
+                        if (msg.progress != null) {
+                            addMessage("system", "📊 [" + msg.task_id.slice(-8) + "] 进度: " + msg.progress + "% — " + (msg.status || ""));
+                        }
+                    } else if (msg.type === "complete") {
+                        completedTasks[msg.task_id] = true;
+                        addMessage("system", "✅ [" + msg.task_id.slice(-8) + "] 仿真完成");
+                        // When all tasks complete, fetch comparison + card data
+                        if (Object.keys(completedTasks).length >= totalTasks) {
+                            _onSimulationAllComplete();
+                        }
+                    } else if (msg.type === "error") {
+                        addMessage("error", "❌ [" + (msg.task_id || "").slice(-8) + "] 仿真失败: " + (msg.message || ""));
+                        _simWs = null;
+                        ws.close();
+                        _onSimulationFailed(msg.message || "仿真任务失败");
+                    } else if (msg.type === "log" && msg.line) {
+                        // Log lines can be shown optionally
+                    }
+                };
+
+                ws.onclose = function () {
+                    if (_simWs === ws) _simWs = null;
+                };
+
+                ws.onerror = function () {
+                    // WebSocket failed — fall back to HTTP polling
+                    if (_simWs === ws) _simWs = null;
+                    _pollSimulationResults();
+                };
+            }
+
+            function _onSimulationAllComplete() {
+                if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
+                fetch(API + "/session/" + sessionId + "/simulation")
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        _simCompleted = true;
+                        setStatus("验证完成");
+                        updateWorkflowNode("simulation", "completed");
+                        if (data.comparison_report) {
+                            if (data.comparison_report.is_equivalent === false) {
+                                updateWorkflowNode("comparison", "failed");
+                                addMessage("system", "⚠️ 仿真完成，等效性对比存在差异，请检查");
+                            } else {
+                                updateWorkflowNode("comparison", "completed");
+                                addMessage("system", "✅ 仿真验证已通过，等效性对比一致");
+                            }
+                        }
+                        if (data.original_simulation && data.original_simulation.cards) {
+                            meshActualOrig = {};
+                            data.original_simulation.cards.forEach(function (c) { meshActualOrig[c.global_rank] = c; });
+                        }
+                        if (data.equivalent_simulation && data.equivalent_simulation.cards) {
+                            meshActualEq = {};
+                            data.equivalent_simulation.cards.forEach(function (c) { meshActualEq[c.global_rank] = c; });
+                        }
+                        checkSimReady();
+                        _renderSimResults();
+                    })
+                    .catch(function (e) {
+                        addMessage("error", "获取仿真结果失败: " + e.message);
+                        _onSimulationFailed(e.message);
+                    });
+            }
+
+            function _onSimulationFailed(message) {
+                if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
+                _simFailed = true;
+                _simCompleted = false;
+                setStatus("验证失败");
+                updateWorkflowNode("simulation", "failed");
+                addMessage("error", "仿真任务失败: " + (message || "未知错误"));
+                checkSimReady();
+            }
+
             function _pollSimulationResults() {
+                // HTTP fallback when WebSocket fails
                 if (_simPollTimer) clearTimeout(_simPollTimer);
                 if (_simCompleted || _simFailed) return;
 
@@ -6243,47 +6348,21 @@
                         var resp = await fetch(API + "/session/" + sessionId + "/simulation");
                         if (!resp.ok) { _pollSimulationResults(); return; }
                         var data = await resp.json();
-                        // Check if comparison report is now available
                         if (data.comparison_report) {
                             _simPollTimer = null;
-                            _simCompleted = true;
-                            setStatus("验证完成");
-                            updateWorkflowNode("simulation", "completed");
-                            if (data.comparison_report.is_equivalent === false) {
-                                updateWorkflowNode("comparison", "failed");
-                                addMessage("system", "⚠️ 仿真完成，等效性对比存在差异，请检查");
-                            } else {
-                                updateWorkflowNode("comparison", "completed");
-                                addMessage("system", "✅ 仿真验证已通过，等效性对比一致");
-                            }
-                            // Populate card data from simulation results
-                            if (data.original_simulation && data.original_simulation.cards) {
-                                meshActualOrig = {};
-                                data.original_simulation.cards.forEach(function (c) { meshActualOrig[c.global_rank] = c; });
-                            }
-                            if (data.equivalent_simulation && data.equivalent_simulation.cards) {
-                                meshActualEq = {};
-                                data.equivalent_simulation.cards.forEach(function (c) { meshActualEq[c.global_rank] = c; });
-                            }
-                            checkSimReady();
-                            _renderSimResults();
+                            _onSimulationAllComplete();
                             return;
                         }
-                        // Also check step field
                         if (data.step === "failed") {
                             _simPollTimer = null;
-                            _simFailed = true;
-                            setStatus("验证失败");
-                            updateWorkflowNode("simulation", "failed");
-                            addMessage("error", "仿真任务失败");
-                            checkSimReady();
+                            _onSimulationFailed("仿真任务失败");
                             return;
                         }
                     } catch (e) {
                         console.warn("[pollSimulation] fetch error:", e.message);
                     }
-                    _pollSimulationResults(); // continue polling
-                }, 3000); // poll every 3 seconds
+                    _pollSimulationResults();
+                }, 5000); // HTTP polling every 5s as fallback, slower than WebSocket
             }
 
             function handleKeyDown(e) {
