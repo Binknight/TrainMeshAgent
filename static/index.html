@@ -5019,7 +5019,7 @@
                         data_shape:
                             fmtShape(shapeIn) + " → " + fmtShape(shapeOut),
                         data_type: dtype,
-                        data_size: null,
+                        msg_size: null,
                         comm_group: null,
                         comm_group_size: null,
                         comm_name: null,
@@ -5031,7 +5031,7 @@
                         start_time: t,
                         end_time: t + dur,
                         duration: dur,
-                        _elapsed_time: dur,
+                        elapsed_time: dur,
                     });
                     t += dur;
                     return dur;
@@ -5065,7 +5065,7 @@
                         stage: stage,
                         data_shape: null,
                         data_type: null,
-                        data_size: msgBytes,
+                        msg_size: msgBytes,
                         comm_group: commGroup,
                         comm_group_size: groupSize,
                         comm_name: commType,
@@ -5077,7 +5077,7 @@
                         start_time: t,
                         end_time: t + dur,
                         duration: dur,
-                        _elapsed_time: dur,
+                        elapsed_time: dur,
                     });
                     t += dur;
                     return dur;
@@ -5446,7 +5446,7 @@
                         o2.duration = Math.round(
                             o2.duration * (0.9 + myTp * 0.07),
                         );
-                        o2._elapsed_time = o2.duration;
+                        o2.elapsed_time = o2.duration;
                     }
                 }
 
@@ -5644,7 +5644,7 @@
                     h += "</div>";
                     if (op.data_shape) h += "<div>Shape: " + op.data_shape + "</div>";
                     if (op.data_type) h += "<div>dtype: " + op.data_type + "</div>";
-                    if (op.data_size != null) h += "<div>Msg size: " + formatBytes(op.data_size) + "</div>";
+                    if (op.msg_size != null) h += "<div>Msg size: " + formatBytes(op.msg_size) + "</div>";
                     if (op.comm_group) h += "<div>Group: " + op.comm_group + " &nbsp; size=" + op.comm_group_size + "</div>";
                     if (op.additional) h += "<div>Info: " + op.additional + "</div>";
                     h += "<div>Duration: <b>" + formatUs(op.duration) + "</b></div>";
@@ -5680,7 +5680,7 @@
                     '<td class="cell-stage">' + op.stage + "</td>" +
                     '<td style="color:#baa1ff">' + (op.comm_group || "—") + "</td>" +
                     '<td style="text-align:center">' + (op.comm_group_size != null ? op.comm_group_size : "—") + "</td>" +
-                    '<td class="cell-shape">' + (op.data_shape || (op.data_size != null ? formatBytes(op.data_size) : "—")) + "</td>" +
+                    '<td class="cell-shape">' + (op.data_shape || (op.msg_size != null ? formatBytes(op.msg_size) : "—")) + "</td>" +
                     '<td style="text-align:center">' + (op.data_type || "—") + "</td>" +
                     '<td class="cell-flops">' + formatUs(op.duration) + "</td>" +
                     '<td style="color:var(--text-muted);max-width:140px;overflow:hidden;text-overflow:ellipsis">' + (op.additional || "—") + "</td>" +
