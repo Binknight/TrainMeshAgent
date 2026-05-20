@@ -220,60 +220,45 @@ def estimate_metrics():
 
 
 def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None) -> tuple[str | None, SimulationResult | None]:
-    """Submit MCP task + run estimation profiler for a single topology. Returns (task_id, SimulationResult)."""
+    """Submit MCP task for a single topology. Returns (task_id, SimulationResult or None if not ready)."""
     if not topo:
         return task_id_in, None
-    _est = importlib.import_module("app.skills.training-mesh-profiler-skill")
-    device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
-    cfg = _est._MODEL_CONFIG[device_type]
-    L = training_model.config.num_layers if training_model else cfg["num_layers"]
-    H = training_model.config.d_model if training_model else cfg["hidden_dim"]
-    # Use user-provided values; fall back to profiler defaults
-    S = int(seq_len) if seq_len is not None else int(_est._SEQ_LEN)
-    B = int(batch_size) if batch_size is not None else int(_est._TOTAL_BATCH)
-    a = float(_est._QUANT_COEFF)
-    dp, tp, pp = topo.dp_size, topo.tp_size, topo.pp_size
-    total_nodes = dp * tp * pp
 
     # Submit MCP task (fire-and-forget)
-    # Forward L, H, A, S, B, model_name in the topology payload for execute_task
     task_id = task_id_in
     if not task_id:
-        try:
-            topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name) or topo.model_dump()
-            task_id = mcp_client.execute_task(topo_payload, params=sim_params)
-            if not task_id:
-                logger.warning(f"[run_simulation] MCP execute_task returned empty task_id for {label}")
-        except Exception as exc:
-            logger.warning(f"[run_simulation] MCP execute_task failed for {label}: {exc}")
-            task_id = ""
+        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name) or topo.model_dump()
+        task_id = mcp_client.execute_task(topo_payload, params=sim_params)
+        if not task_id:
+            raise RuntimeError(f"MCP execute_task returned empty task_id for {label}")
 
-    # Run estimation formulas
-    flops = _est._estimate_flops(L, H, S, B, dp, tp, pp)
-    hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
-    dp_comm = _est._estimate_dp_comm_gb(L, H, dp)
-    tp_comm = _est._estimate_tp_comm_gb(L, H, S, B, pp)
-    pp_comm = _est._estimate_pp_comm_mb(H, S, B)
+    # Try to get card metrics from MCP (may be empty if simulation not yet complete)
+    try:
+        card_details = mcp_client.get_card_details(task_id)
+        if card_details:
+            cards = []
+            for detail in card_details:
+                cards.append(CardMetrics(
+                    card_id=detail.get("card_id", ""),
+                    global_rank=detail.get("global_rank", 0),
+                    flops_per_card=detail.get("flops_per_card", 0),
+                    hbm_gb=detail.get("hbm_gb", 0),
+                    tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
+                    pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
+                    dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
+                ))
+            device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
+            result = SimulationResult(
+                topology_name=topo.name,
+                device_type=device_type,
+                total_nodes=topo.dp_size * topo.tp_size * topo.pp_size,
+                cards=cards,
+            )
+            return task_id, result
+    except Exception as exc:
+        logger.warning(f"[run_simulation] MCP card_detail not ready for {label}: {exc}")
 
-    cards = []
-    for rank in range(total_nodes):
-        cards.append(CardMetrics(
-            card_id=f"card_{rank}",
-            global_rank=rank,
-            flops_per_card=flops,
-            hbm_gb=hbm,
-            tp_comm_gb_per_micro=tp_comm,
-            pp_comm_mb_per_micro=pp_comm,
-            dp_comm_gb_per_step=dp_comm,
-        ))
-
-    result = SimulationResult(
-        topology_name=topo.name,
-        device_type=device_type,
-        total_nodes=total_nodes,
-        cards=cards,
-    )
-    return task_id, result
+    return task_id, None
 
 
 def _build_comparison(original: SimulationResult, equivalent: SimulationResult) -> ComparisonReport:
@@ -340,9 +325,9 @@ def run_simulation(session_id: str):
         batch_size=session.original_batch_size,
         model_name=session.original_model_name,
     )
+    session.original_task_id = orig_tid or session.original_task_id
     if orig_sim:
         session.original_simulation = orig_sim
-        session.original_task_id = orig_tid or session.original_task_id
         results["original"] = orig_sim.model_dump()
 
     # ── Equivalent topology ──
@@ -353,9 +338,9 @@ def run_simulation(session_id: str):
         batch_size=session.equivalent_batch_size,
         model_name=session.original_model_name,
     )
+    session.equivalent_task_id = eq_tid or session.equivalent_task_id
     if eq_sim:
         session.equivalent_simulation = eq_sim
-        session.equivalent_task_id = eq_tid or session.equivalent_task_id
         results["equivalent"] = eq_sim.model_dump()
 
     # ── Comparison ──
@@ -371,7 +356,7 @@ def run_simulation(session_id: str):
             session.history.append({"role": "system", "content": "⚠️ 仿真完成，等效性对比存在差异，请检查"})
     else:
         session.step = "simulating"
-        session.history.append({"role": "system", "content": "📊 仿真任务已提交"})
+        session.history.append({"role": "system", "content": "📊 仿真任务已提交，任务ID: " + str(session.original_task_id or "")})
 
     session_manager.save_session(session)
 
