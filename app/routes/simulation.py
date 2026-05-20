@@ -70,21 +70,15 @@ def _poll_task_status(task_id: str) -> dict:
         return {"task_id": task_id, "result": None, "error": str(e)}
 
 
-def _poll_simulation_tasks(ws, task_ids: list[str], interval: float = 1.0, timeout: float = 300.0):
-    """Poll simulation tasks in parallel threads — heartbeat every interval to keep WS alive."""
-    start_time = time.time()
+def _poll_simulation_tasks(ws, task_ids: list[str], interval: float = 1.0):
+    """Poll simulation tasks in parallel threads — heartbeat every interval to keep WS alive.
+    No hard timeout: MCP Server is the authority on task completion.
+    """
     completed = set()
     log_offsets = {}  # {task_id: next_offset} for incremental log sync
 
     with ThreadPoolExecutor(max_workers=len(task_ids)) as executor:
         while len(completed) < len(task_ids):
-            if time.time() - start_time > timeout:
-                for tid in task_ids:
-                    if tid not in completed:
-                        ws.send(json.dumps({
-                            "type": "error", "task_id": tid, "message": "Task timeout"
-                        }))
-                break
 
             # Send heartbeat BEFORE polling to keep connection alive during MCP wait
             ws.send(json.dumps({"type": "heartbeat", "ts": time.time()}))
