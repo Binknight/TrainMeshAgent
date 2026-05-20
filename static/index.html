@@ -350,6 +350,17 @@
                     rgba(59, 206, 180, 0.05)
                 );
             }
+            .btn-sim.sim-retry {
+                cursor: pointer;
+                color: #ffb454;
+                border-color: #ff8f40;
+                background: linear-gradient(
+                    135deg,
+                    rgba(255, 143, 64, 0.2),
+                    rgba(255, 180, 84, 0.08)
+                );
+                box-shadow: 0 0 8px rgba(255, 143, 64, 0.15);
+            }
             .btn-sim:not(:disabled) {
                 cursor: pointer;
                 color: #fff;
@@ -5993,7 +6004,13 @@
                 var simTabBtn = document.getElementById("tab-btn-simulation");
                 // Already completed — show done state
                 if (_simCompleted) {
-                    if (btn) { btn.disabled = true; btn.textContent = "仿真已完成"; btn.classList.add("sim-done"); }
+                    if (btn) { btn.disabled = true; btn.textContent = "仿真已完成"; btn.classList.add("sim-done"); btn.classList.remove("sim-retry"); }
+                    if (simTabBtn) simTabBtn.disabled = false;
+                    return;
+                }
+                // Simulation failed — keep retry button state
+                if (_simFailed) {
+                    if (btn) { btn.disabled = false; btn.textContent = "重试仿真"; btn.classList.add("sim-retry"); }
                     if (simTabBtn) simTabBtn.disabled = false;
                     return;
                 }
@@ -6003,7 +6020,7 @@
                 if (btn) {
                     btn.disabled = !ready;
                     btn.textContent = "开始仿真";
-                    btn.classList.remove("sim-done");
+                    btn.classList.remove("sim-done", "sim-retry");
                 }
                 // Enable simulation tab when simulation started, data exists, or completed
                 if (simTabBtn) {
@@ -6021,6 +6038,9 @@
 
                 btn.disabled = true;
                 btn.textContent = "仿真中...";
+                btn.classList.remove("sim-done", "sim-retry");
+                _simFailed = false;
+                _simCompleted = false;
                 setStatus("thinking");
                 updateWorkflowNode("simulation", "active");
                 addMessage("system", "📊 开始仿真任务...");
@@ -6049,13 +6069,20 @@
                     );
 
                     if (!resp.ok) {
-                        addMessage(
-                            "error",
-                            "仿真请求失败: HTTP " + resp.status,
-                        );
-                        btn.textContent = "开始仿真";
+                        var errMsg = "仿真任务失败: HTTP " + resp.status;
+                        try {
+                            var errBody = await resp.json();
+                            if (errBody.error) errMsg = "仿真任务失败: " + errBody.error;
+                        } catch (_) {}
+                        addMessage("error", errMsg);
+                        updateWorkflowNode("simulation", "failed");
+                        btn.textContent = "重试仿真";
                         btn.disabled = false;
+                        btn.classList.add("sim-retry");
                         setStatus("error");
+                        _simStarted = false;
+                        _simFailed = true;
+                        checkSimReady();
                         return;
                     }
 
@@ -6106,17 +6133,20 @@
                     });
                 } catch (e) {
                     _simStarted = false;
+                    _simFailed = true;
                     setStatus("error");
-                    addMessage("error", "仿真异常: " + e.message);
+                    addMessage("error", "仿真任务失败: " + (e.message || "MCP Server 不可用"));
                     updateWorkflowNode("simulation", "failed");
-                    btn.textContent = "开始仿真";
+                    btn.textContent = "重试仿真";
                     btn.disabled = false;
+                    btn.classList.add("sim-retry");
                     checkSimReady();
                 }
             }
 
             var _resultsRendered = false;
             var _simCompleted = false;
+            var _simFailed = false;
             var _simStreamDone = false; // true when 60s mock streaming countdown expires
             var _simStarted = false;
 
