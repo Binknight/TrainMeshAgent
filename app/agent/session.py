@@ -186,7 +186,7 @@ def _persist_session(session: SessionState) -> None:
 def _load_session(session_id: str) -> Optional[SessionState]:
     try:
         from app.dao import get_session_summary, get_topology_params, get_simulation_result, get_comparison_report, get_messages, get_simulation_params
-        from app.models.schemas import DeviceType, MeshTopology, TopologyParams, TrainingModel, TrainingModelConfig, TrainingModelComputed, SimulationResult, ComparisonReport, CardMetrics
+        from app.models.schemas import DeviceType, MeshNode, MeshTopology, TopologyParams, TrainingModel, TrainingModelConfig, TrainingModelComputed, SimulationResult, ComparisonReport, CardMetrics
 
         summary = get_session_summary(session_id)
         if not summary:
@@ -201,15 +201,35 @@ def _load_session(session_id: str) -> Optional[SessionState]:
             tp = get_topology_params(session_id, role)
             if tp and tp.get("name"):
                 device_type = DeviceType(tp.get("device_type", "A3"))
+                dp_size = tp.get("dp_size", 1)
+                tp_size = tp.get("tp_size", 1)
+                pp_size = tp.get("pp_size", 1)
+                total_nodes = tp.get("total_nodes", dp_size * tp_size * pp_size)
+                # Rebuild nodes from dp/tp/pp (deterministic, no need to persist separately)
+                nodes = []
+                ranks_per_dp = tp_size * pp_size
+                for g in range(total_nodes):
+                    dp_rank = g // ranks_per_dp
+                    remainder = g % ranks_per_dp
+                    pp_rank = remainder // tp_size
+                    tp_rank = remainder % tp_size
+                    nodes.append(MeshNode(
+                        id=f"node_{g}",
+                        device_type=device_type,
+                        dp_rank=dp_rank,
+                        tp_rank=tp_rank,
+                        pp_rank=pp_rank,
+                        global_rank=g,
+                    ))
                 state_attr = f"{role}_topology"
                 setattr(state, state_attr, MeshTopology(
                     name=tp.get("name", ""),
                     device_type=device_type,
-                    dp_size=tp.get("dp_size", 1),
-                    tp_size=tp.get("tp_size", 1),
-                    pp_size=tp.get("pp_size", 1),
-                    total_nodes=tp.get("total_nodes", 1),
-                    nodes=[],
+                    dp_size=dp_size,
+                    tp_size=tp_size,
+                    pp_size=pp_size,
+                    total_nodes=total_nodes,
+                    nodes=nodes,
                 ))
 
                 params_attr = f"{role}_params"
