@@ -2,7 +2,7 @@
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from flask import Blueprint, request
 from flask_sock import Sock
 
@@ -96,71 +96,82 @@ def _poll_simulation_tasks(ws, task_ids: list[str], interval: float = 1.0, timeo
             pending = [tid for tid in task_ids if tid not in completed]
             futures = {executor.submit(_poll_task_status, tid): tid for tid in pending}
 
-            for future in as_completed(futures, timeout=MCP_POLL_TIMEOUT):
-                tid = futures[future]
-                try:
-                    poll = future.result()
-                except Exception:
-                    ws.send(json.dumps({
-                        "type": "status", "task_id": tid,
-                        "status": "poll_error", "progress": -1,
-                    }))
-                    continue
-
-                if poll["error"]:
-                    ws.send(json.dumps({
-                        "type": "status", "task_id": tid,
-                        "status": "poll_error", "progress": -1,
-                    }))
-                    continue
-
-                status = poll["result"]
-                st = status.get("status", "unknown")
-                progress = status.get("progress", 0)
-
-                ws.send(json.dumps({
-                    "type": "status",
-                    "task_id": tid,
-                    "status": st,
-                    "progress": progress,
-                }))
-
-                # Sync logs incrementally
-                offset = log_offsets.get(tid, 0)
-                try:
-                    logs = mcp_client.sync_logs(tid, offset=offset)
-                    if logs.get("next_offset") is not None:
-                        log_offsets[tid] = logs["next_offset"]
-                    if logs.get("lines"):
-                        for line in logs["lines"]:
-                            ws.send(json.dumps({"type": "log", "task_id": tid, "line": line}))
-                except Exception:
-                    pass
-
-                if st in ("completed", "failed", "error"):
-                    completed.add(tid)
-                    if st == "completed":
-                        try:
-                            result = mcp_client.get_result(tid)
-                            ws.send(json.dumps({
-                                "type": "complete",
-                                "task_id": tid,
-                                "result": result,
-                            }))
-                        except Exception as e:
-                            ws.send(json.dumps({
-                                "type": "error", "task_id": tid,
-                                "message": f"get_result failed: {e}",
-                            }))
-                    else:
+            try:
+                for future in as_completed(futures, timeout=MCP_POLL_TIMEOUT):
+                    tid = futures[future]
+                    try:
+                        poll = future.result()
+                    except Exception:
                         ws.send(json.dumps({
-                            "type": "error",
-                            "task_id": tid,
-                            "message": status.get("message", "Task failed"),
+                            "type": "status", "task_id": tid,
+                            "status": "poll_error", "progress": -1,
                         }))
+                        continue
 
-            # Also handle futures that may have timed out (not returned within MCP_POLL_TIMEOUT)
-            # These futures are cancelled automatically when exiting the with-block
+                    if poll["error"]:
+                        ws.send(json.dumps({
+                            "type": "status", "task_id": tid,
+                            "status": "poll_error", "progress": -1,
+                        }))
+                        continue
+
+                    status = poll["result"]
+                    st = status.get("status", "unknown")
+                    progress = status.get("progress", 0)
+
+                    ws.send(json.dumps({
+                        "type": "status",
+                        "task_id": tid,
+                        "status": st,
+                        "progress": progress,
+                    }))
+
+                    # Sync logs incrementally
+                    offset = log_offsets.get(tid, 0)
+                    try:
+                        logs = mcp_client.sync_logs(tid, offset=offset)
+                        if logs.get("next_offset") is not None:
+                            log_offsets[tid] = logs["next_offset"]
+                        if logs.get("lines"):
+                            for line in logs["lines"]:
+                                ws.send(json.dumps({"type": "log", "task_id": tid, "line": line}))
+                    except Exception:
+                        pass
+
+                    if st in ("completed", "failed", "error"):
+                        completed.add(tid)
+                        if st == "completed":
+                            try:
+                                result = mcp_client.get_result(tid)
+                                ws.send(json.dumps({
+                                    "type": "complete",
+                                    "task_id": tid,
+                                    "result": result,
+                                }))
+                            except Exception as e:
+                                ws.send(json.dumps({
+                                    "type": "error", "task_id": tid,
+                                    "message": f"get_result failed: {e}",
+                                }))
+                        else:
+                            ws.send(json.dumps({
+                                "type": "error",
+                                "task_id": tid,
+                                "message": status.get("message", "Task failed"),
+                            }))
+            except FuturesTimeoutError:
+                # All futures exceeded MCP_POLL_TIMEOUT — MCP server is slow/unreachable.
+                # Send keep-alive status so the frontend knows we're still waiting.
+                logger.warning("MCP poll timeout — all tasks unresponsive within %ss", MCP_POLL_TIMEOUT)
+                for tid in pending:
+                    if tid not in completed:
+                        ws.send(json.dumps({
+                            "type": "status", "task_id": tid,
+                            "status": "polling", "progress": -1,
+                        }))
+                # Cancel remaining futures to free threads
+                for f in futures:
+                    f.cancel()
 
             if len(completed) < len(task_ids):
                 time.sleep(interval)
