@@ -3886,7 +3886,7 @@
                     _syncEquivCalcSubsteps(true, true);
                     updateWorkflowNode("equiv_gen", "completed");
                     updateWorkflowNode("simulation", "active");
-                    updateWorkflowNode("comparison", "active");
+                    updateWorkflowNode("comparison", "pending");
                     _simCompleted = false;
                     setStatus("仿真验证中");
                     // Resume polling for MCP completion
@@ -6073,9 +6073,16 @@
             function checkSimReady() {
                 var btn = document.getElementById("btn-start-sim");
                 var simTabBtn = document.getElementById("tab-btn-simulation");
+                var isPolling = !!(_simPollTimer);
                 // Already completed — show done state
                 if (_simCompleted) {
                     if (btn) { btn.disabled = true; btn.textContent = "仿真已完成"; btn.classList.add("sim-done"); btn.classList.remove("sim-retry"); }
+                    if (simTabBtn) simTabBtn.disabled = false;
+                    return;
+                }
+                // Simulation polling — disable button, enable tab
+                if (isPolling) {
+                    if (btn) { btn.disabled = true; btn.textContent = "仿真验证中..."; }
                     if (simTabBtn) simTabBtn.disabled = false;
                     return;
                 }
@@ -6093,13 +6100,13 @@
                     btn.textContent = "开始仿真";
                     btn.classList.remove("sim-done", "sim-retry");
                 }
-                // Enable simulation tab when simulation started, data exists, or completed
+                // Enable simulation tab when simulation started, data exists, completed, or polling
                 if (simTabBtn) {
                     var hasSimData = (
                         (typeof meshActualOrig !== "undefined" && Object.keys(meshActualOrig || {}).length) ||
                         (typeof meshActualEq !== "undefined" && Object.keys(meshActualEq || {}).length)
                     );
-                    simTabBtn.disabled = !(_simStarted || hasSimData || _simCompleted);
+                    simTabBtn.disabled = !(_simStarted || hasSimData || _simCompleted || isPolling);
                 }
             }
 
@@ -6195,7 +6202,7 @@
                         // Simulation submitted, waiting for MCP to complete
                         _simCompleted = false;
                         updateWorkflowNode("simulation", "active");
-                        updateWorkflowNode("comparison", "active");
+                        updateWorkflowNode("comparison", "pending");
                         addMessage("system", "📊 仿真任务已提交 MCP Server，等待仿真完成...");
                         setStatus("仿真验证中");
                         // Start polling for completion
@@ -6238,6 +6245,7 @@
                         var data = await resp.json();
                         // Check if comparison report is now available
                         if (data.comparison_report) {
+                            _simPollTimer = null;
                             _simCompleted = true;
                             setStatus("验证完成");
                             updateWorkflowNode("simulation", "completed");
@@ -6263,6 +6271,7 @@
                         }
                         // Also check step field
                         if (data.step === "failed") {
+                            _simPollTimer = null;
                             _simFailed = true;
                             setStatus("验证失败");
                             updateWorkflowNode("simulation", "failed");
