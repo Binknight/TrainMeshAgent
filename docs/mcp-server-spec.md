@@ -275,9 +275,12 @@
 
 ---
 
-## 8. get_device_detail — 获取单卡算子级 Trace
+## 8. get_device_detail — 获取单卡算子级 Trace（支持增量轮询）
 
-**调用场景**：前端点击 Rank 卡片查看详情时，通过 REST 接口触发。返回该卡全部算子的执行时序和 Timeline 摘要，用于渲染**算子时序图**和**负载描述文件表格**。
+**调用场景**：前端点击 Rank 卡片查看详情时，通过 REST 接口触发。
+
+- **一次性模式**：不传 `offset`，返回该卡全部算子，用于仿真已完成后的静态查看
+- **增量模式**：传入 `offset`，每次仅返回新增算子。仿真运行过程中每秒轮询，前端渐进渲染算子时序图和负载描述文件表格，直到 `is_complete=true`
 
 > 与 `card_detail` 的区别：`card_detail` 返回卡级别的 7 个汇总指标（轻量，列表页用），`get_device_detail` 返回算子级别的完整 Trace（数据量大，按需点开单个 Rank 时用）。
 
@@ -287,6 +290,7 @@
 |------|------|------|------|
 | `task_id` | string | ✅ | 任务 ID |
 | `global_rank` | integer | ✅ | 全局 Rank 编号 |
+| `offset` | integer | ⬜ 默认 0 | 增量拉取起始位置（算子索引）。0 = 从头返回全量；>0 = 仅返回 `index >= offset` 的算子 |
 
 ### 出参
 
@@ -300,23 +304,67 @@
 | `dp_rank` | integer | ⬜ | DP 维度 rank |
 | `tp_rank` | integer | ⬜ | TP 维度 rank |
 | `pp_rank` | integer | ⬜ | PP 维度 rank |
-| `operators` | array[OperatorTrace] | ✅ | 算子执行列表 |
-| `timeline` | TimelineSummary | ⬜ | 时序汇总统计 |
+| `operators` | array[OperatorTrace] | ✅ | 算子执行列表（增量模式下仅返回新增部分） |
+| `next_offset` | integer | ⬜ | 下次轮询应使用的 offset = 本次返回最后一条算子的 `index + 1`；一次性模式可省略 |
+| `is_complete` | bool | ⬜ 默认 true | `false` = 仿真仍在运行，还有数据生成中；`true` = 已返回全量数据 |
+| `timeline` | TimelineSummary | ⬜ | 时序汇总统计（建议仅在 `is_complete=true` 时填充完整值） |
 
-**OperatorTrace** 每条记录：
+### 增量轮询时序
+
+```
+仿真开始 → MCP Server 为每个 rank 持续写入算子到 CSV/内存
+
+轮询1: get_device_detail(task_id, rank=0, offset=0)
+       → operators[0..11], next_offset=12, is_complete=false
+       前端追加 12 条算子到时序图
+
+轮询2: get_device_detail(task_id, rank=0, offset=12)
+       → operators[12..28], next_offset=29, is_complete=false
+       前端追加 17 条算子
+
+轮询3: get_device_detail(task_id, rank=0, offset=29)
+       → operators[29..45], next_offset=46, is_complete=true
+       前端追加最后 17 条，渲染完整视图，停止轮询
+```
+
+轮询间隔由 TrainMeshAgent 侧控制（建议 1~2 秒），`offset` 从 0 开始，每次用上次返回的 `next_offset` 作为下次的 `offset`。与 `sync_logs`（§5）的增量模式语义一致。
+
+### 兼容性
+
+- 不传 `offset` → 全量返回，`next_offset` 可省略，`is_complete` 默认 `true`，现有逻辑不受影响
+- 传 `offset=0` → 等价于不传，全量返回，但必须返回 `next_offset` 和 `is_complete`
+
+**OperatorTrace** 每条记录。字段以仿真系统 CSV 输出为基准，MCP Server 负责直传 CSV 字段 + 补充少量计算字段：
+
+#### CSV 直传字段（MCP Server 从仿真 CSV 读取后原样返回）
+
+| 字段 | 类型 | CSV 列 | 说明 |
+|------|------|--------|------|
+| `comm_type` | string | ✅ | 算子/通信类型，如 `computation`、`all_reduce`、`send`、`recv` |
+| `comm_group` | string\|null | ✅ | 通信组名，如 `tp_group`、`dp_group`；计算类算子为 null |
+| `comm_group_size` | int\|null | ✅ | 通信组参与卡数；计算类算子为 null |
+| `msg_size` | float\|null | ✅ | 通信消息大小 (bytes)；计算类算子为 null |
+| `stage` | string | ✅ | 执行阶段，如 `forward/layer0`、`backward/layer14`、`optimizer`、`init` |
+| `dst` | string\|null | ✅ | 目标 rank 或组；计算类算子为 null |
+| `src` | string\|null | ✅ | 源 rank 或组；计算类算子为 null |
+| `additional` | string\|null | ✅ | 附加说明，如 `matmul`、`seed-sync` |
+| `nonblock` | int | ✅ | 是否非阻塞：`1` = 非阻塞，`0` = 阻塞 |
+| `wait_n` | int\|null | ✅ | 等待数量 |
+| `elapsed_time` | float | ✅ | 仿真系统原始耗时 (微秒)，CSV 列为 `_elapsed_time`，MCP Server 返回时去掉前导下划线 |
+| `start_time` | float | ✅ | 算子开始时间 (微秒) |
+| `end_time` | float | ✅ | 算子结束时间 (微秒) |
+| `single_flops` | float\|null | ✅ | 单算子 FLOPs；通信类算子为 null |
+
+#### MCP Server 计算补充字段（从上述字段推导）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `op_name` | string | 算子名称，如 `MHA_QKV_Proj`、`AllReduce` |
-| `op_type` | string | 类型枚举：`computation` / `communication` / `collective` |
-| `category` | string | 阶段分类：`fwd` / `bwd` / `optimizer` |
-| `start_us` | float | 开始时间 (微秒) |
-| `duration_us` | float | 持续时间 (微秒) |
-| `flops` | float | 计算量 (FLOPs)，计算类算子填充 |
-| `comm_bytes` | float | 通信量 (bytes)，通信类算子填充 |
-| `parent_op` | string | 父算子名称，用于 tracing 层次 |
-| `depth` | integer | 层次深度 |
-| `details` | object | 额外信息键值对 |
+| `index` | integer | 算子序号（从 0 递增），用于增量 offset 对齐 |
+| `operator_name` | string | 算子可读名称，如 `qkv_projection`、`AllReduce_grad`，由 MCP 根据 `comm_type` + `stage` 推导 |
+| `data_shape` | string\|null | 数据形状描述，如 `[32,4096,4096] → [32,4096,12288]` |
+| `data_type` | string\|null | 数据类型，如 `bf16`、`fp32` |
+| `algo_name` | string\|null | 算法名，如 `linear`、`Ring` |
+| `duration` | float | = `end_time - start_time` (微秒)，方便前端直接使用 |
 
 **TimelineSummary**：
 
@@ -496,7 +544,8 @@ submitted  →  running  →  completed
 
 **详情数据（M1~M5 解 mock）**
 
-- [ ] `get_device_detail`（§8）返回 `operators[]` + `timeline{}`（或扩展 card_detail）
+- [ ] `get_device_detail`（§8）一次性模式返回全量 `operators[]` + `timeline{}`
+- [ ] `get_device_detail`（§8）增量模式 `offset`/`next_offset`/`is_complete` 轮询流程正常
 - [ ] `get_hbm_detail`（§9）返回 HBM 四项分解
 - [ ] `get_comm_detail`（§10）支持 `comm_type: tp/pp/dp` 三种查询
 

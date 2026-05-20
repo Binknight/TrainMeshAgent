@@ -46,7 +46,7 @@ for name, device_type, dp, tp, pp, overrides in topologies:
 
     f = _estimate_flops(L, H, S, B, dp, tp, pp)
     h = _estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
-    dp_c = _estimate_dp_comm_gb(L, H, tp, pp)
+    dp_c = _estimate_dp_comm_gb(L, H, dp)
     tp_c = _estimate_tp_comm_gb(L, H, S, B, pp)
     pp_c = _estimate_pp_comm_mb(H, S, B)
     print(
