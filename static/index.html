@@ -3839,7 +3839,16 @@
                 var hasComparison = !!sessionData.comparison_report;
                 var step = sessionData.step || "idle";
 
-                if (hasComparison) {
+                if (step === "failed") {
+                    updateWorkflowNode("params", "completed");
+                    _syncEquivCalcSubsteps(true, true);
+                    updateWorkflowNode("equiv_gen", "completed");
+                    updateWorkflowNode("simulation", "failed");
+                    updateWorkflowNode("comparison", "disabled");
+                    _simFailed = true;
+                    _simCompleted = false;
+                    checkSimReady();
+                } else if (hasComparison) {
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(true, true);
                     updateWorkflowNode("equiv_gen", "completed");
@@ -4978,8 +4987,10 @@
 
                 // Keep right panel visible on all tabs
                 var simBtn = document.getElementById("btn-start-sim");
-                if (simBtn)
-                    simBtn.style.display = tabName === "modeling" ? "" : "none";
+                if (simBtn) {
+                    // Show button on modeling tab, or on simulation tab when retry needed
+                    simBtn.style.display = (tabName === "modeling" || _simFailed) ? "" : "none";
+                }
             }
 
 

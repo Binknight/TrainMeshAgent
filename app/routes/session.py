@@ -317,46 +317,54 @@ def run_simulation(session_id: str):
     session.history.append({"role": "system", "content": "📊 开始仿真任务..."})
     results = {}
 
-    # ── Original topology ──
-    orig_tid, orig_sim = _run_simulation_for_topology(
-        session.original_topology, session.original_training_model,
-        session.original_task_id, "original", sim_params_dict,
-        seq_len=session.original_seq_len,
-        batch_size=session.original_batch_size,
-        model_name=session.original_model_name,
-    )
-    session.original_task_id = orig_tid or session.original_task_id
-    if orig_sim:
-        session.original_simulation = orig_sim
-        results["original"] = orig_sim.model_dump()
+    try:
+        # ── Original topology ──
+        orig_tid, orig_sim = _run_simulation_for_topology(
+            session.original_topology, session.original_training_model,
+            session.original_task_id, "original", sim_params_dict,
+            seq_len=session.original_seq_len,
+            batch_size=session.original_batch_size,
+            model_name=session.original_model_name,
+        )
+        session.original_task_id = orig_tid or session.original_task_id
+        if orig_sim:
+            session.original_simulation = orig_sim
+            results["original"] = orig_sim.model_dump()
 
-    # ── Equivalent topology ──
-    eq_tid, eq_sim = _run_simulation_for_topology(
-        session.equivalent_topology, session.equivalent_training_model,
-        session.equivalent_task_id, "equivalent", sim_params_dict,
-        seq_len=session.equivalent_seq_len,
-        batch_size=session.equivalent_batch_size,
-        model_name=session.original_model_name,
-    )
-    session.equivalent_task_id = eq_tid or session.equivalent_task_id
-    if eq_sim:
-        session.equivalent_simulation = eq_sim
-        results["equivalent"] = eq_sim.model_dump()
+        # ── Equivalent topology ──
+        eq_tid, eq_sim = _run_simulation_for_topology(
+            session.equivalent_topology, session.equivalent_training_model,
+            session.equivalent_task_id, "equivalent", sim_params_dict,
+            seq_len=session.equivalent_seq_len,
+            batch_size=session.equivalent_batch_size,
+            model_name=session.original_model_name,
+        )
+        session.equivalent_task_id = eq_tid or session.equivalent_task_id
+        if eq_sim:
+            session.equivalent_simulation = eq_sim
+            results["equivalent"] = eq_sim.model_dump()
 
-    # ── Comparison ──
-    report = None
-    if session.original_simulation and session.equivalent_simulation:
-        report = _build_comparison(session.original_simulation, session.equivalent_simulation)
-        session.comparison_report = report
-        session.step = "completed"
-        results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
-        if report.is_equivalent:
-            session.history.append({"role": "system", "content": "✅ 仿真验证已通过，等效性对比一致"})
+        # ── Comparison ──
+        report = None
+        if session.original_simulation and session.equivalent_simulation:
+            report = _build_comparison(session.original_simulation, session.equivalent_simulation)
+            session.comparison_report = report
+            session.step = "completed"
+            results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
+            if report.is_equivalent:
+                session.history.append({"role": "system", "content": "✅ 仿真验证已通过，等效性对比一致"})
+            else:
+                session.history.append({"role": "system", "content": "⚠️ 仿真完成，等效性对比存在差异，请检查"})
         else:
-            session.history.append({"role": "system", "content": "⚠️ 仿真完成，等效性对比存在差异，请检查"})
-    else:
-        session.step = "simulating"
-        session.history.append({"role": "system", "content": "📊 仿真任务已提交，任务ID: " + str(session.original_task_id or "")})
+            session.step = "simulating"
+            session.history.append({"role": "system", "content": "📊 仿真任务已提交，任务ID: " + str(session.original_task_id or "")})
+
+    except Exception as exc:
+        logger.error(f"[run_simulation] Failed: {exc}")
+        session.step = "failed"
+        session.history.append({"role": "system", "content": f"❌ 仿真任务失败: {exc}"})
+        session_manager.save_session(session)
+        return {"error": str(exc), "step": "failed"}, 502
 
     session_manager.save_session(session)
 
