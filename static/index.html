@@ -5723,72 +5723,62 @@
                     }
                 }
 
-                // Generate all ops upfront (mock), then stream them over the 60s window
-                var data;
-                try {
-                    data = genMockWorkload(rankInfoResolved);
-                } catch (e) {
-                    console.error("[_renderSideDetail] genMockWorkload failed:", e);
-                    return;
-                }
-                var ops = data.ops;
-                var totalUs = data.totalUs;
+                if (!rankInfoResolved) return;
 
+                var side = prefix === "orig" ? "original" : "equivalent";
+                var globalRank = rankInfoResolved.globalRank;
                 var timelineId = prefix + "-timeline";
                 var opspecId = prefix + "-opspec";
                 var progressId = prefix + "-stream-progress";
 
-                // Init empty shells immediately
-                _initTimelineIncr(timelineId, ops, totalUs);
-                _initOpspecIncr(opspecId);
-
-                // If stream countdown expired, render all at once
-                if (_simStreamDone) {
-                    for (var i = 0; i < ops.length; i++) {
-                        _appendTimelineOp(timelineId, ops[i]);
-                        _appendOpspecRow(opspecId, ops[i]);
-                    }
-                    _updateStreamProgress(progressId, ops.length, ops.length);
-                    return;
-                }
-
-                // ── Streaming mode: progressive loading over the 60s window ──
-                // Add a visible progress bar / counter above the timeline
+                // Show loading indicator
                 _showStreamProgress(progressId, timelineId);
+                _updateStreamProgress(progressId, 0, 0);
 
-                var stream = new SimDataStream();
-                var index = 0;
-                var total = ops.length;
-                // Batch size: show N ops per tick for visible progress, faster feedback
-                var batchSize = Math.max(1, Math.floor(total / 30)); // ~30 ticks over 60s
-                var tickDelay = 2000; // tick every 2s — clearly visible progressive loading
+                // Fetch operator trace from MCP via REST API (with incremental polling)
+                var allOps = [];
+                var offset = 0;
 
-                function tick() {
-                    if (stream.isCancelled()) return;
-                    if (_simStreamDone) {
-                        // Timer fired mid-stream — render remaining ops at once
-                        while (index < total) {
-                            _appendTimelineOp(timelineId, ops[index]);
-                            _appendOpspecRow(opspecId, ops[index]);
-                            index++;
-                        }
-                        _updateStreamProgress(progressId, total, total);
-                        return;
-                    }
-                    var end = Math.min(index + batchSize, total);
-                    for (var i = index; i < end; i++) {
-                        _appendTimelineOp(timelineId, ops[i]);
-                        _appendOpspecRow(opspecId, ops[i]);
-                    }
-                    index = end;
-                    _updateStreamProgress(progressId, index, total);
-                    if (index >= total) return; // done
-                    setTimeout(tick, tickDelay);
+                function poll() {
+                    var url = API + "/session/" + sessionId + "/simulation/" + side + "/" + globalRank + "/detail?offset=" + offset;
+                    fetch(url)
+                        .then(function (resp) {
+                            if (!resp.ok) throw new Error("HTTP " + resp.status);
+                            return resp.json();
+                        })
+                        .then(function (detail) {
+                            var newOps = detail.operators || [];
+                            // Init timeline/opspec shells on first batch
+                            if (allOps.length === 0) {
+                                var totalUs = newOps.length > 0 ? newOps[newOps.length - 1].end_time : 0;
+                                if (detail.timeline && detail.timeline.total_time_ms) {
+                                    totalUs = detail.timeline.total_time_ms * 1000;
+                                }
+                                _initTimelineIncr(timelineId, newOps, totalUs);
+                                _initOpspecIncr(opspecId);
+                            }
+                            // Append new operators
+                            for (var i = 0; i < newOps.length; i++) {
+                                allOps.push(newOps[i]);
+                                _appendTimelineOp(timelineId, newOps[i]);
+                                _appendOpspecRow(opspecId, newOps[i]);
+                            }
+                            _updateStreamProgress(progressId, allOps.length, allOps.length);
+
+                            // Continue polling if simulation is still running
+                            if (detail.is_complete === false && detail.next_offset != null) {
+                                offset = detail.next_offset;
+                                setTimeout(poll, 2000);
+                            }
+                        })
+                        .catch(function (err) {
+                            console.error("[_renderSideDetail] MCP fetch failed:", err);
+                            _updateStreamProgress(progressId, 0, 0);
+                            var textEl = document.querySelector("." + progressId + "-text");
+                            if (textEl) textEl.textContent = "MCP Server 不可用: " + err.message;
+                        });
                 }
-                // Start first batch immediately
-                tick();
-
-                _activeSimStreams.push({ stream: stream, prefix: prefix });
+                poll();
             }
 
             function _showStreamProgress(progressId, timelineContainerId) {
@@ -6086,47 +6076,34 @@
                         });
                     }
 
-                    // Keep workflow "active" during 60s mock simulation — do NOT complete yet
-                    updateWorkflowNode("simulation", "active");
-                    updateWorkflowNode("comparison", "active");
-
                     _simStarted = false;
-                    // Start 60s streaming countdown (mock simulation duration)
-                    _simCompleted = false;
-                    _simStreamDone = false;
+                    _simStreamDone = true; // no mock streaming — data comes from MCP
                     _showActualData = true;
-                    addMessage("system", "📊 仿真任务已提交，预计60秒后完成...");
+
+                    if (results.comparison) {
+                        // Simulation already complete (MCP returned card data immediately)
+                        _simCompleted = true;
+                        updateWorkflowNode("simulation", "completed");
+                        if (results.comparison.is_equivalent === false) {
+                            updateWorkflowNode("comparison", "failed");
+                            addMessage("system", "⚠️ 仿真完成，等效性对比存在差异，请检查");
+                        } else {
+                            updateWorkflowNode("comparison", "completed");
+                            addMessage("system", "✅ 仿真验证已通过，等效性对比一致");
+                        }
+                    } else {
+                        // Simulation submitted, waiting for MCP to complete
+                        _simCompleted = false;
+                        updateWorkflowNode("simulation", "active");
+                        updateWorkflowNode("comparison", "active");
+                        addMessage("system", "📊 仿真任务已提交 MCP Server，等待仿真完成...");
+                    }
+                    checkSimReady();
+                    setStatus("idle");
                     requestAnimationFrame(function () {
                         if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
                         _renderSimResults();
                     });
-                    // Simulation completes after 60s — all streaming data resolves
-                    setTimeout(function () {
-                        _simStreamDone = true;
-                        _simCompleted = true;
-                        updateWorkflowNode("simulation", "completed");
-                        if (results.comparison) {
-                            if (results.comparison.is_equivalent === false) {
-                                updateWorkflowNode("comparison", "failed");
-                                addMessage(
-                                    "system",
-                                    "⚠️ 仿真完成，等效性对比存在差异，请检查",
-                                );
-                            } else {
-                                updateWorkflowNode("comparison", "completed");
-                                addMessage(
-                                    "system",
-                                    "✅ 仿真验证已通过，等效性对比一致",
-                                );
-                            }
-                        } else {
-                            updateWorkflowNode("comparison", "completed");
-                        }
-                        checkSimReady();
-                        setStatus("idle");
-                        // Re-render to show full results immediately
-                        _renderSimResults();
-                    }, 60000);
                 } catch (e) {
                     _simStarted = false;
                     setStatus("error");
