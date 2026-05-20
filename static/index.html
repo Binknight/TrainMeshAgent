@@ -4292,9 +4292,10 @@
 
             function statusBadge(step) {
                 if (step === "completed") return ["done", "已完成"];
-                if (step === "idle" || step === "draft")
-                    return ["draft", "草稿"];
-                return ["running", "运行中"];
+                if (step === "failed") return ["failed", "验证失败"];
+                if (step === "simulating") return ["running", "仿真验证中"];
+                if (step === "idle" || step === "draft") return ["draft", "草稿"];
+                return ["running", "等效建模中"];
             }
 
             function timeAgo(iso) {
