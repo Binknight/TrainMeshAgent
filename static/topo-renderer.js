@@ -1937,9 +1937,8 @@ function _getDetailSubs(detailType) {
   if (detailType === "hbm") {
     return [
       { key: "weights_gb", label: "模型权重" },
-      { key: "gradients_gb", label: "梯度" },
       { key: "optimizer_gb", label: "优化器状态" },
-      { key: "activations_gb", label: "激活值" },
+      { key: "gradients_gb", label: "梯度" },
     ];
   }
   return [
