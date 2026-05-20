@@ -8,6 +8,7 @@ from flask_sock import Sock
 
 from app.mcp.client import mcp_client
 from app.agent.session import session_manager
+from app.config import config
 
 logger = logging.getLogger(__name__)
 sim_bp = Blueprint("simulation", __name__, url_prefix="/ws")
@@ -47,7 +48,7 @@ def simulation_ws(ws, session_id: str):
                 ws.send(json.dumps({"type": "subscribed", "task_ids": task_ids}))
 
                 # Start polling loop for subscribed tasks
-                _poll_simulation_tasks(ws, task_ids)
+                _poll_simulation_tasks(ws, task_ids, interval=config.SIM_POLL_INTERVAL)
 
             elif msg_type == "unsubscribe":
                 break
@@ -70,7 +71,7 @@ def _poll_task_status(task_id: str) -> dict:
         return {"task_id": task_id, "result": None, "error": str(e)}
 
 
-def _poll_simulation_tasks(ws, task_ids: list[str], interval: float = 1.0):
+def _poll_simulation_tasks(ws, task_ids: list[str], interval: float):
     """Poll simulation tasks in parallel threads — heartbeat every interval to keep WS alive.
     No hard timeout: MCP Server is the authority on task completion.
     """
