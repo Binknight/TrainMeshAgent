@@ -918,7 +918,7 @@ def workflow_step2_stream(session_id: str):
         # ═══ Phase 2: 指标分析 ═══
         h2 = H_val * H_val
         s2 = S_val * S_val
-        flops_per_card = (6 * B_orig * S_val * L_orig * H_val / orig_dp * pp * tp) * (4 * H_val + 3 * dff_val + 2 * S_val)
+        flops_per_card = (6 * B_orig * S_val * L_orig * H_val / (orig_dp * pp * tp)) * (4 * H_val + 3 * dff_val + 2 * S_val)
         flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
 
         # HBM: params_per_card × opt_bytes + activations
@@ -934,8 +934,8 @@ def workflow_step2_stream(session_id: str):
 
         lines_metrics = [
             f"▸ 单卡计算量 (FLOPs)",
-            f"  FLOPs = (6·B·S·L·H/DP·PP·TP) × (4·H + 3·dff + 2·S)",
-            f"  = (6×{B_orig}×{S_val}×{L_orig}×{H_val}/{orig_dp}×{pp}×{tp}) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
+            f"  FLOPs = (6·B·S·L·H/(DP·PP·TP)) × (4·H + 3·dff + 2·S)",
+            f"  = (6×{B_orig}×{S_val}×{L_orig}×{H_val}/({orig_dp}×{pp}×{tp})) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
             f"  ≈ {flops_str} FLOPs",
             f"▸ 显存占用 (HBM)",
             f"  HBM = (params × opt_bytes + activations) / 1e9",

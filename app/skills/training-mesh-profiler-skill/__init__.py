@@ -34,8 +34,8 @@ def _estimate_flops_old(
 def _estimate_flops(
     L: int, H: int, S: int, B: int, dff: int, dp: int, tp: int, pp: int
 ) -> float:
-    """FLOPs = (6*B*S*L*H/DP*PP*TP) * (4*H + 3*dff + 2*S)"""
-    return (6 * B * S * L * H / dp * pp * tp) * (4 * H + 3 * dff + 2 * S)
+    """FLOPs = (6*B*S*L*H/(DP*PP*TP)) * (4*H + 3*dff + 2*S)"""
+    return (6 * B * S * L * H / (dp * pp * tp)) * (4 * H + 3 * dff + 2 * S)
 
 
 def _estimate_hbm_gb(

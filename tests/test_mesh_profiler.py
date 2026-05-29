@@ -87,19 +87,15 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     print(f"  quant_coeff  = {a}")
 
     print(f"\n  -- NEW FLOPs Formula --")
-    print(f"  FLOPs = (6*B*S*L*H/DP*PP*TP) * (4*H + 3*dff + 2*S)")
+    print(f"  FLOPs = (6*B*S*L*H/(DP*PP*TP)) * (4*H + 3*dff + 2*S)")
     print(
-        f"        = (6*{B_val}*{S}*{L}*{H}/{dp}*{pp}*{tp}) * (4*{H} + 3*{dff_val} + 2*{S})"
+        f"        = (6*{B_val}*{S}*{L}*{H}/({dp}*{pp}*{tp})) * (4*{H} + 3*{dff_val} + 2*{S})"
     )
-    term1 = 6 * B_val * S * L * H
-    term2 = term1 / dp
-    term3 = term2 * pp
-    term4 = term3 * tp
+    numerator = 6 * B_val * S * L * H
+    denominator = dp * pp * tp
     factor2 = 4 * H + 3 * dff_val + 2 * S
-    print(f"        = ({term1:.0f}/{dp}*{pp}*{tp}) * {factor2}")
-    print(f"        = ({term2:.0f}*{pp}*{tp}) * {factor2}")
-    print(f"        = ({term3:.0f}*{tp}) * {factor2}")
-    print(f"        = {term4:.0f} * {factor2}")
+    print(f"        = ({numerator} / {denominator}) * {factor2}")
+    print(f"        = {numerator / denominator:.2f} * {factor2}")
     print(f"        = {flops:.4e} FLOPs/card")
 
     print(f"\n  -- OLD FLOPs Formula (reference) --")
