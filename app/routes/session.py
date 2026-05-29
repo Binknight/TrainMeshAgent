@@ -99,7 +99,7 @@ def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
-def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None):
+def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None, d_ffn=None):
     """Attach model config + runtime params onto a topology dict for MCP execute_task."""
     if topo is None:
         return None
@@ -114,6 +114,10 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
         d["batch_size"] = batch_size
     if model_name is not None:
         d["model_name"] = model_name
+    if d_ffn is not None:
+        d["d_ffn"] = d_ffn
+    elif training_model and training_model.config.d_ffn:
+        d["d_ffn"] = training_model.config.d_ffn
     return d
 
 
@@ -132,12 +136,14 @@ def get_topology(session_id: str):
             seq_len=session.original_seq_len,
             batch_size=session.original_batch_size,
             model_name=session.original_model_name,
+            d_ffn=session.original_dff,
         ),
         "equivalent_topology": _topo_with_model(
             session.equivalent_topology, session.equivalent_training_model,
             seq_len=session.equivalent_seq_len,
             batch_size=session.equivalent_batch_size,
             model_name=session.original_model_name,  # model is the same, just different topo
+            d_ffn=session.equivalent_dff,
         ),
         "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
         "equivalent_training_model": session.equivalent_training_model.model_dump() if session.equivalent_training_model else None,
@@ -189,9 +195,10 @@ def estimate_metrics():
     H = int(data.get("hidden_dim", cfg["hidden_dim"]))
     S = int(data.get("seq_len", _est._SEQ_LEN))
     B = int(data.get("total_batch", _est._TOTAL_BATCH))
+    dff_val = int(data.get("d_ffn", 14336))
     a = float(data.get("quant_coeff", _est._QUANT_COEFF))
 
-    flops = _est._estimate_flops(L, H, S, B, dp, tp, pp)
+    flops = _est._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
     hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
     dp_comm = _est._estimate_dp_comm_gb(L, H, dp)
     tp_comm = _est._estimate_tp_comm_gb(L, H, S, B, pp)
@@ -758,6 +765,7 @@ def workflow_step1(session_id: str):
     A = data.get("A", 32)
     S = data.get("S", 2048)
     B = data.get("B", 32)
+    dff = data.get("dff", 14336)
     strategy = data.get("strategy", "min_equiv")
 
     # 1. Guardrail validation (silent — no workflow node)
@@ -796,6 +804,7 @@ def workflow_step1(session_id: str):
         "num_layers": L,
         "d_model": H,
         "num_heads": A,
+        "d_ffn": dff,
         "pp": pp,
         "is_equivalent": False,
     }
@@ -810,16 +819,22 @@ def workflow_step1(session_id: str):
     eq_pp = max(1, min(pp - 1, 3)) if pp > 3 else pp
     eq_dp = max(1, dp // 4) if dp > 1 else 1
     eq_L = L if pp <= 3 else (L // pp) * 3
+    eq_B = max(1, int(B * eq_dp / dp)) if dp > 1 else B
     session.equivalent_params = TopologyParams(
         device_type=DeviceType(device_type_str) if device_type_str in [d.value for d in DeviceType] else DeviceType.A3,
         dp=eq_dp, tp=tp, pp=eq_pp,
     )
     # Store model params for equivalent model
     session._equiv_model_params = {
-        "L": eq_L, "H": H, "A": A, "S": S, "B": B,
+        "L": eq_L, "H": H, "A": A, "S": S, "B": eq_B, "dff": dff,
         "strategy": strategy,
         "L_orig": L,  # original layer count for SSE formula display
+        "B_orig": B,  # original batch size for SSE formula display
     }
+    session.original_dff = dff
+    session.original_batch_size = B
+    session.equivalent_batch_size = eq_B
+    session.equivalent_dff = dff  # dff unchanged between original and equivalent
 
     session.step = "params_collected"
     session_manager.save_session(session)
@@ -875,6 +890,8 @@ def workflow_step2_stream(session_id: str):
     A_val = model_meta.get("A", 32)
     S_val = model_meta.get("S", 2048)
     B_val = model_meta.get("B", 32)
+    B_orig = model_meta.get("B_orig", B_val)
+    dff_val = model_meta.get("dff", 14336)
     L_orig = model_meta.get("L_orig", eq_L)  # fallback to eq_L if not stored
     strategy = model_meta.get("strategy", "min_equiv")
     strategy_label = "最小集群等效" if strategy == "min_equiv" else ("单卡极限等效" if strategy == "single_card_extreme" else strategy)
@@ -890,7 +907,7 @@ def workflow_step2_stream(session_id: str):
             f"▸ 等效策略: {strategy_label} ({strategy})",
             f"  原始组网  {orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}  →  {npu_orig} NPU",
             f"  等效组网  {eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}  →  {npu_eq} NPU",
-            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  S={S_val}  B={B_val}",
+            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  dff={dff_val}  S={S_val}  B={B_orig}  →  B_eq={B_val}",
             f"  NPU 压缩比  {npu_orig} : {npu_eq}  ≈  {comp_ratio} : 1",
         ]
         for line in lines_strategy:
@@ -901,7 +918,7 @@ def workflow_step2_stream(session_id: str):
         # ═══ Phase 2: 指标分析 ═══
         h2 = H_val * H_val
         s2 = S_val * S_val
-        flops_per_card = (72 * B_val * S_val * h2 + 12 * B_val * s2 * H_val) / tp * L_orig / pp
+        flops_per_card = (6 * B_orig * S_val * L_orig * H_val / orig_dp * pp * tp) * (4 * H_val + 3 * dff_val + 2 * S_val)
         flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
 
         # HBM: params_per_card × opt_bytes + activations
@@ -917,8 +934,8 @@ def workflow_step2_stream(session_id: str):
 
         lines_metrics = [
             f"▸ 单卡计算量 (FLOPs)",
-            f"  FLOPs = (72·B·S·H² + 12·B·S²·H) / TP × L/PP",
-            f"  = (72×{B_val}×{S_val}×{H_val}² + 12×{B_val}×{S_val}²×{H_val}) / {tp} × {L_orig}/{pp}",
+            f"  FLOPs = (6·B·S·L·H/DP·PP·TP) × (4·H + 3·dff + 2·S)",
+            f"  = (6×{B_orig}×{S_val}×{L_orig}×{H_val}/{orig_dp}×{pp}×{tp}) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
             f"  ≈ {flops_str} FLOPs",
             f"▸ 显存占用 (HBM)",
             f"  HBM = (params × opt_bytes + activations) / 1e9",
@@ -949,6 +966,7 @@ def workflow_step2_stream(session_id: str):
             f"  PP 降维:  PP_eq = min(PP-1, 3) = {eq_pp}",
             f"  DP 缩减:  DP_eq = max(DP/4, 1) = {eq_dp}",
             f"  层数调整:  L_eq = (L/PP) × PP_eq = ({L_orig}/{pp}) × {eq_pp} = {eq_L}",
+            f"  批次缩减:  B_eq = B × eq_dp/dp = {B_orig}×{eq_dp}/{orig_dp} ≈ {B_val}",
             f"▸ 等效结果:  {npu_orig} NPU → {npu_eq} NPU  (压缩 {comp_ratio}:1)",
         ]
         for line in lines_formula:
@@ -995,6 +1013,7 @@ def workflow_step3(session_id: str):
         "num_layers": model_meta.get("L", 24),
         "d_model": model_meta.get("H", 4096),
         "num_heads": model_meta.get("A", 32),
+        "d_ffn": model_meta.get("dff", 14336),
         "pp": eq_params.pp,
         "is_equivalent": True,
     }

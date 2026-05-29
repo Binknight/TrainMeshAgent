@@ -2554,6 +2554,18 @@
                                         />
                                     </div>
                                     <div class="workflow-param-row">
+                                        <label>dff</label>
+                                        <input
+                                            id="wf-orig-model-dff"
+                                            type="number"
+                                            value="14336"
+                                            min="1"
+                                            max="131072"
+                                            step="64"
+                                            disabled
+                                        />
+                                    </div>
+                                    <div class="workflow-param-row">
                                         <label>S</label>
                                         <input
                                             id="wf-orig-model-s"
@@ -4038,6 +4050,7 @@
                 var origA = document.getElementById("wf-orig-model-a").value;
                 var origS = document.getElementById("wf-orig-model-s").value;
                 var origB = document.getElementById("wf-orig-model-b").value;
+                var origDff = document.getElementById("wf-orig-model-dff").value;
                 var strategy =
                     document.getElementById("wf-equiv-strategy").value;
                 closeWorkflowParams();
@@ -4056,6 +4069,7 @@
                         A: parseInt(origA),
                         S: parseInt(origS),
                         B: parseInt(origB),
+                        dff: parseInt(origDff),
                         strategy: strategy,
                     });
                 } else {
@@ -4080,12 +4094,15 @@
                         origS +
                         ", B=" +
                         origB +
+                        ", dff=" +
+                        origDff +
                         " | 等效策略: " +
                         strategy;
                     sendMessage(msg, {
                         original_model_name: origModelName,
                         original_seq_len: parseInt(origS) || 2048,
                         original_batch_size: parseInt(origB) || 32,
+                        original_dff: parseInt(origDff) || 14336,
                         strategy: strategy,
                     });
                 }
