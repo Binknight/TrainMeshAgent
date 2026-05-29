@@ -24,9 +24,18 @@ _TOTAL_BATCH = 32
 _QUANT_COEFF = 1
 
 
-def _estimate_flops(L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int) -> float:
+def _estimate_flops_old(
+    L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int
+) -> float:
     """FLOPs = [(72*B*S*H^2 + 12*B*S^2*H) / TP] * L/PP"""
     return ((72 * B * S * H**2 + 12 * B * S**2 * H) / tp) * L / pp
+
+
+def _estimate_flops(
+    L: int, H: int, S: int, B: int, dff: int, dp: int, tp: int, pp: int
+) -> float:
+    """FLOPs = (6*B*S*L*H/DP*PP*TP) * (4*H + 3*dff + 2*S)"""
+    return (6 * B * S * L * H / dp * pp * tp) * (4 * H + 3 * dff + 2 * S)
 
 
 def _estimate_hbm_gb(
@@ -118,6 +127,10 @@ class MeshProfilerSkill(BaseSkill):
                             "type": "integer",
                             "description": "隐藏维度，默认使用设备类型对应的配置值",
                         },
+                        "d_ffn": {
+                            "type": "integer",
+                            "description": "FFN 隐藏层维度，默认 14336",
+                        },
                     },
                     "required": [
                         "topology_name",
@@ -191,9 +204,14 @@ class MeshProfilerSkill(BaseSkill):
             )
             S = int(arguments.get("seq_len", _SEQ_LEN))
             B = int(arguments.get("total_batch", _TOTAL_BATCH))
+            dff_val = int(
+                arguments.get("d_ffn")
+                or (training_model.config.d_ffn if training_model else None)
+                or 14336
+            )
             a = float(arguments.get("quant_coeff", _QUANT_COEFF))
 
-            flops = _estimate_flops(L, H, S, B, dp, tp, pp)
+            flops = _estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
             hbm = _estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
             dp_comm = _estimate_dp_comm_gb(L, H, dp)
             tp_comm = _estimate_tp_comm_gb(L, H, S, B, pp)

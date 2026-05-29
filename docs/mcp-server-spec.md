@@ -83,6 +83,7 @@
 | | `num_layers` | integer | ✅ | Transformer 层数 L |
 | | `hidden_dim` | integer | ✅ | 隐藏层维度 H |
 | | `num_heads` | integer | ✅ | 注意力头数 A |
+| | `d_ffn` | integer | ✅ | FFN 隐藏层维度，默认 14336 |
 | **运行时参数** | `seq_len` | integer | ✅ | 序列长度 S |
 | | `batch_size` | integer | ✅ | 总批次大小 B |
 
@@ -109,6 +110,7 @@
     "num_layers": 64,
     "hidden_dim": 4096,
     "num_heads": 32,
+    "d_ffn": 14336,
     "seq_len": 2048,
     "batch_size": 32
   },
@@ -147,8 +149,9 @@
     "num_layers": 24,
     "hidden_dim": 4096,
     "num_heads": 32,
+    "d_ffn": 14336,
     "seq_len": 2048,
-    "batch_size": 32
+    "batch_size": 8
   },
   "simulation_params": {
     "script_path": "/opt/ascend/script/pretrain_xxxx.sh",
