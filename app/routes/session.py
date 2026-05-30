@@ -199,7 +199,7 @@ def estimate_metrics():
     a = float(data.get("quant_coeff", _est._QUANT_COEFF))
 
     flops = _est._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
-    hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
+    hbm = _est._estimate_hbm_gb(L, H, dff_val, tp, pp)
     dp_comm = _est._estimate_dp_comm_gb(L, H, dp)
     tp_comm = _est._estimate_tp_comm_gb(L, H, S, B, pp)
     pp_comm = _est._estimate_pp_comm_mb(H, S, B)
@@ -921,11 +921,9 @@ def workflow_step2_stream(session_id: str):
         flops_per_card = (6 * B_orig * S_val * L_orig * H_val / (orig_dp * pp * tp)) * (4 * H_val + 3 * dff_val + 2 * S_val)
         flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
 
-        # HBM: params_per_card × opt_bytes + activations
-        # opt_bytes = 16 (fp16 weights 2B + fp32 Adam m/v 8B + fp32 master 4B + fp16 grads 2B)
-        params_per_card = L_orig * (12 * h2 + 4 * H_val) / (tp * pp)
-        activations_bytes = B_val * S_val * H_val * L_orig / pp * 2  # fp16 activations
-        hbm_gb = (params_per_card * 16 + activations_bytes) / 1e9
+        # HBM: L/PP * ((4*H^2 + 3*H*dff)/TP + 2*H) / 1e9
+        params_per_card = L_orig / pp * (4 * h2 + 3 * H_val * dff_val) / tp
+        hbm_gb = L_orig / pp * ((4 * h2 + 3 * H_val * dff_val) / tp + 2 * H_val) / 1e9
 
         # Communication (bidirectional all-reduce, fp16)
         tp_comm = L_orig / pp * 32 * B_val * S_val * H_val / 1e9  # GB/micro-step
@@ -938,11 +936,9 @@ def workflow_step2_stream(session_id: str):
             f"  = (6×{B_orig}×{S_val}×{L_orig}×{H_val}/({orig_dp}×{pp}×{tp})) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
             f"  ≈ {flops_str} FLOPs",
             f"▸ 显存占用 (HBM)",
-            f"  HBM = (params × opt_bytes + activations) / 1e9",
-            f"  params = L·(12H²+4H)/(TP·PP) = {L_orig}×({12}×{H_val}²+{4}×{H_val})/({tp}×{pp})",
-            f"  opt_bytes = 16B  (fp16 w+g + fp32 Adam m,v + fp32 master)",
-            f"  activations = B·S·H·L/PP × 2B = {B_val}×{S_val}×{H_val}×{L_orig}/{pp} × 2",
-            f"  HBM ≈ {hbm_gb:.1f} GB",
+            f"  HBM = L/PP × ((4·H² + 3·H·dff)/TP + 2·H) / 1e9",
+            f"  = {L_orig}/{pp} × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val}) / 1e9",
+            f"  ≈ {hbm_gb:.1f} GB",
             f"▸ 通信流量 (GB / step)",
             f"  TP 通信 = L/PP · 32·B·S·H / 1e9",
             f"  = {L_orig}/{pp} × 32 × {B_val} × {S_val} × {H_val} / 1e9",

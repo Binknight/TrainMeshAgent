@@ -38,7 +38,7 @@ def _estimate_flops(
     return (6 * B * S * L * H / (dp * pp * tp)) * (4 * H + 3 * dff + 2 * S)
 
 
-def _estimate_hbm_gb(
+def _estimate_hbm_gb_old(
     L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int, a: float = 1
 ) -> float:
     """HBM = [L*(12*H^2+4H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4H)/(TP*PP)] * a / 1e9"""
@@ -47,6 +47,11 @@ def _estimate_hbm_gb(
     term2 = B * S * H * L / pp
     term3 = param_term / (tp * pp)
     return (term1 + term2 + term3) * a / 1e9
+
+
+def _estimate_hbm_gb(L: int, H: int, dff: int, tp: int, pp: int) -> float:
+    """HBM = L/PP * ((4*H^2 + 3*H*dff)/TP + 2*H) / 1e9"""
+    return L / pp * ((4 * H**2 + 3 * H * dff) / tp + 2 * H) / 1e9
 
 
 def _estimate_dp_comm_gb_old(L: int, H: int, tp: int, pp: int) -> float:
@@ -212,7 +217,7 @@ class MeshProfilerSkill(BaseSkill):
             a = float(arguments.get("quant_coeff", _QUANT_COEFF))
 
             flops = _estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
-            hbm = _estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
+            hbm = _estimate_hbm_gb(L, H, dff_val, tp, pp)
             dp_comm = _estimate_dp_comm_gb(L, H, dp)
             tp_comm = _estimate_tp_comm_gb(L, H, S, B, pp)
             pp_comm = _estimate_pp_comm_mb(H, S, B)
