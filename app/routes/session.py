@@ -27,6 +27,8 @@ from app.models.schemas import (
 from app.skills.base import SkillContext, SkillResult
 from app.skills.registry import registry
 
+_estimator = importlib.import_module("app.skills.training-mesh-profiler-skill")
+
 session_bp = Blueprint("session", __name__, url_prefix="/api/session")
 
 
@@ -188,21 +190,18 @@ def estimate_metrics():
     except (KeyError, ValueError) as e:
         return {"error": f"invalid or missing parameter: {e}"}, 400
 
-    _est = importlib.import_module("app.skills.training-mesh-profiler-skill")
-
-    cfg = _est._MODEL_CONFIG[device_type]
+    cfg = _estimator._MODEL_CONFIG[device_type]
     L = int(data.get("num_layers", cfg["num_layers"]))
     H = int(data.get("hidden_dim", cfg["hidden_dim"]))
-    S = int(data.get("seq_len", _est._SEQ_LEN))
-    B = int(data.get("total_batch", _est._TOTAL_BATCH))
+    S = int(data.get("seq_len", _estimator._SEQ_LEN))
+    B = int(data.get("total_batch", _estimator._TOTAL_BATCH))
     dff_val = int(data.get("d_ffn", 14336))
-    a = float(data.get("quant_coeff", _est._QUANT_COEFF))
 
-    flops = _est._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
-    hbm = _est._estimate_hbm_gb(L, H, dff_val, tp, pp)
-    dp_comm = _est._estimate_dp_comm_gb(L, H, dp)
-    tp_comm = _est._estimate_tp_comm_gb(L, H, S, B, pp)
-    pp_comm = _est._estimate_pp_comm_mb(H, S, B)
+    flops = _estimator._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
+    hbm = _estimator._estimate_hbm_gb(L, H, dff_val, tp, pp)
+    dp_comm = _estimator._estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
+    tp_comm = _estimator._estimate_tp_comm_gb(L, H, S, B, pp)
+    pp_comm = _estimator._estimate_pp_comm_mb(H, S, B)
 
     cards = []
     for rank in range(total_nodes):
@@ -916,19 +915,13 @@ def workflow_step2_stream(session_id: str):
         yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'strategy', 'section_done': True, 'line': ''})}\n\n"
 
         # ═══ Phase 2: 指标分析 ═══
-        h2 = H_val * H_val
-        s2 = S_val * S_val
-        flops_per_card = (6 * B_orig * S_val * L_orig * H_val / (orig_dp * pp * tp)) * (4 * H_val + 3 * dff_val + 2 * S_val)
+        flops_per_card = _estimator._estimate_flops(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp)
         flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
 
-        # HBM: L/PP * ((4*H^2 + 3*H*dff)/TP + 2*H) / 1e9
-        params_per_card = L_orig / pp * (4 * h2 + 3 * H_val * dff_val) / tp
-        hbm_gb = L_orig / pp * ((4 * h2 + 3 * H_val * dff_val) / tp + 2 * H_val) / 1e9
-
-        # Communication (bidirectional all-reduce, fp16)
-        tp_comm = L_orig / pp * 32 * B_val * S_val * H_val / 1e9  # GB/micro-step
-        dp_comm = 4 * params_per_card / 1e9  # GB/step
-        pp_comm = 4 * B_val * S_val * H_val / 1e9  # GB/step (per boundary)
+        hbm_gb = _estimator._estimate_hbm_gb(L_orig, H_val, dff_val, tp, pp)
+        tp_comm = _estimator._estimate_tp_comm_gb(L_orig, H_val, S_val, B_orig, pp)
+        dp_comm = _estimator._estimate_dp_comm_gb(L_orig, H_val, dff_val, orig_dp, tp, pp)
+        pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, B_orig)
 
         lines_metrics = [
             f"▸ 单卡计算量 (FLOPs)",
@@ -940,15 +933,15 @@ def workflow_step2_stream(session_id: str):
             f"  = {L_orig}/{pp} × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val}) / 1e9",
             f"  ≈ {hbm_gb:.1f} GB",
             f"▸ 通信流量 (GB / step)",
-            f"  TP 通信 = L/PP · 32·B·S·H / 1e9",
-            f"  = {L_orig}/{pp} × 32 × {B_val} × {S_val} × {H_val} / 1e9",
+            f"  TP 通信 = L/PP * 15 * B * S * H / 1e9",
+            f"  = {L_orig}/{pp} * 15 * {B_val} * {S_val} * {H_val} / 1e9",
             f"  ≈ {tp_comm:.2f} GB/micro-step  (TP 全规约)",
-            f"  DP 通信 = 4 × params / 1e9  (梯度 all-reduce)",
-            f"  = 4 × {params_per_card:.0f} / 1e9",
+            f"  DP 通信 = 2*(DP-1)/DP * 4 * L/PP * (4*H^2/TP + 3*H*dff/TP) / 1e9",
+            f"  = 2*({orig_dp}-1)/{orig_dp} * 4 * {L_orig}/{pp} * (4*{H_val}^2/{tp} + 3*{H_val}*{dff_val}/{tp}) / 1e9",
             f"  ≈ {dp_comm:.2f} GB/step",
-            f"  PP 通信 = 4·B·S·H / 1e9  (激活值 send/recv)",
-            f"  = 4 × {B_val} × {S_val} × {H_val} / 1e9",
-            f"  ≈ {pp_comm:.2f} GB/step  (per PP boundary)",
+            f"  PP 通信 = 4·B·S·H / 1e6  (激活值 send/recv)",
+            f"  = 4 × {B_val} × {S_val} × {H_val} / 1e6",
+            f"  ≈ {pp_comm:.2f} MB/micro-step  (per PP boundary)",
         ]
         for line in lines_metrics:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'line': line})}\n\n"

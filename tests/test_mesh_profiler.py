@@ -21,6 +21,7 @@ _estimate_flops_old = _skill._estimate_flops_old
 _estimate_hbm_gb = _skill._estimate_hbm_gb
 _estimate_hbm_gb_old = _skill._estimate_hbm_gb_old
 _estimate_dp_comm_gb = _skill._estimate_dp_comm_gb
+_estimate_dp_comm_gb_old_lh = _skill._estimate_dp_comm_gb_old_lh
 _estimate_tp_comm_gb = _skill._estimate_tp_comm_gb
 _estimate_pp_comm_mb = _skill._estimate_pp_comm_mb
 _MODEL_CONFIG = _skill._MODEL_CONFIG
@@ -65,7 +66,8 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     flops_old = _estimate_flops_old(L, H, S, B_val, dp, tp, pp)
     hbm = _estimate_hbm_gb(L, H, dff_val, tp, pp)
     hbm_old = _estimate_hbm_gb_old(L, H, S, B_val, dp, tp, pp, a)
-    dp_comm = _estimate_dp_comm_gb(L, H, dp)
+    dp_comm = _estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
+    dp_comm_old = _estimate_dp_comm_gb_old_lh(L, H, dp)
     tp_comm = _estimate_tp_comm_gb(L, H, S, B_val, pp)
     pp_comm = _estimate_pp_comm_mb(H, S, B_val)
 
@@ -121,9 +123,11 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     print(f"       = {hbm_old:.4f} GB")
 
     print(f"\n  -- Communication --")
-    print(f"  DP comm = 2*(DP-1)/DP * 12*L*H^2 / 1e9")
+    print(f"  DP comm = 2*(DP-1)/DP * 4 * L/PP * (4*H^2/TP + 3*H*dff/TP) / 1e9")
     print(f"          = {dp_comm:.4f} GB/step")
-    print(f"  TP comm = L/PP * 32*B*S*H / 1e9")
+    print(f"  (OLD)   = 2*(DP-1)/DP * 12*L*H^2 / 1e9")
+    print(f"          = {dp_comm_old:.4f} GB/step")
+    print(f"  TP comm = L/PP * 15*B*S*H / 1e9")
     print(f"          = {tp_comm:.2f} GB/micro-step")
     print(f"  PP comm = 4*B*S*H / 1e6")
     print(f"          = {pp_comm:.4f} MB/micro-step")
