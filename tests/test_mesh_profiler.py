@@ -19,6 +19,7 @@ _skill = importlib.import_module("app.skills.training-mesh-profiler-skill")
 _estimate_flops = _skill._estimate_flops
 _estimate_flops_old = _skill._estimate_flops_old
 _estimate_hbm_gb = _skill._estimate_hbm_gb
+_estimate_hbm_gb_old = _skill._estimate_hbm_gb_old
 _estimate_dp_comm_gb = _skill._estimate_dp_comm_gb
 _estimate_tp_comm_gb = _skill._estimate_tp_comm_gb
 _estimate_pp_comm_mb = _skill._estimate_pp_comm_mb
@@ -62,7 +63,8 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     # -- Compute --
     flops = _estimate_flops(L, H, S, B_val, dff_val, dp, tp, pp)
     flops_old = _estimate_flops_old(L, H, S, B_val, dp, tp, pp)
-    hbm = _estimate_hbm_gb(L, H, S, B_val, dp, tp, pp, a)
+    hbm = _estimate_hbm_gb(L, H, dff_val, tp, pp)
+    hbm_old = _estimate_hbm_gb_old(L, H, S, B_val, dp, tp, pp, a)
     dp_comm = _estimate_dp_comm_gb(L, H, dp)
     tp_comm = _estimate_tp_comm_gb(L, H, S, B_val, pp)
     pp_comm = _estimate_pp_comm_mb(H, S, B_val)
@@ -103,11 +105,20 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     print(f"        = (72*{B_val}*{S}*{H}^2 + 12*{B_val}*{S}^2*{H}) / {tp} * {L}/{pp}")
     print(f"        = {flops_old:.4e} FLOPs/card")
 
-    print(f"\n  -- HBM --")
-    print(
-        f"  HBM = [L*(12*H^2+4*H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4*H)/(TP*PP)] * a / 1e9"
-    )
-    print(f"       = {hbm:.4f} GB")
+    print(f"\n  -- NEW HBM Formula --")
+    print(f"  HBM = L/PP * ((4*H^2 + 3*H*dff)/TP + 2*H) / 1e9")
+    term_a = 4 * H**2 + 3 * H * dff_val
+    term_b = term_a / tp
+    term_c = term_b + 2 * H
+    print(f"      = {L}/{pp} * ((4*{H}^2 + 3*{H}*{dff_val})/{tp} + 2*{H}) / 1e9")
+    print(f"      = {L}/{pp} * (({4*H**2} + {3*H*dff_val})/{tp} + {2*H}) / 1e9")
+    print(f"      = {L}/{pp} * ({term_a}/{tp} + {2*H}) / 1e9")
+    print(f"      = {L}/{pp} * ({term_b:.2f} + {2*H}) / 1e9")
+    print(f"      = {L}/{pp} * {term_c:.2f} / 1e9")
+    print(f"      = {hbm:.4f} GB")
+    print(f"\n  -- OLD HBM Formula (reference) --")
+    print(f"  HBM = [L*(12*H^2+4*H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4*H)/(TP*PP)] * a / 1e9")
+    print(f"       = {hbm_old:.4f} GB")
 
     print(f"\n  -- Communication --")
     print(f"  DP comm = 2*(DP-1)/DP * 12*L*H^2 / 1e9")
