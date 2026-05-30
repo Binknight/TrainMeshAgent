@@ -26,6 +26,9 @@ async function fetchEstimates(
   side,
   numLayers,
   hiddenDim,
+  dFfn,
+  seqLen,
+  batchSize,
 ) {
   var ctrl = new AbortController();
   var sideKey = side + "_" + Date.now();
@@ -44,6 +47,9 @@ async function fetchEstimates(
     };
     if (numLayers != null) body.num_layers = numLayers;
     if (hiddenDim != null) body.hidden_dim = hiddenDim;
+    if (dFfn != null) body.d_ffn = dFfn;
+    if (seqLen != null) body.seq_len = seqLen;
+    if (batchSize != null) body.total_batch = batchSize;
 
     var resp = await fetch(API + "/session/estimate", {
       method: "POST",
@@ -3568,11 +3574,17 @@ async function loadMeshData(topoData) {
       meshModelOrig = {
         num_layers: topoData.num_layers,
         hidden_dim: topoData.hidden_dim,
+        d_ffn: topoData.d_ffn,
+        seq_len: topoData.seq_len,
+        batch_size: topoData.batch_size,
       };
     } else {
       meshModelEq = {
         num_layers: topoData.num_layers,
         hidden_dim: topoData.hidden_dim,
+        d_ffn: topoData.d_ffn,
+        seq_len: topoData.seq_len,
+        batch_size: topoData.batch_size,
       };
     }
   }
@@ -3586,24 +3598,40 @@ async function loadMeshData(topoData) {
   }
   if (typeof checkSimReady === "function") checkSimReady();
 
-  // Skip estimate fetch if already populated (prevent duplicate calls on re-entry)
+  // Skip estimate fetch if already populated, or if model params not yet available
+  // (loadModelData will trigger _refetchMeshEstimate with full params later)
   var existing = isOrig ? meshEstimateOrig : meshEstimateEq;
-  if (Object.keys(existing).length === 0 || existing[0] == null) {
+  var modelSide = isOrig ? modelOriginal : modelEquivalent;
+  var meshModel = isOrig ? meshModelOrig : meshModelEq;
+  var numLayers =
+    topoData.num_layers != null
+      ? topoData.num_layers
+      : (meshModel && meshModel.num_layers) ||
+        (modelSide && modelSide.config
+          ? modelSide.config.num_layers
+          : null);
+  var hiddenDim =
+    topoData.hidden_dim != null
+      ? topoData.hidden_dim
+      : (meshModel && meshModel.hidden_dim) ||
+        (modelSide && modelSide.config ? modelSide.config.d_model : null);
+  var dFfn =
+    topoData.d_ffn != null
+      ? topoData.d_ffn
+      : (meshModel && meshModel.d_ffn) ||
+        (modelSide && modelSide.config ? modelSide.config.d_ffn : null);
+  var seqLen =
+    topoData.seq_len != null
+      ? topoData.seq_len
+      : (meshModel && meshModel.seq_len) || null;
+  var batchSize =
+    topoData.batch_size != null
+      ? topoData.batch_size
+      : (meshModel && meshModel.batch_size) || null;
+
+  var hasModelParams = numLayers != null;
+  if (hasModelParams && (Object.keys(existing).length === 0 || existing[0] == null)) {
     try {
-      var modelSide = isOrig ? modelOriginal : modelEquivalent;
-      var meshModel = isOrig ? meshModelOrig : meshModelEq;
-      var numLayers =
-        topoData.num_layers != null
-          ? topoData.num_layers
-          : (meshModel && meshModel.num_layers) ||
-            (modelSide && modelSide.config
-              ? modelSide.config.num_layers
-              : null);
-      var hiddenDim =
-        topoData.hidden_dim != null
-          ? topoData.hidden_dim
-          : (meshModel && meshModel.hidden_dim) ||
-            (modelSide && modelSide.config ? modelSide.config.d_model : null);
       var estimates = await fetchEstimates(
         deviceType,
         totalNodes,
@@ -3613,6 +3641,9 @@ async function loadMeshData(topoData) {
         side,
         numLayers,
         hiddenDim,
+        dFfn,
+        seqLen,
+        batchSize,
       );
       if (isOrig) {
         meshEstimateOrig = estimates;
@@ -4508,6 +4539,9 @@ function loadModelData(modelData, role) {
       meshModelOrig = {
         num_layers: modelData.config.num_layers || modelData.layers_count,
         hidden_dim: modelData.config.d_model,
+        d_ffn: modelData.config.d_ffn,
+        seq_len: modelData.seq_len,
+        batch_size: modelData.batch_size,
       };
     }
     // If mesh already loaded, re-fetch estimates with correct model params
@@ -4518,6 +4552,9 @@ function loadModelData(modelData, role) {
       meshModelEq = {
         num_layers: modelData.config.num_layers || modelData.layers_count,
         hidden_dim: modelData.config.d_model,
+        d_ffn: modelData.config.d_ffn,
+        seq_len: modelData.seq_len,
+        batch_size: modelData.batch_size,
       };
     }
     if (meshEquivalent) _refetchMeshEstimate("eq");
@@ -4539,6 +4576,9 @@ async function _refetchMeshEstimate(side) {
       side,
       model.num_layers,
       model.hidden_dim,
+      model.d_ffn,
+      model.seq_len,
+      model.batch_size,
     );
     if (side === "orig") {
       meshEstimateOrig = estimates;

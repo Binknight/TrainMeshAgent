@@ -838,10 +838,16 @@ def workflow_step1(session_id: str):
     session.step = "params_collected"
     session_manager.save_session(session)
 
-    # Build response with topology/model as dicts
+    # Build response with topology/model as dicts (enrich mesh with model + runtime params)
+    orig_model_dict = orig_model.model_dump() if hasattr(orig_model, "model_dump") else orig_model
+    orig_model_dict["seq_len"] = S
+    orig_model_dict["batch_size"] = B
     return jsonify({
-        "original_mesh": orig_mesh.model_dump() if hasattr(orig_mesh, "model_dump") else orig_mesh,
-        "original_model": orig_model.model_dump() if hasattr(orig_model, "model_dump") else orig_model,
+        "original_mesh": _topo_with_model(
+            orig_mesh, orig_model,
+            seq_len=S, batch_size=B, model_name=model_name, d_ffn=dff,
+        ),
+        "original_model": orig_model_dict,
         "equivalent_params": session.equivalent_params.model_dump() if hasattr(session.equivalent_params, "model_dump") else session.equivalent_params,
         "step": session.step,
     })
@@ -1016,8 +1022,15 @@ def workflow_step3(session_id: str):
     session.step = "equiv_generated"
     session_manager.save_session(session)
 
+    eq_model_dict = eq_model.model_dump() if hasattr(eq_model, "model_dump") else eq_model
+    eq_model_dict["seq_len"] = model_meta.get("S")
+    eq_model_dict["batch_size"] = model_meta.get("B")
     return jsonify({
-        "equivalent_mesh": eq_mesh.model_dump() if hasattr(eq_mesh, "model_dump") else eq_mesh,
-        "equivalent_model": eq_model.model_dump() if hasattr(eq_model, "model_dump") else eq_model,
+        "equivalent_mesh": _topo_with_model(
+            eq_mesh, eq_model,
+            seq_len=model_meta.get("S"), batch_size=model_meta.get("B"),
+            model_name=model_meta.get("model_name"), d_ffn=model_meta.get("dff"),
+        ),
+        "equivalent_model": eq_model_dict,
         "step": session.step,
     })
