@@ -59,16 +59,23 @@ def _estimate_dp_comm_gb_old(L: int, H: int, tp: int, pp: int) -> float:
     return 8 * L * (4 * H**2 + 3 * H * 4 * H) / (tp * pp) / 1e9
 
 
-def _estimate_dp_comm_gb(L: int, H: int, dp: int) -> float:
+def _estimate_dp_comm_gb_old_lh(L: int, H: int, dp: int) -> float:
     """DP comm = 2*(DP-1)/DP * 12*L*H^2 / 1e9"""
     if dp <= 1:
         return 0.0
     return 2 * (dp - 1) / dp * 12 * L * H**2 / 1e9
 
 
+def _estimate_dp_comm_gb(L: int, H: int, dff: int, dp: int, tp: int, pp: int) -> float:
+    """DP comm = 2*(DP-1)/DP * 4 * L/PP * (4*H^2/TP + 3*H*dff/TP) / 1e9"""
+    if dp <= 1:
+        return 0.0
+    return 2 * (dp - 1) / dp * 4 * L / pp * (4 * H**2 / tp + 3 * H * dff / tp) / 1e9
+
+
 def _estimate_tp_comm_gb(L: int, H: int, S: int, B: int, pp: int) -> float:
-    """TP comm = L/PP*32*B*S*H / 1e9  → GB/micro-step"""
-    return L / pp * 32 * B * S * H / 1e9
+    """TP comm = L/PP * 15 * B * S * H / 1e9  -> GB/micro-step"""
+    return L / pp * 15 * B * S * H / 1e9
 
 
 def _estimate_pp_comm_mb(H: int, S: int, B: int) -> float:
@@ -218,7 +225,7 @@ class MeshProfilerSkill(BaseSkill):
 
             flops = _estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
             hbm = _estimate_hbm_gb(L, H, dff_val, tp, pp)
-            dp_comm = _estimate_dp_comm_gb(L, H, dp)
+            dp_comm = _estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
             tp_comm = _estimate_tp_comm_gb(L, H, S, B, pp)
             pp_comm = _estimate_pp_comm_mb(H, S, B)
             for rank in range(total_nodes):
