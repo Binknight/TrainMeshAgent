@@ -1245,83 +1245,6 @@ function _updateDpSelect(selId, activeDp) {
 
 // ── Center Panel: independent formula card + bar chart card ──
 
-// ── Formula loading animation (glow border + staggered text reveal) ──
-function _animateFormulaLoad(cardG, textSelections, cardX, cardY, cardW, cardH) {
-  // Remove any existing glow
-  cardG.selectAll(".formula-glow-group").remove();
-
-  // Glow group
-  var glowG = cardG.insert("g", ".formula-content-group")
-    .attr("class", "formula-glow-group");
-
-  // Wide ambient glow
-  glowG.append("rect")
-    .attr("x", cardX)
-    .attr("y", cardY)
-    .attr("width", cardW)
-    .attr("height", cardH)
-    .attr("rx", 8)
-    .attr("ry", 8)
-    .attr("fill", "none")
-    .attr("stroke", "#39bae6")
-    .attr("stroke-width", 5)
-    .attr("stroke-dasharray", "6 78")
-    .attr("stroke-dashoffset", 0)
-    .attr("opacity", 0.18)
-    .attr("pointer-events", "none");
-
-  // Core bright glow
-  var glowCore = glowG.append("rect")
-    .attr("x", cardX)
-    .attr("y", cardY)
-    .attr("width", cardW)
-    .attr("height", cardH)
-    .attr("rx", 8)
-    .attr("ry", 8)
-    .attr("fill", "none")
-    .attr("stroke", "#39bae6")
-    .attr("stroke-width", 2.5)
-    .attr("stroke-dasharray", "14 78")
-    .attr("stroke-dashoffset", 0)
-    .attr("opacity", 0.8)
-    .attr("filter", "url(#flow-neon-glow)")
-    .attr("pointer-events", "none");
-
-  // Continuous flowing animation
-  function _loopGlow() {
-    glowCore.transition()
-      .duration(1000)
-      .ease(d3.easeLinear)
-      .attrTween("stroke-dashoffset", function () {
-        return d3.interpolate(0, -92);
-      })
-      .on("end", _loopGlow);
-  }
-  _loopGlow();
-
-  // Staggered text reveal
-  if (!textSelections || textSelections.length === 0) {
-    glowG.transition().duration(300).attr("opacity", 0).remove();
-    return;
-  }
-
-  textSelections.forEach(function (text, i) {
-    var isLast = i === textSelections.length - 1;
-    // Interrupt any stale transition before setting opacity and starting new one
-    text.interrupt().attr("opacity", 0);
-    var t = text
-      .transition()
-      .delay(200 + i * 150)
-      .duration(400)
-      .attr("opacity", 1);
-    if (isLast) {
-      t.on("end", function () {
-        glowG.interrupt().transition().duration(350).attr("opacity", 0).remove();
-      });
-    }
-  });
-}
-
 function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var cardG = parentG.append("g").attr("class", "formula-card-group");
   var pad = 14;
@@ -1458,7 +1381,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
         .attr("x", viewX + pad + 4)
         .attr("y", curY + 14)
         .attr("fill", "var(--text-primary)")
-        .attr("font-size", "11px")
+        .attr("font-size", "10px")
         .attr("font-family", "var(--font-mono)")
         .text(line);
       formulaTexts.push(ft);
@@ -1477,10 +1400,6 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     curY += lineH_desc + sectGap;
   });
 
-  if (!_centerPanelState.formulasCollapsed && !sessionStorage.getItem("fxAnimDone")) {
-    _animateFormulaLoad(formulaCardG, formulaTexts, viewX, viewY, viewW, formulaCardFullH);
-    sessionStorage.setItem("fxAnimDone", "1");
-  }
 
   // ═══ Bar chart card (bottom) ═══
   var effFormulaH = _centerPanelState.formulasCollapsed ? headerH : formulaCardFullH;
@@ -1616,7 +1535,6 @@ function _updateFormulaCollapse() {
     st.formulaG.attr("display", "none");
     st.toggleChev.text("▶");
     st.formulaCardRect.attr("height", st.headerH);
-    st.g.selectAll(".formula-glow-group").remove();
     if (st.barCardVisible && st.rankData) {
       st.barCardG.attr("display", null);
     }
@@ -1637,15 +1555,8 @@ function _updateFormulaCollapse() {
     st.formulaG.attr("display", null);
     st.toggleChev.text("▼");
 
-    // Animate text reveal on first expand only; subsequent expands show instantly
     if (st._formulaTexts && st._formulaTexts.length > 0) {
-      if (!sessionStorage.getItem("fxAnimDone")) {
-        var cardW = Number(st.formulaCardRect.attr("width"));
-        _animateFormulaLoad(st.g, st._formulaTexts, st.cardX, st.cardY, cardW, st.formulaCardFullH);
-        sessionStorage.setItem("fxAnimDone", "1");
-      } else {
-        st._formulaTexts.forEach(function (t) { t.interrupt().attr("opacity", 1); });
-      }
+      st._formulaTexts.forEach(function (t) { t.interrupt().attr("opacity", 1); });
     }
   }
 
@@ -2910,25 +2821,6 @@ function canvasRebuild(targetSelector) {
       .attr("flood-color", "#ff8f40")
       .attr("flood-opacity", 0.6);
 
-    // Neon glow filter for formula loading border
-    var flowFilter = defs
-      .append("filter")
-      .attr("id", _currentFilterPrefix + "flow-neon-glow")
-      .attr("x", "-50%")
-      .attr("y", "-50%")
-      .attr("width", "200%")
-      .attr("height", "200%");
-    flowFilter
-      .append("feGaussianBlur")
-      .attr("stdDeviation", "3")
-      .attr("result", "blur");
-    flowFilter
-      .append("feMerge")
-      .selectAll("feMergeNode")
-      .data(["blur", "SourceGraphic"])
-      .enter()
-      .append("feMergeNode")
-      .attr("in", function (d) { return d; });
 
     defs
       .append("style")
@@ -2982,7 +2874,7 @@ function canvasRebuild(targetSelector) {
 
       var _tH = 26,
         _gap = 10;
-      var _cardW = 380; // fixed card width, centered between topologies
+      var _cardW = 440; // fixed card width, centered between topologies
       var _availForTopos = meshWidth - _cardW - _gap * 2;
       var dimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
       var dimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
@@ -3218,7 +3110,7 @@ function canvasRebuild(targetSelector) {
       // ── Two-Part Mode: Orig + Card ──
       var _tH2 = 26,
         _gap2 = 10;
-      var _cardW2 = 380; // fixed card width
+      var _cardW2 = 440; // fixed card width
       var _origW2 = meshWidth - _cardW2 - _gap2;
       var _contentH2 = topoH - _tH2;
       var _sharedScale2 = 0.5;
@@ -3788,11 +3680,11 @@ function _appendFormulaLine(section, line) {
   }
 
   var isSectionLabel = line.indexOf("▸") === 0;
-  var fontSize = isSectionLabel ? "12px" : "11px";
+  var fontSize = isSectionLabel ? "12px" : "10px";
   var fontFamily = isSectionLabel ? "var(--font-sans)" : "var(--font-mono)";
   var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
   var fontWeight = isSectionLabel ? "600" : "400";
-  var lineH = isSectionLabel ? 20 : 16;
+  var lineH = isSectionLabel ? 20 : 14;
   var textX = cardX + (isSectionLabel ? _formulaCardPad : _formulaCardPad + 4);
 
   var textEl = contentG
@@ -3850,11 +3742,11 @@ function _replayFormulaLines() {
   var formulaTexts = [];
   lines.forEach(function (item) {
     var isSectionLabel = item.line.indexOf("▸") === 0;
-    var fontSize = isSectionLabel ? "12px" : "11px";
+    var fontSize = isSectionLabel ? "12px" : "10px";
     var fontFamily = isSectionLabel ? "var(--font-sans)" : "var(--font-mono)";
     var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
     var fontWeight = isSectionLabel ? "600" : "400";
-    var lineH = isSectionLabel ? 20 : 16;
+    var lineH = isSectionLabel ? 20 : 14;
     var textX = cardX + (isSectionLabel ? _formulaCardPad : _formulaCardPad + 4);
     var textEl = contentG
       .append("text")
