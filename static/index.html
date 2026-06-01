@@ -5806,8 +5806,9 @@
                             ["权重 (Weights)", d.weights_gb],
                             ["梯度 (Gradients)", d.gradients_gb],
                             ["优化器 (Optimizer)", d.optimizer_gb],
+                            ["∑ 模型显存", d.model_hbm_gb || (d.weights_gb + d.gradients_gb + d.optimizer_gb), true],
                             ["激活值 (Activations)", d.activations_gb],
-                            ["∑ HBM 总计", d.total_hbm_gb, true],
+                            ["∑ 全量HBM", d.total_hbm_gb],
                         ];
                         var html = '<table style="width:100%;font-size:10px"><tbody>';
                         rows.forEach(function (r) {

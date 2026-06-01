@@ -178,13 +178,30 @@ class MeshProfilerSkill(BaseSkill):
 
         if task_id and mcp:
             card_details = mcp.get_card_details(task_id)
+            # ── Enrich hbm_model_gb from hbm_detail ──
+            hbm_model_map: dict[int, float] = {}
+            try:
+                for detail in card_details:
+                    rank = detail.get("global_rank", 0)
+                    hbd = mcp.get_hbm_detail(task_id, rank)
+                    w = float(hbd.get("weights_gb", 0))
+                    g = float(hbd.get("gradients_gb", 0))
+                    o = float(hbd.get("optimizer_gb", 0))
+                    model_gb = w + g + o
+                    if model_gb > 0:
+                        hbm_model_map[rank] = model_gb
+            except Exception:
+                pass  # fall back to hbm_gb
             for detail in card_details:
+                rank = detail.get("global_rank", 0)
+                hbm_model_gb = hbm_model_map.get(rank, detail.get("hbm_gb", 0))
                 cards.append(
                     CardMetrics(
                         card_id=detail.get("card_id", ""),
-                        global_rank=detail.get("global_rank", 0),
+                        global_rank=rank,
                         flops_per_card=detail.get("flops_per_card", 0),
                         hbm_gb=detail.get("hbm_gb", 0),
+                        hbm_model_gb=hbm_model_gb,
                         tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
                         pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
                         dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
@@ -235,6 +252,7 @@ class MeshProfilerSkill(BaseSkill):
                         global_rank=rank,
                         flops_per_card=flops,
                         hbm_gb=hbm,
+                        hbm_model_gb=hbm,
                         tp_comm_gb_per_micro=tp_comm,
                         pp_comm_mb_per_micro=pp_comm,
                         dp_comm_gb_per_step=dp_comm,

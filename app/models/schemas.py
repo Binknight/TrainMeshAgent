@@ -59,7 +59,8 @@ class CardMetrics(BaseModel):
     card_id: str
     global_rank: int
     flops_per_card: float = Field(description="单卡FLOPs")
-    hbm_gb: float = Field(description="HBM占用 (GB)")
+    hbm_gb: float = Field(description="HBM总占用 (GB)")
+    hbm_model_gb: float | None = Field(default=None, description="模型显存占用 (GB) = 权重+梯度+优化器，不含激活值")
     tp_comm_gb_per_micro: float = Field(description="TP通信量 (GB/micro)")
     pp_comm_mb_per_micro: float = Field(description="PP通信量 (MB/micro)")
     dp_comm_gb_per_step: float = Field(description="DP通信量 (GB/step)")
@@ -132,6 +133,7 @@ class HbmDetail(BaseModel):
     gradients_gb: float = Field(description="梯度占用 (GB)")
     optimizer_gb: float = Field(description="优化器状态占用 (GB)")
     activations_gb: float = Field(description="激活值占用 (GB)")
+    model_hbm_gb: float = Field(description="模型显存占用 (GB) = 权重+梯度+优化器")
     total_hbm_gb: float = Field(description="HBM总占用 (GB)")
 
 

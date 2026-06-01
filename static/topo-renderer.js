@@ -339,11 +339,11 @@ function _buildTooltipBody(globalRank, metrics, isOrig, showHint) {
       isOrig,
     );
     html += _buildCompareRow(
-      "HBM",
+      "HBM(模型)",
       "GB",
       estimate,
       actual,
-      "hbm_gb",
+      "hbm_model_gb",
       null,
       globalRank,
       isOrig,
@@ -412,8 +412,10 @@ function _buildSingleTable(metrics) {
   var html = '<table class="tooltip-table">';
   html += _buildMetricRow("单卡FLOPs", formatFlops(metrics.flops_per_card), "");
   html += _buildMetricRow(
-    "HBM",
-    metrics.hbm_gb != null ? Number(metrics.hbm_gb).toFixed(2) : "—",
+    "HBM(模型)",
+    (metrics.hbm_model_gb || metrics.hbm_gb) != null
+      ? Number(metrics.hbm_model_gb || metrics.hbm_gb).toFixed(2)
+      : "—",
     "GB",
   );
   html += _buildMetricRow(
@@ -499,7 +501,7 @@ function _buildCompareRow(
       ",'flops')\">查看</a>";
   } else {
     var linkType = key.replace(/_per_micro|_per_step|_gb|_mb/g, "");
-    if (key === "hbm_gb") linkType = "hbm";
+    if (key === "hbm_model_gb") linkType = "hbm";
     else if (key === "tp_comm_gb_per_micro") linkType = "tp-comm";
     else if (key === "pp_comm_mb_per_micro") linkType = "pp-comm";
     else if (key === "dp_comm_gb_per_step") linkType = "dp-comm";
@@ -1629,7 +1631,7 @@ function _centerPanelBarRecalc() {
 
 var _BAR_METRICS = [
   { key: "flops_per_card", label: "单卡FLOPs", fmt: null, unit: "" },
-  { key: "hbm_gb", label: "HBM", fmt: null, unit: "GB" },
+  { key: "hbm_model_gb", label: "HBM(模型)", fmt: null, unit: "GB" },
   { key: "tp_comm_gb_per_micro", label: "TP通信", fmt: null, unit: "GB/micro" },
   { key: "pp_comm_mb_per_micro", label: "PP通信", fmt: null, unit: "MB/micro" },
   { key: "dp_comm_gb_per_step", label: "DP通信", fmt: null, unit: "GB/step" },
@@ -1685,7 +1687,7 @@ function _updateCenterBarChart(globalRank, side) {
 
 var _DETAIL_MAP = {
   flops_per_card: "flops",
-  hbm_gb: "hbm",
+  hbm_model_gb: "hbm",
   tp_comm_gb_per_micro: "tp-comm",
   pp_comm_mb_per_micro: "pp-comm",
   dp_comm_gb_per_step: "dp-comm",
@@ -1884,7 +1886,7 @@ function _renderDetailCharts() {
   // Position below the actual bar content
   var chartY = (st._barsBottomY || st.detailY) + 12;
 
-  var typeLabel = detailType === "flops" ? "FLOPs" : detailType === "hbm" ? "HBM" : "通信";
+  var typeLabel = detailType === "flops" ? "FLOPs" : detailType === "hbm" ? "模型显存" : "通信";
 
   if (isPieDetail && hasBoth) {
     // Horizontal layout centered in card: [Left Pie] [Legend center] [Right Pie]
@@ -2066,7 +2068,7 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
     .attr("fill", "var(--text-muted)")
     .attr("font-size", "8px")
     .attr("font-family", "var(--font-sans)")
-    .text("合计");
+    .text(detailType === "hbm" ? "模型显存" : "合计");
 
   // Tooltip flyout box
   var tipW = 90, tipH = 28;
@@ -3885,7 +3887,7 @@ var _centerPanelState = {
 function _metricTypeLabel(type) {
   var map = {
     flops: "单卡FLOPs详情",
-    hbm: "HBM 占用详情",
+    hbm: "模型显存详情",
     "tp-comm": "TP通信详情",
     "pp-comm": "PP通信详情",
     "dp-comm": "DP通信详情",
@@ -4144,27 +4146,40 @@ function _showDetailPanel(panel, tooltip, globalRank, data, metricType) {
 function _renderHbmDetailHtml(d) {
   var html = '<table class="tooltip-detail-table">';
   html += "<tr><th>参数</th><th>占用 (GB)</th><th>占比</th></tr>";
-  var items = [
+  var modelItems = [
     { label: "权重", value: d.weights_gb },
     { label: "梯度", value: d.gradients_gb },
     { label: "优化器", value: d.optimizer_gb },
-    { label: "激活", value: d.activations_gb },
   ];
-  var total = d.total_hbm_gb || 1;
-  items.forEach(function (item) {
+  var modelTotal = d.model_hbm_gb || (d.weights_gb + d.gradients_gb + d.optimizer_gb);
+  var baseTotal = modelTotal || 1;
+  modelItems.forEach(function (item) {
     html +=
       '<tr><td class="tooltip-detail-label">' +
       item.label +
       "</td><td>" +
       item.value.toFixed(2) +
       "</td><td>" +
-      ((item.value / total) * 100).toFixed(1) +
+      ((item.value / baseTotal) * 100).toFixed(1) +
       "%</td></tr>";
   });
   html +=
-    '<tr class="total-row"><td class="tooltip-detail-label">总计</td><td>' +
-    d.total_hbm_gb.toFixed(2) +
+    '<tr class="total-row"><td class="tooltip-detail-label">模型显存</td><td>' +
+    modelTotal.toFixed(2) +
     "</td><td>100%</td></tr>";
+  // Show activations and full total as supplementary info
+  if (d.activations_gb != null) {
+    html +=
+      '<tr><td class="tooltip-detail-label">激活值</td><td>' +
+      d.activations_gb.toFixed(2) +
+      "</td><td>—</td></tr>";
+  }
+  if (d.total_hbm_gb != null) {
+    html +=
+      '<tr><td class="tooltip-detail-label">全量HBM</td><td>' +
+      d.total_hbm_gb.toFixed(2) +
+      "</td><td>—</td></tr>";
+  }
   html += "</table>";
   return html;
 }
