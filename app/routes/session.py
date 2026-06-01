@@ -6,6 +6,7 @@ import logging
 import math
 import random
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, request, jsonify, Response
 
 logger = logging.getLogger(__name__)
@@ -210,6 +211,7 @@ def estimate_metrics():
             global_rank=rank,
             flops_per_card=flops,
             hbm_gb=hbm,
+            hbm_model_gb=hbm,
             tp_comm_gb_per_micro=tp_comm,
             pp_comm_mb_per_micro=pp_comm,
             dp_comm_gb_per_step=dp_comm,
@@ -245,13 +247,42 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
                     f"type={type(card_details).__name__}, len={len(card_details) if hasattr(card_details, '__len__') else 'N/A'}, "
                     f"truthy={bool(card_details)}, raw_keys={list(card_details[0].keys()) if card_details else 'EMPTY'}")
         if card_details:
+            # ── Enrich hbm_model_gb from hbm_detail (weights + gradients + optimizer) ──
+            # Fetch hbm_detail for each rank in parallel; fall back to hbm_gb if unavailable
+            hbm_model_map: dict[int, float] = {}
+            try:
+                def _fetch_hbm_model(rank: int) -> tuple[int, float | None]:
+                    detail = mcp_client.get_hbm_detail(task_id, rank)
+                    w = float(detail.get("weights_gb", 0))
+                    g = float(detail.get("gradients_gb", 0))
+                    o = float(detail.get("optimizer_gb", 0))
+                    model_gb = w + g + o
+                    return rank, model_gb if model_gb > 0 else None
+
+                with ThreadPoolExecutor(max_workers=min(16, len(card_details))) as pool:
+                    futures = {
+                        pool.submit(_fetch_hbm_model, d.get("global_rank", 0)): d.get("global_rank", 0)
+                        for d in card_details
+                    }
+                    for fut in as_completed(futures):
+                        rank, model_gb = fut.result()
+                        if model_gb is not None:
+                            hbm_model_map[rank] = model_gb
+                logger.info(f"[run_simulation] hbm_model_gb enrichment for {label}: "
+                            f"got {len(hbm_model_map)}/{len(card_details)} ranks from hbm_detail")
+            except Exception as exc:
+                logger.warning(f"[run_simulation] hbm_model_gb enrichment failed for {label}: {exc}")
+
             cards = []
             for detail in card_details:
+                rank = detail.get("global_rank", 0)
+                hbm_model_gb = hbm_model_map.get(rank, detail.get("hbm_gb", 0))
                 cards.append(CardMetrics(
                     card_id=detail.get("card_id", ""),
-                    global_rank=detail.get("global_rank", 0),
+                    global_rank=rank,
                     flops_per_card=detail.get("flops_per_card", 0),
                     hbm_gb=detail.get("hbm_gb", 0),
+                    hbm_model_gb=hbm_model_gb,
                     tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
                     pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
                     dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
@@ -261,6 +292,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
                 c0 = cards[0]
                 logger.info(f"[run_simulation] card_detail for {label}: {len(cards)} cards. "
                             f"sample[0]: flops={c0.flops_per_card}, hbm={c0.hbm_gb}, "
+                            f"hbm_model={c0.hbm_model_gb}, "
                             f"tp={c0.tp_comm_gb_per_micro}, pp={c0.pp_comm_mb_per_micro}, dp={c0.dp_comm_gb_per_step}")
             device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
             result = SimulationResult(
@@ -285,10 +317,14 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
         return round(abs(ov - ev) / max(abs(ov), eps) * 100, 2)
 
     def _per_card(cards: list[CardMetrics], attr: str) -> float:
-        return sum(getattr(c, attr) for c in cards) / max(len(cards), 1)
+        vals = [getattr(c, attr) for c in cards]
+        # Fallback: if hbm_model_gb is None, use hbm_gb
+        if attr == "hbm_model_gb":
+            vals = [v if v is not None else getattr(c, "hbm_gb") for v, c in zip(vals, cards)]
+        return sum(vals) / max(len(vals), 1)
 
     flops_diff = _diff_pct(_per_card(original.cards, "flops_per_card"), _per_card(equivalent.cards, "flops_per_card"))
-    hbm_diff = _diff_pct(_per_card(original.cards, "hbm_gb"), _per_card(equivalent.cards, "hbm_gb"))
+    hbm_diff = _diff_pct(_per_card(original.cards, "hbm_model_gb"), _per_card(equivalent.cards, "hbm_model_gb"))
     tp_diff = _diff_pct(_per_card(original.cards, "tp_comm_gb_per_micro"), _per_card(equivalent.cards, "tp_comm_gb_per_micro"))
     pp_diff = _diff_pct(_per_card(original.cards, "pp_comm_mb_per_micro"), _per_card(equivalent.cards, "pp_comm_mb_per_micro"))
     dp_diff = _diff_pct(_per_card(original.cards, "dp_comm_gb_per_step"), _per_card(equivalent.cards, "dp_comm_gb_per_step"))
@@ -655,6 +691,7 @@ def _generate_mock_hbm_detail(global_rank: int) -> HbmDetail:
         gradients_gb=gradients,
         optimizer_gb=optimizer,
         activations_gb=activations,
+        model_hbm_gb=round(weights + gradients + optimizer, 2),
         total_hbm_gb=round(weights + gradients + optimizer + activations, 2),
     )
 
@@ -697,6 +734,13 @@ def get_hbm_detail(session_id: str, side: str, global_rank: int):
 
     task_id = session.original_task_id if side == "original" else session.equivalent_task_id
     mcp_result = mcp_client.get_hbm_detail(task_id, global_rank)
+    # Ensure model_hbm_gb is populated even if MCP doesn't return it
+    if "model_hbm_gb" not in mcp_result:
+        mcp_result["model_hbm_gb"] = round(
+            float(mcp_result.get("weights_gb", 0))
+            + float(mcp_result.get("gradients_gb", 0))
+            + float(mcp_result.get("optimizer_gb", 0)), 2
+        )
     return jsonify(HbmDetail(**mcp_result).model_dump())
 
 
