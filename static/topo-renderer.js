@@ -16,6 +16,7 @@
 // ── Estimation engine — fetched from backend ──
 
 var _estimateFetchAbort = {}; // track abort controllers per side to cancel stale requests
+var _estimateInFlight = {};  // track in-flight estimate requests per side to avoid duplicate calls
 
 async function fetchEstimates(
   deviceType,
@@ -30,9 +31,16 @@ async function fetchEstimates(
   seqLen,
   batchSize,
 ) {
+  // ── Cancel any previous in-flight request for the same side ──
+  var oldCtrl = _estimateFetchAbort[side];
+  if (oldCtrl) {
+    oldCtrl.abort();
+    delete _estimateFetchAbort[side];
+  }
+
   var ctrl = new AbortController();
-  var sideKey = side + "_" + Date.now();
-  _estimateFetchAbort[sideKey] = ctrl;
+  _estimateFetchAbort[side] = ctrl;
+  _estimateInFlight[side] = true;
   var timeout = setTimeout(function () {
     ctrl.abort();
   }, 10000);
@@ -67,9 +75,10 @@ async function fetchEstimates(
     return est;
   } finally {
     clearTimeout(timeout);
-    if (_estimateFetchAbort[sideKey] === ctrl) {
-      delete _estimateFetchAbort[sideKey];
+    if (_estimateFetchAbort[side] === ctrl) {
+      delete _estimateFetchAbort[side];
     }
+    _estimateInFlight[side] = false;
   }
 }
 
@@ -3524,7 +3533,9 @@ async function loadMeshData(topoData) {
       : (meshModel && meshModel.batch_size) || null;
 
   var hasModelParams = numLayers != null;
-  if (hasModelParams && (Object.keys(existing).length === 0 || existing[0] == null)) {
+  var alreadyInFlight = _estimateInFlight[side];
+  var alreadyPopulated = Object.keys(existing).length > 0 && existing[0] != null;
+  if (hasModelParams && !alreadyInFlight && !alreadyPopulated) {
     try {
       var estimates = await fetchEstimates(
         deviceType,
@@ -3545,11 +3556,16 @@ async function loadMeshData(topoData) {
         meshEstimateEq = estimates;
       }
     } catch (e) {
-      console.warn("Estimate fetch failed, using empty estimates:", e);
-      if (isOrig) {
-        meshEstimateOrig = {};
+      // If aborted by a newer request, don't clear the estimates — the newer request will fill them
+      if (e.name === "AbortError") {
+        console.log("Estimate fetch aborted (superseded by newer request for " + side + ")");
       } else {
-        meshEstimateEq = {};
+        console.warn("Estimate fetch failed, using empty estimates:", e);
+        if (isOrig) {
+          meshEstimateOrig = {};
+        } else {
+          meshEstimateEq = {};
+        }
       }
     }
   }
