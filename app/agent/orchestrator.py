@@ -244,6 +244,7 @@ def _execute_utility_tool(
             topology_json.setdefault("num_layers", model.config.num_layers)
             topology_json.setdefault("hidden_dim", model.config.d_model)
             topology_json.setdefault("num_heads", model.config.num_heads)
+            topology_json.setdefault("d_ffn", model.config.d_ffn)
         if params:
             if params.seq_len is not None:
                 topology_json.setdefault("seq_len", params.seq_len)

@@ -95,6 +95,7 @@ ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_pp_comm;
 ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_dp_comm;
 
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS d_ffn INT;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS micro_batch_size INT;
 
 CREATE INDEX IF NOT EXISTS idx_topology_params_session ON topology_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_params_session ON simulation_params(session_id, role);

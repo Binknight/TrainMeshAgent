@@ -6,6 +6,7 @@ import logging
 import math
 import random
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, request, jsonify, Response
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,8 @@ from app.models.schemas import (
 )
 from app.skills.base import SkillContext, SkillResult
 from app.skills.registry import registry
+
+_estimator = importlib.import_module("app.skills.training-mesh-profiler-skill")
 
 session_bp = Blueprint("session", __name__, url_prefix="/api/session")
 
@@ -99,7 +102,7 @@ def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
-def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None):
+def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None):
     """Attach model config + runtime params onto a topology dict for MCP execute_task."""
     if topo is None:
         return None
@@ -114,6 +117,12 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
         d["batch_size"] = batch_size
     if model_name is not None:
         d["model_name"] = model_name
+    if d_ffn is not None:
+        d["d_ffn"] = d_ffn
+    elif training_model and training_model.config.d_ffn:
+        d["d_ffn"] = training_model.config.d_ffn
+    if micro_batch_size is not None:
+        d["micro_batch_size"] = micro_batch_size
     return d
 
 
@@ -132,12 +141,16 @@ def get_topology(session_id: str):
             seq_len=session.original_seq_len,
             batch_size=session.original_batch_size,
             model_name=session.original_model_name,
+            d_ffn=session.original_dff,
+            micro_batch_size=session.original_micro_batch,
         ),
         "equivalent_topology": _topo_with_model(
             session.equivalent_topology, session.equivalent_training_model,
             seq_len=session.equivalent_seq_len,
             batch_size=session.equivalent_batch_size,
             model_name=session.original_model_name,  # model is the same, just different topo
+            d_ffn=session.equivalent_dff,
+            micro_batch_size=session.equivalent_micro_batch,
         ),
         "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
         "equivalent_training_model": session.equivalent_training_model.model_dump() if session.equivalent_training_model else None,
@@ -182,20 +195,19 @@ def estimate_metrics():
     except (KeyError, ValueError) as e:
         return {"error": f"invalid or missing parameter: {e}"}, 400
 
-    _est = importlib.import_module("app.skills.training-mesh-profiler-skill")
-
-    cfg = _est._MODEL_CONFIG[device_type]
+    cfg = _estimator._MODEL_CONFIG[device_type]
     L = int(data.get("num_layers", cfg["num_layers"]))
     H = int(data.get("hidden_dim", cfg["hidden_dim"]))
-    S = int(data.get("seq_len", _est._SEQ_LEN))
-    B = int(data.get("total_batch", _est._TOTAL_BATCH))
-    a = float(data.get("quant_coeff", _est._QUANT_COEFF))
+    S = int(data.get("seq_len", _estimator._SEQ_LEN))
+    B = int(data.get("total_batch", _estimator._TOTAL_BATCH))
+    b_micro = int(data.get("micro_batch", _estimator._MICRO_BATCH))
+    dff_val = int(data.get("d_ffn", 14336))
 
-    flops = _est._estimate_flops(L, H, S, B, dp, tp, pp)
-    hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
-    dp_comm = _est._estimate_dp_comm_gb(L, H, dp)
-    tp_comm = _est._estimate_tp_comm_gb(L, H, S, B, pp)
-    pp_comm = _est._estimate_pp_comm_mb(H, S, B)
+    flops = _estimator._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
+    hbm = _estimator._estimate_hbm_gb(L, H, dff_val, tp, pp)
+    dp_comm = _estimator._estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
+    tp_comm = _estimator._estimate_tp_comm_gb(L, H, S, b_micro, pp)
+    pp_comm = _estimator._estimate_pp_comm_mb(H, S, b_micro)
 
     cards = []
     for rank in range(total_nodes):
@@ -204,6 +216,7 @@ def estimate_metrics():
             global_rank=rank,
             flops_per_card=flops,
             hbm_gb=hbm,
+            hbm_model_gb=hbm,
             tp_comm_gb_per_micro=tp_comm,
             pp_comm_mb_per_micro=pp_comm,
             dp_comm_gb_per_step=dp_comm,
@@ -219,61 +232,87 @@ def estimate_metrics():
     })
 
 
-def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None) -> tuple[str | None, SimulationResult | None]:
-    """Submit MCP task + run estimation profiler for a single topology. Returns (task_id, SimulationResult)."""
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, micro_batch_size=None) -> tuple[str | None, SimulationResult | None]:
+    """Submit MCP task for a single topology. Returns (task_id, SimulationResult or None if not ready)."""
     if not topo:
         return task_id_in, None
-    _est = importlib.import_module("app.skills.training-mesh-profiler-skill")
-    device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
-    cfg = _est._MODEL_CONFIG[device_type]
-    L = training_model.config.num_layers if training_model else cfg["num_layers"]
-    H = training_model.config.d_model if training_model else cfg["hidden_dim"]
-    # Use user-provided values; fall back to profiler defaults
-    S = int(seq_len) if seq_len is not None else int(_est._SEQ_LEN)
-    B = int(batch_size) if batch_size is not None else int(_est._TOTAL_BATCH)
-    a = float(_est._QUANT_COEFF)
-    dp, tp, pp = topo.dp_size, topo.tp_size, topo.pp_size
-    total_nodes = dp * tp * pp
 
     # Submit MCP task (fire-and-forget)
-    # Forward L, H, A, S, B, model_name in the topology payload for execute_task
     task_id = task_id_in
     if not task_id:
-        try:
-            topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name) or topo.model_dump()
-            task_id = mcp_client.execute_task(topo_payload, params=sim_params)
-            if not task_id:
-                logger.warning(f"[run_simulation] MCP execute_task returned empty task_id for {label}")
-        except Exception as exc:
-            logger.warning(f"[run_simulation] MCP execute_task failed for {label}: {exc}")
-            task_id = ""
+        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, micro_batch_size=micro_batch_size) or topo.model_dump()
+        task_id = mcp_client.execute_task(topo_payload, params=sim_params)
+        if not task_id:
+            raise RuntimeError(f"MCP execute_task returned empty task_id for {label}")
 
-    # Run estimation formulas
-    flops = _est._estimate_flops(L, H, S, B, dp, tp, pp)
-    hbm = _est._estimate_hbm_gb(L, H, S, B, dp, tp, pp, a)
-    dp_comm = _est._estimate_dp_comm_gb(L, H, dp)
-    tp_comm = _est._estimate_tp_comm_gb(L, H, S, B, pp)
-    pp_comm = _est._estimate_pp_comm_mb(H, S, B)
+    # Try to get card metrics from MCP (may be empty if simulation not yet complete)
+    try:
+        card_details = mcp_client.get_card_details(task_id)
+        logger.info(f"[run_simulation] card_detail for {label} (task_id={task_id}): "
+                    f"type={type(card_details).__name__}, len={len(card_details) if hasattr(card_details, '__len__') else 'N/A'}, "
+                    f"truthy={bool(card_details)}, raw_keys={list(card_details[0].keys()) if card_details else 'EMPTY'}")
+        if card_details:
+            # ── Enrich hbm_model_gb from hbm_detail (weights + gradients + optimizer) ──
+            # Fetch hbm_detail for each rank in parallel; fall back to hbm_gb if unavailable
+            hbm_model_map: dict[int, float] = {}
+            try:
+                def _fetch_hbm_model(rank: int) -> tuple[int, float | None]:
+                    detail = mcp_client.get_hbm_detail(task_id, rank)
+                    w = float(detail.get("weights_gb", 0))
+                    g = float(detail.get("gradients_gb", 0))
+                    o = float(detail.get("optimizer_gb", 0))
+                    model_gb = w + g + o
+                    return rank, model_gb if model_gb > 0 else None
 
-    cards = []
-    for rank in range(total_nodes):
-        cards.append(CardMetrics(
-            card_id=f"card_{rank}",
-            global_rank=rank,
-            flops_per_card=flops,
-            hbm_gb=hbm,
-            tp_comm_gb_per_micro=tp_comm,
-            pp_comm_mb_per_micro=pp_comm,
-            dp_comm_gb_per_step=dp_comm,
-        ))
+                with ThreadPoolExecutor(max_workers=min(16, len(card_details))) as pool:
+                    futures = {
+                        pool.submit(_fetch_hbm_model, d.get("global_rank", 0)): d.get("global_rank", 0)
+                        for d in card_details
+                    }
+                    for fut in as_completed(futures):
+                        rank, model_gb = fut.result()
+                        if model_gb is not None:
+                            hbm_model_map[rank] = model_gb
+                logger.info(f"[run_simulation] hbm_model_gb enrichment for {label}: "
+                            f"got {len(hbm_model_map)}/{len(card_details)} ranks from hbm_detail")
+            except Exception as exc:
+                logger.warning(f"[run_simulation] hbm_model_gb enrichment failed for {label}: {exc}")
 
-    result = SimulationResult(
-        topology_name=topo.name,
-        device_type=device_type,
-        total_nodes=total_nodes,
-        cards=cards,
-    )
-    return task_id, result
+            cards = []
+            for detail in card_details:
+                rank = detail.get("global_rank", 0)
+                hbm_model_gb = hbm_model_map.get(rank, detail.get("hbm_gb", 0))
+                cards.append(CardMetrics(
+                    card_id=detail.get("card_id", ""),
+                    global_rank=rank,
+                    flops_per_card=detail.get("flops_per_card", 0),
+                    hbm_gb=detail.get("hbm_gb", 0),
+                    hbm_model_gb=hbm_model_gb,
+                    tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
+                    pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
+                    dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
+                ))
+            # Log first card as sample
+            if cards:
+                c0 = cards[0]
+                logger.info(f"[run_simulation] card_detail for {label}: {len(cards)} cards. "
+                            f"sample[0]: flops={c0.flops_per_card}, hbm={c0.hbm_gb}, "
+                            f"hbm_model={c0.hbm_model_gb}, "
+                            f"tp={c0.tp_comm_gb_per_micro}, pp={c0.pp_comm_mb_per_micro}, dp={c0.dp_comm_gb_per_step}")
+            device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
+            result = SimulationResult(
+                topology_name=topo.name,
+                device_type=device_type,
+                total_nodes=topo.dp_size * topo.tp_size * topo.pp_size,
+                cards=cards,
+            )
+            return task_id, result
+        else:
+            logger.warning(f"[run_simulation] card_detail for {label}: falsy result (empty list or None), skipping")
+    except Exception as exc:
+        logger.warning(f"[run_simulation] MCP card_detail failed for {label}: {exc}", exc_info=True)
+
+    return task_id, None
 
 
 def _build_comparison(original: SimulationResult, equivalent: SimulationResult) -> ComparisonReport:
@@ -283,10 +322,14 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
         return round(abs(ov - ev) / max(abs(ov), eps) * 100, 2)
 
     def _per_card(cards: list[CardMetrics], attr: str) -> float:
-        return sum(getattr(c, attr) for c in cards) / max(len(cards), 1)
+        vals = [getattr(c, attr) for c in cards]
+        # Fallback: if hbm_model_gb is None, use hbm_gb
+        if attr == "hbm_model_gb":
+            vals = [v if v is not None else getattr(c, "hbm_gb") for v, c in zip(vals, cards)]
+        return sum(vals) / max(len(vals), 1)
 
     flops_diff = _diff_pct(_per_card(original.cards, "flops_per_card"), _per_card(equivalent.cards, "flops_per_card"))
-    hbm_diff = _diff_pct(_per_card(original.cards, "hbm_gb"), _per_card(equivalent.cards, "hbm_gb"))
+    hbm_diff = _diff_pct(_per_card(original.cards, "hbm_model_gb"), _per_card(equivalent.cards, "hbm_model_gb"))
     tp_diff = _diff_pct(_per_card(original.cards, "tp_comm_gb_per_micro"), _per_card(equivalent.cards, "tp_comm_gb_per_micro"))
     pp_diff = _diff_pct(_per_card(original.cards, "pp_comm_mb_per_micro"), _per_card(equivalent.cards, "pp_comm_mb_per_micro"))
     dp_diff = _diff_pct(_per_card(original.cards, "dp_comm_gb_per_step"), _per_card(equivalent.cards, "dp_comm_gb_per_step"))
@@ -329,49 +372,63 @@ def run_simulation(session_id: str):
 
     sim_params_dict = session.simulation_params.model_dump()
 
+    is_retry = bool(session.original_task_id or session.equivalent_task_id)
+    logger.info(f"[run_simulation] session={session_id}, step={session.step}, "
+                f"orig_task={session.original_task_id}, eq_task={session.equivalent_task_id}, "
+                f"is_retry={is_retry}")
     session.history.append({"role": "system", "content": "📊 开始仿真任务..."})
     results = {}
 
-    # ── Original topology ──
-    orig_tid, orig_sim = _run_simulation_for_topology(
-        session.original_topology, session.original_training_model,
-        session.original_task_id, "original", sim_params_dict,
-        seq_len=session.original_seq_len,
-        batch_size=session.original_batch_size,
-        model_name=session.original_model_name,
-    )
-    if orig_sim:
-        session.original_simulation = orig_sim
+    try:
+        # ── Original topology ──
+        orig_tid, orig_sim = _run_simulation_for_topology(
+            session.original_topology, session.original_training_model,
+            session.original_task_id, "original", sim_params_dict,
+            seq_len=session.original_seq_len,
+            batch_size=session.original_batch_size,
+            model_name=session.original_model_name,
+            micro_batch_size=session.original_micro_batch,
+        )
         session.original_task_id = orig_tid or session.original_task_id
-        results["original"] = orig_sim.model_dump()
+        if orig_sim:
+            session.original_simulation = orig_sim
+            results["original"] = orig_sim.model_dump()
 
-    # ── Equivalent topology ──
-    eq_tid, eq_sim = _run_simulation_for_topology(
-        session.equivalent_topology, session.equivalent_training_model,
-        session.equivalent_task_id, "equivalent", sim_params_dict,
-        seq_len=session.equivalent_seq_len,
-        batch_size=session.equivalent_batch_size,
-        model_name=session.original_model_name,
-    )
-    if eq_sim:
-        session.equivalent_simulation = eq_sim
+        # ── Equivalent topology ──
+        eq_tid, eq_sim = _run_simulation_for_topology(
+            session.equivalent_topology, session.equivalent_training_model,
+            session.equivalent_task_id, "equivalent", sim_params_dict,
+            seq_len=session.equivalent_seq_len,
+            batch_size=session.equivalent_batch_size,
+            model_name=session.original_model_name,
+            micro_batch_size=session.equivalent_micro_batch,
+        )
         session.equivalent_task_id = eq_tid or session.equivalent_task_id
-        results["equivalent"] = eq_sim.model_dump()
+        if eq_sim:
+            session.equivalent_simulation = eq_sim
+            results["equivalent"] = eq_sim.model_dump()
 
-    # ── Comparison ──
-    report = None
-    if session.original_simulation and session.equivalent_simulation:
-        report = _build_comparison(session.original_simulation, session.equivalent_simulation)
-        session.comparison_report = report
-        session.step = "completed"
-        results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
-        if report.is_equivalent:
-            session.history.append({"role": "system", "content": "✅ 仿真验证已通过，等效性对比一致"})
+        # ── Comparison ──
+        report = None
+        if session.original_simulation and session.equivalent_simulation:
+            report = _build_comparison(session.original_simulation, session.equivalent_simulation)
+            session.comparison_report = report
+            session.step = "completed"
+            results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
+            if report.is_equivalent:
+                session.history.append({"role": "system", "content": "✅ 仿真验证已通过，等效性对比一致"})
+            else:
+                session.history.append({"role": "system", "content": "⚠️ 仿真完成，等效性对比存在差异，请检查"})
         else:
-            session.history.append({"role": "system", "content": "⚠️ 仿真完成，等效性对比存在差异，请检查"})
-    else:
-        session.step = "simulating"
-        session.history.append({"role": "system", "content": "📊 仿真任务已提交"})
+            session.step = "simulating"
+            session.history.append({"role": "system", "content": "📊 仿真任务已提交，任务ID: " + str(session.original_task_id or "")})
+
+    except Exception as exc:
+        logger.error(f"[run_simulation] Failed: {exc}")
+        session.step = "failed"
+        session.history.append({"role": "system", "content": f"❌ 仿真任务失败: {exc}"})
+        session_manager.save_session(session)
+        return {"error": str(exc), "step": "failed"}, 502
 
     session_manager.save_session(session)
 
@@ -605,25 +662,24 @@ def get_device_detail(session_id: str, side: str, global_rank: int):
     pp = topo.pp_size
     dp = topo.dp_size
 
-    # Calculate layers per PP stage
-    total_layers = {"A2": 32, "A3": 48, "A5": 64}.get(topo.device_type.value if hasattr(topo.device_type, 'value') else str(topo.device_type), 32)
-    num_layers_per_pp = max(1, math.ceil(total_layers / pp))
-
-    operators, timeline = _generate_mock_operators(global_rank, tp, pp, num_layers_per_pp)
+    mcp_result = mcp_client.get_device_detail(task_id, global_rank)
+    raw_ops = mcp_result.get("operators", [])
+    operators = [OperatorTrace(**op) if isinstance(op, dict) else op for op in raw_ops]
+    timeline_data = mcp_result.get("timeline")
+    timeline = TimelineSummary(**timeline_data) if timeline_data and isinstance(timeline_data, dict) else None
 
     detail = DeviceSimulationDetail(
-        card_id=f"card_{global_rank}",
-        global_rank=global_rank,
-        task_id=task_id or "mock_task_id",
-        topology_name=topo.name,
-        device_type=topo.device_type.value if hasattr(topo.device_type, 'value') else str(topo.device_type),
-        dp_rank=node.dp_rank,
-        tp_rank=node.tp_rank,
-        pp_rank=node.pp_rank,
+        card_id=mcp_result.get("card_id", f"card_{global_rank}"),
+        global_rank=mcp_result.get("global_rank", global_rank),
+        task_id=mcp_result.get("task_id", task_id),
+        topology_name=mcp_result.get("topology_name", topo.name),
+        device_type=mcp_result.get("device_type", str(topo.device_type.value if hasattr(topo.device_type, 'value') else topo.device_type)),
+        dp_rank=mcp_result.get("dp_rank", node.dp_rank),
+        tp_rank=mcp_result.get("tp_rank", node.tp_rank),
+        pp_rank=mcp_result.get("pp_rank", node.pp_rank),
         operators=operators,
         timeline=timeline,
     )
-
     return jsonify(detail.model_dump())
 
 
@@ -642,6 +698,7 @@ def _generate_mock_hbm_detail(global_rank: int) -> HbmDetail:
         gradients_gb=gradients,
         optimizer_gb=optimizer,
         activations_gb=activations,
+        model_hbm_gb=round(weights + gradients + optimizer, 2),
         total_hbm_gb=round(weights + gradients + optimizer + activations, 2),
     )
 
@@ -675,62 +732,65 @@ def _generate_mock_comm_detail(global_rank: int, comm_type: str, tp: int, pp: in
 
 @session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/hbm-detail", methods=["GET"])
 def get_hbm_detail(session_id: str, side: str, global_rank: int):
-    """Get HBM usage breakdown for a device (mock data)."""
+    """Get HBM usage breakdown for a device."""
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
     if side not in ("original", "equivalent"):
         return {"error": "side must be 'original' or 'equivalent'"}, 400
-    detail = _generate_mock_hbm_detail(global_rank)
-    return jsonify(detail.model_dump())
+
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    mcp_result = mcp_client.get_hbm_detail(task_id, global_rank)
+    # Ensure model_hbm_gb is populated even if MCP doesn't return it
+    if "model_hbm_gb" not in mcp_result:
+        mcp_result["model_hbm_gb"] = round(
+            float(mcp_result.get("weights_gb", 0))
+            + float(mcp_result.get("gradients_gb", 0))
+            + float(mcp_result.get("optimizer_gb", 0)), 2
+        )
+    return jsonify(HbmDetail(**mcp_result).model_dump())
 
 
 @session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/tp-comm-detail", methods=["GET"])
 def get_tp_comm_detail(session_id: str, side: str, global_rank: int):
-    """Get TP communication detail for a device (mock data)."""
+    """Get TP communication detail for a device."""
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
     if side not in ("original", "equivalent"):
         return {"error": "side must be 'original' or 'equivalent'"}, 400
     topo = session.original_topology if side == "original" else session.equivalent_topology
-    tp = topo.tp_size if topo else 4
-    pp = topo.pp_size if topo else 4
-    dp = topo.dp_size if topo else 4
-    detail = _generate_mock_comm_detail(global_rank, "tp", tp, pp, dp)
-    return jsonify(detail.model_dump())
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    mcp_result = mcp_client.get_comm_detail(task_id, global_rank, "tp")
+    return jsonify(CommDetail(**mcp_result).model_dump())
 
 
 @session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/pp-comm-detail", methods=["GET"])
 def get_pp_comm_detail(session_id: str, side: str, global_rank: int):
-    """Get PP communication detail for a device (mock data)."""
+    """Get PP communication detail for a device."""
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
     if side not in ("original", "equivalent"):
         return {"error": "side must be 'original' or 'equivalent'"}, 400
     topo = session.original_topology if side == "original" else session.equivalent_topology
-    tp = topo.tp_size if topo else 4
-    pp = topo.pp_size if topo else 4
-    dp = topo.dp_size if topo else 4
-    detail = _generate_mock_comm_detail(global_rank, "pp", tp, pp, dp)
-    return jsonify(detail.model_dump())
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    mcp_result = mcp_client.get_comm_detail(task_id, global_rank, "pp")
+    return jsonify(CommDetail(**mcp_result).model_dump())
 
 
 @session_bp.route("/<session_id>/simulation/<side>/<int:global_rank>/dp-comm-detail", methods=["GET"])
 def get_dp_comm_detail(session_id: str, side: str, global_rank: int):
-    """Get DP communication detail for a device (mock data)."""
+    """Get DP communication detail for a device."""
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
     if side not in ("original", "equivalent"):
         return {"error": "side must be 'original' or 'equivalent'"}, 400
     topo = session.original_topology if side == "original" else session.equivalent_topology
-    tp = topo.tp_size if topo else 4
-    pp = topo.pp_size if topo else 4
-    dp = topo.dp_size if topo else 4
-    detail = _generate_mock_comm_detail(global_rank, "dp", tp, pp, dp)
-    return jsonify(detail.model_dump())
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    mcp_result = mcp_client.get_comm_detail(task_id, global_rank, "dp")
+    return jsonify(CommDetail(**mcp_result).model_dump())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -755,6 +815,8 @@ def workflow_step1(session_id: str):
     A = data.get("A", 32)
     S = data.get("S", 2048)
     B = data.get("B", 32)
+    b_micro = data.get("b_micro", 4)
+    dff = data.get("dff", 14336)
     strategy = data.get("strategy", "min_equiv")
 
     # 1. Guardrail validation (silent — no workflow node)
@@ -793,6 +855,7 @@ def workflow_step1(session_id: str):
         "num_layers": L,
         "d_model": H,
         "num_heads": A,
+        "d_ffn": dff,
         "pp": pp,
         "is_equivalent": False,
     }
@@ -807,24 +870,40 @@ def workflow_step1(session_id: str):
     eq_pp = max(1, min(pp - 1, 3)) if pp > 3 else pp
     eq_dp = max(1, dp // 4) if dp > 1 else 1
     eq_L = L if pp <= 3 else (L // pp) * 3
+    eq_B = max(1, int(B * eq_dp / dp)) if dp > 1 else B
     session.equivalent_params = TopologyParams(
         device_type=DeviceType(device_type_str) if device_type_str in [d.value for d in DeviceType] else DeviceType.A3,
         dp=eq_dp, tp=tp, pp=eq_pp,
     )
     # Store model params for equivalent model
     session._equiv_model_params = {
-        "L": eq_L, "H": H, "A": A, "S": S, "B": B,
+        "L": eq_L, "H": H, "A": A, "S": S, "B": eq_B, "dff": dff,
         "strategy": strategy,
         "L_orig": L,  # original layer count for SSE formula display
+        "B_orig": B,  # original batch size for SSE formula display
+        "b_micro": b_micro,  # micro-batch size for TP/PP formula display
     }
+    session.original_dff = dff
+    session.original_batch_size = B
+    session.original_micro_batch = b_micro
+    session.equivalent_batch_size = eq_B
+    session.equivalent_dff = dff  # dff unchanged between original and equivalent
+    session.equivalent_micro_batch = b_micro  # b unchanged between original and equivalent
 
     session.step = "params_collected"
     session_manager.save_session(session)
 
-    # Build response with topology/model as dicts
+    # Build response with topology/model as dicts (enrich mesh with model + runtime params)
+    orig_model_dict = orig_model.model_dump() if hasattr(orig_model, "model_dump") else orig_model
+    orig_model_dict["seq_len"] = S
+    orig_model_dict["batch_size"] = B
     return jsonify({
-        "original_mesh": orig_mesh.model_dump() if hasattr(orig_mesh, "model_dump") else orig_mesh,
-        "original_model": orig_model.model_dump() if hasattr(orig_model, "model_dump") else orig_model,
+        "original_mesh": _topo_with_model(
+            orig_mesh, orig_model,
+            seq_len=S, batch_size=B, model_name=model_name, d_ffn=dff,
+            micro_batch_size=b_micro,
+        ),
+        "original_model": orig_model_dict,
         "equivalent_params": session.equivalent_params.model_dump() if hasattr(session.equivalent_params, "model_dump") else session.equivalent_params,
         "step": session.step,
     })
@@ -872,6 +951,9 @@ def workflow_step2_stream(session_id: str):
     A_val = model_meta.get("A", 32)
     S_val = model_meta.get("S", 2048)
     B_val = model_meta.get("B", 32)
+    B_orig = model_meta.get("B_orig", B_val)
+    b_micro_val = model_meta.get("b_micro", 4)
+    dff_val = model_meta.get("dff", 14336)
     L_orig = model_meta.get("L_orig", eq_L)  # fallback to eq_L if not stored
     strategy = model_meta.get("strategy", "min_equiv")
     strategy_label = "最小集群等效" if strategy == "min_equiv" else ("单卡极限等效" if strategy == "single_card_extreme" else strategy)
@@ -887,7 +969,7 @@ def workflow_step2_stream(session_id: str):
             f"▸ 等效策略: {strategy_label} ({strategy})",
             f"  原始组网  {orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}  →  {npu_orig} NPU",
             f"  等效组网  {eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}  →  {npu_eq} NPU",
-            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  S={S_val}  B={B_val}",
+            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  dff={dff_val}  S={S_val}  B={B_orig}  b={b_micro_val}  →  B_eq={B_val}",
             f"  NPU 压缩比  {npu_orig} : {npu_eq}  ≈  {comp_ratio} : 1",
         ]
         for line in lines_strategy:
@@ -896,43 +978,33 @@ def workflow_step2_stream(session_id: str):
         yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'strategy', 'section_done': True, 'line': ''})}\n\n"
 
         # ═══ Phase 2: 指标分析 ═══
-        h2 = H_val * H_val
-        s2 = S_val * S_val
-        flops_per_card = (72 * B_val * S_val * h2 + 12 * B_val * s2 * H_val) / tp * L_orig / pp
+        flops_per_card = _estimator._estimate_flops(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp)
         flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
 
-        # HBM: params_per_card × opt_bytes + activations
-        # opt_bytes = 16 (fp16 weights 2B + fp32 Adam m/v 8B + fp32 master 4B + fp16 grads 2B)
-        params_per_card = L_orig * (12 * h2 + 4 * H_val) / (tp * pp)
-        activations_bytes = B_val * S_val * H_val * L_orig / pp * 2  # fp16 activations
-        hbm_gb = (params_per_card * 16 + activations_bytes) / 1e9
-
-        # Communication (bidirectional all-reduce, fp16)
-        tp_comm = L_orig / pp * 32 * B_val * S_val * H_val / 1e9  # GB/micro-step
-        dp_comm = 4 * params_per_card / 1e9  # GB/step
-        pp_comm = 4 * B_val * S_val * H_val / 1e9  # GB/step (per boundary)
+        hbm_gb = _estimator._estimate_hbm_gb(L_orig, H_val, dff_val, tp, pp)
+        tp_comm = _estimator._estimate_tp_comm_gb(L_orig, H_val, S_val, b_micro_val, pp)
+        dp_comm = _estimator._estimate_dp_comm_gb(L_orig, H_val, dff_val, orig_dp, tp, pp)
+        pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
 
         lines_metrics = [
             f"▸ 单卡计算量 (FLOPs)",
-            f"  FLOPs = (72·B·S·H² + 12·B·S²·H) / TP × L/PP",
-            f"  = (72×{B_val}×{S_val}×{H_val}² + 12×{B_val}×{S_val}²×{H_val}) / {tp} × {L_orig}/{pp}",
+            f"  FLOPs = (6·B·S·L·H/(DP·PP·TP)) × (4·H + 3·dff + 2·S)",
+            f"  = (6×{B_orig}×{S_val}×{L_orig}×{H_val}/({orig_dp}×{pp}×{tp})) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
             f"  ≈ {flops_str} FLOPs",
             f"▸ 显存占用 (HBM)",
-            f"  HBM = (params × opt_bytes + activations) / 1e9",
-            f"  params = L·(12H²+4H)/(TP·PP) = {L_orig}×({12}×{H_val}²+{4}×{H_val})/({tp}×{pp})",
-            f"  opt_bytes = 16B  (fp16 w+g + fp32 Adam m,v + fp32 master)",
-            f"  activations = B·S·H·L/PP × 2B = {B_val}×{S_val}×{H_val}×{L_orig}/{pp} × 2",
-            f"  HBM ≈ {hbm_gb:.1f} GB",
+            f"  HBM = L/PP × ((4·H² + 3·H·dff)/TP + 2·H) / 1e9",
+            f"  = {L_orig}/{pp} × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val}) / 1e9",
+            f"  ≈ {hbm_gb:.1f} GB",
             f"▸ 通信流量 (GB / step)",
-            f"  TP 通信 = L/PP · 32·B·S·H / 1e9",
-            f"  = {L_orig}/{pp} × 32 × {B_val} × {S_val} × {H_val} / 1e9",
+            f"  TP 通信 = L/PP * 15 * b * S * H / 1e9",
+            f"  = {L_orig}/{pp} * 15 * {b_micro_val} * {S_val} * {H_val} / 1e9",
             f"  ≈ {tp_comm:.2f} GB/micro-step  (TP 全规约)",
-            f"  DP 通信 = 4 × params / 1e9  (梯度 all-reduce)",
-            f"  = 4 × {params_per_card:.0f} / 1e9",
+            f"  DP 通信 = 2*(DP-1)/DP * 4 * L/PP * (4*H^2/TP + 3*H*dff/TP) / 1e9",
+            f"  = 2*({orig_dp}-1)/{orig_dp} * 4 * {L_orig}/{pp} * (4*{H_val}^2/{tp} + 3*{H_val}*{dff_val}/{tp}) / 1e9",
             f"  ≈ {dp_comm:.2f} GB/step",
-            f"  PP 通信 = 4·B·S·H / 1e9  (激活值 send/recv)",
-            f"  = 4 × {B_val} × {S_val} × {H_val} / 1e9",
-            f"  ≈ {pp_comm:.2f} GB/step  (per PP boundary)",
+            f"  PP 通信 = 4·b·S·H / 1e6  (激活值 send/recv)",
+            f"  = 4 × {b_micro_val} × {S_val} × {H_val} / 1e6",
+            f"  ≈ {pp_comm:.2f} MB/micro-step  (per PP boundary)",
         ]
         for line in lines_metrics:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'line': line})}\n\n"
@@ -946,6 +1018,7 @@ def workflow_step2_stream(session_id: str):
             f"  PP 降维:  PP_eq = min(PP-1, 3) = {eq_pp}",
             f"  DP 缩减:  DP_eq = max(DP/4, 1) = {eq_dp}",
             f"  层数调整:  L_eq = (L/PP) × PP_eq = ({L_orig}/{pp}) × {eq_pp} = {eq_L}",
+            f"  批次缩减:  B_eq = B × eq_dp/dp = {B_orig}×{eq_dp}/{orig_dp} ≈ {B_val}",
             f"▸ 等效结果:  {npu_orig} NPU → {npu_eq} NPU  (压缩 {comp_ratio}:1)",
         ]
         for line in lines_formula:
@@ -992,6 +1065,7 @@ def workflow_step3(session_id: str):
         "num_layers": model_meta.get("L", 24),
         "d_model": model_meta.get("H", 4096),
         "num_heads": model_meta.get("A", 32),
+        "d_ffn": model_meta.get("dff", 14336),
         "pp": eq_params.pp,
         "is_equivalent": True,
     }
@@ -1005,8 +1079,16 @@ def workflow_step3(session_id: str):
     session.step = "equiv_generated"
     session_manager.save_session(session)
 
+    eq_model_dict = eq_model.model_dump() if hasattr(eq_model, "model_dump") else eq_model
+    eq_model_dict["seq_len"] = model_meta.get("S")
+    eq_model_dict["batch_size"] = model_meta.get("B")
     return jsonify({
-        "equivalent_mesh": eq_mesh.model_dump() if hasattr(eq_mesh, "model_dump") else eq_mesh,
-        "equivalent_model": eq_model.model_dump() if hasattr(eq_model, "model_dump") else eq_model,
+        "equivalent_mesh": _topo_with_model(
+            eq_mesh, eq_model,
+            seq_len=model_meta.get("S"), batch_size=model_meta.get("B"),
+            model_name=model_meta.get("model_name"), d_ffn=model_meta.get("dff"),
+            micro_batch_size=model_meta.get("b_micro"),
+        ),
+        "equivalent_model": eq_model_dict,
         "step": session.step,
     })

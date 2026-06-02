@@ -18,6 +18,9 @@ class Config:
     FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
     FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
+    # Simulation polling interval (seconds)
+    SIM_POLL_INTERVAL = float(os.getenv("SIM_POLL_INTERVAL", "1.0"))
+
     # Guardrail rules
     VALID_DEVICE_TYPES = {"A2", "A3", "A5"}
     DP_MIN = 1
