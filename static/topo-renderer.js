@@ -3345,14 +3345,11 @@ function canvasRebuild(targetSelector) {
       }
     }
 
-    // ── Resolve highlight for input/output layers ──
+    // ── Resolve highlight for input/output/transformer layers ──
+    // PP0 and last PP both highlight input layer + output layer + transformer card
     function _computeInputOutputHL(ppIdx, ppCount) {
       if (ppIdx == null || !ppCount) return null;
-      var isInput = ppIdx === 0;
-      var isOutput = ppIdx === ppCount - 1;
-      if (isInput && isOutput) return "both";
-      if (isInput) return "input";
-      if (isOutput) return "output";
+      if (ppIdx === 0 || ppIdx === ppCount - 1) return "all";
       return null;
     }
     var highlightOrigInputOutput = _computeInputOutputHL(highlightOrigPp, origPp);
@@ -4839,17 +4836,18 @@ function _renderOneModel(
     10,
     "embeddings",
   );
-  // ── Input layer highlight overlay (when PP0 is pinned) ──
-  if (highlightInputOutput === "input" || highlightInputOutput === "both") {
+  // ── Input layer highlight overlay (when PP0 or last PP is pinned) ──
+  if (highlightInputOutput === "all") {
     sg.append("rect")
-      .attr("x", D.CX - D.BOX_W / 2)
-      .attr("y", D.Y_EMBED)
-      .attr("width", D.BOX_W)
-      .attr("height", D.H_MD)
-      .attr("rx", 4)
-      .attr("fill", "none")
+      .attr("x", D.CX - D.BOX_W / 2 - 2)
+      .attr("y", D.Y_EMBED - 2)
+      .attr("width", D.BOX_W + 4)
+      .attr("height", D.H_MD + 4)
+      .attr("rx", 6)
+      .attr("fill", "#ff8f40")
+      .attr("fill-opacity", 0.12)
       .attr("stroke", "#ff8f40")
-      .attr("stroke-width", 2)
+      .attr("stroke-width", 3)
       .attr("stroke-dasharray", "3 2")
       .attr("class", "pp-row pinned");
   }
@@ -4891,6 +4889,21 @@ function _renderOneModel(
     .attr("stroke", MODEL_COLORS.transformer_card.stroke)
     .attr("stroke-width", 1.8);
   addHover(tfCard, 1.8, "container_transformer_layer");
+  // ── Transformer card highlight overlay (when PP0 or last PP is pinned) ──
+  if (highlightInputOutput === "all") {
+    sg.append("rect")
+      .attr("x", D.CX - D.BOX_W / 2 - 2)
+      .attr("y", D.Y_HEADER - 2)
+      .attr("width", D.BOX_W + 4)
+      .attr("height", tfH + 4)
+      .attr("rx", 10)
+      .attr("fill", "#ff8f40")
+      .attr("fill-opacity", 0.08)
+      .attr("stroke", "#ff8f40")
+      .attr("stroke-width", 3)
+      .attr("stroke-dasharray", "3 2")
+      .attr("class", "pp-row pinned");
+  }
 
   sg.append("text")
     .attr("x", D.CX - D.BOX_W / 2 + 12)
@@ -5049,17 +5062,18 @@ function _renderOneModel(
     10,
     "output_layer_and_loss",
   );
-  // ── Output layer highlight overlay (when last PP is pinned) ──
-  if (highlightInputOutput === "output" || highlightInputOutput === "both") {
+  // ── Output layer highlight overlay (when PP0 or last PP is pinned) ──
+  if (highlightInputOutput === "all") {
     sg.append("rect")
-      .attr("x", D.CX - D.BOX_W / 2)
-      .attr("y", D.Y_OUTPUT)
-      .attr("width", D.BOX_W)
-      .attr("height", D.H_MD)
-      .attr("rx", 4)
-      .attr("fill", "none")
+      .attr("x", D.CX - D.BOX_W / 2 - 2)
+      .attr("y", D.Y_OUTPUT - 2)
+      .attr("width", D.BOX_W + 4)
+      .attr("height", D.H_MD + 4)
+      .attr("rx", 6)
+      .attr("fill", "#ff8f40")
+      .attr("fill-opacity", 0.12)
       .attr("stroke", "#ff8f40")
-      .attr("stroke-width", 2)
+      .attr("stroke-width", 3)
       .attr("stroke-dasharray", "3 2")
       .attr("class", "pp-row pinned");
   }
