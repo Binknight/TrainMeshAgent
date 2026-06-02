@@ -15,6 +15,48 @@
 
 // ── Estimation engine — fetched from backend ──
 
+// ── Safe DOM helpers (mesh-config-toolbar removed) ──
+function _safeGet(id) { return document.getElementById(id); }
+function _safeHideMeshInputs() {
+  ["mesh-tpInput", "mesh-ppInput", "mesh-dpInput"].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && el.parentElement) el.parentElement.style.display = "none";
+  });
+}
+function _safeShowMeshInputs() {
+  ["mesh-tpInput", "mesh-ppInput", "mesh-dpInput"].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && el.parentElement) el.parentElement.style.display = "";
+  });
+}
+function _safeSetMeshInputs(tp, pp, dp) {
+  var tpEl = document.getElementById("mesh-tpInput");
+  var ppEl = document.getElementById("mesh-ppInput");
+  var dpEl = document.getElementById("mesh-dpInput");
+  if (tpEl) tpEl.value = tp;
+  if (ppEl) ppEl.value = pp;
+  if (dpEl) dpEl.value = dp;
+}
+function _safeSetNpuCount(text) {
+  var el = document.getElementById("mesh-npu-count");
+  if (el) el.textContent = text;
+}
+function _safeShowToolbar() {
+  var el = document.getElementById("mesh-config-toolbar");
+  if (el) el.classList.add("visible");
+}
+function _safeHideToolbar() {
+  var el = document.getElementById("mesh-config-toolbar");
+  if (el) el.classList.remove("visible");
+}
+function _safeHideToolbarButton() {
+  var tb = document.getElementById("mesh-config-toolbar");
+  if (tb) {
+    var btn = tb.querySelector("button");
+    if (btn) btn.style.display = "none";
+  }
+}
+
 var _estimateFetchAbort = {}; // track abort controllers per side to cancel stale requests
 var _estimateInFlight = {};  // track in-flight estimate requests per side to avoid duplicate calls
 
@@ -2657,7 +2699,7 @@ function canvasRebuild(targetSelector) {
     if (!isSim) {
       document.getElementById("canvas-section").style.display = "none";
       document.getElementById("canvas-placeholder").classList.remove("hidden");
-      document.getElementById("mesh-config-toolbar").classList.remove("visible");
+      _safeHideToolbar();
       document.getElementById("canvas-label").textContent = "等待组网数据...";
     }
     _renderState.mode = null;
@@ -2666,9 +2708,8 @@ function canvasRebuild(targetSelector) {
 
   if (!isSim) {
     document.getElementById("canvas-placeholder").classList.add("hidden");
-    var toolbar = document.getElementById("mesh-config-toolbar");
-    if (hasTopo) toolbar.classList.add("visible");
-    else toolbar.classList.remove("visible");
+    if (hasTopo) _safeShowToolbar();
+    else _safeHideToolbar();
   }
 
   var container = d3.select(targetSelector);
@@ -2887,14 +2928,9 @@ function canvasRebuild(targetSelector) {
   if (hasTopo) {
     if (meshOriginal && meshEquivalent && !_isSimulation) {
       // ── Three-Part Mode: Orig + Card + Eq ──
-      document.getElementById("mesh-tpInput").parentElement.style.display =
-        "none";
-      document.getElementById("mesh-ppInput").parentElement.style.display =
-        "none";
-      document.getElementById("mesh-dpInput").parentElement.style.display =
-        "none";
-      toolbar.querySelector("button").style.display = "none";
-      document.getElementById("mesh-npu-count").textContent =
+      _safeHideMeshInputs();
+      _safeHideToolbarButton();
+      _safeSetNpuCount(
         "原始组网 " +
         _meshNpuTotal(meshOriginal) +
         " NPUs  |  " +
@@ -3010,12 +3046,10 @@ function canvasRebuild(targetSelector) {
     } else if (meshOriginal && meshEquivalent && _isSimulation) {
       // ── Simulation Mode: Orig + Card + Eq (card shows bar chart on rank pin) ──
       if (!isSim) {
-        document.getElementById("mesh-tpInput").parentElement.style.display = "none";
-        document.getElementById("mesh-ppInput").parentElement.style.display = "none";
-        document.getElementById("mesh-dpInput").parentElement.style.display = "none";
-        if (toolbar.querySelector("button")) toolbar.querySelector("button").style.display = "none";
-        document.getElementById("mesh-npu-count").textContent =
-          "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs";
+        _safeHideMeshInputs();
+        _safeHideToolbarButton();
+        _safeSetNpuCount(
+          "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs");
         document.getElementById("canvas-label").textContent =
           (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "等效组网");
       }
@@ -3154,15 +3188,9 @@ function canvasRebuild(targetSelector) {
 
       if (meshOrigDp >= entry2.dp) meshOrigDp = entry2.dp - 1;
 
-      document.getElementById("mesh-tpInput").parentElement.style.display =
-        "none";
-      document.getElementById("mesh-ppInput").parentElement.style.display =
-        "none";
-      document.getElementById("mesh-dpInput").parentElement.style.display =
-        "none";
-      toolbar.querySelector("button").style.display = "none";
-      document.getElementById("mesh-npu-count").textContent =
-        "Total NPUs: " + _meshNpuTotal(entry2);
+      _safeHideMeshInputs();
+      _safeHideToolbarButton();
+      _safeSetNpuCount("Total NPUs: " + _meshNpuTotal(entry2));
       document.getElementById("canvas-label").textContent =
         (entry2.name || "组网拓扑") +
         " | " +
@@ -3227,15 +3255,11 @@ function canvasRebuild(targetSelector) {
       var entry = meshOriginal || meshEquivalent;
       if (meshOrigDp >= entry.dp) meshOrigDp = entry.dp - 1;
 
-      document.getElementById("mesh-tpInput").value = entry.tp;
-      document.getElementById("mesh-ppInput").value = entry.pp;
-      document.getElementById("mesh-dpInput").value = entry.dp;
-      document.getElementById("mesh-tpInput").parentElement.style.display = "";
-      document.getElementById("mesh-ppInput").parentElement.style.display = "";
-      document.getElementById("mesh-dpInput").parentElement.style.display = "";
-      toolbar.querySelector("button").style.display = "";
-      document.getElementById("mesh-npu-count").textContent =
-        "Total NPUs: " + _meshNpuTotal(entry);
+      _safeSetMeshInputs(entry.tp, entry.pp, entry.dp);
+      _safeShowMeshInputs();
+      var _tb = document.getElementById("mesh-config-toolbar");
+      if (_tb) { var _btn = _tb.querySelector("button"); if (_btn) _btn.style.display = ""; }
+      _safeSetNpuCount("Total NPUs: " + _meshNpuTotal(entry));
       document.getElementById("canvas-label").textContent =
         (entry.name || "组网拓扑") +
         " | " +

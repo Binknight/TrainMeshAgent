@@ -2161,43 +2161,6 @@
                 color: var(--teal);
             }
 
-            .mesh-config-toolbar {
-                display: none;
-                align-items: center;
-                gap: 10px;
-                font-size: 13px;
-            }
-            .mesh-config-toolbar label {
-                color: var(--text-secondary);
-            }
-            .mesh-config-toolbar input {
-                width: 48px;
-                background: var(--bg-input);
-                border: 1px solid var(--border);
-                color: var(--text-primary);
-                border-radius: 4px;
-                padding: 4px 6px;
-                text-align: center;
-            }
-            .mesh-config-toolbar button {
-                background: #238636;
-                color: #fff;
-                border: none;
-                border-radius: 4px;
-                padding: 5px 12px;
-                cursor: pointer;
-                font-size: 12px;
-            }
-            .mesh-config-toolbar button:hover {
-                background: #2ea043;
-            }
-            .mesh-config-toolbar.visible {
-                display: flex;
-            }
-            #mesh-npu-count {
-                margin-left: 8px;
-                color: #58a6ff;
-            }
             #canvas-section {
                 min-height: 200px;
             }
@@ -2612,40 +2575,6 @@
                         >
                             开始仿真
                         </button>
-                        <span
-                            class="mesh-config-toolbar"
-                            id="mesh-config-toolbar"
-                        >
-                            <label
-                                >TP:
-                                <input
-                                    id="mesh-tpInput"
-                                    type="number"
-                                    value="4"
-                                    min="1"
-                                    max="16"
-                            /></label>
-                            <label
-                                >PP:
-                                <input
-                                    id="mesh-ppInput"
-                                    type="number"
-                                    value="4"
-                                    min="1"
-                                    max="32"
-                            /></label>
-                            <label
-                                >DP:
-                                <input
-                                    id="mesh-dpInput"
-                                    type="number"
-                                    value="4"
-                                    min="1"
-                                    max="8"
-                            /></label>
-                            <button onclick="canvasRebuild()">Refresh</button>
-                            <span id="mesh-npu-count"></span>
-                        </span>
                         <button
                             class="btn-fullscreen"
                             id="btn-canvas-fullscreen"
@@ -4914,9 +4843,8 @@
                 d3.select("#canvas-section").selectAll("svg").remove();
                 document.getElementById("canvas-section").style.display =
                     "none";
-                document
-                    .getElementById("mesh-config-toolbar")
-                    .classList.remove("visible");
+                var _mct = document.getElementById("mesh-config-toolbar");
+                if (_mct) _mct.classList.remove("visible");
                 document
                     .getElementById("canvas-placeholder")
                     .classList.remove("hidden");
