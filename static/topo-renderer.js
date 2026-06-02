@@ -692,6 +692,9 @@ function fetchSimulationData() {
           // Mark simulation as completed if results exist
           if (data.original_simulation || data.equivalent_simulation) {
             window._simCompleted = true;
+            if (data.comparison_report && typeof data.comparison_report === "object") {
+              window._comparisonReport = data.comparison_report;
+            }
             if (typeof checkSimReady === "function") checkSimReady();
           }
           if (changed && (meshOriginal || meshEquivalent)) {
@@ -699,6 +702,7 @@ function fetchSimulationData() {
             try { activeTab = sessionStorage.getItem("activeCanvasTab") || "modeling"; } catch (e) {}
             meshRebuild(activeTab === "simulation" ? "#sim-canvas-section" : "#canvas-section");
             if (typeof _renderSimResults === "function") _renderSimResults();
+            if (activeTab === "result" && typeof _renderResultPanel === "function") _renderResultPanel();
           }
         });
       })
@@ -2904,7 +2908,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "#58a6ff")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text(meshOriginal.name || "原始组网");
@@ -2914,7 +2918,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "#58a6ff")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text(meshEquivalent.name || "等效组网");
@@ -3019,7 +3023,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _sTH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "var(--cyan)")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text((meshOriginal.name || "原始组网").replace(/\s*\(.*\)$/, ""));
@@ -3029,7 +3033,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _sTH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "var(--teal)")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text((meshEquivalent.name || "等效组网").replace(/\s*\(.*\)$/, ""));
@@ -3157,7 +3161,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _tH2 - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "#58a6ff")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text(entry2.name || "原始组网");
@@ -3345,6 +3349,16 @@ function canvasRebuild(targetSelector) {
       }
     }
 
+    // ── Resolve highlight for input/output/transformer layers ──
+    // PP0 and last PP both highlight input layer + output layer + transformer card
+    function _computeInputOutputHL(ppIdx, ppCount) {
+      if (ppIdx == null || !ppCount) return null;
+      if (ppIdx === 0 || ppIdx === ppCount - 1) return "all";
+      return null;
+    }
+    var highlightOrigInputOutput = _computeInputOutputHL(highlightOrigPp, origPp);
+    var highlightEqInputOutput = _computeInputOutputHL(highlightEqPp, eqPp);
+
     if (hasBothModels) {
       zoomLayer
         .append("text")
@@ -3385,6 +3399,7 @@ function canvasRebuild(targetSelector) {
         origPp,
         highlightOrigTp,
         highlightOrigPp,
+        highlightOrigInputOutput,
       );
       _renderOneModel(
         zoomLayer,
@@ -3400,6 +3415,7 @@ function canvasRebuild(targetSelector) {
         eqPp,
         highlightEqTp,
         highlightEqPp,
+        highlightEqInputOutput,
       );
     } else {
       var singleTp =
@@ -3416,6 +3432,7 @@ function canvasRebuild(targetSelector) {
         singleHlTp = meshPinnedTpInfo.tpIndex;
         singleHlPp = meshPinnedTpInfo.ppIndex;
       }
+      var singleHlInputOutput = _computeInputOutputHL(singleHlPp, singlePp);
       zoomLayer
         .append("text")
         .attr("x", modelX0 + modelAreaW / 2)
@@ -3440,6 +3457,7 @@ function canvasRebuild(targetSelector) {
         singlePp,
         singleHlTp,
         singleHlPp,
+        singleHlInputOutput,
       );
     }
   }
@@ -4575,6 +4593,7 @@ function _renderOneModel(
   ppCount,
   highlightTpIdx,
   highlightPpIdx,
+  highlightInputOutput,
 ) {
   var cfg = model.config || {};
   var comp = model.computed || {};
@@ -4611,7 +4630,7 @@ function _renderOneModel(
       .attr("text-anchor", "middle")
       .attr("fill", "var(--text-secondary)")
       .attr("font-size", "10px")
-      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-family", "var(--font-mono)")
       .text(
         (model.type || "TRANSFORMER_MODEL").toUpperCase() +
           "  ·  " +
@@ -4697,7 +4716,7 @@ function _renderOneModel(
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("font-size", fontSize)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 500)
       .attr("fill", textColor)
       .text(label);
@@ -4735,7 +4754,7 @@ function _renderOneModel(
       .attr("y", oy + 13)
       .attr("text-anchor", "middle")
       .attr("font-size", 10)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", titleColor)
       .text(title);
@@ -4766,7 +4785,7 @@ function _renderOneModel(
         .attr("text-anchor", "middle")
         .attr("dominant-baseline", "middle")
         .attr("font-size", 9)
-        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-family", "var(--font-mono)")
         .attr("font-weight", 500)
         .attr("fill", "var(--text-secondary)")
         .text(item);
@@ -4779,15 +4798,15 @@ function _renderOneModel(
     sg.append("polygon")
       .attr(
         "points",
-        cx +
+        (cx - D.ARROW_S / 2) +
           "," +
           (midY - D.ARROW_S / 2) +
           " " +
-          (cx - D.ARROW_S / 2) +
-          "," +
-          (midY + D.ARROW_S / 2) +
-          " " +
           (cx + D.ARROW_S / 2) +
+          "," +
+          (midY - D.ARROW_S / 2) +
+          " " +
+          cx +
           "," +
           (midY + D.ARROW_S / 2),
       )
@@ -4821,6 +4840,21 @@ function _renderOneModel(
     10,
     "embeddings",
   );
+  // ── Input layer highlight overlay (when PP0 or last PP is pinned) ──
+  if (highlightInputOutput === "all") {
+    sg.append("rect")
+      .attr("x", D.CX - D.BOX_W / 2 - 2)
+      .attr("y", D.Y_EMBED - 2)
+      .attr("width", D.BOX_W + 4)
+      .attr("height", D.H_MD + 4)
+      .attr("rx", 6)
+      .attr("fill", "#ff8f40")
+      .attr("fill-opacity", 0.12)
+      .attr("stroke", "#ff8f40")
+      .attr("stroke-width", 3)
+      .attr("stroke-dasharray", "3 2")
+      .attr("class", "pp-row pinned");
+  }
 
   // ══════════════════════════════════════════════
   // 2. Transformer Layer card (with stacked depth shadows)
@@ -4859,6 +4893,21 @@ function _renderOneModel(
     .attr("stroke", MODEL_COLORS.transformer_card.stroke)
     .attr("stroke-width", 1.8);
   addHover(tfCard, 1.8, "container_transformer_layer");
+  // ── Transformer card highlight overlay (when PP0 or last PP is pinned) ──
+  if (highlightInputOutput === "all") {
+    sg.append("rect")
+      .attr("x", D.CX - D.BOX_W / 2 - 2)
+      .attr("y", D.Y_HEADER - 2)
+      .attr("width", D.BOX_W + 4)
+      .attr("height", tfH + 4)
+      .attr("rx", 10)
+      .attr("fill", "#ff8f40")
+      .attr("fill-opacity", 0.08)
+      .attr("stroke", "#ff8f40")
+      .attr("stroke-width", 3)
+      .attr("stroke-dasharray", "3 2")
+      .attr("class", "pp-row pinned");
+  }
 
   sg.append("text")
     .attr("x", D.CX - D.BOX_W / 2 + 12)
@@ -4866,7 +4915,7 @@ function _renderOneModel(
     .text("Transformer Layer  (×N)")
     .attr("font-size", 11)
     .attr("font-weight", 600)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("fill", MODEL_COLORS.transformer_card.stroke);
 
   sg.append("text")
@@ -4875,7 +4924,7 @@ function _renderOneModel(
     .text("×" + numLayers)
     .attr("font-size", 11)
     .attr("font-weight", 600)
-    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-family", "var(--font-mono)")
     .attr("fill", "var(--text-muted)")
     .attr("text-anchor", "end");
 
@@ -5017,6 +5066,21 @@ function _renderOneModel(
     10,
     "output_layer_and_loss",
   );
+  // ── Output layer highlight overlay (when PP0 or last PP is pinned) ──
+  if (highlightInputOutput === "all") {
+    sg.append("rect")
+      .attr("x", D.CX - D.BOX_W / 2 - 2)
+      .attr("y", D.Y_OUTPUT - 2)
+      .attr("width", D.BOX_W + 4)
+      .attr("height", D.H_MD + 4)
+      .attr("rx", 6)
+      .attr("fill", "#ff8f40")
+      .attr("fill-opacity", 0.12)
+      .attr("stroke", "#ff8f40")
+      .attr("stroke-width", 3)
+      .attr("stroke-dasharray", "3 2")
+      .attr("class", "pp-row pinned");
+  }
 
   // ══════════════════════════════════════════════
   // Main flow arrows (between components)
@@ -5045,19 +5109,19 @@ function _renderOneModel(
     dashLine(D.CX, startY, skipRight, startY, skipColor);
     dashLine(skipRight, startY, skipRight, endY, skipColor);
     dashLine(skipRight, endY, endX + 6, endY, skipColor);
-    // Arrow at endpoint
+    // Arrow at endpoint (pointing left, into the Add block)
     sg.append("polygon")
       .attr(
         "points",
-        endX +
+        (endX + D.ARROW_S / 2) +
           "," +
           (endY - D.ARROW_S / 2) +
           " " +
-          (endX + D.ARROW_S / 2) +
+          endX +
           "," +
           endY +
           " " +
-          endX +
+          (endX + D.ARROW_S / 2) +
           "," +
           (endY + D.ARROW_S / 2),
       )
@@ -5073,7 +5137,7 @@ function _renderOneModel(
   sg.append("text")
     .attr("text-anchor", "middle")
     .attr("font-size", 8)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-style", "italic")
     .attr("fill", skipColor)
     .attr(
@@ -5095,7 +5159,7 @@ function _renderOneModel(
   sg.append("text")
     .attr("text-anchor", "middle")
     .attr("font-size", 8)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-style", "italic")
     .attr("fill", skipColor)
     .attr(
@@ -5155,7 +5219,7 @@ function _renderOneModel(
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("font-size", effectiveTp > 16 ? 7 : 9)
-      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-family", "var(--font-mono)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
       .text(cellIdx + 1)
@@ -5174,7 +5238,7 @@ function _renderOneModel(
     .attr("y", D.TENSOR_Y - 10)
     .attr("text-anchor", "middle")
     .attr("font-size", 9)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-weight", 500)
     .attr("fill", labelColor)
     .text("TP切分Tensor映射");
@@ -5186,7 +5250,7 @@ function _renderOneModel(
     .attr("y", mapTableTitleY)
     .attr("text-anchor", "middle")
     .attr("font-size", 9)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-weight", 500)
     .attr("fill", labelColor)
     .text("PP切分模型层映射");
@@ -5196,12 +5260,11 @@ function _renderOneModel(
 
   if (ppCount && cfg.num_layers) {
     var layersPerPp = Math.floor(cfg.num_layers / ppCount);
-    var COL_PP = 40,
-      COL_START = 42,
-      COL_END_W = 42;
+    var COL_PP = 50,
+      COL_RANGE = 74;
     var ROW_H = 14,
       HEADER_H = 15;
-    var tableW = COL_PP + COL_START + COL_END_W;
+    var tableW = COL_PP + COL_RANGE;
     var tableX = D.TENSOR_X + (D.TENSOR_W - tableW) / 2;
 
     var tableH = HEADER_H + ppCount * ROW_H;
@@ -5210,8 +5273,7 @@ function _renderOneModel(
 
     // Column boundary X positions
     var sepX1 = tableX + COL_PP;
-    var sepX2 = tableX + COL_PP + COL_START;
-    var colSeps = [sepX1, sepX2];
+    var colSeps = [sepX1];
 
     // ── Cell backgrounds (drawn first, below grid lines) ──
     // Header row background
@@ -5290,28 +5352,19 @@ function _renderOneModel(
       .attr("y", headerY)
       .attr("text-anchor", "middle")
       .attr("font-size", 8)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
-      .text("PP");
+      .text("PP索引");
     sg.append("text")
-      .attr("x", tableX + COL_PP + COL_START / 2)
+      .attr("x", tableX + COL_PP + COL_RANGE / 2)
       .attr("y", headerY)
       .attr("text-anchor", "middle")
       .attr("font-size", 8)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
-      .text("Start");
-    sg.append("text")
-      .attr("x", tableX + COL_PP + COL_START + COL_END_W / 2)
-      .attr("y", headerY)
-      .attr("text-anchor", "middle")
-      .attr("font-size", 8)
-      .attr("font-family", "DM Sans, sans-serif")
-      .attr("font-weight", 600)
-      .attr("fill", "var(--text-secondary)")
-      .text("End");
+      .text("模型起止层数");
 
     // ── Data row text ──
     for (var pi2 = 0; pi2 < ppCount; pi2++) {
@@ -5325,25 +5378,17 @@ function _renderOneModel(
         .attr("y", rowTextY)
         .attr("text-anchor", "middle")
         .attr("font-size", 8)
-        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-family", "var(--font-mono)")
         .attr("fill", "var(--text-primary)")
         .text(pi2);
       sg.append("text")
-        .attr("x", tableX + COL_PP + COL_START / 2)
+        .attr("x", tableX + COL_PP + COL_RANGE / 2)
         .attr("y", rowTextY)
         .attr("text-anchor", "middle")
         .attr("font-size", 8)
-        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-family", "var(--font-mono)")
         .attr("fill", "var(--text-primary)")
-        .text(layerStart2);
-      sg.append("text")
-        .attr("x", tableX + COL_PP + COL_START + COL_END_W / 2)
-        .attr("y", rowTextY)
-        .attr("text-anchor", "middle")
-        .attr("font-size", 8)
-        .attr("font-family", "JetBrains Mono, monospace")
-        .attr("fill", "var(--text-primary)")
-        .text(layerEnd2);
+        .text(layerStart2 + "~" + layerEnd2);
     }
 
     legendTopY = mapTableY + tableH + 36;
@@ -5369,7 +5414,7 @@ function _renderOneModel(
     .attr("y", legendTitleY + 4)
     .text("Legend")
     .attr("font-size", 11)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-weight", 600)
     .attr("fill", "var(--text-muted)")
     .attr("letter-spacing", "1px");
@@ -5387,7 +5432,7 @@ function _renderOneModel(
       .attr("x", lx + 14)
       .attr("y", ly + 5)
       .attr("font-size", 10)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("fill", "var(--text-secondary)")
       .text(item.label);
   });

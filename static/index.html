@@ -9,7 +9,7 @@
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap"
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap"
             rel="stylesheet"
         />
         <style>
@@ -32,8 +32,8 @@
                 --green: #7fd962;
                 --purple: #baa1ff;
                 --orange: #ff8f40;
-                --font-mono: "JetBrains Mono", monospace;
-                --font-sans: "DM Sans", system-ui, sans-serif;
+                --font-mono: "JetBrains Mono", "微软雅黑", "Microsoft YaHei", monospace;
+                --font-sans: "微软雅黑", "Microsoft YaHei", system-ui, sans-serif;
                 --radius: 8px;
                 --radius-sm: 5px;
                 --transition: 180ms ease;
@@ -400,6 +400,83 @@
                 border-color: var(--cyan-dim);
                 color: var(--cyan);
                 background: rgba(57, 186, 230, 0.1);
+            }
+
+            /* ── Fullscreen Toggle Button ── */
+            .btn-fullscreen {
+                width: 28px;
+                height: 28px;
+                padding: 0;
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--border);
+                background: var(--bg-surface);
+                color: var(--text-muted);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all var(--transition);
+            }
+            .btn-fullscreen:hover {
+                border-color: var(--cyan-dim);
+                color: var(--cyan);
+                background: rgba(57, 186, 230, 0.08);
+            }
+            .btn-fullscreen svg {
+                width: 16px;
+                height: 16px;
+            }
+
+            /* ── Fullscreen Mode: collapse side panels with hover slide-in ── */
+            .main-container.canvas-fullscreen {
+                position: relative;
+            }
+            .main-container.canvas-fullscreen .panel-left,
+            .main-container.canvas-fullscreen .panel-right {
+                display: flex;
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                z-index: 200;
+                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: none;
+            }
+            .main-container.canvas-fullscreen .panel-left {
+                left: 0;
+                transform: translateX(-100%);
+                border-right: 1px solid var(--border);
+            }
+            .main-container.canvas-fullscreen .panel-left.panel-visible {
+                transform: translateX(0);
+                box-shadow: 4px 0 20px rgba(0, 0, 0, 0.4);
+            }
+            .main-container.canvas-fullscreen .panel-right {
+                right: 0;
+                transform: translateX(100%);
+                border-left: 1px solid var(--border);
+            }
+            .main-container.canvas-fullscreen .panel-right.panel-visible {
+                transform: translateX(0);
+                box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+            }
+
+            /* ── Edge hover trigger zones (only in fullscreen mode) ── */
+            .fullscreen-edge-trigger {
+                display: none;
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                width: 12px;
+                z-index: 199;
+            }
+            .main-container.canvas-fullscreen .fullscreen-edge-trigger {
+                display: block;
+            }
+            .fullscreen-edge-trigger.left {
+                left: 0;
+            }
+            .fullscreen-edge-trigger.right {
+                right: 0;
             }
 
             /* ── Canvas Tabs ── */
@@ -2114,16 +2191,16 @@
             }
             .tp-label {
                 fill: #3fb950;
-                font-family: sans-serif;
+                font-family: var(--font-sans);
             }
             .rank-label {
                 fill: var(--text-primary);
-                font-family: sans-serif;
+                font-family: var(--font-sans);
                 font-weight: 500;
             }
             .pp-label {
                 fill: var(--bg-deep);
-                font-family: sans-serif;
+                font-family: var(--font-sans);
                 font-weight: bold;
             }
             .arrow-line {
@@ -2137,7 +2214,7 @@
             }
             .info-text {
                 fill: var(--text-secondary);
-                font-family: sans-serif;
+                font-family: var(--font-sans);
             }
             .pp-ellipsis {
                 fill: #161b22;
@@ -2147,13 +2224,13 @@
             .pp-ellipsis-text {
                 fill: var(--text-secondary);
                 font-size: 18px;
-                font-family: sans-serif;
+                font-family: var(--font-sans);
                 font-weight: bold;
             }
             .pp-ellipsis-dots {
                 fill: #6e7681;
                 font-size: 11px;
-                font-family: sans-serif;
+                font-family: var(--font-sans);
             }
             #mesh-dp-select {
                 width: 120px;
@@ -2164,7 +2241,7 @@
                 border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 14px;
-                font-family: sans-serif;
+                font-family: var(--font-sans);
                 cursor: pointer;
             }
             .dp-select-wrap {
@@ -2177,7 +2254,7 @@
                 background: transparent;
                 color: #58a6ff;
                 border: none;
-                font-family: sans-serif;
+                font-family: var(--font-sans);
                 cursor: pointer;
                 width: 100%;
                 padding: 0 6px;
@@ -2200,7 +2277,7 @@
             }
             .formula-card-formula {
                 fill: var(--text-primary);
-                font-family: var(--font-mono);
+                font-family: var(--font-sans);
             }
             .formula-card-desc {
                 fill: var(--text-secondary);
@@ -2215,6 +2292,233 @@
             }
             .rank-bar-chart-group rect:hover {
                 opacity: 1 !important;
+            }
+
+            /* ── Equivalent Result Tab ── */
+            .result-panel-wrap {
+                flex: 1;
+                overflow-y: auto;
+                padding: 16px 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            .result-panel-wrap::-webkit-scrollbar {
+                width: 6px;
+            }
+            .result-panel-wrap::-webkit-scrollbar-thumb {
+                background: var(--border);
+                border-radius: 3px;
+            }
+            .result-panel-wrap::-webkit-scrollbar-thumb:hover {
+                background: var(--cyan);
+            }
+
+            .result-verdict-card {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                padding: 16px 20px;
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+            }
+            .result-verdict-icon {
+                font-size: 32px;
+                line-height: 1;
+            }
+            .result-verdict-icon.pass { color: #3fb950; }
+            .result-verdict-icon.fail { color: #f85149; }
+            .result-verdict-text h2 {
+                margin: 0 0 4px;
+                font-size: 15px;
+                font-weight: 600;
+                font-family: var(--font-sans);
+            }
+            .result-verdict-text h2.pass { color: #3fb950; }
+            .result-verdict-text h2.fail { color: #f85149; }
+            .result-verdict-meta {
+                display: flex;
+                gap: 16px;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--text-muted);
+            }
+            .result-verdict-meta span strong {
+                color: var(--text-primary);
+            }
+
+            .result-diff-section {
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 14px 18px;
+            }
+            .result-diff-title {
+                font-family: var(--font-sans);
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--text-primary);
+                margin-bottom: 12px;
+            }
+            .result-diff-row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 8px;
+            }
+            .result-diff-row:last-child { margin-bottom: 0; }
+            .result-diff-label {
+                width: 70px;
+                flex-shrink: 0;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--text-secondary);
+                text-align: right;
+            }
+            .result-diff-bar-bg {
+                flex: 1;
+                height: 14px;
+                background: var(--bg-panel);
+                border-radius: 7px;
+                position: relative;
+                overflow: hidden;
+            }
+            .result-diff-bar-fill {
+                height: 100%;
+                border-radius: 7px;
+                transition: width 0.4s ease;
+            }
+            .result-diff-bar-fill.pass { background: rgba(63, 185, 80, 0.6); }
+            .result-diff-bar-fill.fail { background: rgba(248, 81, 73, 0.6); }
+            .result-diff-tolerance-line {
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                width: 2px;
+                background: var(--text-muted);
+                opacity: 0.6;
+            }
+            .result-diff-tolerance-label {
+                position: absolute;
+                top: -14px;
+                font-family: var(--font-mono);
+                font-size: 9px;
+                color: var(--text-muted);
+                transform: translateX(-50%);
+                white-space: nowrap;
+            }
+            .result-diff-pct {
+                width: 52px;
+                flex-shrink: 0;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                font-weight: 600;
+                text-align: right;
+            }
+            .result-diff-pct.pass { color: #3fb950; }
+            .result-diff-pct.fail { color: #f85149; }
+            .result-diff-badge {
+                width: 16px;
+                flex-shrink: 0;
+                text-align: center;
+                font-size: 11px;
+            }
+
+            .result-config-section {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 14px;
+            }
+            .result-config-card {
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                overflow: hidden;
+            }
+            .result-config-card-header {
+                padding: 8px 14px;
+                background: var(--bg-panel);
+                border-bottom: 1px solid var(--border);
+                font-family: var(--font-sans);
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--text-primary);
+            }
+            .result-config-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-family: var(--font-mono);
+                font-size: 11px;
+            }
+            .result-config-table th {
+                text-align: left;
+                padding: 5px 12px;
+                color: var(--text-muted);
+                font-weight: 500;
+                border-bottom: 1px solid var(--border);
+            }
+            .result-config-table td {
+                padding: 5px 12px;
+                color: var(--text-primary);
+                border-bottom: 1px solid var(--border);
+            }
+            .result-config-table tr:last-child td { border-bottom: none; }
+            .result-config-table td.val-orig { color: #58a6ff; }
+            .result-config-table td.val-eq { color: var(--teal); }
+            .result-config-table td.val-highlight {
+                font-weight: 600;
+                color: var(--text-primary);
+            }
+
+            .result-metric-section {
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 14px 18px;
+            }
+            .result-metric-title {
+                font-family: var(--font-sans);
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--text-primary);
+                margin-bottom: 12px;
+            }
+            .result-metric-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 10px;
+            }
+            .result-metric-item {
+                padding: 10px 12px;
+                background: var(--bg-panel);
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--border);
+            }
+            .result-metric-item-label {
+                font-family: var(--font-mono);
+                font-size: 10px;
+                color: var(--text-muted);
+                margin-bottom: 6px;
+            }
+            .result-metric-item-row {
+                display: flex;
+                justify-content: space-between;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                margin-bottom: 2px;
+            }
+            .result-metric-item-row .tag-orig {
+                color: #58a6ff;
+                font-weight: 500;
+            }
+            .result-metric-item-row .tag-eq {
+                color: var(--teal);
+                font-weight: 500;
+            }
+            .result-metric-item-row .val {
+                color: var(--text-primary);
+                font-weight: 600;
             }
         </style>
     </head>
@@ -2295,6 +2599,16 @@
                             <button onclick="canvasRebuild()">Refresh</button>
                             <span id="mesh-npu-count"></span>
                         </span>
+                        <button
+                            class="btn-fullscreen"
+                            id="btn-canvas-fullscreen"
+                            title="全屏画布"
+                            onclick="toggleCanvasFullscreen()"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                            </svg>
+                        </button>
                     </span>
                 </div>
                 <div class="canvas-tabs" id="canvas-tabs">
@@ -2313,6 +2627,15 @@
                         onclick="switchCanvasTab('simulation')"
                     >
                         等效仿真验证
+                    </button>
+                    <button
+                        class="canvas-tab"
+                        data-tab="result"
+                        id="tab-btn-result"
+                        disabled
+                        onclick="switchCanvasTab('result')"
+                    >
+                        等效结果
                     </button>
                 </div>
                 <!-- Tab: 等效建模分析 -->
@@ -2345,7 +2668,7 @@
                                     y="48"
                                     text-anchor="middle"
                                     fill="currentColor"
-                                    font-family="JetBrains Mono,monospace"
+                                    font-family="var(--font-mono)"
                                     font-size="11"
                                     opacity="0.6"
                                 >
@@ -2356,7 +2679,7 @@
                                     y="66"
                                     text-anchor="middle"
                                     fill="currentColor"
-                                    font-family="JetBrains Mono,monospace"
+                                    font-family="var(--font-mono)"
                                     font-size="9"
                                     opacity="0.35"
                                 >
@@ -2396,7 +2719,7 @@
                                         y="48"
                                         text-anchor="middle"
                                         fill="currentColor"
-                                        font-family="JetBrains Mono,monospace"
+                                        font-family="var(--font-mono)"
                                         font-size="11"
                                         opacity="0.6"
                                     >
@@ -2407,7 +2730,7 @@
                                         y="66"
                                         text-anchor="middle"
                                         fill="currentColor"
-                                        font-family="JetBrains Mono,monospace"
+                                        font-family="var(--font-mono)"
                                         font-size="9"
                                         opacity="0.35"
                                     >
@@ -2427,6 +2750,12 @@
                         <div class="sim-results-area" id="sim-results-area">
                             <!-- populated dynamically -->
                         </div>
+                    </div>
+                </div>
+                <!-- Tab: 等效结果 -->
+                <div class="canvas-tab-panel" id="tab-panel-result">
+                    <div class="result-panel-wrap" id="result-panel-wrap">
+                        <!-- populated dynamically by _renderResultPanel() -->
                     </div>
                 </div>
             </main>
@@ -2895,6 +3224,9 @@
                     </div>
                 </div>
             </aside>
+            <!-- Fullscreen edge hover triggers -->
+            <div class="fullscreen-edge-trigger left" id="edge-trigger-left"></div>
+            <div class="fullscreen-edge-trigger right" id="edge-trigger-right"></div>
         </div>
 
         <!-- Metric Detail Popup -->
@@ -3902,6 +4234,7 @@
                     updateWorkflowNode("comparison", "disabled");
                     _simFailed = true;
                     _simCompleted = false;
+                    _comparisonReport = null;
                     setStatus("验证失败");
                     checkSimReady();
                 } else if (step === "simulating") {
@@ -3911,6 +4244,7 @@
                     updateWorkflowNode("simulation", "active");
                     updateWorkflowNode("comparison", "pending");
                     _simCompleted = false;
+                    _comparisonReport = null;
                     setStatus("仿真验证中");
                     // Resume WebSocket connection for real-time status
                     var taskIds = [sessionData.original_task_id, sessionData.equivalent_task_id].filter(Boolean);
@@ -4531,6 +4865,16 @@
                                 _renderSimResults();
                             });
                         });
+                    } else if (savedTab === "result" && _comparisonReport) {
+                        document.querySelectorAll(".canvas-tab").forEach(function (t) {
+                            t.classList.toggle("active", t.getAttribute("data-tab") === "result");
+                        });
+                        document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
+                            p.classList.toggle("active", p.id === "tab-panel-result");
+                        });
+                        requestAnimationFrame(function () {
+                            _renderResultPanel();
+                        });
                     } else {
                         if (meshOriginal || meshEquivalent) canvasRebuild();
                     }
@@ -4588,6 +4932,9 @@
                     _simCompleted = !!(
                         data.original_simulation && data.equivalent_simulation
                     );
+                    if (_simCompleted && data.comparison_report) {
+                        _comparisonReport = data.comparison_report;
+                    }
                     checkSimReady();
                     fetchSimulationData();
 
@@ -4624,6 +4971,7 @@
                 meshEstimateEq = {};
                 meshActualOrig = {};
                 meshActualEq = {};
+                _comparisonReport = null;
                 _renderState.mode = null;
                 _formulaCardReady = false;
                 sessionStorage.removeItem("fxAnimDone");
@@ -4645,6 +4993,7 @@
                 var chatPanel = document.querySelector(".chat-panel");
                 if (chatPanel) chatPanel.style.display = "";
                 _simCompleted = false;
+                _comparisonReport = null;
                 _simStarted = false;
                 _pendingWorkflowState = null;
                 _pendingSimData = false;
@@ -5080,6 +5429,12 @@
                     }
                 }
 
+                if (tabName === "result") {
+                    requestAnimationFrame(function () {
+                        _renderResultPanel();
+                    });
+                }
+
                 // Keep right panel visible on all tabs
                 var simBtn = document.getElementById("btn-start-sim");
                 if (simBtn) {
@@ -5087,6 +5442,96 @@
                     simBtn.style.display = (tabName === "modeling" || _simFailed) ? "" : "none";
                 }
             }
+
+            // ── Canvas Fullscreen Toggle ──
+            var _canvasFullscreen = false;
+            function toggleCanvasFullscreen() {
+                _canvasFullscreen = !_canvasFullscreen;
+                var container = document.querySelector(".main-container");
+                var btn = document.getElementById("btn-canvas-fullscreen");
+                if (!container || !btn) return;
+
+                container.classList.toggle("canvas-fullscreen", _canvasFullscreen);
+                btn.title = _canvasFullscreen ? "退出全屏" : "全屏画布";
+
+                // Remove panel-visible class when exiting fullscreen
+                if (!_canvasFullscreen) {
+                    var pl = document.querySelector(".panel-left");
+                    var pr = document.querySelector(".panel-right");
+                    if (pl) pl.classList.remove("panel-visible");
+                    if (pr) pr.classList.remove("panel-visible");
+                }
+
+                // Swap icon: fullscreen-expand ↔ fullscreen-shrink
+                if (_canvasFullscreen) {
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+                        + '<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>'
+                        + '</svg>';
+                } else {
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+                        + '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>'
+                        + '</svg>';
+                }
+
+                // Rebuild canvas after layout reflow (double RAF for full reflow)
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        var activeTab = "modeling";
+                        try { activeTab = sessionStorage.getItem("activeCanvasTab") || "modeling"; } catch (e) {}
+                        if (activeTab === "simulation") {
+                            if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                        } else if (activeTab === "modeling") {
+                            if (typeof canvasRebuild === "function") canvasRebuild();
+                            if (typeof canvasRecenter === "function") canvasRecenter();
+                        }
+                    });
+                });
+            }
+
+            // ── Fullscreen Edge-Hover Panel Slide ──
+            (function () {
+                var edgeLeft = document.getElementById("edge-trigger-left");
+                var edgeRight = document.getElementById("edge-trigger-right");
+                var panelLeft = document.querySelector(".panel-left");
+                var panelRight = document.querySelector(".panel-right");
+                var _hideTimerLeft = null;
+                var _hideTimerRight = null;
+
+                function _showPanel(panel, timerRef) {
+                    if (!panel) return;
+                    if (timerRef) clearTimeout(timerRef);
+                    panel.classList.add("panel-visible");
+                }
+                function _hidePanel(panel, timerRefName) {
+                    if (!panel) return;
+                    var delay = 300;
+                    if (timerRefName === "left") {
+                        _hideTimerLeft = setTimeout(function () { panel.classList.remove("panel-visible"); }, delay);
+                    } else {
+                        _hideTimerRight = setTimeout(function () { panel.classList.remove("panel-visible"); }, delay);
+                    }
+                }
+                function _cancelHide(timerRefName) {
+                    if (timerRefName === "left") {
+                        if (_hideTimerLeft) { clearTimeout(_hideTimerLeft); _hideTimerLeft = null; }
+                    } else {
+                        if (_hideTimerRight) { clearTimeout(_hideTimerRight); _hideTimerRight = null; }
+                    }
+                }
+
+                if (edgeLeft && panelLeft) {
+                    edgeLeft.addEventListener("mouseenter", function () { _showPanel(panelLeft, _hideTimerLeft); });
+                    edgeLeft.addEventListener("mouseleave", function () { _hidePanel(panelLeft, "left"); });
+                    panelLeft.addEventListener("mouseenter", function () { _cancelHide("left"); _showPanel(panelLeft, _hideTimerLeft); });
+                    panelLeft.addEventListener("mouseleave", function () { _hidePanel(panelLeft, "left"); });
+                }
+                if (edgeRight && panelRight) {
+                    edgeRight.addEventListener("mouseenter", function () { _showPanel(panelRight, _hideTimerRight); });
+                    edgeRight.addEventListener("mouseleave", function () { _hidePanel(panelRight, "right"); });
+                    panelRight.addEventListener("mouseenter", function () { _cancelHide("right"); _showPanel(panelRight, _hideTimerRight); });
+                    panelRight.addEventListener("mouseleave", function () { _hidePanel(panelRight, "right"); });
+                }
+            })();
 
 
             function genMockWorkload(pinnedRank) {
@@ -5699,7 +6144,7 @@
                         .attr("y", stages.length * rowH + 16)
                         .attr("text-anchor", "middle").attr("fill", "#4a5568")
                         .attr("font-size", "9px")
-                        .attr("font-family", "JetBrains Mono,monospace")
+                        .attr("font-family", "var(--font-mono)")
                         .text(formatUs(tv));
                 }
 
@@ -5707,7 +6152,7 @@
                     g.append("text").attr("x", -8).attr("y", si * rowH + rowH / 2 + 4)
                         .attr("text-anchor", "end").attr("fill", "#7b8ca3")
                         .attr("font-size", "9px")
-                        .attr("font-family", "JetBrains Mono,monospace").text(s);
+                        .attr("font-family", "var(--font-mono)").text(s);
                 });
 
                 var tooltip = d3.select(container).append("div").attr("class", "result-tooltip");
@@ -5721,7 +6166,7 @@
                         .attr("fill", TYPE_COLORS[ct]).attr("rx", 2);
                     svg.append("text").attr("x", lx + 14).attr("y", legY)
                         .attr("fill", "#7b8ca3").attr("font-size", "9px")
-                        .attr("font-family", "JetBrains Mono,monospace")
+                        .attr("font-family", "var(--font-mono)")
                         .text(TYPE_LABELS[ct]);
                 });
 
@@ -6060,6 +6505,186 @@
                 });
             })();
 
+            // ── Equivalent Result Tab Renderer ──
+            function _renderResultPanel() {
+                var wrap = document.getElementById("result-panel-wrap");
+                if (!wrap) return;
+
+                if (!_comparisonReport) {
+                    wrap.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;flex:1;height:100%;color:var(--text-muted);font-family:var(--font-mono);font-size:13px">'
+                        + '<span>等待仿真完成...<br/><small>仿真任务完成后自动展示等效性验证结果</small></span></div>';
+                    return;
+                }
+
+                var cr = _comparisonReport;
+                var tol = cr.error_tolerance_pct || 5.0;
+                var isEq = cr.is_equivalent !== false;
+                var maxDiff = (cr.details && cr.details.max_diff_pct != null) ? cr.details.max_diff_pct : Math.max(cr.flops_diff_pct, cr.hbm_diff_pct, cr.tp_comm_diff_pct, cr.pp_comm_diff_pct, cr.dp_comm_diff_pct);
+
+                var html = '';
+
+                // ═══ 1. Verdict Card ═══
+                html += '<div class="result-verdict-card">';
+                html += '<div class="result-verdict-icon ' + (isEq ? 'pass' : 'fail') + '">' + (isEq ? '✅' : '❌') + '</div>';
+                html += '<div class="result-verdict-text">';
+                html += '<h2 class="' + (isEq ? 'pass' : 'fail') + '">' + (isEq ? '等效验证通过' : '等效验证不通过') + '</h2>';
+                html += '<div class="result-verdict-meta">';
+                html += '<span>容差: <strong>' + tol + '%</strong></span>';
+                html += '<span>最大差异: <strong>' + maxDiff.toFixed(2) + '%</strong></span>';
+                html += '<span>结论: <strong>' + (cr.details && cr.details.conclusion || (isEq ? '通过' : '不通过')) + '</strong></span>';
+                html += '</div></div></div>';
+
+                // ═══ 2. Five-dimension diff bars ═══
+                var diffs = [
+                    { label: 'FLOPs', val: cr.flops_diff_pct },
+                    { label: 'HBM', val: cr.hbm_diff_pct },
+                    { label: 'TP通信', val: cr.tp_comm_diff_pct },
+                    { label: 'PP通信', val: cr.pp_comm_diff_pct },
+                    { label: 'DP通信', val: cr.dp_comm_diff_pct }
+                ];
+                var barMaxPct = Math.max(10, maxDiff * 1.5); // scale so max diff is ~66% of bar width
+
+                html += '<div class="result-diff-section">';
+                html += '<div class="result-diff-title">五维差异对比</div>';
+                diffs.forEach(function (d) {
+                    var pass = d.val <= tol;
+                    var pctW = Math.min(100, (d.val / barMaxPct) * 100);
+                    var tolLinePct = (tol / barMaxPct) * 100;
+                    html += '<div class="result-diff-row">';
+                    html += '<div class="result-diff-label">' + d.label + '</div>';
+                    html += '<div class="result-diff-bar-bg">';
+                    html += '<div class="result-diff-bar-fill ' + (pass ? 'pass' : 'fail') + '" style="width:' + pctW.toFixed(1) + '%"></div>';
+                    html += '<div class="result-diff-tolerance-line" style="left:' + tolLinePct.toFixed(1) + '%"></div>';
+                    html += '</div>';
+                    html += '<div class="result-diff-pct ' + (pass ? 'pass' : 'fail') + '">' + d.val.toFixed(2) + '%</div>';
+                    html += '<div class="result-diff-badge">' + (pass ? '✓' : '✗') + '</div>';
+                    html += '</div>';
+                });
+                html += '<div style="display:flex;justify-content:space-between;margin-top:8px;padding-left:80px;font-family:var(--font-mono);font-size:9px;color:var(--text-muted)">';
+                html += '<span>0%</span><span>' + (barMaxPct / 2).toFixed(1) + '%</span><span>' + barMaxPct.toFixed(1) + '%</span>';
+                html += '</div>';
+                html += '</div>';
+
+                // ═══ 3. Config comparison tables ═══
+                var origMesh = meshOriginal || {};
+                var eqMesh = meshEquivalent || {};
+                var origModel = modelOriginal || {};
+                var eqModel = modelEquivalent || {};
+                var origCfg = origModel.config || {};
+                var eqCfg = eqModel.config || {};
+                var origComp = origModel.computed || {};
+                var eqComp = eqModel.computed || {};
+
+                var origNpu = (origMesh.dp || 0) * (origMesh.tp || 0) * (origMesh.pp || 0);
+                var eqNpu = (eqMesh.dp || 0) * (eqMesh.tp || 0) * (eqMesh.pp || 0);
+                var compRatio = eqNpu > 0 ? (origNpu / eqNpu).toFixed(1) : '—';
+
+                html += '<div class="result-config-section">';
+
+                // Topology config card
+                html += '<div class="result-config-card">';
+                html += '<div class="result-config-card-header">组网配置对比</div>';
+                html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
+                var topoRows = [
+                    ['设备', origMesh.device_type || '—', eqMesh.device_type || '—'],
+                    ['DP', origMesh.dp, eqMesh.dp],
+                    ['TP', origMesh.tp, eqMesh.tp],
+                    ['PP', origMesh.pp, eqMesh.pp],
+                    ['NPU总数', origNpu, eqNpu, true],
+                    ['压缩比', '—', compRatio + ':1', true]
+                ];
+                topoRows.forEach(function (r) {
+                    var hl = r[3] ? ' val-highlight' : '';
+                    html += '<tr><td>' + r[0] + '</td><td class="val-orig' + hl + '">' + r[1] + '</td><td class="val-eq' + hl + '">' + r[2] + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+
+                // Model config card
+                html += '<div class="result-config-card">';
+                html += '<div class="result-config-card-header">模型配置对比</div>';
+                html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
+                var modelRows = [
+                    ['L (层数)', origCfg.num_layers || '—', eqCfg.num_layers || '—', true],
+                    ['H (d_model)', origCfg.d_model || '—', eqCfg.d_model || '—'],
+                    ['A (heads)', origCfg.num_heads || '—', eqCfg.num_heads || '—'],
+                    ['d_ffn', origCfg.d_ffn || '—', eqCfg.d_ffn || '—'],
+                    ['d_head', origComp.d_head || '—', eqComp.d_head || '—'],
+                    ['参数量', origComp.total_params_billions || '—', eqComp.total_params_billions || '—']
+                ];
+                modelRows.forEach(function (r) {
+                    var hl = r[3] ? ' val-highlight' : '';
+                    html += '<tr><td>' + r[0] + '</td><td class="val-orig' + hl + '">' + r[1] + '</td><td class="val-eq' + hl + '">' + r[2] + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+
+                html += '</div>'; // end result-config-section
+
+                // ═══ 4. Per-card metric summary ═══
+                html += '<div class="result-metric-section">';
+                html += '<div class="result-metric-title">每卡仿真指标摘要 (avg / min / max)</div>';
+
+                function _aggMetrics(cardsMap) {
+                    if (!cardsMap) return null;
+                    var cards = Object.values(cardsMap);
+                    if (!cards.length) return null;
+                    function _stat(key) {
+                        var vals = cards.map(function (c) { return c[key] || 0; }).filter(function (v) { return v != null; });
+                        if (!vals.length) return { avg: 0, min: 0, max: 0 };
+                        var sum = vals.reduce(function (a, b) { return a + b; }, 0);
+                        return { avg: sum / vals.length, min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) };
+                    }
+                    return {
+                        flops: _stat('flops_per_card'),
+                        hbm: _stat('hbm_gb'),
+                        tp: _stat('tp_comm_gb_per_micro'),
+                        pp: _stat('pp_comm_mb_per_micro'),
+                        dp: _stat('dp_comm_gb_per_step')
+                    };
+                }
+
+                var origStats = _aggMetrics(meshActualOrig);
+                var eqStats = _aggMetrics(meshActualEq);
+
+                function _fmt(v, unit) {
+                    if (unit === 'FLOPs') return v >= 1e12 ? (v / 1e12).toFixed(2) + ' T' : (v / 1e9).toFixed(2) + ' G';
+                    if (unit === 'MB') return v.toFixed(3) + ' MB';
+                    return v.toFixed(4) + ' GB';
+                }
+
+                var metricItems = [
+                    { label: 'FLOPs / 卡', key: 'flops', unit: 'FLOPs' },
+                    { label: 'HBM 占用', key: 'hbm', unit: 'GB' },
+                    { label: 'TP 通信 / micro', key: 'tp', unit: 'GB' },
+                    { label: 'PP 通信 / micro', key: 'pp', unit: 'MB' },
+                    { label: 'DP 通信 / step', key: 'dp', unit: 'GB' }
+                ];
+
+                html += '<div class="result-metric-grid">';
+                metricItems.forEach(function (mi) {
+                    html += '<div class="result-metric-item">';
+                    html += '<div class="result-metric-item-label">' + mi.label + '</div>';
+                    if (origStats && origStats[mi.key]) {
+                        var os = origStats[mi.key];
+                        html += '<div class="result-metric-item-row"><span class="tag-orig">原始 avg</span><span class="val">' + _fmt(os.avg, mi.unit) + '</span></div>';
+                        html += '<div class="result-metric-item-row"><span class="tag-orig"> min / max</span><span class="val">' + _fmt(os.min, mi.unit) + ' / ' + _fmt(os.max, mi.unit) + '</span></div>';
+                    } else {
+                        html += '<div class="result-metric-item-row"><span class="tag-orig">原始</span><span class="val">—</span></div>';
+                    }
+                    if (eqStats && eqStats[mi.key]) {
+                        var es = eqStats[mi.key];
+                        html += '<div class="result-metric-item-row"><span class="tag-eq">等效 avg</span><span class="val">' + _fmt(es.avg, mi.unit) + '</span></div>';
+                        html += '<div class="result-metric-item-row"><span class="tag-eq"> min / max</span><span class="val">' + _fmt(es.min, mi.unit) + ' / ' + _fmt(es.max, mi.unit) + '</span></div>';
+                    } else {
+                        html += '<div class="result-metric-item-row"><span class="tag-eq">等效</span><span class="val">—</span></div>';
+                    }
+                    html += '</div>';
+                });
+                html += '</div>'; // end result-metric-grid
+                html += '</div>'; // end result-metric-section
+
+                wrap.innerHTML = html;
+            }
+
             function _renderSimResults() {
                 var area = document.getElementById("sim-results-area");
                 if (!area) return;
@@ -6187,7 +6812,10 @@
             function checkSimReady() {
                 var btn = document.getElementById("btn-start-sim");
                 var simTabBtn = document.getElementById("tab-btn-simulation");
+                var resultTabBtn = document.getElementById("tab-btn-result");
                 var isPolling = !!(_simPollTimer || _simWs);
+                // Result tab: only enabled when simulation is fully completed
+                if (resultTabBtn) resultTabBtn.disabled = !_simCompleted;
                 // Already completed — show done state
                 if (_simCompleted) {
                     if (btn) { btn.disabled = true; btn.textContent = "仿真已完成"; btn.classList.add("sim-done"); btn.classList.remove("sim-retry"); }
@@ -6233,6 +6861,7 @@
                 btn.classList.remove("sim-done", "sim-retry");
                 _simFailed = false;
                 _simCompleted = false;
+                _comparisonReport = null;
                 if (_simPollTimer) { clearTimeout(_simPollTimer); _simPollTimer = null; }
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
                 setStatus("仿真验证中");
@@ -6304,6 +6933,7 @@
                     if (results.comparison) {
                         // Simulation already complete (MCP returned card data immediately)
                         _simCompleted = true;
+                        _comparisonReport = results.comparison;
                         updateWorkflowNode("simulation", "completed");
                         if (results.comparison.is_equivalent === false) {
                             updateWorkflowNode("comparison", "failed");
@@ -6349,6 +6979,7 @@
             var _simWs = null; // WebSocket for simulation status
             var _simStreamDone = false; // true when 60s mock streaming countdown expires
             var _simStarted = false;
+            var _comparisonReport = null; // ComparisonReport from backend, set when simulation completes
 
             function _connectSimWebSocket(taskIds) {
                 // Close any existing connection
@@ -6422,6 +7053,7 @@
                     .then(function (data) {
                         var results = data.results || {};
                         _simCompleted = true;
+                        _comparisonReport = results.comparison || null;
                         setStatus("验证完成");
                         updateWorkflowNode("simulation", "completed");
                         if (results.comparison) {
@@ -6455,6 +7087,7 @@
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
                 _simFailed = true;
                 _simCompleted = false;
+                _comparisonReport = null;
                 setStatus("验证失败");
                 updateWorkflowNode("simulation", "failed");
                 addMessage("error", "仿真任务失败: " + (message || "未知错误"));
@@ -6509,12 +7142,12 @@
             (function () {
                 var savedTab = sessionStorage.getItem("activeCanvasTab");
                 var hasSession = !!(JSON.parse(localStorage.getItem("mesh_session") || "{}")).id;
-                if (savedTab !== "simulation" || !hasSession) return;
+                if ((savedTab !== "simulation" && savedTab !== "result") || !hasSession) return;
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
-                    t.classList.toggle("active", t.getAttribute("data-tab") === "simulation");
+                    t.classList.toggle("active", t.getAttribute("data-tab") === savedTab);
                 });
                 document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
-                    p.classList.toggle("active", p.id === "tab-panel-simulation");
+                    p.classList.toggle("active", p.id === "tab-panel-" + savedTab);
                 });
             })();
 
