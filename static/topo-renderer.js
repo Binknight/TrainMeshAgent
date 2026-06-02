@@ -16,6 +16,7 @@
 // ── Estimation engine — fetched from backend ──
 
 var _estimateFetchAbort = {}; // track abort controllers per side to cancel stale requests
+var _estimateInFlight = {};  // track in-flight estimate requests per side to avoid duplicate calls
 
 async function fetchEstimates(
   deviceType,
@@ -26,10 +27,21 @@ async function fetchEstimates(
   side,
   numLayers,
   hiddenDim,
+  dFfn,
+  seqLen,
+  batchSize,
+  microBatch,
 ) {
+  // ── Cancel any previous in-flight request for the same side ──
+  var oldCtrl = _estimateFetchAbort[side];
+  if (oldCtrl) {
+    oldCtrl.abort();
+    delete _estimateFetchAbort[side];
+  }
+
   var ctrl = new AbortController();
-  var sideKey = side + "_" + Date.now();
-  _estimateFetchAbort[sideKey] = ctrl;
+  _estimateFetchAbort[side] = ctrl;
+  _estimateInFlight[side] = true;
   var timeout = setTimeout(function () {
     ctrl.abort();
   }, 10000);
@@ -44,6 +56,10 @@ async function fetchEstimates(
     };
     if (numLayers != null) body.num_layers = numLayers;
     if (hiddenDim != null) body.hidden_dim = hiddenDim;
+    if (dFfn != null) body.d_ffn = dFfn;
+    if (seqLen != null) body.seq_len = seqLen;
+    if (batchSize != null) body.total_batch = batchSize;
+    if (microBatch != null) body.micro_batch = microBatch;
 
     var resp = await fetch(API + "/session/estimate", {
       method: "POST",
@@ -61,9 +77,10 @@ async function fetchEstimates(
     return est;
   } finally {
     clearTimeout(timeout);
-    if (_estimateFetchAbort[sideKey] === ctrl) {
-      delete _estimateFetchAbort[sideKey];
+    if (_estimateFetchAbort[side] === ctrl) {
+      delete _estimateFetchAbort[side];
     }
+    _estimateInFlight[side] = false;
   }
 }
 
@@ -333,11 +350,11 @@ function _buildTooltipBody(globalRank, metrics, isOrig, showHint) {
       isOrig,
     );
     html += _buildCompareRow(
-      "HBM",
+      "HBM(模型)",
       "GB",
       estimate,
       actual,
-      "hbm_gb",
+      "hbm_model_gb",
       null,
       globalRank,
       isOrig,
@@ -406,8 +423,10 @@ function _buildSingleTable(metrics) {
   var html = '<table class="tooltip-table">';
   html += _buildMetricRow("单卡FLOPs", formatFlops(metrics.flops_per_card), "");
   html += _buildMetricRow(
-    "HBM",
-    metrics.hbm_gb != null ? Number(metrics.hbm_gb).toFixed(2) : "—",
+    "HBM(模型)",
+    (metrics.hbm_model_gb || metrics.hbm_gb) != null
+      ? Number(metrics.hbm_model_gb || metrics.hbm_gb).toFixed(2)
+      : "—",
     "GB",
   );
   html += _buildMetricRow(
@@ -493,7 +512,7 @@ function _buildCompareRow(
       ",'flops')\">查看</a>";
   } else {
     var linkType = key.replace(/_per_micro|_per_step|_gb|_mb/g, "");
-    if (key === "hbm_gb") linkType = "hbm";
+    if (key === "hbm_model_gb") linkType = "hbm";
     else if (key === "tp_comm_gb_per_micro") linkType = "tp-comm";
     else if (key === "pp_comm_mb_per_micro") linkType = "pp-comm";
     else if (key === "dp_comm_gb_per_step") linkType = "dp-comm";
@@ -1239,83 +1258,6 @@ function _updateDpSelect(selId, activeDp) {
 
 // ── Center Panel: independent formula card + bar chart card ──
 
-// ── Formula loading animation (glow border + staggered text reveal) ──
-function _animateFormulaLoad(cardG, textSelections, cardX, cardY, cardW, cardH) {
-  // Remove any existing glow
-  cardG.selectAll(".formula-glow-group").remove();
-
-  // Glow group
-  var glowG = cardG.insert("g", ".formula-content-group")
-    .attr("class", "formula-glow-group");
-
-  // Wide ambient glow
-  glowG.append("rect")
-    .attr("x", cardX)
-    .attr("y", cardY)
-    .attr("width", cardW)
-    .attr("height", cardH)
-    .attr("rx", 8)
-    .attr("ry", 8)
-    .attr("fill", "none")
-    .attr("stroke", "#39bae6")
-    .attr("stroke-width", 5)
-    .attr("stroke-dasharray", "6 78")
-    .attr("stroke-dashoffset", 0)
-    .attr("opacity", 0.18)
-    .attr("pointer-events", "none");
-
-  // Core bright glow
-  var glowCore = glowG.append("rect")
-    .attr("x", cardX)
-    .attr("y", cardY)
-    .attr("width", cardW)
-    .attr("height", cardH)
-    .attr("rx", 8)
-    .attr("ry", 8)
-    .attr("fill", "none")
-    .attr("stroke", "#39bae6")
-    .attr("stroke-width", 2.5)
-    .attr("stroke-dasharray", "14 78")
-    .attr("stroke-dashoffset", 0)
-    .attr("opacity", 0.8)
-    .attr("filter", "url(#flow-neon-glow)")
-    .attr("pointer-events", "none");
-
-  // Continuous flowing animation
-  function _loopGlow() {
-    glowCore.transition()
-      .duration(1000)
-      .ease(d3.easeLinear)
-      .attrTween("stroke-dashoffset", function () {
-        return d3.interpolate(0, -92);
-      })
-      .on("end", _loopGlow);
-  }
-  _loopGlow();
-
-  // Staggered text reveal
-  if (!textSelections || textSelections.length === 0) {
-    glowG.transition().duration(300).attr("opacity", 0).remove();
-    return;
-  }
-
-  textSelections.forEach(function (text, i) {
-    var isLast = i === textSelections.length - 1;
-    // Interrupt any stale transition before setting opacity and starting new one
-    text.interrupt().attr("opacity", 0);
-    var t = text
-      .transition()
-      .delay(200 + i * 150)
-      .duration(400)
-      .attr("opacity", 1);
-    if (isLast) {
-      t.on("end", function () {
-        glowG.interrupt().transition().duration(350).attr("opacity", 0).remove();
-      });
-    }
-  });
-}
-
 function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var cardG = parentG.append("g").attr("class", "formula-card-group");
   var pad = 14;
@@ -1452,7 +1394,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
         .attr("x", viewX + pad + 4)
         .attr("y", curY + 14)
         .attr("fill", "var(--text-primary)")
-        .attr("font-size", "11px")
+        .attr("font-size", "10px")
         .attr("font-family", "var(--font-mono)")
         .text(line);
       formulaTexts.push(ft);
@@ -1471,10 +1413,6 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
     curY += lineH_desc + sectGap;
   });
 
-  if (!_centerPanelState.formulasCollapsed && !sessionStorage.getItem("fxAnimDone")) {
-    _animateFormulaLoad(formulaCardG, formulaTexts, viewX, viewY, viewW, formulaCardFullH);
-    sessionStorage.setItem("fxAnimDone", "1");
-  }
 
   // ═══ Bar chart card (bottom) ═══
   var effFormulaH = _centerPanelState.formulasCollapsed ? headerH : formulaCardFullH;
@@ -1610,7 +1548,6 @@ function _updateFormulaCollapse() {
     st.formulaG.attr("display", "none");
     st.toggleChev.text("▶");
     st.formulaCardRect.attr("height", st.headerH);
-    st.g.selectAll(".formula-glow-group").remove();
     if (st.barCardVisible && st.rankData) {
       st.barCardG.attr("display", null);
     }
@@ -1631,15 +1568,8 @@ function _updateFormulaCollapse() {
     st.formulaG.attr("display", null);
     st.toggleChev.text("▼");
 
-    // Animate text reveal on first expand only; subsequent expands show instantly
     if (st._formulaTexts && st._formulaTexts.length > 0) {
-      if (!sessionStorage.getItem("fxAnimDone")) {
-        var cardW = Number(st.formulaCardRect.attr("width"));
-        _animateFormulaLoad(st.g, st._formulaTexts, st.cardX, st.cardY, cardW, st.formulaCardFullH);
-        sessionStorage.setItem("fxAnimDone", "1");
-      } else {
-        st._formulaTexts.forEach(function (t) { t.interrupt().attr("opacity", 1); });
-      }
+      st._formulaTexts.forEach(function (t) { t.interrupt().attr("opacity", 1); });
     }
   }
 
@@ -1712,7 +1642,7 @@ function _centerPanelBarRecalc() {
 
 var _BAR_METRICS = [
   { key: "flops_per_card", label: "单卡FLOPs", fmt: null, unit: "" },
-  { key: "hbm_gb", label: "HBM", fmt: null, unit: "GB" },
+  { key: "hbm_model_gb", label: "HBM(模型)", fmt: null, unit: "GB" },
   { key: "tp_comm_gb_per_micro", label: "TP通信", fmt: null, unit: "GB/micro" },
   { key: "pp_comm_mb_per_micro", label: "PP通信", fmt: null, unit: "MB/micro" },
   { key: "dp_comm_gb_per_step", label: "DP通信", fmt: null, unit: "GB/step" },
@@ -1768,7 +1698,7 @@ function _updateCenterBarChart(globalRank, side) {
 
 var _DETAIL_MAP = {
   flops_per_card: "flops",
-  hbm_gb: "hbm",
+  hbm_model_gb: "hbm",
   tp_comm_gb_per_micro: "tp-comm",
   pp_comm_mb_per_micro: "pp-comm",
   dp_comm_gb_per_step: "dp-comm",
@@ -1937,9 +1867,8 @@ function _getDetailSubs(detailType) {
   if (detailType === "hbm") {
     return [
       { key: "weights_gb", label: "模型权重" },
-      { key: "gradients_gb", label: "梯度" },
       { key: "optimizer_gb", label: "优化器状态" },
-      { key: "activations_gb", label: "激活值" },
+      { key: "gradients_gb", label: "梯度" },
     ];
   }
   return [
@@ -1968,7 +1897,7 @@ function _renderDetailCharts() {
   // Position below the actual bar content
   var chartY = (st._barsBottomY || st.detailY) + 12;
 
-  var typeLabel = detailType === "flops" ? "FLOPs" : detailType === "hbm" ? "HBM" : "通信";
+  var typeLabel = detailType === "flops" ? "FLOPs" : detailType === "hbm" ? "模型显存" : "通信";
 
   if (isPieDetail && hasBoth) {
     // Horizontal layout centered in card: [Left Pie] [Legend center] [Right Pie]
@@ -2150,7 +2079,7 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
     .attr("fill", "var(--text-muted)")
     .attr("font-size", "8px")
     .attr("font-family", "var(--font-sans)")
-    .text("合计");
+    .text(detailType === "hbm" ? "模型显存" : "合计");
 
   // Tooltip flyout box
   var tipW = 90, tipH = 28;
@@ -2905,25 +2834,6 @@ function canvasRebuild(targetSelector) {
       .attr("flood-color", "#ff8f40")
       .attr("flood-opacity", 0.6);
 
-    // Neon glow filter for formula loading border
-    var flowFilter = defs
-      .append("filter")
-      .attr("id", _currentFilterPrefix + "flow-neon-glow")
-      .attr("x", "-50%")
-      .attr("y", "-50%")
-      .attr("width", "200%")
-      .attr("height", "200%");
-    flowFilter
-      .append("feGaussianBlur")
-      .attr("stdDeviation", "3")
-      .attr("result", "blur");
-    flowFilter
-      .append("feMerge")
-      .selectAll("feMergeNode")
-      .data(["blur", "SourceGraphic"])
-      .enter()
-      .append("feMergeNode")
-      .attr("in", function (d) { return d; });
 
     defs
       .append("style")
@@ -2977,7 +2887,7 @@ function canvasRebuild(targetSelector) {
 
       var _tH = 26,
         _gap = 10;
-      var _cardW = 380; // fixed card width, centered between topologies
+      var _cardW = 440; // fixed card width, centered between topologies
       var _availForTopos = meshWidth - _cardW - _gap * 2;
       var dimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
       var dimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
@@ -3213,7 +3123,7 @@ function canvasRebuild(targetSelector) {
       // ── Two-Part Mode: Orig + Card ──
       var _tH2 = 26,
         _gap2 = 10;
-      var _cardW2 = 380; // fixed card width
+      var _cardW2 = 440; // fixed card width
       var _origW2 = meshWidth - _cardW2 - _gap2;
       var _contentH2 = topoH - _tH2;
       var _sharedScale2 = 0.5;
@@ -3569,11 +3479,17 @@ async function loadMeshData(topoData) {
       meshModelOrig = {
         num_layers: topoData.num_layers,
         hidden_dim: topoData.hidden_dim,
+        d_ffn: topoData.d_ffn,
+        seq_len: topoData.seq_len,
+        batch_size: topoData.batch_size,
       };
     } else {
       meshModelEq = {
         num_layers: topoData.num_layers,
         hidden_dim: topoData.hidden_dim,
+        d_ffn: topoData.d_ffn,
+        seq_len: topoData.seq_len,
+        batch_size: topoData.batch_size,
       };
     }
   }
@@ -3587,24 +3503,46 @@ async function loadMeshData(topoData) {
   }
   if (typeof checkSimReady === "function") checkSimReady();
 
-  // Skip estimate fetch if already populated (prevent duplicate calls on re-entry)
+  // Skip estimate fetch if already populated, or if model params not yet available
+  // (loadModelData will trigger _refetchMeshEstimate with full params later)
   var existing = isOrig ? meshEstimateOrig : meshEstimateEq;
-  if (Object.keys(existing).length === 0 || existing[0] == null) {
+  var modelSide = isOrig ? modelOriginal : modelEquivalent;
+  var meshModel = isOrig ? meshModelOrig : meshModelEq;
+  var numLayers =
+    topoData.num_layers != null
+      ? topoData.num_layers
+      : (meshModel && meshModel.num_layers) ||
+        (modelSide && modelSide.config
+          ? modelSide.config.num_layers
+          : null);
+  var hiddenDim =
+    topoData.hidden_dim != null
+      ? topoData.hidden_dim
+      : (meshModel && meshModel.hidden_dim) ||
+        (modelSide && modelSide.config ? modelSide.config.d_model : null);
+  var dFfn =
+    topoData.d_ffn != null
+      ? topoData.d_ffn
+      : (meshModel && meshModel.d_ffn) ||
+        (modelSide && modelSide.config ? modelSide.config.d_ffn : null);
+  var seqLen =
+    topoData.seq_len != null
+      ? topoData.seq_len
+      : (meshModel && meshModel.seq_len) || null;
+  var batchSize =
+    topoData.batch_size != null
+      ? topoData.batch_size
+      : (meshModel && meshModel.batch_size) || null;
+  var microBatch =
+    topoData.micro_batch_size != null
+      ? topoData.micro_batch_size
+      : (meshModel && meshModel.micro_batch_size) || null;
+
+  var hasModelParams = numLayers != null;
+  var alreadyInFlight = _estimateInFlight[side];
+  var alreadyPopulated = Object.keys(existing).length > 0 && existing[0] != null;
+  if (hasModelParams && !alreadyInFlight && !alreadyPopulated) {
     try {
-      var modelSide = isOrig ? modelOriginal : modelEquivalent;
-      var meshModel = isOrig ? meshModelOrig : meshModelEq;
-      var numLayers =
-        topoData.num_layers != null
-          ? topoData.num_layers
-          : (meshModel && meshModel.num_layers) ||
-            (modelSide && modelSide.config
-              ? modelSide.config.num_layers
-              : null);
-      var hiddenDim =
-        topoData.hidden_dim != null
-          ? topoData.hidden_dim
-          : (meshModel && meshModel.hidden_dim) ||
-            (modelSide && modelSide.config ? modelSide.config.d_model : null);
       var estimates = await fetchEstimates(
         deviceType,
         totalNodes,
@@ -3614,6 +3552,10 @@ async function loadMeshData(topoData) {
         side,
         numLayers,
         hiddenDim,
+        dFfn,
+        seqLen,
+        batchSize,
+        microBatch,
       );
       if (isOrig) {
         meshEstimateOrig = estimates;
@@ -3621,11 +3563,16 @@ async function loadMeshData(topoData) {
         meshEstimateEq = estimates;
       }
     } catch (e) {
-      console.warn("Estimate fetch failed, using empty estimates:", e);
-      if (isOrig) {
-        meshEstimateOrig = {};
+      // If aborted by a newer request, don't clear the estimates — the newer request will fill them
+      if (e.name === "AbortError") {
+        console.log("Estimate fetch aborted (superseded by newer request for " + side + ")");
       } else {
-        meshEstimateEq = {};
+        console.warn("Estimate fetch failed, using empty estimates:", e);
+        if (isOrig) {
+          meshEstimateOrig = {};
+        } else {
+          meshEstimateEq = {};
+        }
       }
     }
   }
@@ -3758,11 +3705,11 @@ function _appendFormulaLine(section, line) {
   }
 
   var isSectionLabel = line.indexOf("▸") === 0;
-  var fontSize = isSectionLabel ? "12px" : "11px";
+  var fontSize = isSectionLabel ? "12px" : "10px";
   var fontFamily = isSectionLabel ? "var(--font-sans)" : "var(--font-mono)";
   var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
   var fontWeight = isSectionLabel ? "600" : "400";
-  var lineH = isSectionLabel ? 20 : 16;
+  var lineH = isSectionLabel ? 20 : 14;
   var textX = cardX + (isSectionLabel ? _formulaCardPad : _formulaCardPad + 4);
 
   var textEl = contentG
@@ -3820,11 +3767,11 @@ function _replayFormulaLines() {
   var formulaTexts = [];
   lines.forEach(function (item) {
     var isSectionLabel = item.line.indexOf("▸") === 0;
-    var fontSize = isSectionLabel ? "12px" : "11px";
+    var fontSize = isSectionLabel ? "12px" : "10px";
     var fontFamily = isSectionLabel ? "var(--font-sans)" : "var(--font-mono)";
     var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
     var fontWeight = isSectionLabel ? "600" : "400";
-    var lineH = isSectionLabel ? 20 : 16;
+    var lineH = isSectionLabel ? 20 : 14;
     var textX = cardX + (isSectionLabel ? _formulaCardPad : _formulaCardPad + 4);
     var textEl = contentG
       .append("text")
@@ -3963,7 +3910,7 @@ var _centerPanelState = {
 function _metricTypeLabel(type) {
   var map = {
     flops: "单卡FLOPs详情",
-    hbm: "HBM 占用详情",
+    hbm: "模型显存详情",
     "tp-comm": "TP通信详情",
     "pp-comm": "PP通信详情",
     "dp-comm": "DP通信详情",
@@ -4222,27 +4169,40 @@ function _showDetailPanel(panel, tooltip, globalRank, data, metricType) {
 function _renderHbmDetailHtml(d) {
   var html = '<table class="tooltip-detail-table">';
   html += "<tr><th>参数</th><th>占用 (GB)</th><th>占比</th></tr>";
-  var items = [
+  var modelItems = [
     { label: "权重", value: d.weights_gb },
     { label: "梯度", value: d.gradients_gb },
     { label: "优化器", value: d.optimizer_gb },
-    { label: "激活", value: d.activations_gb },
   ];
-  var total = d.total_hbm_gb || 1;
-  items.forEach(function (item) {
+  var modelTotal = d.model_hbm_gb || (d.weights_gb + d.gradients_gb + d.optimizer_gb);
+  var baseTotal = modelTotal || 1;
+  modelItems.forEach(function (item) {
     html +=
       '<tr><td class="tooltip-detail-label">' +
       item.label +
       "</td><td>" +
       item.value.toFixed(2) +
       "</td><td>" +
-      ((item.value / total) * 100).toFixed(1) +
+      ((item.value / baseTotal) * 100).toFixed(1) +
       "%</td></tr>";
   });
   html +=
-    '<tr class="total-row"><td class="tooltip-detail-label">总计</td><td>' +
-    d.total_hbm_gb.toFixed(2) +
+    '<tr class="total-row"><td class="tooltip-detail-label">模型显存</td><td>' +
+    modelTotal.toFixed(2) +
     "</td><td>100%</td></tr>";
+  // Show activations and full total as supplementary info
+  if (d.activations_gb != null) {
+    html +=
+      '<tr><td class="tooltip-detail-label">激活值</td><td>' +
+      d.activations_gb.toFixed(2) +
+      "</td><td>—</td></tr>";
+  }
+  if (d.total_hbm_gb != null) {
+    html +=
+      '<tr><td class="tooltip-detail-label">全量HBM</td><td>' +
+      d.total_hbm_gb.toFixed(2) +
+      "</td><td>—</td></tr>";
+  }
   html += "</table>";
   return html;
 }
@@ -4509,6 +4469,10 @@ function loadModelData(modelData, role) {
       meshModelOrig = {
         num_layers: modelData.config.num_layers || modelData.layers_count,
         hidden_dim: modelData.config.d_model,
+        d_ffn: modelData.config.d_ffn,
+        seq_len: modelData.seq_len,
+        batch_size: modelData.batch_size,
+        micro_batch_size: modelData.micro_batch_size,
       };
     }
     // If mesh already loaded, re-fetch estimates with correct model params
@@ -4519,6 +4483,10 @@ function loadModelData(modelData, role) {
       meshModelEq = {
         num_layers: modelData.config.num_layers || modelData.layers_count,
         hidden_dim: modelData.config.d_model,
+        d_ffn: modelData.config.d_ffn,
+        seq_len: modelData.seq_len,
+        batch_size: modelData.batch_size,
+        micro_batch_size: modelData.micro_batch_size,
       };
     }
     if (meshEquivalent) _refetchMeshEstimate("eq");
@@ -4540,6 +4508,10 @@ async function _refetchMeshEstimate(side) {
       side,
       model.num_layers,
       model.hidden_dim,
+      model.d_ffn,
+      model.seq_len,
+      model.batch_size,
+      model.micro_batch_size,
     );
     if (side === "orig") {
       meshEstimateOrig = estimates;
