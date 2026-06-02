@@ -5260,12 +5260,11 @@ function _renderOneModel(
 
   if (ppCount && cfg.num_layers) {
     var layersPerPp = Math.floor(cfg.num_layers / ppCount);
-    var COL_PP = 40,
-      COL_START = 42,
-      COL_END_W = 42;
+    var COL_PP = 50,
+      COL_RANGE = 74;
     var ROW_H = 14,
       HEADER_H = 15;
-    var tableW = COL_PP + COL_START + COL_END_W;
+    var tableW = COL_PP + COL_RANGE;
     var tableX = D.TENSOR_X + (D.TENSOR_W - tableW) / 2;
 
     var tableH = HEADER_H + ppCount * ROW_H;
@@ -5274,8 +5273,7 @@ function _renderOneModel(
 
     // Column boundary X positions
     var sepX1 = tableX + COL_PP;
-    var sepX2 = tableX + COL_PP + COL_START;
-    var colSeps = [sepX1, sepX2];
+    var colSeps = [sepX1];
 
     // ── Cell backgrounds (drawn first, below grid lines) ──
     // Header row background
@@ -5357,25 +5355,16 @@ function _renderOneModel(
       .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
-      .text("PP");
+      .text("PP索引");
     sg.append("text")
-      .attr("x", tableX + COL_PP + COL_START / 2)
+      .attr("x", tableX + COL_PP + COL_RANGE / 2)
       .attr("y", headerY)
       .attr("text-anchor", "middle")
       .attr("font-size", 8)
       .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
-      .text("Start");
-    sg.append("text")
-      .attr("x", tableX + COL_PP + COL_START + COL_END_W / 2)
-      .attr("y", headerY)
-      .attr("text-anchor", "middle")
-      .attr("font-size", 8)
-      .attr("font-family", "var(--font-sans)")
-      .attr("font-weight", 600)
-      .attr("fill", "var(--text-secondary)")
-      .text("End");
+      .text("模型起止层数");
 
     // ── Data row text ──
     for (var pi2 = 0; pi2 < ppCount; pi2++) {
@@ -5393,21 +5382,13 @@ function _renderOneModel(
         .attr("fill", "var(--text-primary)")
         .text(pi2);
       sg.append("text")
-        .attr("x", tableX + COL_PP + COL_START / 2)
+        .attr("x", tableX + COL_PP + COL_RANGE / 2)
         .attr("y", rowTextY)
         .attr("text-anchor", "middle")
         .attr("font-size", 8)
         .attr("font-family", "var(--font-mono)")
         .attr("fill", "var(--text-primary)")
-        .text(layerStart2);
-      sg.append("text")
-        .attr("x", tableX + COL_PP + COL_START + COL_END_W / 2)
-        .attr("y", rowTextY)
-        .attr("text-anchor", "middle")
-        .attr("font-size", 8)
-        .attr("font-family", "var(--font-mono)")
-        .attr("fill", "var(--text-primary)")
-        .text(layerEnd2);
+        .text(layerStart2 + "~" + layerEnd2);
     }
 
     legendTopY = mapTableY + tableH + 36;
