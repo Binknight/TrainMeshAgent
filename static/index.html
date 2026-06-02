@@ -294,17 +294,24 @@
                 display: flex;
                 flex-direction: column;
                 min-width: 0;
+                position: relative;
             }
             .canvas-toolbar {
-                height: 36px;
+                height: 52px;
                 background: var(--bg-panel);
                 border-bottom: 1px solid var(--border);
                 display: flex;
                 align-items: center;
                 padding: 0 14px;
-                gap: 10px;
+                gap: 8px;
                 flex-shrink: 0;
                 user-select: none;
+                position: relative;
+            }
+            .wf-inline-svg {
+                flex: 1;
+                min-width: 200px;
+                overflow: visible;
             }
             .canvas-label {
                 font-family: var(--font-mono);
@@ -943,29 +950,113 @@
                 white-space: nowrap;
             }
 
-            /* ── Workflow Panel ── */
-            .workflow-panel {
-                height: 520px;
-                min-height: 200px;
-                flex-shrink: 0;
+            /* ── Chevron Shapes ── */
+            .wf-chevron {
+                transition: all 0.25s ease;
+                stroke-width: 1.2;
+            }
+            .wf-chevron.pending {
+                fill: var(--bg-surface);
+                stroke: #8a94a1;
+                stroke-dasharray: 4 3;
+            }
+            .wf-chevron.active {
+                fill: rgba(57, 186, 230, 0.08);
+                stroke: var(--cyan);
+                stroke-width: 1.8;
+                filter: drop-shadow(0 0 4px rgba(57, 186, 230, 0.3));
+                animation: wf-pulse 2s ease-in-out infinite;
+            }
+            .wf-chevron.completed {
+                fill: rgba(127, 217, 98, 0.06);
+                stroke: var(--green);
+                filter: drop-shadow(0 0 3px rgba(127, 217, 98, 0.2));
+            }
+            .wf-chevron.failed {
+                fill: rgba(242, 109, 120, 0.06);
+                stroke: var(--red);
+            }
+            .wf-chevron.waiting_input {
+                fill: rgba(255, 180, 84, 0.08);
+                stroke: var(--yellow);
+                animation: wf-pulse-yellow 1.5s ease-in-out infinite;
+            }
+            .wf-chevron.disabled {
+                fill: var(--bg-surface);
+                stroke: var(--border);
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+
+            /* Progress bar */
+            .wf-progress-track {
+                fill: var(--border);
+                opacity: 0.3;
+            }
+            .wf-progress-fill {
+                transition: width 0.4s ease;
+            }
+
+            /* Sub-step Popover */
+            .wf-substep-popover {
+                position: absolute;
+                background: var(--bg-panel);
+                border: 1px solid var(--border-active);
+                border-radius: var(--radius);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+                padding: 8px 12px;
+                z-index: 100;
+                min-width: 170px;
+                animation: wf-popover-in 0.15s ease-out;
+            }
+            .wf-popover-arrow {
+                position: absolute;
+                top: -6px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 0;
+                height: 0;
+                border-left: 6px solid transparent;
+                border-right: 6px solid transparent;
+                border-bottom: 6px solid var(--border-active);
+            }
+            .wf-substep-pill {
                 display: flex;
-                flex-direction: column;
-                position: relative;
-            }
-            .wf-resize-handle {
-                height: 6px;
-                background: var(--border);
-                cursor: ns-resize;
-                flex-shrink: 0;
-                transition: background 0.15s;
-            }
-            .wf-resize-handle:hover,
-            .wf-resize-handle.active {
-                background: var(--cyan);
-            }
-            .workflow-panel .panel-header {
-                justify-content: space-between;
+                align-items: center;
                 gap: 8px;
+                padding: 5px 10px;
+                border-radius: 12px;
+                margin-bottom: 3px;
+                font-size: 12px;
+                font-family: var(--font-sans);
+                transition: background 0.15s;
+                cursor: default;
+            }
+            .wf-substep-pill:hover {
+                background: var(--bg-hover);
+            }
+            .wf-substep-pill.completed .wf-substep-label {
+                color: var(--green);
+            }
+            .wf-substep-pill.active .wf-substep-label {
+                color: var(--cyan);
+                font-weight: 600;
+            }
+            .wf-substep-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+            @keyframes wf-popover-in {
+                from {
+                    opacity: 0;
+                    transform: translateY(-4px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
             }
             /* ── AI Mode Toggle ── */
             .ai-toggle {
@@ -1018,19 +1109,7 @@
                 background: var(--cyan);
                 box-shadow: 0 0 6px rgba(57, 186, 230, 0.6);
             }
-            .workflow-svg-wrap {
-                flex: 1;
-                overflow-y: auto;
-                padding: 4px 8px;
-                position: relative;
-            }
-            .workflow-svg-wrap::-webkit-scrollbar {
-                width: 3px;
-            }
-            .workflow-svg-wrap::-webkit-scrollbar-thumb {
-                background: var(--border);
-                border-radius: 2px;
-            }
+            /* workflow-svg-wrap removed — replaced by horizontal flow bar */
 
             /* ── Chat Panel (wraps existing chat area) ── */
             .chat-panel {
@@ -1044,41 +1123,7 @@
                 justify-content: space-between;
             }
 
-            /* ── Workflow Node SVG styles ── */
-            .wf-node-rect {
-                transition: all 0.25s ease;
-                cursor: pointer;
-            }
-            .wf-node-rect.pending {
-                fill: var(--bg-surface);
-                stroke: #8a94a1;
-                stroke-dasharray: 4 3;
-            }
-            .wf-node-rect.active {
-                fill: rgba(57, 186, 230, 0.08);
-                stroke: var(--cyan);
-                stroke-width: 1.8;
-                animation: wf-pulse 2s ease-in-out infinite;
-            }
-            .wf-node-rect.completed {
-                fill: rgba(127, 217, 98, 0.06);
-                stroke: var(--green);
-            }
-            .wf-node-rect.failed {
-                fill: rgba(242, 109, 120, 0.06);
-                stroke: var(--red);
-            }
-            .wf-node-rect.waiting_input {
-                fill: rgba(255, 180, 84, 0.08);
-                stroke: var(--yellow);
-                animation: wf-pulse-yellow 1.5s ease-in-out infinite;
-            }
-            .wf-node-rect.disabled {
-                fill: var(--bg-surface);
-                stroke: var(--border);
-                opacity: 0.45;
-                cursor: not-allowed;
-            }
+            /* wf-node-rect removed — replaced by .wf-chevron in horizontal flow bar */
             @keyframes wf-pulse {
                 0%,
                 100% {
@@ -1119,7 +1164,7 @@
             /* ── Parameter Input Overlay ── */
             .workflow-param-overlay {
                 position: absolute;
-                top: 36px;
+                top: 0;
                 left: 0;
                 right: 0;
                 bottom: 0;
@@ -1128,7 +1173,7 @@
                 display: flex;
                 align-items: flex-start;
                 justify-content: center;
-                padding-top: 40px;
+                padding-top: 120px;
             }
             .wf-param-columns {
                 display: grid;
@@ -2556,6 +2601,8 @@
                     <span class="canvas-label" id="canvas-label"
                         >等待组网数据...</span
                     >
+                    <!-- Workflow Chevron Flow (inline, flex:1) -->
+                    <svg id="workflow-flow-svg" width="100%" preserveAspectRatio="xMinYMid meet" class="wf-inline-svg"></svg>
                     <span class="canvas-toolbar-right">
                         <button
                             class="btn-sim"
@@ -2609,7 +2656,187 @@
                                 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
                             </svg>
                         </button>
+                        <label class="ai-toggle" title="切换 Agent 对话驱动模式">
+                            <span class="ai-toggle-label">AI</span>
+                            <input type="checkbox" id="ai-mode-toggle-flow" onchange="toggleWorkflowMode()" />
+                            <span class="ai-toggle-slider"></span>
+                        </label>
                     </span>
+                    <!-- Sub-step popover (anchored to toolbar) -->
+                    <div class="wf-substep-popover" id="wf-substep-popover" style="display:none">
+                        <div class="wf-popover-arrow" id="wf-popover-arrow"></div>
+                        <div class="wf-substep-list" id="wf-substep-list"></div>
+                    </div>
+                </div>
+                <!-- Parameter Input Overlay -->
+                <div
+                    class="workflow-param-overlay"
+                    id="workflow-param-overlay"
+                    style="display: none"
+                >
+                    <div class="workflow-param-card">
+                        <div class="workflow-param-title">
+                            Step 1 — 参数输入
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>模型名称</label>
+                            <select id="wf-orig-model-name">
+                                <option value="Qwen3-32B">Qwen3-32B</option>
+                            </select>
+                        </div>
+                        <div class="wf-param-columns">
+                            <div class="wf-param-col">
+                                <div class="workflow-param-section">
+                                    原始组网参数
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>设备类型</label>
+                                    <select
+                                        id="wf-orig-device"
+                                        onchange="onOrigDeviceChange()"
+                                    >
+                                        <option value="A3">A3</option>
+                                        <option value="A2">A2</option>
+                                        <option value="A5">A5</option>
+                                    </select>
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>DP</label>
+                                    <input id="wf-orig-dp" type="number" value="8" min="1" max="1024" disabled />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>TP</label>
+                                    <select id="wf-orig-tp" disabled>
+                                        <option value="16">16</option>
+                                    </select>
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>PP</label>
+                                    <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()" disabled />
+                                </div>
+                                <div class="workflow-param-section">原始模型参数</div>
+                                <div class="workflow-param-row">
+                                    <label>L</label>
+                                    <input id="wf-orig-model-l" type="number" value="64" min="1" max="512" onchange="updateEquivalentModelL()" disabled />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>H</label>
+                                    <input id="wf-orig-model-h" type="number" value="4096" min="128" max="32768" step="64" onchange="updateEquivalentModelL()" disabled />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>A</label>
+                                    <input id="wf-orig-model-a" type="number" value="32" min="1" max="256" onchange="updateEquivalentModelL()" disabled />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>b</label>
+                                    <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" disabled />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>dff</label>
+                                    <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" disabled />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>S</label>
+                                    <input id="wf-orig-model-s" type="number" value="2048" min="1" max="131072" />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>B</label>
+                                    <input id="wf-orig-model-b" type="number" value="32" min="1" max="1048576" />
+                                </div>
+                                <div class="workflow-param-section" style="margin-top: 16px">默认等效策略</div>
+                                <div class="workflow-param-row">
+                                    <label>策略</label>
+                                    <select id="wf-equiv-strategy">
+                                        <option value="single_card_extreme">单卡极限等效</option>
+                                        <option value="min_equiv" selected>最小集群等效</option>
+                                    </select>
+                                </div>
+                                <input type="hidden" id="wf-equiv-device" value="A3" />
+                                <input type="hidden" id="wf-equiv-dp" value="2" />
+                                <input type="hidden" id="wf-equiv-tp" value="16" />
+                                <input type="hidden" id="wf-equiv-pp" value="3" />
+                                <input type="hidden" id="wf-equiv-model-l" value="24" />
+                                <input type="hidden" id="wf-equiv-model-h" value="4096" />
+                                <input type="hidden" id="wf-equiv-model-a" value="32" />
+                                <input type="hidden" id="wf-equiv-model-s" value="2048" />
+                                <input type="hidden" id="wf-equiv-model-b" value="32" />
+                            </div>
+                        </div>
+                        <div class="workflow-param-actions">
+                            <button class="btn-wf-cancel" onclick="closeWorkflowParams()">取消</button>
+                            <button class="btn-wf-submit" onclick="submitWorkflowParams()">确认提交</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Step 4 仿真参数 Overlay -->
+                <div class="workflow-param-overlay" id="sim-param-overlay" style="display: none">
+                    <div class="workflow-param-card sim-param-card">
+                        <div class="workflow-param-title">Step 4 — 仿真参数</div>
+                        <div class="workflow-param-row">
+                            <label>Epoch Num</label>
+                            <input id="sim-epoch-num" type="number" value="1" min="1" max="1000" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Model Name</label>
+                            <input id="sim-model-name" type="text" value="" readonly placeholder="从 Step1 自动获取" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Device Type</label>
+                            <input id="sim-device-type" type="text" value="" readonly placeholder="从 Step1 自动获取" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Vocab Size</label>
+                            <input id="sim-vocab-size" type="text" value="18277" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Frame</label>
+                            <select id="sim-frame">
+                                <option value="Mindspeed">Mindspeed</option>
+                                <option value="Megatron-LM">Megatron-LM</option>
+                                <option value="DeepSpeed">DeepSpeed</option>
+                            </select>
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Rank</label>
+                            <input id="sim-rank" type="number" value="0" min="0" max="65535" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Rank Range</label>
+                            <input id="sim-rank-range" type="number" value="1023" min="0" max="65535" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Comp Filepath</label>
+                            <input id="sim-comp-filepath" type="text" value="/opt/traffic_modeling/aicm/default.txt" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>No Time Accumulation</label>
+                            <input type="checkbox" id="sim-no-time-acc" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Visual JSON Output</label>
+                            <input type="checkbox" id="sim-visual-json" checked />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Comm Group Output</label>
+                            <input type="checkbox" id="sim-comm-group" checked />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Debug Time</label>
+                            <input type="checkbox" id="sim-debug-time" />
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Level0 Config (JSON)</label>
+                            <textarea id="sim-level0-config" rows="2" placeholder='可选，JSON 对象，如 {"key":"value"}'></textarea>
+                        </div>
+                        <div class="workflow-param-row">
+                            <label>Level1 Config (JSON)</label>
+                            <textarea id="sim-level1-config" rows="2" placeholder='可选，JSON 对象，如 {"key":"value"}'></textarea>
+                        </div>
+                        <div class="workflow-param-actions">
+                            <button class="btn-wf-cancel" onclick="closeSimParams()">取消</button>
+                            <button class="btn-wf-submit" onclick="submitSimParams()">开始仿真</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="canvas-tabs" id="canvas-tabs">
                     <button
@@ -2760,402 +2987,9 @@
                 </div>
             </main>
 
-            <!-- RIGHT: Workflow + Chat -->
+            <!-- RIGHT: Chat -->
             <aside class="panel-right">
-                <!-- ── Workflow Panel (Top) ── -->
-                <div class="workflow-panel">
-                    <div class="panel-header">
-                        <span>⚡ 执行流程</span>
-                        <label
-                            class="ai-toggle"
-                            title="切换 Agent 对话驱动模式"
-                        >
-                            <span class="ai-toggle-label">AI</span>
-                            <input
-                                type="checkbox"
-                                id="ai-mode-toggle"
-                                onchange="toggleWorkflowMode()"
-                            />
-                            <span class="ai-toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="workflow-svg-wrap" id="workflow-svg-wrap"></div>
-                    <!-- Parameter Input Overlay -->
-                    <div
-                        class="workflow-param-overlay"
-                        id="workflow-param-overlay"
-                        style="display: none"
-                    >
-                        <div class="workflow-param-card">
-                            <div class="workflow-param-title">
-                                Step 1 — 参数输入
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>模型名称</label>
-                                <select id="wf-orig-model-name">
-                                    <option value="Qwen3-32B">Qwen3-32B</option>
-                                </select>
-                            </div>
-                            <div class="wf-param-columns">
-                                <div class="wf-param-col">
-                                    <div class="workflow-param-section">
-                                        原始组网参数
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>设备类型</label>
-                                        <select
-                                            id="wf-orig-device"
-                                            onchange="onOrigDeviceChange()"
-                                        >
-                                            <option value="A3">A3</option>
-                                            <option value="A2">A2</option>
-                                            <option value="A5">A5</option>
-                                        </select>
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>DP</label>
-                                        <input
-                                            id="wf-orig-dp"
-                                            type="number"
-                                            value="8"
-                                            min="1"
-                                            max="1024"
-                                            disabled
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>TP</label>
-                                        <select id="wf-orig-tp" disabled>
-                                            <option value="16">16</option>
-                                        </select>
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>PP</label>
-                                        <input
-                                            id="wf-orig-pp"
-                                            type="number"
-                                            value="8"
-                                            min="1"
-                                            max="128"
-                                            onchange="updateEquivalentModelL()"
-                                            disabled
-                                        />
-                                    </div>
-
-                                    <div class="workflow-param-section">
-                                        原始模型参数
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>L</label>
-                                        <input
-                                            id="wf-orig-model-l"
-                                            type="number"
-                                            value="64"
-                                            min="1"
-                                            max="512"
-                                            onchange="updateEquivalentModelL()"
-                                            disabled
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>H</label>
-                                        <input
-                                            id="wf-orig-model-h"
-                                            type="number"
-                                            value="4096"
-                                            min="128"
-                                            max="32768"
-                                            step="64"
-                                            onchange="updateEquivalentModelL()"
-                                            disabled
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>A</label>
-                                        <input
-                                            id="wf-orig-model-a"
-                                            type="number"
-                                            value="32"
-                                            min="1"
-                                            max="256"
-                                            onchange="updateEquivalentModelL()"
-                                            disabled
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>b</label>
-                                        <input
-                                            id="wf-orig-model-b-micro"
-                                            type="number"
-                                            value="4"
-                                            min="1"
-                                            max="1024"
-                                            disabled
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>dff</label>
-                                        <input
-                                            id="wf-orig-model-dff"
-                                            type="number"
-                                            value="14336"
-                                            min="1"
-                                            max="131072"
-                                            step="64"
-                                            disabled
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>S</label>
-                                        <input
-                                            id="wf-orig-model-s"
-                                            type="number"
-                                            value="2048"
-                                            min="1"
-                                            max="131072"
-                                        />
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>B</label>
-                                        <input
-                                            id="wf-orig-model-b"
-                                            type="number"
-                                            value="32"
-                                            min="1"
-                                            max="1048576"
-                                        />
-                                    </div>
-                                    <div
-                                        class="workflow-param-section"
-                                        style="margin-top: 16px"
-                                    >
-                                        默认等效策略
-                                    </div>
-                                    <div class="workflow-param-row">
-                                        <label>策略</label>
-                                        <select id="wf-equiv-strategy">
-                                            <option value="single_card_extreme">
-                                                单卡极限等效
-                                            </option>
-                                            <option value="min_equiv" selected>
-                                                最小集群等效
-                                            </option>
-                                        </select>
-                                    </div>
-
-                                    <!-- hidden equivalent topology params (auto-synced from original) -->
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-device"
-                                        value="A3"
-                                    />
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-dp"
-                                        value="2"
-                                    />
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-tp"
-                                        value="16"
-                                    />
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-pp"
-                                        value="3"
-                                    />
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-model-l"
-                                        value="24"
-                                    />
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-model-h"
-                                        value="4096"
-                                    />
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-model-a"
-                                        value="32"
-                                    />
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-model-s"
-                                        value="2048"
-                                    />
-                                    <input
-                                        type="hidden"
-                                        id="wf-equiv-model-b"
-                                        value="32"
-                                    />
-                                </div>
-                            </div>
-
-                            <div class="workflow-param-actions">
-                                <button
-                                    class="btn-wf-cancel"
-                                    onclick="closeWorkflowParams()"
-                                >
-                                    取消
-                                </button>
-                                <button
-                                    class="btn-wf-submit"
-                                    onclick="submitWorkflowParams()"
-                                >
-                                    确认提交
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- ── Step 4 仿真参数 Overlay ── -->
-                    <div
-                        class="workflow-param-overlay"
-                        id="sim-param-overlay"
-                        style="display: none"
-                    >
-                        <div class="workflow-param-card sim-param-card">
-                            <div class="workflow-param-title">
-                                Step 4 — 仿真参数
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Epoch Num</label>
-                                <input
-                                    id="sim-epoch-num"
-                                    type="number"
-                                    value="1"
-                                    min="1"
-                                    max="1000"
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Model Name</label>
-                                <input
-                                    id="sim-model-name"
-                                    type="text"
-                                    value=""
-                                    readonly
-                                    placeholder="从 Step1 自动获取"
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Device Type</label>
-                                <input
-                                    id="sim-device-type"
-                                    type="text"
-                                    value=""
-                                    readonly
-                                    placeholder="从 Step1 自动获取"
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Vocab Size</label>
-                                <input
-                                    id="sim-vocab-size"
-                                    type="text"
-                                    value="18277"
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Frame</label>
-                                <select id="sim-frame">
-                                    <option value="Mindspeed">Mindspeed</option>
-                                    <option value="Megatron-LM">
-                                        Megatron-LM
-                                    </option>
-                                    <option value="DeepSpeed">DeepSpeed</option>
-                                </select>
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Rank</label>
-                                <input
-                                    id="sim-rank"
-                                    type="number"
-                                    value="0"
-                                    min="0"
-                                    max="65535"
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Rank Range</label>
-                                <input
-                                    id="sim-rank-range"
-                                    type="number"
-                                    value="1023"
-                                    min="0"
-                                    max="65535"
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Comp Filepath</label>
-                                <input
-                                    id="sim-comp-filepath"
-                                    type="text"
-                                    value="/opt/traffic_modeling/aicm/default.txt"
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>No Time Accumulation</label>
-                                <input type="checkbox" id="sim-no-time-acc" />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Visual JSON Output</label>
-                                <input
-                                    type="checkbox"
-                                    id="sim-visual-json"
-                                    checked
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Comm Group Output</label>
-                                <input
-                                    type="checkbox"
-                                    id="sim-comm-group"
-                                    checked
-                                />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Debug Time</label>
-                                <input type="checkbox" id="sim-debug-time" />
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Level0 Config (JSON)</label>
-                                <textarea
-                                    id="sim-level0-config"
-                                    rows="2"
-                                    placeholder='可选，JSON 对象，如 {"key":"value"}'
-                                ></textarea>
-                            </div>
-                            <div class="workflow-param-row">
-                                <label>Level1 Config (JSON)</label>
-                                <textarea
-                                    id="sim-level1-config"
-                                    rows="2"
-                                    placeholder='可选，JSON 对象，如 {"key":"value"}'
-                                ></textarea>
-                            </div>
-                            <div class="workflow-param-actions">
-                                <button
-                                    class="btn-wf-cancel"
-                                    onclick="closeSimParams()"
-                                >
-                                    取消
-                                </button>
-                                <button
-                                    class="btn-wf-submit"
-                                    onclick="submitSimParams()"
-                                >
-                                    开始仿真
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="wf-resize-handle" id="wf-resize-handle"></div>
-
-                <!-- ── Chat Panel (Bottom) ── -->
+                <!-- ── Chat Panel ── -->
                 <div class="chat-panel">
                     <div class="panel-header">
                         <span>💬 Agent 交互</span>
@@ -3339,6 +3173,15 @@
             var _pendingWorkflowState = null; // deferred workflow_state SSE data, applied after staged rendering
             var _pendingSimData = false; // flag: sim_data arrived, apply in done handler
 
+            // Debounced resize handler for horizontal flow bar
+            var _wfResizeTimer = null;
+            window.addEventListener("resize", function () {
+                clearTimeout(_wfResizeTimer);
+                _wfResizeTimer = setTimeout(function () {
+                    renderWorkflow();
+                }, 150);
+            });
+
             function initWorkflow() {
                 // restore persisted mode
                 workflowMode = localStorage.getItem("workflowMode") || "api";
@@ -3364,12 +3207,12 @@
             }
 
             function toggleWorkflowMode() {
-                var toggle = document.getElementById("ai-mode-toggle");
+                var toggle = document.getElementById("ai-mode-toggle-flow");
                 workflowMode = toggle && toggle.checked ? "agent" : "api";
                 localStorage.setItem("workflowMode", workflowMode);
             }
             function updateModeSwitchUI() {
-                var toggle = document.getElementById("ai-mode-toggle");
+                var toggle = document.getElementById("ai-mode-toggle-flow");
                 if (toggle) toggle.checked = workflowMode === "agent";
             }
 
@@ -3790,7 +3633,7 @@
 
             function getNodeStateClass(stepId) {
                 var state = workflowNodeStates[stepId] || "pending";
-                return "wf-node-rect " + state;
+                return "wf-chevron " + state;
             }
 
             function getStatusColor(state) {
@@ -3822,170 +3665,308 @@
             }
 
             function renderWorkflow() {
-                var container = document.getElementById("workflow-svg-wrap");
-                if (!container) return;
-                var W = container.clientWidth - 16;
-                if (W < 200) W = 360;
-                var nodeH = 32,
-                    childNodeH = 22,
-                    gapH = 18,
-                    topPad = 10;
-                var maxNodeW = Math.min(280, W - 40);
-                var nodeW = maxNodeW;
-                var childNodeW = nodeW - 60;
-                var offsetX = (W - nodeW) / 2;
-                var childOffsetX = offsetX + (nodeW - childNodeW) / 2;
-                var allVisible = WORKFLOW_STEPS;
+                var svgEl = document.getElementById("workflow-flow-svg");
+                if (!svgEl) return;
 
-                // Pre-compute cumulative Y positions (child nodes use smaller height)
-                var cumY = 0;
-                var stepY = [];
-                allVisible.forEach(function (s) {
-                    stepY.push(cumY);
-                    cumY += (s.isChild ? childNodeH : nodeH) + gapH;
+                var W = svgEl.clientWidth || svgEl.parentElement.clientWidth - 80;
+                if (W < 200) W = 600;
+                var H = 52;
+
+                var topLevelSteps = WORKFLOW_STEPS.filter(function (s) {
+                    return !s.isChild;
                 });
-                var totalH = cumY - gapH + topPad * 2;
-                var svgH = Math.max(totalH, container.clientHeight - 8);
+                var stepCount = topLevelSteps.length;
+                var chevronDepth = 10;
+                var stepH = 34;
+                var topPad = (H - stepH - 5) / 2;
+                var gap = 2;
+                var leftPad = 6;
+                var availW = W - leftPad * 2 - (stepCount - 1) * gap;
+                var stepW = Math.max(
+                    80,
+                    Math.min(
+                        155,
+                        (availW - chevronDepth * stepCount) / stepCount,
+                    ),
+                );
 
-                container.innerHTML = "";
-                var svg = d3
-                    .select(container)
-                    .append("svg")
-                    .attr("width", W)
-                    .attr("height", svgH);
+                var svg = d3.select(svgEl);
+                svg.selectAll("*").remove();
+                svg.attr("height", H).attr("viewBox", "0 0 " + W + " " + H);
 
                 var g = svg
                     .append("g")
                     .attr(
                         "transform",
-                        "translate(" + offsetX + "," + topPad + ")",
+                        "translate(" + leftPad + "," + topPad + ")",
                     );
 
-                allVisible.forEach(function (step, i) {
-                    var y = stepY[i];
-                    var state = workflowNodeStates[step.id] || "pending";
-                    var isChild = !!step.isChild;
-                    var currH = isChild ? childNodeH : nodeH;
-                    var currW = isChild ? childNodeW : nodeW;
-                    var currX = isChild ? childOffsetX - offsetX : 0;
+                var progressTotal = 0;
 
-                    var prevStep = i > 0 ? allVisible[i - 1] : null;
-                    var prevState = prevStep
-                        ? workflowNodeStates[prevStep.id] || "pending"
-                        : null;
-                    var isPrevCompleted = prevStep && prevState === "completed";
-                    var isCurCompleted = state === "completed";
+                topLevelSteps.forEach(function (step, i) {
+                    var x = i * (stepW + chevronDepth + gap);
+                    var state =
+                        workflowNodeStates[step.id] || "pending";
+                    var isCompleted = state === "completed";
+                    var isActive = state === "active";
 
-                    // Arrow between steps (skip for parent→first-child, use connector instead)
-                    if (i > 0 && !(prevStep.isParent && step.isChild)) {
-                        var prevH = prevStep.isChild ? childNodeH : nodeH;
-                        var prevY = stepY[i - 1] + prevH;
-                        var arrowH = isChild ? 10 : 16,
-                            arrowW = isChild ? 8 : 12;
-                        var arrowSrc =
-                            isCurCompleted || isPrevCompleted
-                                ? "/static/assets/down_arrow_green.png"
-                                : "/static/assets/down_arrow_grey.png";
-                        var arrowCenterX = nodeW / 2;
-                        g.append("image")
-                            .attr("x", arrowCenterX - arrowW / 2)
-                            .attr("y", prevY + (gapH - arrowH) / 2)
-                            .attr("width", arrowW)
-                            .attr("height", arrowH)
-                            .attr("href", arrowSrc);
+                    // Build chevron SVG path
+                    var path;
+                    if (i === 0) {
+                        path =
+                            "M 0 0 L " +
+                            stepW +
+                            " 0 L " +
+                            (stepW + chevronDepth) +
+                            " " +
+                            stepH / 2 +
+                            " L " +
+                            stepW +
+                            " " +
+                            stepH +
+                            " L 0 " +
+                            stepH +
+                            " Z";
+                    } else {
+                        path =
+                            "M 0 0 L " +
+                            stepW +
+                            " 0 L " +
+                            (stepW + chevronDepth) +
+                            " " +
+                            stepH / 2 +
+                            " L " +
+                            stepW +
+                            " " +
+                            stepH +
+                            " L 0 " +
+                            stepH +
+                            " L " +
+                            chevronDepth +
+                            " " +
+                            stepH / 2 +
+                            " Z";
                     }
 
-                    // Connector line from parent to first child (centers aligned)
-                    if (prevStep && prevStep.isParent && step.isChild) {
-                        var connY = stepY[i - 1] + nodeH;
-                        g.append("line")
-                            .attr("x1", nodeW / 2)
-                            .attr("y1", connY)
-                            .attr("x2", nodeW / 2)
-                            .attr("y2", connY + gapH / 2)
-                            .attr(
-                                "stroke",
-                                isCurCompleted
-                                    ? "var(--green)"
-                                    : "var(--border)",
-                            )
-                            .attr("stroke-width", 1)
-                            .attr("stroke-dasharray", "2,2");
-                        g.append("line")
-                            .attr("x1", nodeW / 2)
-                            .attr("y1", connY + gapH / 2)
-                            .attr("x2", nodeW / 2)
-                            .attr("y2", y)
-                            .attr(
-                                "stroke",
-                                isCurCompleted
-                                    ? "var(--green)"
-                                    : "var(--border)",
-                            )
-                            .attr("stroke-width", 1)
-                            .attr("stroke-dasharray", "2,2");
-                    }
-
-                    // Node rect
-                    var rect = g
-                        .append("rect")
-                        .attr("x", currX)
-                        .attr("y", y)
-                        .attr("width", currW)
-                        .attr("height", currH)
-                        .attr("rx", isChild ? 4 : 6)
-                        .attr("ry", isChild ? 4 : 6)
-                        .attr("class", getNodeStateClass(step.id));
+                    var chevron = g
+                        .append("path")
+                        .attr("d", path)
+                        .attr("transform", "translate(" + x + ", 0)")
+                        .attr("class", "wf-chevron " + state);
 
                     // Status dot
                     g.append("circle")
-                        .attr("cx", currX + (isChild ? 12 : 16))
-                        .attr("cy", y + currH / 2)
-                        .attr("r", isChild ? 3 : 5)
-                        .attr("fill", getStatusColor(state))
-                        .attr("class", "wf-status-dot");
+                        .attr(
+                            "cx",
+                            x +
+                                (i === 0
+                                    ? 14
+                                    : chevronDepth + 12),
+                        )
+                        .attr("cy", stepH / 2)
+                        .attr("r", 3.5)
+                        .attr("fill", getStatusColor(state));
 
-                    // icon + label
-                    var labelText =
-                        (isChild ? "" : step.icon + " ") + step.label;
-                    if (step.disabled) labelText += " (暂未开放)";
+                    // Label text
+                    var textX =
+                        x +
+                        (i === 0
+                            ? stepW / 2
+                            : stepW / 2 + chevronDepth / 2);
+                    var label = step.icon + " " + step.label;
+                    if (step.disabled) label = step.label + " (暂未开放)";
+
                     g.append("text")
-                        .attr("x", currX + currW / 2)
-                        .attr("y", y + currH / 2 + 4)
+                        .attr("x", textX)
+                        .attr("y", stepH / 2 + 4)
                         .attr("text-anchor", "middle")
                         .attr(
                             "fill",
                             state === "disabled"
                                 ? "var(--text-muted)"
-                                : "var(--text-primary)",
+                                : state === "active"
+                                  ? "var(--cyan)"
+                                  : "var(--text-primary)",
                         )
-                        .attr("font-size", isChild ? "11px" : "13px")
+                        .attr(
+                            "font-size",
+                            stepW < 110 ? "10px" : "11px",
+                        )
                         .attr("font-family", "var(--font-sans)")
-                        .attr("font-weight", state === "active" ? "600" : "400")
-                        .text(labelText);
+                        .attr(
+                            "font-weight",
+                            isActive ? "600" : "400",
+                        )
+                        .text(label);
 
-                    // completed checkmark
-                    if (state === "completed") {
+                    // Completed checkmark
+                    if (isCompleted) {
                         g.append("text")
-                            .attr("x", currX + currW - (isChild ? 14 : 18))
-                            .attr("y", y + currH / 2 + 4)
+                            .attr("x", x + stepW - 2)
+                            .attr("y", 12)
                             .attr("text-anchor", "end")
                             .attr("fill", "var(--green)")
-                            .attr("font-size", isChild ? "10px" : "12px")
-                            .text("\u2713");
+                            .attr("font-size", "10px")
+                            .text("✓");
                     }
 
-                    // click handler
-                    if (!step.disabled) {
-                        rect.style("cursor", "pointer").on(
-                            "click",
-                            function () {
-                                handleWorkflowNodeClick(step);
-                            },
-                        );
+                    // Sub-step indicator for parent steps
+                    if (step.isParent) {
+                        g.append("text")
+                            .attr("x", textX)
+                            .attr("y", stepH + 10)
+                            .attr("text-anchor", "middle")
+                            .attr("fill", "var(--text-muted)")
+                            .attr("font-size", "8px")
+                            .text("▾");
                     }
+
+                    // Click handler
+                    if (!step.disabled) {
+                        chevron
+                            .style("cursor", "pointer")
+                            .on("click", function () {
+                                handleWorkflowNodeClick(step);
+                                if (step.isParent) {
+                                    showSubstepPopover(
+                                        step,
+                                        x,
+                                        stepW,
+                                        topPad,
+                                    );
+                                }
+                            });
+                    }
+
+                    if (isCompleted) progressTotal++;
+                    else if (isActive) progressTotal += 0.5;
                 });
+
+                // Bottom progress bar
+                var totalTrackW =
+                    stepCount * (stepW + chevronDepth) +
+                    (stepCount - 1) * gap -
+                    chevronDepth;
+                var progressW =
+                    (progressTotal / stepCount) * totalTrackW;
+                var barY = topPad + stepH + 3;
+
+                g.append("rect")
+                    .attr("x", 0)
+                    .attr("y", barY)
+                    .attr("width", totalTrackW)
+                    .attr("height", 3)
+                    .attr("rx", 1.5)
+                    .attr("class", "wf-progress-track");
+
+                if (progressW > 0) {
+                    g.append("rect")
+                        .attr("x", 0)
+                        .attr("y", barY)
+                        .attr("width", progressW)
+                        .attr("height", 3)
+                        .attr("rx", 1.5)
+                        .attr("class", "wf-progress-fill")
+                        .attr(
+                            "fill",
+                            progressTotal === stepCount
+                                ? "var(--green)"
+                                : "var(--cyan)",
+                        );
+                }
+
+                // Update substep popover if open
+                var popover =
+                    document.getElementById("wf-substep-popover");
+                if (
+                    popover &&
+                    popover.style.display === "block" &&
+                    popover.dataset.parentId
+                ) {
+                    var parentStep = WORKFLOW_STEPS.find(function (s) {
+                        return s.id === popover.dataset.parentId;
+                    });
+                    if (parentStep) {
+                        var pIdx = topLevelSteps.indexOf(parentStep);
+                        if (pIdx >= 0) {
+                            var px = pIdx * (stepW + chevronDepth + gap);
+                            refreshSubstepPopoverContent(
+                                parentStep,
+                                px,
+                                stepW,
+                                topPad,
+                            );
+                        }
+                    }
+                }
             }
+
+            /* ── Sub-step Popover ── */
+            function showSubstepPopover(parentStep, chevronX, chevronW, topPad) {
+                var popover = document.getElementById("wf-substep-popover");
+                if (popover.style.display === "block" && popover.dataset.parentId === parentStep.id) {
+                    popover.style.display = "none";
+                    return;
+                }
+                refreshSubstepPopoverContent(parentStep, chevronX, chevronW, topPad);
+                popover.dataset.parentId = parentStep.id;
+                popover.style.display = "block";
+            }
+
+            function refreshSubstepPopoverContent(parentStep, chevronX, chevronW, topPad) {
+                var popover = document.getElementById("wf-substep-popover");
+                var list = document.getElementById("wf-substep-list");
+                var arrow = document.getElementById("wf-popover-arrow");
+                var children = WORKFLOW_STEPS.filter(function (s) { return s.parentId === parentStep.id; });
+                list.innerHTML = "";
+                children.forEach(function (child) {
+                    var state = workflowNodeStates[child.id] || "pending";
+                    var pill = document.createElement("div");
+                    pill.className = "wf-substep-pill " + state;
+                    var dot = document.createElement("span");
+                    dot.className = "wf-substep-dot";
+                    dot.style.background = getStatusColor(state);
+                    var label = document.createElement("span");
+                    label.className = "wf-substep-label";
+                    label.textContent = child.label;
+                    pill.appendChild(dot);
+                    pill.appendChild(label);
+                    if (state === "completed") {
+                        var check = document.createElement("span");
+                        check.style.cssText = "color:var(--green);margin-left:auto;font-size:11px;";
+                        check.textContent = "✓";
+                        pill.appendChild(check);
+                    } else if (state === "active") {
+                        var tag = document.createElement("span");
+                        tag.style.cssText = "color:var(--cyan);margin-left:auto;font-size:9px;";
+                        tag.textContent = "执行中";
+                        pill.appendChild(tag);
+                    }
+                    list.appendChild(pill);
+                });
+                var popoverW = Math.max(170, chevronW);
+                popover.style.width = popoverW + "px";
+                var svgEl = document.getElementById("workflow-flow-svg");
+                var svgOffsetLeft = svgEl ? svgEl.offsetLeft : 0;
+                popover.style.left = (svgOffsetLeft + chevronX + chevronW / 2 - popoverW / 2 + 6) + "px";
+                popover.style.top = "48px";
+                arrow.style.left = (popoverW / 2) + "px";
+            }
+
+            function closeSubstepPopover() {
+                var popover = document.getElementById("wf-substep-popover");
+                if (popover) popover.style.display = "none";
+            }
+
+            document.addEventListener("click", function (e) {
+                var popover = document.getElementById("wf-substep-popover");
+                var flowBar = document.getElementById("canvas-toolbar");
+                if (popover && popover.style.display === "block" &&
+                    !popover.contains(e.target) && flowBar && !flowBar.contains(e.target)) {
+                    popover.style.display = "none";
+                }
+            });
+
 
             function handleWorkflowNodeClick(step) {
                 if (step.disabled) return;
@@ -4621,53 +4602,6 @@
                     body: JSON.stringify(params),
                 }).catch(function () {});
             }
-
-            // ── Workflow-Chat Resize Handle ──
-            (function () {
-                var handle = document.getElementById("wf-resize-handle");
-                var workflow = document.querySelector(".workflow-panel");
-                var rightPanel = document.querySelector(".panel-right");
-                if (!handle || !workflow || !rightPanel) return;
-
-                var startY = 0,
-                    startH = 0;
-                var minH = 200;
-                var maxH = function () {
-                    var rightRect = rightPanel.getBoundingClientRect();
-                    // allow workflow to take up to right panel height minus chat header (40px) minus handle (6px)
-                    return rightRect.height - 46;
-                };
-
-                handle.addEventListener("mousedown", function (e) {
-                    e.preventDefault();
-                    startY = e.clientY;
-                    startH = workflow.offsetHeight;
-                    handle.classList.add("active");
-                    document.body.style.cursor = "ns-resize";
-                    document.body.style.userSelect = "none";
-
-                    function onMove(ev) {
-                        var dy = ev.clientY - startY;
-                        var newH = startH + dy;
-                        if (newH < minH) newH = minH;
-                        var max = maxH();
-                        if (newH > max) newH = max;
-                        workflow.style.height = newH + "px";
-                        renderWorkflow();
-                    }
-
-                    function onUp() {
-                        handle.classList.remove("active");
-                        document.body.style.cursor = "";
-                        document.body.style.userSelect = "";
-                        document.removeEventListener("mousemove", onMove);
-                        document.removeEventListener("mouseup", onUp);
-                    }
-
-                    document.addEventListener("mousemove", onMove);
-                    document.addEventListener("mouseup", onUp);
-                });
-            })();
 
             // ── History ──
             var _historyCache = [];
