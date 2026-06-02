@@ -2908,7 +2908,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "#58a6ff")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text(meshOriginal.name || "原始组网");
@@ -2918,7 +2918,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "#58a6ff")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text(meshEquivalent.name || "等效组网");
@@ -3023,7 +3023,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _sTH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "var(--cyan)")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text((meshOriginal.name || "原始组网").replace(/\s*\(.*\)$/, ""));
@@ -3033,7 +3033,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _sTH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "var(--teal)")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text((meshEquivalent.name || "等效组网").replace(/\s*\(.*\)$/, ""));
@@ -3161,7 +3161,7 @@ function canvasRebuild(targetSelector) {
         .attr("y", _tH2 - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "#58a6ff")
-        .attr("font-family", "sans-serif")
+        .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
         .text(entry2.name || "原始组网");
@@ -4630,7 +4630,7 @@ function _renderOneModel(
       .attr("text-anchor", "middle")
       .attr("fill", "var(--text-secondary)")
       .attr("font-size", "10px")
-      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-family", "var(--font-mono)")
       .text(
         (model.type || "TRANSFORMER_MODEL").toUpperCase() +
           "  ·  " +
@@ -4716,7 +4716,7 @@ function _renderOneModel(
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("font-size", fontSize)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 500)
       .attr("fill", textColor)
       .text(label);
@@ -4754,7 +4754,7 @@ function _renderOneModel(
       .attr("y", oy + 13)
       .attr("text-anchor", "middle")
       .attr("font-size", 10)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", titleColor)
       .text(title);
@@ -4785,7 +4785,7 @@ function _renderOneModel(
         .attr("text-anchor", "middle")
         .attr("dominant-baseline", "middle")
         .attr("font-size", 9)
-        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-family", "var(--font-mono)")
         .attr("font-weight", 500)
         .attr("fill", "var(--text-secondary)")
         .text(item);
@@ -4915,7 +4915,7 @@ function _renderOneModel(
     .text("Transformer Layer  (×N)")
     .attr("font-size", 11)
     .attr("font-weight", 600)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("fill", MODEL_COLORS.transformer_card.stroke);
 
   sg.append("text")
@@ -4924,7 +4924,7 @@ function _renderOneModel(
     .text("×" + numLayers)
     .attr("font-size", 11)
     .attr("font-weight", 600)
-    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-family", "var(--font-mono)")
     .attr("fill", "var(--text-muted)")
     .attr("text-anchor", "end");
 
@@ -5137,7 +5137,7 @@ function _renderOneModel(
   sg.append("text")
     .attr("text-anchor", "middle")
     .attr("font-size", 8)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-style", "italic")
     .attr("fill", skipColor)
     .attr(
@@ -5159,7 +5159,7 @@ function _renderOneModel(
   sg.append("text")
     .attr("text-anchor", "middle")
     .attr("font-size", 8)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-style", "italic")
     .attr("fill", skipColor)
     .attr(
@@ -5219,7 +5219,7 @@ function _renderOneModel(
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("font-size", effectiveTp > 16 ? 7 : 9)
-      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-family", "var(--font-mono)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
       .text(cellIdx + 1)
@@ -5238,7 +5238,7 @@ function _renderOneModel(
     .attr("y", D.TENSOR_Y - 10)
     .attr("text-anchor", "middle")
     .attr("font-size", 9)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-weight", 500)
     .attr("fill", labelColor)
     .text("TP切分Tensor映射");
@@ -5250,7 +5250,7 @@ function _renderOneModel(
     .attr("y", mapTableTitleY)
     .attr("text-anchor", "middle")
     .attr("font-size", 9)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-weight", 500)
     .attr("fill", labelColor)
     .text("PP切分模型层映射");
@@ -5354,7 +5354,7 @@ function _renderOneModel(
       .attr("y", headerY)
       .attr("text-anchor", "middle")
       .attr("font-size", 8)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
       .text("PP");
@@ -5363,7 +5363,7 @@ function _renderOneModel(
       .attr("y", headerY)
       .attr("text-anchor", "middle")
       .attr("font-size", 8)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
       .text("Start");
@@ -5372,7 +5372,7 @@ function _renderOneModel(
       .attr("y", headerY)
       .attr("text-anchor", "middle")
       .attr("font-size", 8)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("font-weight", 600)
       .attr("fill", "var(--text-secondary)")
       .text("End");
@@ -5389,7 +5389,7 @@ function _renderOneModel(
         .attr("y", rowTextY)
         .attr("text-anchor", "middle")
         .attr("font-size", 8)
-        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-family", "var(--font-mono)")
         .attr("fill", "var(--text-primary)")
         .text(pi2);
       sg.append("text")
@@ -5397,7 +5397,7 @@ function _renderOneModel(
         .attr("y", rowTextY)
         .attr("text-anchor", "middle")
         .attr("font-size", 8)
-        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-family", "var(--font-mono)")
         .attr("fill", "var(--text-primary)")
         .text(layerStart2);
       sg.append("text")
@@ -5405,7 +5405,7 @@ function _renderOneModel(
         .attr("y", rowTextY)
         .attr("text-anchor", "middle")
         .attr("font-size", 8)
-        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-family", "var(--font-mono)")
         .attr("fill", "var(--text-primary)")
         .text(layerEnd2);
     }
@@ -5433,7 +5433,7 @@ function _renderOneModel(
     .attr("y", legendTitleY + 4)
     .text("Legend")
     .attr("font-size", 11)
-    .attr("font-family", "DM Sans, sans-serif")
+    .attr("font-family", "var(--font-sans)")
     .attr("font-weight", 600)
     .attr("fill", "var(--text-muted)")
     .attr("letter-spacing", "1px");
@@ -5451,7 +5451,7 @@ function _renderOneModel(
       .attr("x", lx + 14)
       .attr("y", ly + 5)
       .attr("font-size", 10)
-      .attr("font-family", "DM Sans, sans-serif")
+      .attr("font-family", "var(--font-sans)")
       .attr("fill", "var(--text-secondary)")
       .text(item.label);
   });
