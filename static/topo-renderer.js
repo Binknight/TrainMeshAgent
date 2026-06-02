@@ -1714,7 +1714,7 @@ function _rebuildSimWithBars(skipFetch) {
   canvasRebuild("#sim-canvas-section");
   // Suppress bar grow animation on detail-toggle rebuilds
   if (_simPanelLayout) _simPanelLayout._skipBarAnim = true;
-  if (window._pinnedSim && typeof _drawRankBars === "function" && _centerPanelState && _simPanelLayout) {
+  if (window._simCompleted && window._pinnedSim && typeof _drawRankBars === "function" && _centerPanelState && _simPanelLayout) {
     var pinned = window._pinnedSim;
     var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
     var eqRank = pinned.side === "orig" ? pinned.mappedRank : pinned.globalRank;
@@ -2279,7 +2279,15 @@ function _drawRankBars(data, isSim) {
       .text(label);
     legX += 56;
   };
-  if (hasBoth) {
+  if (isSim) {
+    // Simulation tab: only show simulation result legends
+    if (hasBoth) {
+      drawLegend("#3fb950", "原始仿真");
+      drawLegend("#7ee787", "等效仿真");
+    } else {
+      drawLegend("#3fb950", "仿真结果");
+    }
+  } else if (hasBoth) {
     drawLegend("#58a6ff", "原始估算");
     drawLegend("#79c0ff", "等效估算");
     var simPanel = document.getElementById("tab-panel-simulation");
@@ -2442,7 +2450,16 @@ function _drawRankBars(data, isSim) {
     var eqActV =
       data.eq && data.eq.metrics.actual ? data.eq.metrics.actual[key] : null;
 
-    if (hasBoth) {
+    if (isSim) {
+      // Simulation tab: only show simulation result bars (no theoretical estimates)
+      if (hasBoth) {
+        if (origActV != null) barY += drawBar(origActV, "#3fb950", "原始仿");
+        if (eqActV != null) barY += drawBar(eqActV, "#7ee787", "等效仿");
+      } else {
+        if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
+        if (eqActV != null && !data.orig) barY += drawBar(eqActV, "#3fb950", "仿");
+      }
+    } else if (hasBoth) {
       // Estimate bars first
       if (origEstV != null)
         barY += drawBar(origEstV, "#58a6ff", "原始估");
@@ -3062,7 +3079,9 @@ function canvasRebuild(targetSelector) {
       var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
       var cardH = Math.max(_detailVisible ? 420 : 280, _sContentH);
       var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
-      if (!window._pinnedSim) cardG.attr("display", "none");
+      // Hide card when no rank pinned OR simulation not yet completed
+      var _simDone = !!(window._simCompleted);
+      if (!window._pinnedSim || !_simDone) cardG.attr("display", "none");
       cardG.append("rect")
         .attr("x", _cardX).attr("y", _sTH)
         .attr("width", _cardW).attr("height", cardH)
@@ -3084,8 +3103,8 @@ function canvasRebuild(targetSelector) {
       }
       var barAreaH = Math.max(0, availH - detailH);
       var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
-      // Placeholder when no rank pinned
-      if (!window._pinnedSim) {
+      // Placeholder when sim completed but no rank pinned yet
+      if (_simDone && !window._pinnedSim) {
         barG.append("text")
           .attr("x", _cardX + _cardW / 2)
           .attr("y", barAreaY + Math.max(barAreaH / 2, 20))

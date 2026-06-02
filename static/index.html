@@ -4234,6 +4234,7 @@
                     updateWorkflowNode("comparison", "disabled");
                     _simFailed = true;
                     _simCompleted = false;
+                    window._simCompleted = false;
                     _comparisonReport = null;
                     setStatus("验证失败");
                     checkSimReady();
@@ -4244,6 +4245,7 @@
                     updateWorkflowNode("simulation", "active");
                     updateWorkflowNode("comparison", "pending");
                     _simCompleted = false;
+                    window._simCompleted = false;
                     _comparisonReport = null;
                     setStatus("仿真验证中");
                     // Resume WebSocket connection for real-time status
@@ -4993,6 +4995,7 @@
                 var chatPanel = document.querySelector(".chat-panel");
                 if (chatPanel) chatPanel.style.display = "";
                 _simCompleted = false;
+                window._simCompleted = false;
                 _comparisonReport = null;
                 _simStarted = false;
                 _pendingWorkflowState = null;
@@ -5319,6 +5322,7 @@
                         // Defer workflow update to done handler for canvas sync
                         _simStarted = false;
                         _simCompleted = true;
+                        window._simCompleted = true;
                         _pendingSimData = true;
                         break;
                     case "done":
@@ -6861,6 +6865,7 @@
                 btn.classList.remove("sim-done", "sim-retry");
                 _simFailed = false;
                 _simCompleted = false;
+                window._simCompleted = false;
                 _comparisonReport = null;
                 if (_simPollTimer) { clearTimeout(_simPollTimer); _simPollTimer = null; }
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
@@ -6933,6 +6938,7 @@
                     if (results.comparison) {
                         // Simulation already complete (MCP returned card data immediately)
                         _simCompleted = true;
+                        window._simCompleted = true;
                         _comparisonReport = results.comparison;
                         updateWorkflowNode("simulation", "completed");
                         if (results.comparison.is_equivalent === false) {
@@ -6946,6 +6952,7 @@
                     } else {
                         // Simulation submitted, waiting for MCP to complete
                         _simCompleted = false;
+                        window._simCompleted = false;
                         updateWorkflowNode("simulation", "active");
                         updateWorkflowNode("comparison", "pending");
                         addMessage("system", "📊 仿真任务已提交 MCP Server，等待仿真完成...");
@@ -7053,6 +7060,7 @@
                     .then(function (data) {
                         var results = data.results || {};
                         _simCompleted = true;
+                        window._simCompleted = true;
                         _comparisonReport = results.comparison || null;
                         setStatus("验证完成");
                         updateWorkflowNode("simulation", "completed");
@@ -7076,6 +7084,10 @@
                         }
                         checkSimReady();
                         _renderSimResults();
+                        // If a rank is pinned on simulation tab, rebuild canvas to show bar chart card
+                        if (window._pinnedSim && typeof window._onSimRankPinned === "function") {
+                            window._onSimRankPinned();
+                        }
                     })
                     .catch(function (e) {
                         addMessage("error", "获取仿真结果失败: " + e.message);
@@ -7087,6 +7099,7 @@
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
                 _simFailed = true;
                 _simCompleted = false;
+                window._simCompleted = false;
                 _comparisonReport = null;
                 setStatus("验证失败");
                 updateWorkflowNode("simulation", "failed");
@@ -7161,7 +7174,8 @@
                         _centerPanelState.detailData = null;
                     }
                     if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
-                    if (window._pinnedSim && typeof _drawRankBars === "function" && typeof _centerPanelState !== "undefined" && typeof _simPanelLayout !== "undefined" && _simPanelLayout) {
+                    // Only draw bar chart when simulation is completed
+                    if (_simCompleted && window._pinnedSim && typeof _drawRankBars === "function" && typeof _centerPanelState !== "undefined" && typeof _simPanelLayout !== "undefined" && _simPanelLayout) {
                         var pinned = window._pinnedSim;
                         var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
                         var eqRank = pinned.side === "orig" ? pinned.mappedRank : pinned.globalRank;
