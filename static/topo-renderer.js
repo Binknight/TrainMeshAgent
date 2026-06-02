@@ -692,6 +692,9 @@ function fetchSimulationData() {
           // Mark simulation as completed if results exist
           if (data.original_simulation || data.equivalent_simulation) {
             window._simCompleted = true;
+            if (data.comparison_report && typeof data.comparison_report === "object") {
+              window._comparisonReport = data.comparison_report;
+            }
             if (typeof checkSimReady === "function") checkSimReady();
           }
           if (changed && (meshOriginal || meshEquivalent)) {
@@ -699,6 +702,7 @@ function fetchSimulationData() {
             try { activeTab = sessionStorage.getItem("activeCanvasTab") || "modeling"; } catch (e) {}
             meshRebuild(activeTab === "simulation" ? "#sim-canvas-section" : "#canvas-section");
             if (typeof _renderSimResults === "function") _renderSimResults();
+            if (activeTab === "result" && typeof _renderResultPanel === "function") _renderResultPanel();
           }
         });
       })
@@ -4794,15 +4798,15 @@ function _renderOneModel(
     sg.append("polygon")
       .attr(
         "points",
-        cx +
+        (cx - D.ARROW_S / 2) +
           "," +
           (midY - D.ARROW_S / 2) +
           " " +
-          (cx - D.ARROW_S / 2) +
-          "," +
-          (midY + D.ARROW_S / 2) +
-          " " +
           (cx + D.ARROW_S / 2) +
+          "," +
+          (midY - D.ARROW_S / 2) +
+          " " +
+          cx +
           "," +
           (midY + D.ARROW_S / 2),
       )
@@ -5105,19 +5109,19 @@ function _renderOneModel(
     dashLine(D.CX, startY, skipRight, startY, skipColor);
     dashLine(skipRight, startY, skipRight, endY, skipColor);
     dashLine(skipRight, endY, endX + 6, endY, skipColor);
-    // Arrow at endpoint
+    // Arrow at endpoint (pointing left, into the Add block)
     sg.append("polygon")
       .attr(
         "points",
-        endX +
+        (endX + D.ARROW_S / 2) +
           "," +
           (endY - D.ARROW_S / 2) +
           " " +
-          (endX + D.ARROW_S / 2) +
+          endX +
           "," +
           endY +
           " " +
-          endX +
+          (endX + D.ARROW_S / 2) +
           "," +
           (endY + D.ARROW_S / 2),
       )
