@@ -278,3 +278,5 @@ class SessionState(BaseModel):
     equivalent_seq_len: int | None = None
     equivalent_batch_size: int | None = None
     equivalent_dff: int | None = None
+    original_micro_batch: int | None = None
+    equivalent_micro_batch: int | None = None

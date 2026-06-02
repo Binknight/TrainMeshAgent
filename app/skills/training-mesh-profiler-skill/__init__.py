@@ -21,6 +21,7 @@ _MODEL_CONFIG = {
 # ── Default estimation parameters ──
 _SEQ_LEN = 2048
 _TOTAL_BATCH = 32
+_MICRO_BATCH = 4
 _QUANT_COEFF = 1
 
 
@@ -50,8 +51,8 @@ def _estimate_hbm_gb_old(
 
 
 def _estimate_hbm_gb(L: int, H: int, dff: int, tp: int, pp: int) -> float:
-    """HBM = L/PP * ((4*H^2 + 3*H*dff)/TP + 2*H) / 1e9"""
-    return L / pp * ((4 * H**2 + 3 * H * dff) / tp + 2 * H) / 1e9
+    """HBM = K * L/PP * ((4*H^2 + 3*H*dff)/TP + 2*H) / 1e9"""
+    return 18 * L / pp * ((4 * H**2 + 3 * H * dff) / tp + 2 * H) / 1e9
 
 
 def _estimate_dp_comm_gb_old(L: int, H: int, tp: int, pp: int) -> float:
@@ -73,14 +74,14 @@ def _estimate_dp_comm_gb(L: int, H: int, dff: int, dp: int, tp: int, pp: int) ->
     return 2 * (dp - 1) / dp * 4 * L / pp * (4 * H**2 / tp + 3 * H * dff / tp) / 1e9
 
 
-def _estimate_tp_comm_gb(L: int, H: int, S: int, B: int, pp: int) -> float:
-    """TP comm = L/PP * 15 * B * S * H / 1e9  -> GB/micro-step"""
-    return L / pp * 15 * B * S * H / 1e9
+def _estimate_tp_comm_gb(L: int, H: int, S: int, b: int, pp: int) -> float:
+    """TP comm = L/PP * 15 * b * S * H / 1e9  -> GB/micro-step"""
+    return L / pp * 15 * b * S * H / 1e9
 
 
-def _estimate_pp_comm_mb(H: int, S: int, B: int) -> float:
-    """PP comm = 4*B*S*H / 1e6  → MB/micro-step"""
-    return 4 * B * S * H / 1e6
+def _estimate_pp_comm_mb(H: int, S: int, b: int) -> float:
+    """PP comm = 4*b*S*H / 1e6  → MB/micro-step"""
+    return 4 * b * S * H / 1e6
 
 
 class MeshProfilerSkill(BaseSkill):
@@ -142,6 +143,10 @@ class MeshProfilerSkill(BaseSkill):
                         "d_ffn": {
                             "type": "integer",
                             "description": "FFN 隐藏层维度，默认 14336",
+                        },
+                        "micro_batch": {
+                            "type": "integer",
+                            "description": f"微批次大小 b，默认 {_MICRO_BATCH}",
                         },
                     },
                     "required": [
@@ -233,6 +238,7 @@ class MeshProfilerSkill(BaseSkill):
             )
             S = int(arguments.get("seq_len", _SEQ_LEN))
             B = int(arguments.get("total_batch", _TOTAL_BATCH))
+            b_micro = int(arguments.get("micro_batch", _MICRO_BATCH))
             dff_val = int(
                 arguments.get("d_ffn")
                 or (training_model.config.d_ffn if training_model else None)
@@ -243,8 +249,8 @@ class MeshProfilerSkill(BaseSkill):
             flops = _estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
             hbm = _estimate_hbm_gb(L, H, dff_val, tp, pp)
             dp_comm = _estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
-            tp_comm = _estimate_tp_comm_gb(L, H, S, B, pp)
-            pp_comm = _estimate_pp_comm_mb(H, S, B)
+            tp_comm = _estimate_tp_comm_gb(L, H, S, b_micro, pp)
+            pp_comm = _estimate_pp_comm_mb(H, S, b_micro)
             for rank in range(total_nodes):
                 cards.append(
                     CardMetrics(

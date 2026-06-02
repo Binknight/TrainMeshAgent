@@ -86,6 +86,7 @@
 | | `d_ffn` | integer | ✅ | FFN 隐藏层维度，默认 14336 |
 | **运行时参数** | `seq_len` | integer | ✅ | 序列长度 S |
 | | `batch_size` | integer | ✅ | 总批次大小 B |
+| | `micro_batch_size` | integer | ✅ | 微批次大小 b（per pipeline stage micro-batch） |
 
 > **额外字段**：`MeshTopology.model_dump()` 还会输出 `nodes`（`MeshNode[]`）和 `communication_groups`（通信组列表）。这些是组网拓扑的内部结构，MCP Server 可忽略，但 `execute_task` 的 `topology` 参数中可能包含。后续版本考虑剥离。
 
@@ -112,7 +113,8 @@
     "num_heads": 32,
     "d_ffn": 14336,
     "seq_len": 2048,
-    "batch_size": 32
+    "batch_size": 32,
+    "micro_batch_size": 4
   },
   "simulation_params": {
     "script_path": "/opt/ascend/script/pretrain_xxxx.sh",
@@ -151,7 +153,8 @@
     "num_heads": 32,
     "d_ffn": 14336,
     "seq_len": 2048,
-    "batch_size": 8
+    "batch_size": 8,
+    "micro_batch_size": 4
   },
   "simulation_params": {
     "script_path": "/opt/ascend/script/pretrain_xxxx.sh",

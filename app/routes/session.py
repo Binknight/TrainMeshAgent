@@ -102,7 +102,7 @@ def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
-def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None, d_ffn=None):
+def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None):
     """Attach model config + runtime params onto a topology dict for MCP execute_task."""
     if topo is None:
         return None
@@ -121,6 +121,8 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
         d["d_ffn"] = d_ffn
     elif training_model and training_model.config.d_ffn:
         d["d_ffn"] = training_model.config.d_ffn
+    if micro_batch_size is not None:
+        d["micro_batch_size"] = micro_batch_size
     return d
 
 
@@ -140,6 +142,7 @@ def get_topology(session_id: str):
             batch_size=session.original_batch_size,
             model_name=session.original_model_name,
             d_ffn=session.original_dff,
+            micro_batch_size=session.original_micro_batch,
         ),
         "equivalent_topology": _topo_with_model(
             session.equivalent_topology, session.equivalent_training_model,
@@ -147,6 +150,7 @@ def get_topology(session_id: str):
             batch_size=session.equivalent_batch_size,
             model_name=session.original_model_name,  # model is the same, just different topo
             d_ffn=session.equivalent_dff,
+            micro_batch_size=session.equivalent_micro_batch,
         ),
         "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
         "equivalent_training_model": session.equivalent_training_model.model_dump() if session.equivalent_training_model else None,
@@ -196,13 +200,14 @@ def estimate_metrics():
     H = int(data.get("hidden_dim", cfg["hidden_dim"]))
     S = int(data.get("seq_len", _estimator._SEQ_LEN))
     B = int(data.get("total_batch", _estimator._TOTAL_BATCH))
+    b_micro = int(data.get("micro_batch", _estimator._MICRO_BATCH))
     dff_val = int(data.get("d_ffn", 14336))
 
     flops = _estimator._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
     hbm = _estimator._estimate_hbm_gb(L, H, dff_val, tp, pp)
     dp_comm = _estimator._estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
-    tp_comm = _estimator._estimate_tp_comm_gb(L, H, S, B, pp)
-    pp_comm = _estimator._estimate_pp_comm_mb(H, S, B)
+    tp_comm = _estimator._estimate_tp_comm_gb(L, H, S, b_micro, pp)
+    pp_comm = _estimator._estimate_pp_comm_mb(H, S, b_micro)
 
     cards = []
     for rank in range(total_nodes):
@@ -227,7 +232,7 @@ def estimate_metrics():
     })
 
 
-def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None) -> tuple[str | None, SimulationResult | None]:
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, micro_batch_size=None) -> tuple[str | None, SimulationResult | None]:
     """Submit MCP task for a single topology. Returns (task_id, SimulationResult or None if not ready)."""
     if not topo:
         return task_id_in, None
@@ -235,7 +240,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     # Submit MCP task (fire-and-forget)
     task_id = task_id_in
     if not task_id:
-        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name) or topo.model_dump()
+        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, micro_batch_size=micro_batch_size) or topo.model_dump()
         task_id = mcp_client.execute_task(topo_payload, params=sim_params)
         if not task_id:
             raise RuntimeError(f"MCP execute_task returned empty task_id for {label}")
@@ -382,6 +387,7 @@ def run_simulation(session_id: str):
             seq_len=session.original_seq_len,
             batch_size=session.original_batch_size,
             model_name=session.original_model_name,
+            micro_batch_size=session.original_micro_batch,
         )
         session.original_task_id = orig_tid or session.original_task_id
         if orig_sim:
@@ -395,6 +401,7 @@ def run_simulation(session_id: str):
             seq_len=session.equivalent_seq_len,
             batch_size=session.equivalent_batch_size,
             model_name=session.original_model_name,
+            micro_batch_size=session.equivalent_micro_batch,
         )
         session.equivalent_task_id = eq_tid or session.equivalent_task_id
         if eq_sim:
@@ -808,6 +815,7 @@ def workflow_step1(session_id: str):
     A = data.get("A", 32)
     S = data.get("S", 2048)
     B = data.get("B", 32)
+    b_micro = data.get("b_micro", 4)
     dff = data.get("dff", 14336)
     strategy = data.get("strategy", "min_equiv")
 
@@ -873,11 +881,14 @@ def workflow_step1(session_id: str):
         "strategy": strategy,
         "L_orig": L,  # original layer count for SSE formula display
         "B_orig": B,  # original batch size for SSE formula display
+        "b_micro": b_micro,  # micro-batch size for TP/PP formula display
     }
     session.original_dff = dff
     session.original_batch_size = B
+    session.original_micro_batch = b_micro
     session.equivalent_batch_size = eq_B
     session.equivalent_dff = dff  # dff unchanged between original and equivalent
+    session.equivalent_micro_batch = b_micro  # b unchanged between original and equivalent
 
     session.step = "params_collected"
     session_manager.save_session(session)
@@ -890,6 +901,7 @@ def workflow_step1(session_id: str):
         "original_mesh": _topo_with_model(
             orig_mesh, orig_model,
             seq_len=S, batch_size=B, model_name=model_name, d_ffn=dff,
+            micro_batch_size=b_micro,
         ),
         "original_model": orig_model_dict,
         "equivalent_params": session.equivalent_params.model_dump() if hasattr(session.equivalent_params, "model_dump") else session.equivalent_params,
@@ -940,6 +952,7 @@ def workflow_step2_stream(session_id: str):
     S_val = model_meta.get("S", 2048)
     B_val = model_meta.get("B", 32)
     B_orig = model_meta.get("B_orig", B_val)
+    b_micro_val = model_meta.get("b_micro", 4)
     dff_val = model_meta.get("dff", 14336)
     L_orig = model_meta.get("L_orig", eq_L)  # fallback to eq_L if not stored
     strategy = model_meta.get("strategy", "min_equiv")
@@ -956,7 +969,7 @@ def workflow_step2_stream(session_id: str):
             f"▸ 等效策略: {strategy_label} ({strategy})",
             f"  原始组网  {orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}  →  {npu_orig} NPU",
             f"  等效组网  {eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}  →  {npu_eq} NPU",
-            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  dff={dff_val}  S={S_val}  B={B_orig}  →  B_eq={B_val}",
+            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  dff={dff_val}  S={S_val}  B={B_orig}  b={b_micro_val}  →  B_eq={B_val}",
             f"  NPU 压缩比  {npu_orig} : {npu_eq}  ≈  {comp_ratio} : 1",
         ]
         for line in lines_strategy:
@@ -969,9 +982,9 @@ def workflow_step2_stream(session_id: str):
         flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
 
         hbm_gb = _estimator._estimate_hbm_gb(L_orig, H_val, dff_val, tp, pp)
-        tp_comm = _estimator._estimate_tp_comm_gb(L_orig, H_val, S_val, B_orig, pp)
+        tp_comm = _estimator._estimate_tp_comm_gb(L_orig, H_val, S_val, b_micro_val, pp)
         dp_comm = _estimator._estimate_dp_comm_gb(L_orig, H_val, dff_val, orig_dp, tp, pp)
-        pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, B_orig)
+        pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
 
         lines_metrics = [
             f"▸ 单卡计算量 (FLOPs)",
@@ -983,14 +996,14 @@ def workflow_step2_stream(session_id: str):
             f"  = {L_orig}/{pp} × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val}) / 1e9",
             f"  ≈ {hbm_gb:.1f} GB",
             f"▸ 通信流量 (GB / step)",
-            f"  TP 通信 = L/PP * 15 * B * S * H / 1e9",
-            f"  = {L_orig}/{pp} * 15 * {B_val} * {S_val} * {H_val} / 1e9",
+            f"  TP 通信 = L/PP * 15 * b * S * H / 1e9",
+            f"  = {L_orig}/{pp} * 15 * {b_micro_val} * {S_val} * {H_val} / 1e9",
             f"  ≈ {tp_comm:.2f} GB/micro-step  (TP 全规约)",
             f"  DP 通信 = 2*(DP-1)/DP * 4 * L/PP * (4*H^2/TP + 3*H*dff/TP) / 1e9",
             f"  = 2*({orig_dp}-1)/{orig_dp} * 4 * {L_orig}/{pp} * (4*{H_val}^2/{tp} + 3*{H_val}*{dff_val}/{tp}) / 1e9",
             f"  ≈ {dp_comm:.2f} GB/step",
-            f"  PP 通信 = 4·B·S·H / 1e6  (激活值 send/recv)",
-            f"  = 4 × {B_val} × {S_val} × {H_val} / 1e6",
+            f"  PP 通信 = 4·b·S·H / 1e6  (激活值 send/recv)",
+            f"  = 4 × {b_micro_val} × {S_val} × {H_val} / 1e6",
             f"  ≈ {pp_comm:.2f} MB/micro-step  (per PP boundary)",
         ]
         for line in lines_metrics:
@@ -1074,6 +1087,7 @@ def workflow_step3(session_id: str):
             eq_mesh, eq_model,
             seq_len=model_meta.get("S"), batch_size=model_meta.get("B"),
             model_name=model_meta.get("model_name"), d_ffn=model_meta.get("dff"),
+            micro_batch_size=model_meta.get("b_micro"),
         ),
         "equivalent_model": eq_model_dict,
         "step": session.step,

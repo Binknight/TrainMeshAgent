@@ -28,6 +28,7 @@ _MODEL_CONFIG = _skill._MODEL_CONFIG
 
 S = 2048
 B = 32
+b = 4
 dff = 14336
 a = 1
 
@@ -68,8 +69,8 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     hbm_old = _estimate_hbm_gb_old(L, H, S, B_val, dp, tp, pp, a)
     dp_comm = _estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
     dp_comm_old = _estimate_dp_comm_gb_old_lh(L, H, dp)
-    tp_comm = _estimate_tp_comm_gb(L, H, S, B_val, pp)
-    pp_comm = _estimate_pp_comm_mb(H, S, B_val)
+    tp_comm = _estimate_tp_comm_gb(L, H, S, b, pp)
+    pp_comm = _estimate_pp_comm_mb(H, S, b)
 
     # -- Print --
     print(f"\n{'=' * 80}")
@@ -87,6 +88,7 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     print(f"  H  (hidden)  = {H}")
     print(f"  S  (seq_len) = {S}")
     print(f"  B  (batch)   = {B_val}")
+    print(f"  b  (micro)   = {b}")
     print(f"  dff          = {dff_val}")
     print(f"  quant_coeff  = {a}")
 
@@ -127,9 +129,9 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     print(f"          = {dp_comm:.4f} GB/step")
     print(f"  (OLD)   = 2*(DP-1)/DP * 12*L*H^2 / 1e9")
     print(f"          = {dp_comm_old:.4f} GB/step")
-    print(f"  TP comm = L/PP * 15*B*S*H / 1e9")
+    print(f"  TP comm = L/PP * 15*b*S*H / 1e9")
     print(f"          = {tp_comm:.2f} GB/micro-step")
-    print(f"  PP comm = 4*B*S*H / 1e6")
+    print(f"  PP comm = 4*b*S*H / 1e6")
     print(f"          = {pp_comm:.4f} MB/micro-step")
 
 # -- B scaling verification --

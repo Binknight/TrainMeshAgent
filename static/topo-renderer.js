@@ -30,6 +30,7 @@ async function fetchEstimates(
   dFfn,
   seqLen,
   batchSize,
+  microBatch,
 ) {
   // ── Cancel any previous in-flight request for the same side ──
   var oldCtrl = _estimateFetchAbort[side];
@@ -58,6 +59,7 @@ async function fetchEstimates(
     if (dFfn != null) body.d_ffn = dFfn;
     if (seqLen != null) body.seq_len = seqLen;
     if (batchSize != null) body.total_batch = batchSize;
+    if (microBatch != null) body.micro_batch = microBatch;
 
     var resp = await fetch(API + "/session/estimate", {
       method: "POST",
@@ -3531,6 +3533,10 @@ async function loadMeshData(topoData) {
     topoData.batch_size != null
       ? topoData.batch_size
       : (meshModel && meshModel.batch_size) || null;
+  var microBatch =
+    topoData.micro_batch_size != null
+      ? topoData.micro_batch_size
+      : (meshModel && meshModel.micro_batch_size) || null;
 
   var hasModelParams = numLayers != null;
   var alreadyInFlight = _estimateInFlight[side];
@@ -3549,6 +3555,7 @@ async function loadMeshData(topoData) {
         dFfn,
         seqLen,
         batchSize,
+        microBatch,
       );
       if (isOrig) {
         meshEstimateOrig = estimates;
@@ -4465,6 +4472,7 @@ function loadModelData(modelData, role) {
         d_ffn: modelData.config.d_ffn,
         seq_len: modelData.seq_len,
         batch_size: modelData.batch_size,
+        micro_batch_size: modelData.micro_batch_size,
       };
     }
     // If mesh already loaded, re-fetch estimates with correct model params
@@ -4478,6 +4486,7 @@ function loadModelData(modelData, role) {
         d_ffn: modelData.config.d_ffn,
         seq_len: modelData.seq_len,
         batch_size: modelData.batch_size,
+        micro_batch_size: modelData.micro_batch_size,
       };
     }
     if (meshEquivalent) _refetchMeshEstimate("eq");
@@ -4502,6 +4511,7 @@ async function _refetchMeshEstimate(side) {
       model.d_ffn,
       model.seq_len,
       model.batch_size,
+      model.micro_batch_size,
     );
     if (side === "orig") {
       meshEstimateOrig = estimates;
