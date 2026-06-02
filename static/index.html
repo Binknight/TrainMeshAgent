@@ -297,7 +297,7 @@
                 position: relative;
             }
             .canvas-toolbar {
-                height: 52px;
+                height: 68px;
                 background: var(--bg-panel);
                 border-bottom: 1px solid var(--border);
                 display: flex;
@@ -314,13 +314,7 @@
                 overflow: visible;
             }
             .canvas-label {
-                font-family: var(--font-mono);
-                font-size: 10px;
-                color: var(--text-secondary);
-                min-width: 0;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
+                display: none;
             }
             .canvas-toolbar-right {
                 margin-left: auto;
@@ -997,67 +991,6 @@
                 transition: width 0.4s ease;
             }
 
-            /* Sub-step Popover */
-            .wf-substep-popover {
-                position: absolute;
-                background: var(--bg-panel);
-                border: 1px solid var(--border-active);
-                border-radius: var(--radius);
-                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-                padding: 8px 12px;
-                z-index: 100;
-                min-width: 170px;
-                animation: wf-popover-in 0.15s ease-out;
-            }
-            .wf-popover-arrow {
-                position: absolute;
-                top: -6px;
-                left: 50%;
-                transform: translateX(-50%);
-                width: 0;
-                height: 0;
-                border-left: 6px solid transparent;
-                border-right: 6px solid transparent;
-                border-bottom: 6px solid var(--border-active);
-            }
-            .wf-substep-pill {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                padding: 5px 10px;
-                border-radius: 12px;
-                margin-bottom: 3px;
-                font-size: 12px;
-                font-family: var(--font-sans);
-                transition: background 0.15s;
-                cursor: default;
-            }
-            .wf-substep-pill:hover {
-                background: var(--bg-hover);
-            }
-            .wf-substep-pill.completed .wf-substep-label {
-                color: var(--green);
-            }
-            .wf-substep-pill.active .wf-substep-label {
-                color: var(--cyan);
-                font-weight: 600;
-            }
-            .wf-substep-dot {
-                width: 6px;
-                height: 6px;
-                border-radius: 50%;
-                flex-shrink: 0;
-            }
-            @keyframes wf-popover-in {
-                from {
-                    opacity: 0;
-                    transform: translateY(-4px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
             /* ── AI Mode Toggle ── */
             .ai-toggle {
                 display: flex;
@@ -2591,11 +2524,6 @@
                             <span class="ai-toggle-slider"></span>
                         </label>
                     </span>
-                    <!-- Sub-step popover (anchored to toolbar) -->
-                    <div class="wf-substep-popover" id="wf-substep-popover" style="display:none">
-                        <div class="wf-popover-arrow" id="wf-popover-arrow"></div>
-                        <div class="wf-substep-list" id="wf-substep-list"></div>
-                    </div>
                 </div>
                 <!-- Parameter Input Overlay -->
                 <div
@@ -3437,7 +3365,7 @@
                 }
 
                 // ── Stage "step1": 原始组网 + 原始模型结构 → single mode, centered ──
-                if (stage === "step1" || stage === "auto") {
+                if (stage === "step1" || (stage === "auto" && (origMesh || _pendingModelList.length))) {
                     if (origMesh) {
                         await loadMeshData(origMesh);
                         canvasRebuild();
@@ -3458,16 +3386,28 @@
                     _pendingMeshList = [];
                 }
 
-                // ── Stage "step2": 等效计算完成 → sub-steps already done via equiv_formula_line ──
-                if (
-                    stage === "step2" ||
-                    (stage === "auto" &&
-                        workflowNodeStates["equiv_calc_sub3"] === "completed")
-                ) {
-                    // All equiv_calc sub-steps completed, mark parent with visible pause
-                    await renderThenSleep(STAGE_DELAY_MS);
-                    if (workflowNodeStates["equiv_calc"] !== "completed") {
-                        updateWorkflowNode("equiv_calc", "completed");
+                // ── Stage "step2": 等效计算完成 → only when all sub-steps are done ──
+                else if (stage === "step2" || stage === "auto") {
+                    // Wait for all 3 sub-steps to complete (formula card fully loaded)
+                    var _subWaitStart = Date.now();
+                    while (
+                        workflowNodeStates["equiv_calc_sub3"] !== "completed" &&
+                        Date.now() - _subWaitStart < 15000
+                    ) {
+                        await new Promise(function (r) { setTimeout(r, 100); });
+                    }
+                    if (workflowNodeStates["equiv_calc_sub3"] === "completed") {
+                        // Double RAF ensures browser has painted the last formula line
+                        await new Promise(function (resolve) {
+                            requestAnimationFrame(function () {
+                                requestAnimationFrame(function () {
+                                    setTimeout(resolve, STAGE_DELAY_MS);
+                                });
+                            });
+                        });
+                        if (workflowNodeStates["equiv_calc"] !== "completed") {
+                            updateWorkflowNode("equiv_calc", "completed");
+                        }
                     }
                 }
 
@@ -3599,22 +3539,22 @@
 
                 var W = svgEl.clientWidth || svgEl.parentElement.clientWidth - 80;
                 if (W < 200) W = 600;
-                var H = 52;
+                var H = 68;
 
                 var topLevelSteps = WORKFLOW_STEPS.filter(function (s) {
                     return !s.isChild;
                 });
                 var stepCount = topLevelSteps.length;
-                var chevronDepth = 10;
-                var stepH = 34;
+                var chevronDepth = 14;
+                var stepH = 46;
                 var topPad = (H - stepH - 5) / 2;
-                var gap = 2;
+                var gap = 3;
                 var leftPad = 6;
                 var availW = W - leftPad * 2 - (stepCount - 1) * gap;
                 var stepW = Math.max(
-                    80,
+                    110,
                     Math.min(
-                        155,
+                        210,
                         (availW - chevronDepth * stepCount) / stepCount,
                     ),
                 );
@@ -3689,11 +3629,11 @@
                             "cx",
                             x +
                                 (i === 0
-                                    ? 14
-                                    : chevronDepth + 12),
+                                    ? 18
+                                    : chevronDepth + 16),
                         )
                         .attr("cy", stepH / 2)
-                        .attr("r", 3.5)
+                        .attr("r", 5)
                         .attr("fill", getStatusColor(state));
 
                     // Label text
@@ -3707,7 +3647,7 @@
 
                     g.append("text")
                         .attr("x", textX)
-                        .attr("y", stepH / 2 + 4)
+                        .attr("y", stepH / 2 + 5)
                         .attr("text-anchor", "middle")
                         .attr(
                             "fill",
@@ -3719,7 +3659,7 @@
                         )
                         .attr(
                             "font-size",
-                            stepW < 110 ? "10px" : "11px",
+                            stepW < 140 ? "13px" : "14px",
                         )
                         .attr("font-family", "var(--font-sans)")
                         .attr(
@@ -3732,22 +3672,11 @@
                     if (isCompleted) {
                         g.append("text")
                             .attr("x", x + stepW - 2)
-                            .attr("y", 12)
+                            .attr("y", 16)
                             .attr("text-anchor", "end")
                             .attr("fill", "var(--green)")
-                            .attr("font-size", "10px")
+                            .attr("font-size", "14px")
                             .text("✓");
-                    }
-
-                    // Sub-step indicator for parent steps
-                    if (step.isParent) {
-                        g.append("text")
-                            .attr("x", textX)
-                            .attr("y", stepH + 10)
-                            .attr("text-anchor", "middle")
-                            .attr("fill", "var(--text-muted)")
-                            .attr("font-size", "8px")
-                            .text("▾");
                     }
 
                     // Click handler
@@ -3756,14 +3685,6 @@
                             .style("cursor", "pointer")
                             .on("click", function () {
                                 handleWorkflowNodeClick(step);
-                                if (step.isParent) {
-                                    showSubstepPopover(
-                                        step,
-                                        x,
-                                        stepW,
-                                        topPad,
-                                    );
-                                }
                             });
                     }
 
@@ -3784,8 +3705,8 @@
                     .attr("x", 0)
                     .attr("y", barY)
                     .attr("width", totalTrackW)
-                    .attr("height", 3)
-                    .attr("rx", 1.5)
+                    .attr("height", 4)
+                    .attr("rx", 2)
                     .attr("class", "wf-progress-track");
 
                 if (progressW > 0) {
@@ -3793,8 +3714,8 @@
                         .attr("x", 0)
                         .attr("y", barY)
                         .attr("width", progressW)
-                        .attr("height", 3)
-                        .attr("rx", 1.5)
+                        .attr("height", 4)
+                        .attr("rx", 2)
                         .attr("class", "wf-progress-fill")
                         .attr(
                             "fill",
@@ -3803,98 +3724,7 @@
                                 : "var(--cyan)",
                         );
                 }
-
-                // Update substep popover if open
-                var popover =
-                    document.getElementById("wf-substep-popover");
-                if (
-                    popover &&
-                    popover.style.display === "block" &&
-                    popover.dataset.parentId
-                ) {
-                    var parentStep = WORKFLOW_STEPS.find(function (s) {
-                        return s.id === popover.dataset.parentId;
-                    });
-                    if (parentStep) {
-                        var pIdx = topLevelSteps.indexOf(parentStep);
-                        if (pIdx >= 0) {
-                            var px = pIdx * (stepW + chevronDepth + gap);
-                            refreshSubstepPopoverContent(
-                                parentStep,
-                                px,
-                                stepW,
-                                topPad,
-                            );
-                        }
-                    }
-                }
             }
-
-            /* ── Sub-step Popover ── */
-            function showSubstepPopover(parentStep, chevronX, chevronW, topPad) {
-                var popover = document.getElementById("wf-substep-popover");
-                if (popover.style.display === "block" && popover.dataset.parentId === parentStep.id) {
-                    popover.style.display = "none";
-                    return;
-                }
-                refreshSubstepPopoverContent(parentStep, chevronX, chevronW, topPad);
-                popover.dataset.parentId = parentStep.id;
-                popover.style.display = "block";
-            }
-
-            function refreshSubstepPopoverContent(parentStep, chevronX, chevronW, topPad) {
-                var popover = document.getElementById("wf-substep-popover");
-                var list = document.getElementById("wf-substep-list");
-                var arrow = document.getElementById("wf-popover-arrow");
-                var children = WORKFLOW_STEPS.filter(function (s) { return s.parentId === parentStep.id; });
-                list.innerHTML = "";
-                children.forEach(function (child) {
-                    var state = workflowNodeStates[child.id] || "pending";
-                    var pill = document.createElement("div");
-                    pill.className = "wf-substep-pill " + state;
-                    var dot = document.createElement("span");
-                    dot.className = "wf-substep-dot";
-                    dot.style.background = getStatusColor(state);
-                    var label = document.createElement("span");
-                    label.className = "wf-substep-label";
-                    label.textContent = child.label;
-                    pill.appendChild(dot);
-                    pill.appendChild(label);
-                    if (state === "completed") {
-                        var check = document.createElement("span");
-                        check.style.cssText = "color:var(--green);margin-left:auto;font-size:11px;";
-                        check.textContent = "✓";
-                        pill.appendChild(check);
-                    } else if (state === "active") {
-                        var tag = document.createElement("span");
-                        tag.style.cssText = "color:var(--cyan);margin-left:auto;font-size:9px;";
-                        tag.textContent = "执行中";
-                        pill.appendChild(tag);
-                    }
-                    list.appendChild(pill);
-                });
-                var popoverW = Math.max(170, chevronW);
-                popover.style.width = popoverW + "px";
-                var svgEl = document.getElementById("workflow-flow-svg");
-                var svgOffsetLeft = svgEl ? svgEl.offsetLeft : 0;
-                popover.style.left = (svgOffsetLeft + chevronX + chevronW / 2 - popoverW / 2 + 6) + "px";
-                popover.style.top = "48px";
-                arrow.style.left = (popoverW / 2) + "px";
-            }
-
-            function closeSubstepPopover() {
-                var popover = document.getElementById("wf-substep-popover");
-                if (popover) popover.style.display = "none";
-            }
-
-            document.addEventListener("click", function (e) {
-                var popover = document.getElementById("wf-substep-popover");
-                var flowBar = document.getElementById("canvas-toolbar");
-                if (popover && popover.style.display === "block" &&
-                    !popover.contains(e.target) && flowBar && !flowBar.contains(e.target)) {
-                    popover.style.display = "none";
-                }
-            });
 
 
             function handleWorkflowNodeClick(step) {
@@ -4061,11 +3891,13 @@
                             }
                         }
                         // Check if all siblings done → mark parent completed → auto-advance past parent
+                        // equiv_calc: skip auto-complete, it's completed explicitly after formula card loads
                         var allChildrenDone = children.every(function (c) {
                             return workflowNodeStates[c.id] === "completed";
                         });
                         if (
                             allChildrenDone &&
+                            parentId !== "equiv_calc" &&
                             workflowNodeStates[parentId] !== "completed"
                         ) {
                             workflowNodeStates[parentId] = "completed";
@@ -4106,12 +3938,12 @@
 
             function _syncEquivCalcSubsteps(hasOrig, hasEq) {
                 // Sub-steps are marked by SSE equiv_formula_line events during step2.
-                // Only bulk-complete when equivalent data confirms step2 ran to completion.
+                // Only bulk-complete sub-steps when equivalent data confirms step2 ran.
+                // Parent equiv_calc completion is handled explicitly by handleDone or caller.
                 if (hasEq) {
                     updateWorkflowNode("equiv_calc_sub1", "completed");
                     updateWorkflowNode("equiv_calc_sub2", "completed");
                     updateWorkflowNode("equiv_calc_sub3", "completed");
-                    updateWorkflowNode("equiv_calc", "completed");
                 }
             }
 
@@ -4139,6 +3971,7 @@
                 if (step === "failed") {
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(true, true);
+                    updateWorkflowNode("equiv_calc", "completed");
                     updateWorkflowNode("equiv_gen", "completed");
                     updateWorkflowNode("simulation", "failed");
                     updateWorkflowNode("comparison", "disabled");
@@ -4151,6 +3984,7 @@
                 } else if (step === "simulating") {
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(true, true);
+                    updateWorkflowNode("equiv_calc", "completed");
                     updateWorkflowNode("equiv_gen", "completed");
                     updateWorkflowNode("simulation", "active");
                     updateWorkflowNode("comparison", "pending");
@@ -4168,6 +4002,7 @@
                 } else if (hasComparison) {
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(true, true);
+                    updateWorkflowNode("equiv_calc", "completed");
                     updateWorkflowNode("equiv_gen", "completed");
                     updateWorkflowNode("simulation", "completed");
                     if (sessionData.comparison_equivalent === false) {
@@ -4178,6 +4013,7 @@
                 } else if (hasSimulation) {
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(true, true);
+                    updateWorkflowNode("equiv_calc", "completed");
                     updateWorkflowNode("equiv_gen", "completed");
                     updateWorkflowNode("simulation", "completed");
                     updateWorkflowNode("comparison", "active");
@@ -4185,6 +4021,7 @@
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(hasOrigTopo, hasEqTopo);
                     if (hasEqTopo) {
+                        updateWorkflowNode("equiv_calc", "completed");
                         updateWorkflowNode("equiv_gen", "completed");
                         updateWorkflowNode("simulation", "active");
                     } else if (
@@ -4196,6 +4033,7 @@
                     updateWorkflowNode("params", "completed");
                     if (hasEqTopo) {
                         _syncEquivCalcSubsteps(true, true);
+                        updateWorkflowNode("equiv_calc", "completed");
                         updateWorkflowNode("equiv_gen", "completed");
                         updateWorkflowNode("simulation", "active");
                     } else if (hasOrigTopo) {
@@ -5230,6 +5068,7 @@
                 if (hasSimulation && hasModel && hasTopology) {
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(true, true);
+                    updateWorkflowNode("equiv_calc", "completed");
                     updateWorkflowNode("equiv_gen", "completed");
                     updateWorkflowNode("simulation", "completed");
                     if (workflowNodeStates["comparison"] !== "completed") {
@@ -5238,6 +5077,8 @@
                 } else if (hasModel && hasTopology) {
                     updateWorkflowNode("params", "completed");
                     _syncEquivCalcSubsteps(hasOrigTopo, hasEqTopo);
+                    // Don't complete equiv_calc here — let handleDone step2 block do it
+                    // when the formula card finishes loading
                     if (hasEqTopo) {
                         updateWorkflowNode("equiv_gen", "completed");
                         if (workflowNodeStates["simulation"] !== "completed") {
@@ -5252,6 +5093,7 @@
                     updateWorkflowNode("params", "completed");
                     if (hasEqTopo) {
                         _syncEquivCalcSubsteps(true, true);
+                        // Don't complete equiv_calc here — handled by explicit paths
                         updateWorkflowNode("equiv_gen", "completed");
                         if (workflowNodeStates["simulation"] !== "completed") {
                             updateWorkflowNode("simulation", "active");
@@ -6708,13 +6550,16 @@
                     btn.textContent = "开始仿真";
                     btn.classList.remove("sim-done", "sim-retry");
                 }
-                // Enable simulation tab when simulation started, data exists, completed, or polling
+                // Enable simulation tab only when workflow has progressed past equiv_gen
                 if (simTabBtn) {
                     var hasSimData = (
                         (typeof meshActualOrig !== "undefined" && Object.keys(meshActualOrig || {}).length) ||
                         (typeof meshActualEq !== "undefined" && Object.keys(meshActualEq || {}).length)
                     );
-                    simTabBtn.disabled = !(_simStarted || hasSimData || _simCompleted || isPolling);
+                    var workflowReady = workflowNodeStates["equiv_gen"] === "completed" ||
+                                       workflowNodeStates["simulation"] === "active" ||
+                                       workflowNodeStates["simulation"] === "completed";
+                    simTabBtn.disabled = !(workflowReady && (_simStarted || hasSimData || _simCompleted || isPolling));
                 }
             }
 
