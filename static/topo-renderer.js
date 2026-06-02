@@ -3345,6 +3345,19 @@ function canvasRebuild(targetSelector) {
       }
     }
 
+    // ── Resolve highlight for input/output layers ──
+    function _computeInputOutputHL(ppIdx, ppCount) {
+      if (ppIdx == null || !ppCount) return null;
+      var isInput = ppIdx === 0;
+      var isOutput = ppIdx === ppCount - 1;
+      if (isInput && isOutput) return "both";
+      if (isInput) return "input";
+      if (isOutput) return "output";
+      return null;
+    }
+    var highlightOrigInputOutput = _computeInputOutputHL(highlightOrigPp, origPp);
+    var highlightEqInputOutput = _computeInputOutputHL(highlightEqPp, eqPp);
+
     if (hasBothModels) {
       zoomLayer
         .append("text")
@@ -3385,6 +3398,7 @@ function canvasRebuild(targetSelector) {
         origPp,
         highlightOrigTp,
         highlightOrigPp,
+        highlightOrigInputOutput,
       );
       _renderOneModel(
         zoomLayer,
@@ -3400,6 +3414,7 @@ function canvasRebuild(targetSelector) {
         eqPp,
         highlightEqTp,
         highlightEqPp,
+        highlightEqInputOutput,
       );
     } else {
       var singleTp =
@@ -3416,6 +3431,7 @@ function canvasRebuild(targetSelector) {
         singleHlTp = meshPinnedTpInfo.tpIndex;
         singleHlPp = meshPinnedTpInfo.ppIndex;
       }
+      var singleHlInputOutput = _computeInputOutputHL(singleHlPp, singlePp);
       zoomLayer
         .append("text")
         .attr("x", modelX0 + modelAreaW / 2)
@@ -3440,6 +3456,7 @@ function canvasRebuild(targetSelector) {
         singlePp,
         singleHlTp,
         singleHlPp,
+        singleHlInputOutput,
       );
     }
   }
@@ -4575,6 +4592,7 @@ function _renderOneModel(
   ppCount,
   highlightTpIdx,
   highlightPpIdx,
+  highlightInputOutput,
 ) {
   var cfg = model.config || {};
   var comp = model.computed || {};
@@ -4821,6 +4839,20 @@ function _renderOneModel(
     10,
     "embeddings",
   );
+  // ── Input layer highlight overlay (when PP0 is pinned) ──
+  if (highlightInputOutput === "input" || highlightInputOutput === "both") {
+    sg.append("rect")
+      .attr("x", D.CX - D.BOX_W / 2)
+      .attr("y", D.Y_EMBED)
+      .attr("width", D.BOX_W)
+      .attr("height", D.H_MD)
+      .attr("rx", 4)
+      .attr("fill", "none")
+      .attr("stroke", "#ff8f40")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "3 2")
+      .attr("class", "pp-row pinned");
+  }
 
   // ══════════════════════════════════════════════
   // 2. Transformer Layer card (with stacked depth shadows)
@@ -5017,6 +5049,20 @@ function _renderOneModel(
     10,
     "output_layer_and_loss",
   );
+  // ── Output layer highlight overlay (when last PP is pinned) ──
+  if (highlightInputOutput === "output" || highlightInputOutput === "both") {
+    sg.append("rect")
+      .attr("x", D.CX - D.BOX_W / 2)
+      .attr("y", D.Y_OUTPUT)
+      .attr("width", D.BOX_W)
+      .attr("height", D.H_MD)
+      .attr("rx", 4)
+      .attr("fill", "none")
+      .attr("stroke", "#ff8f40")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "3 2")
+      .attr("class", "pp-row pinned");
+  }
 
   // ══════════════════════════════════════════════
   // Main flow arrows (between components)
