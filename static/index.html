@@ -2554,6 +2554,17 @@
                                         />
                                     </div>
                                     <div class="workflow-param-row">
+                                        <label>b</label>
+                                        <input
+                                            id="wf-orig-model-b-micro"
+                                            type="number"
+                                            value="4"
+                                            min="1"
+                                            max="1024"
+                                            disabled
+                                        />
+                                    </div>
+                                    <div class="workflow-param-row">
                                         <label>dff</label>
                                         <input
                                             id="wf-orig-model-dff"
@@ -4050,6 +4061,7 @@
                 var origA = document.getElementById("wf-orig-model-a").value;
                 var origS = document.getElementById("wf-orig-model-s").value;
                 var origB = document.getElementById("wf-orig-model-b").value;
+                var origB_micro = document.getElementById("wf-orig-model-b-micro").value;
                 var origDff = document.getElementById("wf-orig-model-dff").value;
                 var strategy =
                     document.getElementById("wf-equiv-strategy").value;
@@ -4069,6 +4081,7 @@
                         A: parseInt(origA),
                         S: parseInt(origS),
                         B: parseInt(origB),
+                        b_micro: parseInt(origB_micro),
                         dff: parseInt(origDff),
                         strategy: strategy,
                     });

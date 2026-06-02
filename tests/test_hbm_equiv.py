@@ -19,6 +19,7 @@ H = 4096
 dff = 14336
 S = 2048
 B = 32
+b = 4
 a = 1
 
 # -- Test cases: (name, L, dp, tp, pp, B) --
@@ -38,7 +39,7 @@ for name, L, dp, tp, pp, B_val in cases:
     print(f"\n{'-' * 60}")
     print(f"  {name}")
     print(f"{'-' * 60}")
-    print(f"  L={L}  H={H}  dff={dff}  DP={dp}  TP={tp}  PP={pp}  B={B_val}")
+    print(f"  L={L}  H={H}  dff={dff}  DP={dp}  TP={tp}  PP={pp}  B={B_val}  b={b}")
 
     print(f"\n  [NEW] HBM = L/PP * ((4*H^2 + 3*H*dff)/TP + 2*H) / 1e9")
     term_a = 4 * H**2 + 3 * H * dff

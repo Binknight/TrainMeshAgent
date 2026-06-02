@@ -96,21 +96,22 @@ def save_topology_params(session_id: str, role: str, data: dict[str, Any]) -> No
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO topology_params (session_id, role, name, device_type, dp_size, tp_size, pp_size, total_nodes,
-                   model_name, num_layers, hidden_dim, num_heads, d_ffn, seq_len, batch_size)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   model_name, num_layers, hidden_dim, num_heads, d_ffn, seq_len, batch_size, micro_batch_size)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (session_id, role) DO UPDATE SET
                    name=EXCLUDED.name, device_type=EXCLUDED.device_type, dp_size=EXCLUDED.dp_size,
                    tp_size=EXCLUDED.tp_size, pp_size=EXCLUDED.pp_size, total_nodes=EXCLUDED.total_nodes,
                    model_name=EXCLUDED.model_name, num_layers=EXCLUDED.num_layers, hidden_dim=EXCLUDED.hidden_dim,
                    num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
-                   seq_len=EXCLUDED.seq_len, batch_size=EXCLUDED.batch_size""",
+                   seq_len=EXCLUDED.seq_len, batch_size=EXCLUDED.batch_size,
+                   micro_batch_size=EXCLUDED.micro_batch_size""",
                 (
                     session_id, role,
                     data.get("name"), data.get("device_type"), data.get("dp_size"),
                     data.get("tp_size"), data.get("pp_size"), data.get("total_nodes"),
                     data.get("model_name"), data.get("num_layers"), data.get("hidden_dim"),
                     data.get("num_heads"), data.get("d_ffn"),
-                    data.get("seq_len"), data.get("batch_size"),
+                    data.get("seq_len"), data.get("batch_size"), data.get("micro_batch_size"),
                 ),
             )
 
@@ -119,13 +120,13 @@ def get_topology_params(session_id: str, role: str) -> dict[str, Any] | None:
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT name, device_type, dp_size, tp_size, pp_size, total_nodes, model_name, num_layers, hidden_dim, num_heads, d_ffn, seq_len, batch_size FROM topology_params WHERE session_id=%s AND role=%s",
+                "SELECT name, device_type, dp_size, tp_size, pp_size, total_nodes, model_name, num_layers, hidden_dim, num_heads, d_ffn, seq_len, batch_size, micro_batch_size FROM topology_params WHERE session_id=%s AND role=%s",
                 (session_id, role),
             )
             row = cur.fetchone()
     if not row:
         return None
-    keys = ["name", "device_type", "dp_size", "tp_size", "pp_size", "total_nodes", "model_name", "num_layers", "hidden_dim", "num_heads", "d_ffn", "seq_len", "batch_size"]
+    keys = ["name", "device_type", "dp_size", "tp_size", "pp_size", "total_nodes", "model_name", "num_layers", "hidden_dim", "num_heads", "d_ffn", "seq_len", "batch_size", "micro_batch_size"]
     return dict(zip(keys, row))
 
 
