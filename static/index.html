@@ -2216,6 +2216,233 @@
             .rank-bar-chart-group rect:hover {
                 opacity: 1 !important;
             }
+
+            /* ── Equivalent Result Tab ── */
+            .result-panel-wrap {
+                flex: 1;
+                overflow-y: auto;
+                padding: 16px 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            .result-panel-wrap::-webkit-scrollbar {
+                width: 6px;
+            }
+            .result-panel-wrap::-webkit-scrollbar-thumb {
+                background: var(--border);
+                border-radius: 3px;
+            }
+            .result-panel-wrap::-webkit-scrollbar-thumb:hover {
+                background: var(--cyan);
+            }
+
+            .result-verdict-card {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                padding: 16px 20px;
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+            }
+            .result-verdict-icon {
+                font-size: 32px;
+                line-height: 1;
+            }
+            .result-verdict-icon.pass { color: #3fb950; }
+            .result-verdict-icon.fail { color: #f85149; }
+            .result-verdict-text h2 {
+                margin: 0 0 4px;
+                font-size: 15px;
+                font-weight: 600;
+                font-family: var(--font-sans);
+            }
+            .result-verdict-text h2.pass { color: #3fb950; }
+            .result-verdict-text h2.fail { color: #f85149; }
+            .result-verdict-meta {
+                display: flex;
+                gap: 16px;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--text-muted);
+            }
+            .result-verdict-meta span strong {
+                color: var(--text-primary);
+            }
+
+            .result-diff-section {
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 14px 18px;
+            }
+            .result-diff-title {
+                font-family: var(--font-sans);
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--text-primary);
+                margin-bottom: 12px;
+            }
+            .result-diff-row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 8px;
+            }
+            .result-diff-row:last-child { margin-bottom: 0; }
+            .result-diff-label {
+                width: 70px;
+                flex-shrink: 0;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--text-secondary);
+                text-align: right;
+            }
+            .result-diff-bar-bg {
+                flex: 1;
+                height: 14px;
+                background: var(--bg-panel);
+                border-radius: 7px;
+                position: relative;
+                overflow: hidden;
+            }
+            .result-diff-bar-fill {
+                height: 100%;
+                border-radius: 7px;
+                transition: width 0.4s ease;
+            }
+            .result-diff-bar-fill.pass { background: rgba(63, 185, 80, 0.6); }
+            .result-diff-bar-fill.fail { background: rgba(248, 81, 73, 0.6); }
+            .result-diff-tolerance-line {
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                width: 2px;
+                background: var(--text-muted);
+                opacity: 0.6;
+            }
+            .result-diff-tolerance-label {
+                position: absolute;
+                top: -14px;
+                font-family: var(--font-mono);
+                font-size: 9px;
+                color: var(--text-muted);
+                transform: translateX(-50%);
+                white-space: nowrap;
+            }
+            .result-diff-pct {
+                width: 52px;
+                flex-shrink: 0;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                font-weight: 600;
+                text-align: right;
+            }
+            .result-diff-pct.pass { color: #3fb950; }
+            .result-diff-pct.fail { color: #f85149; }
+            .result-diff-badge {
+                width: 16px;
+                flex-shrink: 0;
+                text-align: center;
+                font-size: 11px;
+            }
+
+            .result-config-section {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 14px;
+            }
+            .result-config-card {
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                overflow: hidden;
+            }
+            .result-config-card-header {
+                padding: 8px 14px;
+                background: var(--bg-panel);
+                border-bottom: 1px solid var(--border);
+                font-family: var(--font-sans);
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--text-primary);
+            }
+            .result-config-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-family: var(--font-mono);
+                font-size: 11px;
+            }
+            .result-config-table th {
+                text-align: left;
+                padding: 5px 12px;
+                color: var(--text-muted);
+                font-weight: 500;
+                border-bottom: 1px solid var(--border);
+            }
+            .result-config-table td {
+                padding: 5px 12px;
+                color: var(--text-primary);
+                border-bottom: 1px solid var(--border);
+            }
+            .result-config-table tr:last-child td { border-bottom: none; }
+            .result-config-table td.val-orig { color: #58a6ff; }
+            .result-config-table td.val-eq { color: var(--teal); }
+            .result-config-table td.val-highlight {
+                font-weight: 600;
+                color: var(--text-primary);
+            }
+
+            .result-metric-section {
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 14px 18px;
+            }
+            .result-metric-title {
+                font-family: var(--font-sans);
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--text-primary);
+                margin-bottom: 12px;
+            }
+            .result-metric-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 10px;
+            }
+            .result-metric-item {
+                padding: 10px 12px;
+                background: var(--bg-panel);
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--border);
+            }
+            .result-metric-item-label {
+                font-family: var(--font-mono);
+                font-size: 10px;
+                color: var(--text-muted);
+                margin-bottom: 6px;
+            }
+            .result-metric-item-row {
+                display: flex;
+                justify-content: space-between;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                margin-bottom: 2px;
+            }
+            .result-metric-item-row .tag-orig {
+                color: #58a6ff;
+                font-weight: 500;
+            }
+            .result-metric-item-row .tag-eq {
+                color: var(--teal);
+                font-weight: 500;
+            }
+            .result-metric-item-row .val {
+                color: var(--text-primary);
+                font-weight: 600;
+            }
         </style>
     </head>
     <body>
@@ -2313,6 +2540,15 @@
                         onclick="switchCanvasTab('simulation')"
                     >
                         等效仿真验证
+                    </button>
+                    <button
+                        class="canvas-tab"
+                        data-tab="result"
+                        id="tab-btn-result"
+                        disabled
+                        onclick="switchCanvasTab('result')"
+                    >
+                        等效结果
                     </button>
                 </div>
                 <!-- Tab: 等效建模分析 -->
@@ -2427,6 +2663,12 @@
                         <div class="sim-results-area" id="sim-results-area">
                             <!-- populated dynamically -->
                         </div>
+                    </div>
+                </div>
+                <!-- Tab: 等效结果 -->
+                <div class="canvas-tab-panel" id="tab-panel-result">
+                    <div class="result-panel-wrap" id="result-panel-wrap">
+                        <!-- populated dynamically by _renderResultPanel() -->
                     </div>
                 </div>
             </main>
@@ -3902,6 +4144,7 @@
                     updateWorkflowNode("comparison", "disabled");
                     _simFailed = true;
                     _simCompleted = false;
+                    _comparisonReport = null;
                     setStatus("验证失败");
                     checkSimReady();
                 } else if (step === "simulating") {
@@ -3911,6 +4154,7 @@
                     updateWorkflowNode("simulation", "active");
                     updateWorkflowNode("comparison", "pending");
                     _simCompleted = false;
+                    _comparisonReport = null;
                     setStatus("仿真验证中");
                     // Resume WebSocket connection for real-time status
                     var taskIds = [sessionData.original_task_id, sessionData.equivalent_task_id].filter(Boolean);
@@ -4531,6 +4775,16 @@
                                 _renderSimResults();
                             });
                         });
+                    } else if (savedTab === "result" && _comparisonReport) {
+                        document.querySelectorAll(".canvas-tab").forEach(function (t) {
+                            t.classList.toggle("active", t.getAttribute("data-tab") === "result");
+                        });
+                        document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
+                            p.classList.toggle("active", p.id === "tab-panel-result");
+                        });
+                        requestAnimationFrame(function () {
+                            _renderResultPanel();
+                        });
                     } else {
                         if (meshOriginal || meshEquivalent) canvasRebuild();
                     }
@@ -4588,6 +4842,9 @@
                     _simCompleted = !!(
                         data.original_simulation && data.equivalent_simulation
                     );
+                    if (_simCompleted && data.comparison_report) {
+                        _comparisonReport = data.comparison_report;
+                    }
                     checkSimReady();
                     fetchSimulationData();
 
@@ -4624,6 +4881,7 @@
                 meshEstimateEq = {};
                 meshActualOrig = {};
                 meshActualEq = {};
+                _comparisonReport = null;
                 _renderState.mode = null;
                 _formulaCardReady = false;
                 sessionStorage.removeItem("fxAnimDone");
@@ -4645,6 +4903,7 @@
                 var chatPanel = document.querySelector(".chat-panel");
                 if (chatPanel) chatPanel.style.display = "";
                 _simCompleted = false;
+                _comparisonReport = null;
                 _simStarted = false;
                 _pendingWorkflowState = null;
                 _pendingSimData = false;
@@ -5078,6 +5337,12 @@
                         canvasRebuild();
                         if (typeof canvasRecenter === "function") canvasRecenter();
                     }
+                }
+
+                if (tabName === "result") {
+                    requestAnimationFrame(function () {
+                        _renderResultPanel();
+                    });
                 }
 
                 // Keep right panel visible on all tabs
@@ -6060,6 +6325,186 @@
                 });
             })();
 
+            // ── Equivalent Result Tab Renderer ──
+            function _renderResultPanel() {
+                var wrap = document.getElementById("result-panel-wrap");
+                if (!wrap) return;
+
+                if (!_comparisonReport) {
+                    wrap.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;flex:1;height:100%;color:var(--text-muted);font-family:var(--font-mono);font-size:13px">'
+                        + '<span>等待仿真完成...<br/><small>仿真任务完成后自动展示等效性验证结果</small></span></div>';
+                    return;
+                }
+
+                var cr = _comparisonReport;
+                var tol = cr.error_tolerance_pct || 5.0;
+                var isEq = cr.is_equivalent !== false;
+                var maxDiff = (cr.details && cr.details.max_diff_pct != null) ? cr.details.max_diff_pct : Math.max(cr.flops_diff_pct, cr.hbm_diff_pct, cr.tp_comm_diff_pct, cr.pp_comm_diff_pct, cr.dp_comm_diff_pct);
+
+                var html = '';
+
+                // ═══ 1. Verdict Card ═══
+                html += '<div class="result-verdict-card">';
+                html += '<div class="result-verdict-icon ' + (isEq ? 'pass' : 'fail') + '">' + (isEq ? '✅' : '❌') + '</div>';
+                html += '<div class="result-verdict-text">';
+                html += '<h2 class="' + (isEq ? 'pass' : 'fail') + '">' + (isEq ? '等效验证通过' : '等效验证不通过') + '</h2>';
+                html += '<div class="result-verdict-meta">';
+                html += '<span>容差: <strong>' + tol + '%</strong></span>';
+                html += '<span>最大差异: <strong>' + maxDiff.toFixed(2) + '%</strong></span>';
+                html += '<span>结论: <strong>' + (cr.details && cr.details.conclusion || (isEq ? '通过' : '不通过')) + '</strong></span>';
+                html += '</div></div></div>';
+
+                // ═══ 2. Five-dimension diff bars ═══
+                var diffs = [
+                    { label: 'FLOPs', val: cr.flops_diff_pct },
+                    { label: 'HBM', val: cr.hbm_diff_pct },
+                    { label: 'TP通信', val: cr.tp_comm_diff_pct },
+                    { label: 'PP通信', val: cr.pp_comm_diff_pct },
+                    { label: 'DP通信', val: cr.dp_comm_diff_pct }
+                ];
+                var barMaxPct = Math.max(10, maxDiff * 1.5); // scale so max diff is ~66% of bar width
+
+                html += '<div class="result-diff-section">';
+                html += '<div class="result-diff-title">五维差异对比</div>';
+                diffs.forEach(function (d) {
+                    var pass = d.val <= tol;
+                    var pctW = Math.min(100, (d.val / barMaxPct) * 100);
+                    var tolLinePct = (tol / barMaxPct) * 100;
+                    html += '<div class="result-diff-row">';
+                    html += '<div class="result-diff-label">' + d.label + '</div>';
+                    html += '<div class="result-diff-bar-bg">';
+                    html += '<div class="result-diff-bar-fill ' + (pass ? 'pass' : 'fail') + '" style="width:' + pctW.toFixed(1) + '%"></div>';
+                    html += '<div class="result-diff-tolerance-line" style="left:' + tolLinePct.toFixed(1) + '%"></div>';
+                    html += '</div>';
+                    html += '<div class="result-diff-pct ' + (pass ? 'pass' : 'fail') + '">' + d.val.toFixed(2) + '%</div>';
+                    html += '<div class="result-diff-badge">' + (pass ? '✓' : '✗') + '</div>';
+                    html += '</div>';
+                });
+                html += '<div style="display:flex;justify-content:space-between;margin-top:8px;padding-left:80px;font-family:var(--font-mono);font-size:9px;color:var(--text-muted)">';
+                html += '<span>0%</span><span>' + (barMaxPct / 2).toFixed(1) + '%</span><span>' + barMaxPct.toFixed(1) + '%</span>';
+                html += '</div>';
+                html += '</div>';
+
+                // ═══ 3. Config comparison tables ═══
+                var origMesh = meshOriginal || {};
+                var eqMesh = meshEquivalent || {};
+                var origModel = modelOriginal || {};
+                var eqModel = modelEquivalent || {};
+                var origCfg = origModel.config || {};
+                var eqCfg = eqModel.config || {};
+                var origComp = origModel.computed || {};
+                var eqComp = eqModel.computed || {};
+
+                var origNpu = (origMesh.dp || 0) * (origMesh.tp || 0) * (origMesh.pp || 0);
+                var eqNpu = (eqMesh.dp || 0) * (eqMesh.tp || 0) * (eqMesh.pp || 0);
+                var compRatio = eqNpu > 0 ? (origNpu / eqNpu).toFixed(1) : '—';
+
+                html += '<div class="result-config-section">';
+
+                // Topology config card
+                html += '<div class="result-config-card">';
+                html += '<div class="result-config-card-header">组网配置对比</div>';
+                html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
+                var topoRows = [
+                    ['设备', origMesh.device_type || '—', eqMesh.device_type || '—'],
+                    ['DP', origMesh.dp, eqMesh.dp],
+                    ['TP', origMesh.tp, eqMesh.tp],
+                    ['PP', origMesh.pp, eqMesh.pp],
+                    ['NPU总数', origNpu, eqNpu, true],
+                    ['压缩比', '—', compRatio + ':1', true]
+                ];
+                topoRows.forEach(function (r) {
+                    var hl = r[3] ? ' val-highlight' : '';
+                    html += '<tr><td>' + r[0] + '</td><td class="val-orig' + hl + '">' + r[1] + '</td><td class="val-eq' + hl + '">' + r[2] + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+
+                // Model config card
+                html += '<div class="result-config-card">';
+                html += '<div class="result-config-card-header">模型配置对比</div>';
+                html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
+                var modelRows = [
+                    ['L (层数)', origCfg.num_layers || '—', eqCfg.num_layers || '—', true],
+                    ['H (d_model)', origCfg.d_model || '—', eqCfg.d_model || '—'],
+                    ['A (heads)', origCfg.num_heads || '—', eqCfg.num_heads || '—'],
+                    ['d_ffn', origCfg.d_ffn || '—', eqCfg.d_ffn || '—'],
+                    ['d_head', origComp.d_head || '—', eqComp.d_head || '—'],
+                    ['参数量', origComp.total_params_billions || '—', eqComp.total_params_billions || '—']
+                ];
+                modelRows.forEach(function (r) {
+                    var hl = r[3] ? ' val-highlight' : '';
+                    html += '<tr><td>' + r[0] + '</td><td class="val-orig' + hl + '">' + r[1] + '</td><td class="val-eq' + hl + '">' + r[2] + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+
+                html += '</div>'; // end result-config-section
+
+                // ═══ 4. Per-card metric summary ═══
+                html += '<div class="result-metric-section">';
+                html += '<div class="result-metric-title">每卡仿真指标摘要 (avg / min / max)</div>';
+
+                function _aggMetrics(cardsMap) {
+                    if (!cardsMap) return null;
+                    var cards = Object.values(cardsMap);
+                    if (!cards.length) return null;
+                    function _stat(key) {
+                        var vals = cards.map(function (c) { return c[key] || 0; }).filter(function (v) { return v != null; });
+                        if (!vals.length) return { avg: 0, min: 0, max: 0 };
+                        var sum = vals.reduce(function (a, b) { return a + b; }, 0);
+                        return { avg: sum / vals.length, min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) };
+                    }
+                    return {
+                        flops: _stat('flops_per_card'),
+                        hbm: _stat('hbm_gb'),
+                        tp: _stat('tp_comm_gb_per_micro'),
+                        pp: _stat('pp_comm_mb_per_micro'),
+                        dp: _stat('dp_comm_gb_per_step')
+                    };
+                }
+
+                var origStats = _aggMetrics(meshActualOrig);
+                var eqStats = _aggMetrics(meshActualEq);
+
+                function _fmt(v, unit) {
+                    if (unit === 'FLOPs') return v >= 1e12 ? (v / 1e12).toFixed(2) + ' T' : (v / 1e9).toFixed(2) + ' G';
+                    if (unit === 'MB') return v.toFixed(3) + ' MB';
+                    return v.toFixed(4) + ' GB';
+                }
+
+                var metricItems = [
+                    { label: 'FLOPs / 卡', key: 'flops', unit: 'FLOPs' },
+                    { label: 'HBM 占用', key: 'hbm', unit: 'GB' },
+                    { label: 'TP 通信 / micro', key: 'tp', unit: 'GB' },
+                    { label: 'PP 通信 / micro', key: 'pp', unit: 'MB' },
+                    { label: 'DP 通信 / step', key: 'dp', unit: 'GB' }
+                ];
+
+                html += '<div class="result-metric-grid">';
+                metricItems.forEach(function (mi) {
+                    html += '<div class="result-metric-item">';
+                    html += '<div class="result-metric-item-label">' + mi.label + '</div>';
+                    if (origStats && origStats[mi.key]) {
+                        var os = origStats[mi.key];
+                        html += '<div class="result-metric-item-row"><span class="tag-orig">原始 avg</span><span class="val">' + _fmt(os.avg, mi.unit) + '</span></div>';
+                        html += '<div class="result-metric-item-row"><span class="tag-orig"> min / max</span><span class="val">' + _fmt(os.min, mi.unit) + ' / ' + _fmt(os.max, mi.unit) + '</span></div>';
+                    } else {
+                        html += '<div class="result-metric-item-row"><span class="tag-orig">原始</span><span class="val">—</span></div>';
+                    }
+                    if (eqStats && eqStats[mi.key]) {
+                        var es = eqStats[mi.key];
+                        html += '<div class="result-metric-item-row"><span class="tag-eq">等效 avg</span><span class="val">' + _fmt(es.avg, mi.unit) + '</span></div>';
+                        html += '<div class="result-metric-item-row"><span class="tag-eq"> min / max</span><span class="val">' + _fmt(es.min, mi.unit) + ' / ' + _fmt(es.max, mi.unit) + '</span></div>';
+                    } else {
+                        html += '<div class="result-metric-item-row"><span class="tag-eq">等效</span><span class="val">—</span></div>';
+                    }
+                    html += '</div>';
+                });
+                html += '</div>'; // end result-metric-grid
+                html += '</div>'; // end result-metric-section
+
+                wrap.innerHTML = html;
+            }
+
             function _renderSimResults() {
                 var area = document.getElementById("sim-results-area");
                 if (!area) return;
@@ -6187,7 +6632,10 @@
             function checkSimReady() {
                 var btn = document.getElementById("btn-start-sim");
                 var simTabBtn = document.getElementById("tab-btn-simulation");
+                var resultTabBtn = document.getElementById("tab-btn-result");
                 var isPolling = !!(_simPollTimer || _simWs);
+                // Result tab: only enabled when simulation is fully completed
+                if (resultTabBtn) resultTabBtn.disabled = !_simCompleted;
                 // Already completed — show done state
                 if (_simCompleted) {
                     if (btn) { btn.disabled = true; btn.textContent = "仿真已完成"; btn.classList.add("sim-done"); btn.classList.remove("sim-retry"); }
@@ -6233,6 +6681,7 @@
                 btn.classList.remove("sim-done", "sim-retry");
                 _simFailed = false;
                 _simCompleted = false;
+                _comparisonReport = null;
                 if (_simPollTimer) { clearTimeout(_simPollTimer); _simPollTimer = null; }
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
                 setStatus("仿真验证中");
@@ -6304,6 +6753,7 @@
                     if (results.comparison) {
                         // Simulation already complete (MCP returned card data immediately)
                         _simCompleted = true;
+                        _comparisonReport = results.comparison;
                         updateWorkflowNode("simulation", "completed");
                         if (results.comparison.is_equivalent === false) {
                             updateWorkflowNode("comparison", "failed");
@@ -6349,6 +6799,7 @@
             var _simWs = null; // WebSocket for simulation status
             var _simStreamDone = false; // true when 60s mock streaming countdown expires
             var _simStarted = false;
+            var _comparisonReport = null; // ComparisonReport from backend, set when simulation completes
 
             function _connectSimWebSocket(taskIds) {
                 // Close any existing connection
@@ -6422,6 +6873,7 @@
                     .then(function (data) {
                         var results = data.results || {};
                         _simCompleted = true;
+                        _comparisonReport = results.comparison || null;
                         setStatus("验证完成");
                         updateWorkflowNode("simulation", "completed");
                         if (results.comparison) {
@@ -6455,6 +6907,7 @@
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
                 _simFailed = true;
                 _simCompleted = false;
+                _comparisonReport = null;
                 setStatus("验证失败");
                 updateWorkflowNode("simulation", "failed");
                 addMessage("error", "仿真任务失败: " + (message || "未知错误"));
@@ -6509,12 +6962,12 @@
             (function () {
                 var savedTab = sessionStorage.getItem("activeCanvasTab");
                 var hasSession = !!(JSON.parse(localStorage.getItem("mesh_session") || "{}")).id;
-                if (savedTab !== "simulation" || !hasSession) return;
+                if ((savedTab !== "simulation" && savedTab !== "result") || !hasSession) return;
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
-                    t.classList.toggle("active", t.getAttribute("data-tab") === "simulation");
+                    t.classList.toggle("active", t.getAttribute("data-tab") === savedTab);
                 });
                 document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
-                    p.classList.toggle("active", p.id === "tab-panel-simulation");
+                    p.classList.toggle("active", p.id === "tab-panel-" + savedTab);
                 });
             })();
 
