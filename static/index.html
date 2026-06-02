@@ -402,6 +402,83 @@
                 background: rgba(57, 186, 230, 0.1);
             }
 
+            /* ── Fullscreen Toggle Button ── */
+            .btn-fullscreen {
+                width: 28px;
+                height: 28px;
+                padding: 0;
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--border);
+                background: var(--bg-surface);
+                color: var(--text-muted);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all var(--transition);
+            }
+            .btn-fullscreen:hover {
+                border-color: var(--cyan-dim);
+                color: var(--cyan);
+                background: rgba(57, 186, 230, 0.08);
+            }
+            .btn-fullscreen svg {
+                width: 16px;
+                height: 16px;
+            }
+
+            /* ── Fullscreen Mode: collapse side panels with hover slide-in ── */
+            .main-container.canvas-fullscreen {
+                position: relative;
+            }
+            .main-container.canvas-fullscreen .panel-left,
+            .main-container.canvas-fullscreen .panel-right {
+                display: flex;
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                z-index: 200;
+                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: none;
+            }
+            .main-container.canvas-fullscreen .panel-left {
+                left: 0;
+                transform: translateX(-100%);
+                border-right: 1px solid var(--border);
+            }
+            .main-container.canvas-fullscreen .panel-left.panel-visible {
+                transform: translateX(0);
+                box-shadow: 4px 0 20px rgba(0, 0, 0, 0.4);
+            }
+            .main-container.canvas-fullscreen .panel-right {
+                right: 0;
+                transform: translateX(100%);
+                border-left: 1px solid var(--border);
+            }
+            .main-container.canvas-fullscreen .panel-right.panel-visible {
+                transform: translateX(0);
+                box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+            }
+
+            /* ── Edge hover trigger zones (only in fullscreen mode) ── */
+            .fullscreen-edge-trigger {
+                display: none;
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                width: 12px;
+                z-index: 199;
+            }
+            .main-container.canvas-fullscreen .fullscreen-edge-trigger {
+                display: block;
+            }
+            .fullscreen-edge-trigger.left {
+                left: 0;
+            }
+            .fullscreen-edge-trigger.right {
+                right: 0;
+            }
+
             /* ── Canvas Tabs ── */
             .canvas-tabs {
                 display: flex;
@@ -2522,6 +2599,16 @@
                             <button onclick="canvasRebuild()">Refresh</button>
                             <span id="mesh-npu-count"></span>
                         </span>
+                        <button
+                            class="btn-fullscreen"
+                            id="btn-canvas-fullscreen"
+                            title="全屏画布"
+                            onclick="toggleCanvasFullscreen()"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                            </svg>
+                        </button>
                     </span>
                 </div>
                 <div class="canvas-tabs" id="canvas-tabs">
@@ -3137,6 +3224,9 @@
                     </div>
                 </div>
             </aside>
+            <!-- Fullscreen edge hover triggers -->
+            <div class="fullscreen-edge-trigger left" id="edge-trigger-left"></div>
+            <div class="fullscreen-edge-trigger right" id="edge-trigger-right"></div>
         </div>
 
         <!-- Metric Detail Popup -->
@@ -5352,6 +5442,96 @@
                     simBtn.style.display = (tabName === "modeling" || _simFailed) ? "" : "none";
                 }
             }
+
+            // ── Canvas Fullscreen Toggle ──
+            var _canvasFullscreen = false;
+            function toggleCanvasFullscreen() {
+                _canvasFullscreen = !_canvasFullscreen;
+                var container = document.querySelector(".main-container");
+                var btn = document.getElementById("btn-canvas-fullscreen");
+                if (!container || !btn) return;
+
+                container.classList.toggle("canvas-fullscreen", _canvasFullscreen);
+                btn.title = _canvasFullscreen ? "退出全屏" : "全屏画布";
+
+                // Remove panel-visible class when exiting fullscreen
+                if (!_canvasFullscreen) {
+                    var pl = document.querySelector(".panel-left");
+                    var pr = document.querySelector(".panel-right");
+                    if (pl) pl.classList.remove("panel-visible");
+                    if (pr) pr.classList.remove("panel-visible");
+                }
+
+                // Swap icon: fullscreen-expand ↔ fullscreen-shrink
+                if (_canvasFullscreen) {
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+                        + '<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>'
+                        + '</svg>';
+                } else {
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+                        + '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>'
+                        + '</svg>';
+                }
+
+                // Rebuild canvas after layout reflow (double RAF for full reflow)
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        var activeTab = "modeling";
+                        try { activeTab = sessionStorage.getItem("activeCanvasTab") || "modeling"; } catch (e) {}
+                        if (activeTab === "simulation") {
+                            if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
+                        } else if (activeTab === "modeling") {
+                            if (typeof canvasRebuild === "function") canvasRebuild();
+                            if (typeof canvasRecenter === "function") canvasRecenter();
+                        }
+                    });
+                });
+            }
+
+            // ── Fullscreen Edge-Hover Panel Slide ──
+            (function () {
+                var edgeLeft = document.getElementById("edge-trigger-left");
+                var edgeRight = document.getElementById("edge-trigger-right");
+                var panelLeft = document.querySelector(".panel-left");
+                var panelRight = document.querySelector(".panel-right");
+                var _hideTimerLeft = null;
+                var _hideTimerRight = null;
+
+                function _showPanel(panel, timerRef) {
+                    if (!panel) return;
+                    if (timerRef) clearTimeout(timerRef);
+                    panel.classList.add("panel-visible");
+                }
+                function _hidePanel(panel, timerRefName) {
+                    if (!panel) return;
+                    var delay = 300;
+                    if (timerRefName === "left") {
+                        _hideTimerLeft = setTimeout(function () { panel.classList.remove("panel-visible"); }, delay);
+                    } else {
+                        _hideTimerRight = setTimeout(function () { panel.classList.remove("panel-visible"); }, delay);
+                    }
+                }
+                function _cancelHide(timerRefName) {
+                    if (timerRefName === "left") {
+                        if (_hideTimerLeft) { clearTimeout(_hideTimerLeft); _hideTimerLeft = null; }
+                    } else {
+                        if (_hideTimerRight) { clearTimeout(_hideTimerRight); _hideTimerRight = null; }
+                    }
+                }
+
+                if (edgeLeft && panelLeft) {
+                    edgeLeft.addEventListener("mouseenter", function () { _showPanel(panelLeft, _hideTimerLeft); });
+                    edgeLeft.addEventListener("mouseleave", function () { _hidePanel(panelLeft, "left"); });
+                    panelLeft.addEventListener("mouseenter", function () { _cancelHide("left"); _showPanel(panelLeft, _hideTimerLeft); });
+                    panelLeft.addEventListener("mouseleave", function () { _hidePanel(panelLeft, "left"); });
+                }
+                if (edgeRight && panelRight) {
+                    edgeRight.addEventListener("mouseenter", function () { _showPanel(panelRight, _hideTimerRight); });
+                    edgeRight.addEventListener("mouseleave", function () { _hidePanel(panelRight, "right"); });
+                    panelRight.addEventListener("mouseenter", function () { _cancelHide("right"); _showPanel(panelRight, _hideTimerRight); });
+                    panelRight.addEventListener("mouseleave", function () { _hidePanel(panelRight, "right"); });
+                }
+            })();
 
 
             function genMockWorkload(pinnedRank) {
