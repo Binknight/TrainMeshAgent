@@ -2936,7 +2936,7 @@ function canvasRebuild(targetSelector) {
         " NPUs  |  " +
         (meshEquivalent.name || "等效组网") + " " +
         _meshNpuTotal(meshEquivalent) +
-        " NPUs";
+        " NPUs");
       document.getElementById("canvas-label").textContent =
         (meshOriginal.name || "原始组网") +
         "  vs  " +
