@@ -3725,38 +3725,9 @@ function canvasRecenter(targetSelector, _retry, skipTransition) {
 // ── _appendFormulaLine: append one line to the formula card with animation ──
 
 // ── Typewriter effect: character-by-character formula card loading ──
-
-// Animation speed config: "normal" | "fast" | "instant"
-// charInterval: ms between each character reveal (lower = faster typing)
-var FORMULA_ANIM_PRESETS = {
-  normal:  { charInterval: 25, ease: d3.easeCubicOut },
-  fast:    { charInterval: 8,  ease: d3.easeCubicOut },
-  instant: { charInterval: 0,  ease: d3.easeLinear },
-};
-var _formulaAnimSpeed = "normal";
-
-function _getFormulaAnim() {
-  return FORMULA_ANIM_PRESETS[_formulaAnimSpeed] || FORMULA_ANIM_PRESETS.normal;
-}
-
-// Public API: setFormulaAnimSpeed("normal" | "fast" | "instant")
-window.setFormulaAnimSpeed = function (speed) {
-  if (!FORMULA_ANIM_PRESETS[speed]) {
-    console.warn("[formula-anim] unknown speed:", speed, "— valid: normal, fast, instant");
-    return;
-  }
-  _formulaAnimSpeed = speed;
-  try { localStorage.setItem("formulaAnimSpeed", speed); } catch (e) {}
-  var btn = document.getElementById("btn-formula-speed");
-  if (btn) btn.textContent = speed === "normal" ? "动效" : speed === "fast" ? "快速" : "瞬时";
-  console.log("[formula-anim] speed →", speed);
-};
-
-// Restore from localStorage on load
-try {
-  var _saved = localStorage.getItem("formulaAnimSpeed");
-  if (_saved && FORMULA_ANIM_PRESETS[_saved]) _formulaAnimSpeed = _saved;
-} catch (e) {}
+// Fixed at 8ms/char for smooth typewriter animation
+var FORMULA_CHAR_INTERVAL = 8;
+var FORMULA_EASE = d3.easeCubicOut;
 
 // ── Typewriter state ──
 var _typewriterQueue = [];       // lines waiting to be typed
@@ -3800,7 +3771,6 @@ function _startTypewriterItem(item) {
     return;
   }
 
-  var cfg = _getFormulaAnim();
   var cardRect = _formulaCardRect;
   var cardX = cardRect.empty() ? 0 : parseFloat(cardRect.attr("x")) || 0;
   var cardY = cardRect.empty() ? 0 : parseFloat(cardRect.attr("y")) || 0;
@@ -3833,14 +3803,12 @@ function _startTypewriterItem(item) {
   };
 
   // Kick off the character-by-character tick
-  _typewriterTimer = setTimeout(_typewriterTick, cfg.charInterval);
+  _typewriterTimer = setTimeout(_typewriterTick, FORMULA_CHAR_INTERVAL);
 }
 
 function _typewriterTick() {
   var st = _typewriterState;
   if (!st) { _typewriterTimer = null; return; }
-
-  var cfg = _getFormulaAnim();
 
   if (st.charIdx >= st.fullText.length) {
     // Current line fully typed — move to next line
@@ -3858,13 +3826,7 @@ function _typewriterTick() {
 
     // Process next queued line
     if (_typewriterQueue.length) {
-      if (cfg.charInterval > 0) {
-        _startTypewriterItem(_typewriterQueue.shift());
-      } else {
-        // instant: drain synchronously
-        _startTypewriterItem(_typewriterQueue.shift());
-        return;
-      }
+      _startTypewriterItem(_typewriterQueue.shift());
     } else {
       _typewriterTimer = null;
     }
@@ -3876,14 +3838,7 @@ function _typewriterTick() {
   st.textEl.text(st.fullText.substring(0, st.charIdx));
 
   // Schedule next tick
-  if (cfg.charInterval > 0) {
-    _typewriterTimer = setTimeout(_typewriterTick, cfg.charInterval);
-  } else {
-    // instant mode: complete this line immediately
-    st.textEl.text(st.fullText);
-    st.charIdx = st.fullText.length;
-    _typewriterTick();
-  }
+  _typewriterTimer = setTimeout(_typewriterTick, FORMULA_CHAR_INTERVAL);
 }
 
 function _appendFormulaLine(section, line) {
@@ -3896,11 +3851,9 @@ function _appendFormulaLine(section, line) {
 
   // Kick off typewriter if idle
   if (!_typewriterTimer && !_typewriterState) {
-    var cfg = _getFormulaAnim();
-    var delay = cfg.charInterval > 0 ? cfg.charInterval : 0;
     _typewriterTimer = setTimeout(function () {
       _startTypewriterItem(_typewriterQueue.shift());
-    }, delay);
+    }, FORMULA_CHAR_INTERVAL);
   }
 }
 
