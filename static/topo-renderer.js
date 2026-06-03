@@ -1350,7 +1350,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   formulaContentH += pad - sectGap;
 
   var headerH = pad + titleFont + 10;
-  var formulaCardFullH = headerH + formulaContentH;
+  var formulaCardFullH = headerH + Math.min(formulaContentH, FORMULA_MAX_CONTENT_H);
 
   // ═══ Formula card (top) ═══
   var formulaCardG = cardG.append("g").attr("class", "formula-card-inner");
@@ -1415,6 +1415,23 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   var formulaG = formulaCardG
     .append("g")
     .attr("class", "formula-content-group");
+
+  // Set up clipPath for scrollable content
+  var svg = cardG.node().ownerSVGElement || cardG.node().closest("svg");
+  var clipId = "formula-clip-init-" + Date.now();
+  var defs = d3.select(svg).select("defs");
+  if (defs.empty()) defs = d3.select(svg).append("defs");
+
+  _formulaContentClip = defs.append("clipPath")
+    .attr("id", clipId)
+    .append("rect")
+    .attr("x", viewX - 2)
+    .attr("y", viewY + headerH - 2)
+    .attr("width", viewW + 4)
+    .attr("height", FORMULA_MAX_CONTENT_H + 4);
+
+  formulaG.attr("clip-path", "url(#" + clipId + ")");
+
   if (_centerPanelState.formulasCollapsed) {
     formulaG.attr("display", "none");
   }
@@ -3729,6 +3746,9 @@ function canvasRecenter(targetSelector, _retry, skipTransition) {
 var FORMULA_CHAR_INTERVAL = 8;
 var FORMULA_EASE = d3.easeCubicOut;
 
+// Max content height before scrolling (px). Card total = headerH + contentH
+var FORMULA_MAX_CONTENT_H = 120;
+
 // ── Typewriter state ──
 var _typewriterQueue = [];       // lines waiting to be typed
 var _typewriterState = null;     // { textEl, fullText, charIdx, lineH, isSectionLabel }
@@ -3738,6 +3758,8 @@ var _formulaCardG = null;
 var _formulaCardRect = null;
 var _formulaCardPad = 14;
 var _formulaCardHeaderH = 0;
+var _formulaScrollY = 0;         // current scroll offset (negative = scrolled down)
+var _formulaContentClip = null;  // clipPath element for scrolling
 
 function _ensureFormulaCard() {
   var cardGroups = d3.selectAll(".formula-card-inner");
@@ -3749,6 +3771,7 @@ function _ensureFormulaCard() {
   if (_formulaLineY === 0) {
     _formulaCardHeaderH = _formulaCardPad + 16 + 10;
     _formulaLineY = _formulaCardHeaderH;
+    _formulaScrollY = 0;
   }
 
   var contentG = cardG.select(".formula-content-group");
@@ -3758,6 +3781,26 @@ function _ensureFormulaCard() {
       _centerPanelState.formulaG = contentG;
       _centerPanelState._formulaTexts = [];
     }
+
+    // Set up clipPath for scrollable content
+    var cardX = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("x")) || 0;
+    var cardY = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("y")) || 0;
+    var cardW = _formulaCardRect.empty() ? 300 : parseFloat(_formulaCardRect.attr("width")) || 300;
+
+    var svg = cardG.node().ownerSVGElement || cardG.node().closest("svg");
+    var clipId = "formula-clip-" + Date.now();
+    var defs = d3.select(svg).select("defs");
+    if (defs.empty()) defs = d3.select(svg).append("defs");
+
+    _formulaContentClip = defs.append("clipPath")
+      .attr("id", clipId)
+      .append("rect")
+      .attr("x", cardX - 2)
+      .attr("y", cardY + _formulaCardHeaderH - 2)
+      .attr("width", cardW + 4)
+      .attr("height", FORMULA_MAX_CONTENT_H + 4);
+
+    contentG.attr("clip-path", "url(#" + clipId + ")");
   }
   if (contentG.attr("display") === "none") contentG.attr("display", null);
   return contentG;
@@ -3815,10 +3858,27 @@ function _typewriterTick() {
     _typewriterState = null;
     _formulaLineY += st.lineH;
 
-    // Expand card height
+    // Calculate content height (excluding header)
+    var contentH = _formulaLineY - _formulaCardHeaderH;
+
+    // Cap card height at max
+    var cappedH = Math.min(contentH, FORMULA_MAX_CONTENT_H);
+    var newCardH = _formulaCardHeaderH + cappedH;
+
+    // Expand card height (capped)
     if (_formulaCardRect && !_formulaCardRect.empty()) {
-      var newH = _formulaLineY + _formulaCardPad;
-      _formulaCardRect.attr("height", newH);
+      _formulaCardRect.attr("height", newCardH);
+    }
+
+    // Scroll content up when it exceeds visible area
+    if (contentH > FORMULA_MAX_CONTENT_H) {
+      _formulaScrollY = -(contentH - FORMULA_MAX_CONTENT_H);
+      var contentG = _formulaCardG.select(".formula-content-group");
+      if (!contentG.empty()) {
+        var cardY = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("y")) || 0;
+        // Apply scroll: translate content up, keeping header visible
+        contentG.attr("transform", "translate(0," + _formulaScrollY + ")");
+      }
     }
 
     // Recenter once per completed line
@@ -3862,6 +3922,8 @@ window._resetFormulaQueue = function () {
   _typewriterQueue = [];
   _typewriterState = null;
   if (_typewriterTimer) { clearTimeout(_typewriterTimer); _typewriterTimer = null; }
+  _formulaScrollY = 0;
+  _formulaContentClip = null;
 };
 
 function _replayFormulaLines() {
@@ -3869,6 +3931,7 @@ function _replayFormulaLines() {
   _typewriterQueue = [];
   _typewriterState = null;
   if (_typewriterTimer) { clearTimeout(_typewriterTimer); _typewriterTimer = null; }
+  _formulaScrollY = 0;
 
   var cardGroups = d3.selectAll(".formula-card-inner");
   if (cardGroups.empty()) return;
@@ -3878,6 +3941,7 @@ function _replayFormulaLines() {
 
   var cardX = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("x")) || 0;
   var cardY = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("y")) || 0;
+  var cardW = _formulaCardRect.empty() ? 300 : parseFloat(_formulaCardRect.attr("width")) || 300;
 
   // Reset
   _formulaCardHeaderH = _formulaCardPad + 16 + 10;
@@ -3888,6 +3952,23 @@ function _replayFormulaLines() {
   if (!lines.length) return;
 
   var contentG = cardG.append("g").attr("class", "formula-content-group");
+
+  // Set up clipPath for scrollable content
+  var svg = cardG.node().ownerSVGElement || cardG.node().closest("svg");
+  var clipId = "formula-clip-replay-" + Date.now();
+  var defs = d3.select(svg).select("defs");
+  if (defs.empty()) defs = d3.select(svg).append("defs");
+
+  _formulaContentClip = defs.append("clipPath")
+    .attr("id", clipId)
+    .append("rect")
+    .attr("x", cardX - 2)
+    .attr("y", cardY + _formulaCardHeaderH - 2)
+    .attr("width", cardW + 4)
+    .attr("height", FORMULA_MAX_CONTENT_H + 4);
+
+  contentG.attr("clip-path", "url(#" + clipId + ")");
+
   var formulaTexts = [];
   lines.forEach(function (item) {
     var isSectionLabel = item.line.indexOf("▸") === 0;
@@ -3911,12 +3992,23 @@ function _replayFormulaLines() {
     _formulaLineY += lineH;
   });
 
+  // Calculate content height and cap card
+  var contentH = _formulaLineY - _formulaCardHeaderH;
+  var cappedH = Math.min(contentH, FORMULA_MAX_CONTENT_H);
+  var newCardH = _formulaCardHeaderH + cappedH;
+
   // Update collapsed height and respect current collapse state
-  var newFullH = _formulaLineY + _formulaCardPad;
   var st = typeof _centerPanelState !== "undefined" ? _centerPanelState : null;
   if (_formulaCardRect && !_formulaCardRect.empty()) {
-    _formulaCardRect.attr("height", st && st.formulasCollapsed ? (st.headerH || 40) : newFullH);
+    _formulaCardRect.attr("height", st && st.formulasCollapsed ? (st.headerH || 40) : newCardH);
   }
+
+  // Apply scroll when content exceeds visible area
+  if (contentH > FORMULA_MAX_CONTENT_H) {
+    _formulaScrollY = -(contentH - FORMULA_MAX_CONTENT_H);
+    contentG.attr("transform", "translate(0," + _formulaScrollY + ")");
+  }
+
   if (st && st.formulasCollapsed) {
     contentG.attr("display", "none");
   }
@@ -3925,7 +4017,7 @@ function _replayFormulaLines() {
   if (st) {
     st.formulaG = contentG;
     st._formulaTexts = formulaTexts;
-    st.formulaCardFullH = newFullH;
+    st.formulaCardFullH = newCardH;
   }
 }
 
