@@ -3724,48 +3724,88 @@ function canvasRecenter(targetSelector, _retry, skipTransition) {
 
 // ── _appendFormulaLine: append one line to the formula card with animation ──
 
-var _formulaLineY = 0;       // current Y position for appending
-var _formulaCardG = null;    // reference to formula card group
-var _formulaCardRect = null; // reference to formula card rect
+// ── Typewriter effect: character-by-character formula card loading ──
+
+// Animation speed config: "normal" | "fast" | "instant"
+// charInterval: ms between each character reveal (lower = faster typing)
+var FORMULA_ANIM_PRESETS = {
+  normal:  { charInterval: 25, ease: d3.easeCubicOut },
+  fast:    { charInterval: 8,  ease: d3.easeCubicOut },
+  instant: { charInterval: 0,  ease: d3.easeLinear },
+};
+var _formulaAnimSpeed = "normal";
+
+function _getFormulaAnim() {
+  return FORMULA_ANIM_PRESETS[_formulaAnimSpeed] || FORMULA_ANIM_PRESETS.normal;
+}
+
+// Public API: setFormulaAnimSpeed("normal" | "fast" | "instant")
+window.setFormulaAnimSpeed = function (speed) {
+  if (!FORMULA_ANIM_PRESETS[speed]) {
+    console.warn("[formula-anim] unknown speed:", speed, "— valid: normal, fast, instant");
+    return;
+  }
+  _formulaAnimSpeed = speed;
+  try { localStorage.setItem("formulaAnimSpeed", speed); } catch (e) {}
+  var btn = document.getElementById("btn-formula-speed");
+  if (btn) btn.textContent = speed === "normal" ? "动效" : speed === "fast" ? "快速" : "瞬时";
+  console.log("[formula-anim] speed →", speed);
+};
+
+// Restore from localStorage on load
+try {
+  var _saved = localStorage.getItem("formulaAnimSpeed");
+  if (_saved && FORMULA_ANIM_PRESETS[_saved]) _formulaAnimSpeed = _saved;
+} catch (e) {}
+
+// ── Typewriter state ──
+var _typewriterQueue = [];       // lines waiting to be typed
+var _typewriterState = null;     // { textEl, fullText, charIdx, lineH, isSectionLabel }
+var _typewriterTimer = null;
+var _formulaLineY = 0;
+var _formulaCardG = null;
+var _formulaCardRect = null;
 var _formulaCardPad = 14;
 var _formulaCardHeaderH = 0;
 
-function _appendFormulaLine(section, line) {
-  // Always buffer so lines survive SVG rebuilds (e.g. Two-Part → Three-Part)
-  if (!window._pendingFormulaLines) window._pendingFormulaLines = [];
-  window._pendingFormulaLines.push({ section: section, line: line });
-
+function _ensureFormulaCard() {
   var cardGroups = d3.selectAll(".formula-card-inner");
-  if (cardGroups.empty()) return;
-
+  if (cardGroups.empty()) return null;
   var cardG = d3.select(cardGroups.nodes()[0]);
   _formulaCardG = cardG;
   _formulaCardRect = cardG.select("rect.formula-card-rect");
 
-  // Read card origin from the rect to offset text into card coordinate space
-  var cardX = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("x")) || 0;
-  var cardY = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("y")) || 0;
-
   if (_formulaLineY === 0) {
-    // Initialize Y from header
-    _formulaCardHeaderH = _formulaCardPad + 16 + 10; // pad + titleFont + gap
+    _formulaCardHeaderH = _formulaCardPad + 16 + 10;
     _formulaLineY = _formulaCardHeaderH;
   }
 
   var contentG = cardG.select(".formula-content-group");
   if (contentG.empty()) {
     contentG = cardG.append("g").attr("class", "formula-content-group");
-    // Re-register with _centerPanelState so collapse toggle affects this group
     if (typeof _centerPanelState !== "undefined") {
       _centerPanelState.formulaG = contentG;
       _centerPanelState._formulaTexts = [];
     }
   }
-  if (contentG.attr("display") === "none") {
-    contentG.attr("display", null);
+  if (contentG.attr("display") === "none") contentG.attr("display", null);
+  return contentG;
+}
+
+function _startTypewriterItem(item) {
+  var contentG = _ensureFormulaCard();
+  if (!contentG) {
+    // Card not ready yet — put item back in queue
+    _typewriterQueue.unshift(item);
+    return;
   }
 
-  var isSectionLabel = line.indexOf("▸") === 0;
+  var cfg = _getFormulaAnim();
+  var cardRect = _formulaCardRect;
+  var cardX = cardRect.empty() ? 0 : parseFloat(cardRect.attr("x")) || 0;
+  var cardY = cardRect.empty() ? 0 : parseFloat(cardRect.attr("y")) || 0;
+
+  var isSectionLabel = item.line.indexOf("▸") === 0;
   var fontSize = isSectionLabel ? "12px" : "10px";
   var fontFamily = isSectionLabel ? "var(--font-sans)" : "var(--font-mono)";
   var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
@@ -3781,32 +3821,102 @@ function _appendFormulaLine(section, line) {
     .attr("font-weight", fontWeight)
     .attr("font-size", fontSize)
     .attr("font-family", fontFamily)
-    .attr("opacity", 0)
-    .text(line);
+    .attr("opacity", 1)
+    .text("");
 
-  textEl
-    .transition()
-    .duration(350)
-    .ease(d3.easeCubicOut)
-    .attr("opacity", 1);
+  _typewriterState = {
+    textEl: textEl,
+    fullText: item.line,
+    charIdx: 0,
+    lineH: lineH,
+    isSectionLabel: isSectionLabel,
+  };
 
-  _formulaLineY += lineH;
-
-  // Expand card rect
-  if (_formulaCardRect && !_formulaCardRect.empty()) {
-    var newH = _formulaLineY + _formulaCardPad;
-    _formulaCardRect
-      .transition()
-      .duration(300)
-      .ease(d3.easeCubicOut)
-      .attr("height", newH);
-  }
-
-  // Recenter canvas after each line
-  canvasRecenter();
+  // Kick off the character-by-character tick
+  _typewriterTimer = setTimeout(_typewriterTick, cfg.charInterval);
 }
 
+function _typewriterTick() {
+  var st = _typewriterState;
+  if (!st) { _typewriterTimer = null; return; }
+
+  var cfg = _getFormulaAnim();
+
+  if (st.charIdx >= st.fullText.length) {
+    // Current line fully typed — move to next line
+    _typewriterState = null;
+    _formulaLineY += st.lineH;
+
+    // Expand card height
+    if (_formulaCardRect && !_formulaCardRect.empty()) {
+      var newH = _formulaLineY + _formulaCardPad;
+      _formulaCardRect.attr("height", newH);
+    }
+
+    // Recenter once per completed line
+    canvasRecenter();
+
+    // Process next queued line
+    if (_typewriterQueue.length) {
+      if (cfg.charInterval > 0) {
+        _startTypewriterItem(_typewriterQueue.shift());
+      } else {
+        // instant: drain synchronously
+        _startTypewriterItem(_typewriterQueue.shift());
+        return;
+      }
+    } else {
+      _typewriterTimer = null;
+    }
+    return;
+  }
+
+  // Reveal next character
+  st.charIdx++;
+  st.textEl.text(st.fullText.substring(0, st.charIdx));
+
+  // Schedule next tick
+  if (cfg.charInterval > 0) {
+    _typewriterTimer = setTimeout(_typewriterTick, cfg.charInterval);
+  } else {
+    // instant mode: complete this line immediately
+    st.textEl.text(st.fullText);
+    st.charIdx = st.fullText.length;
+    _typewriterTick();
+  }
+}
+
+function _appendFormulaLine(section, line) {
+  // Always buffer so lines survive SVG rebuilds (e.g. Two-Part → Three-Part)
+  if (!window._pendingFormulaLines) window._pendingFormulaLines = [];
+  window._pendingFormulaLines.push({ section: section, line: line });
+
+  // Enqueue for typewriter effect
+  _typewriterQueue.push({ section: section, line: line });
+
+  // Kick off typewriter if idle
+  if (!_typewriterTimer && !_typewriterState) {
+    var cfg = _getFormulaAnim();
+    var delay = cfg.charInterval > 0 ? cfg.charInterval : 0;
+    _typewriterTimer = setTimeout(function () {
+      _startTypewriterItem(_typewriterQueue.shift());
+    }, delay);
+  }
+}
+
+// Public API: reset typewriter (called on new session)
+window._resetFormulaQueue = function () {
+  _typewriterQueue = [];
+  _typewriterState = null;
+  if (_typewriterTimer) { clearTimeout(_typewriterTimer); _typewriterTimer = null; }
+};
+
 function _replayFormulaLines() {
+  // Clear typewriter — replay renders all saved lines at once (no animation)
+  _typewriterQueue = [];
+  _typewriterState = null;
+  if (_typewriterTimer) { clearTimeout(_typewriterTimer); _typewriterTimer = null; }
+
   var cardGroups = d3.selectAll(".formula-card-inner");
   if (cardGroups.empty()) return;
   var cardG = d3.select(cardGroups.nodes()[0]);
