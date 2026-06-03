@@ -322,29 +322,6 @@
                 gap: 8px;
                 align-items: center;
             }
-            .btn-formula-speed {
-                padding: 4px 12px;
-                border-radius: var(--radius-sm);
-                border: 1px solid var(--border);
-                background: var(--bg-surface);
-                color: var(--text-muted);
-                font-family: var(--font-mono);
-                font-size: 10px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all var(--transition);
-                white-space: nowrap;
-                user-select: none;
-                letter-spacing: 0.5px;
-            }
-            .btn-formula-speed:hover {
-                border-color: var(--border-active);
-                color: var(--text-primary);
-                background: var(--bg-hover);
-            }
-            .btn-formula-speed:active {
-                transform: scale(0.95);
-            }
             .btn-sim {
                 padding: 5px 16px;
                 border-radius: var(--radius-sm);
@@ -2524,14 +2501,6 @@
                     <svg id="workflow-flow-svg" width="100%" preserveAspectRatio="xMinYMid meet" class="wf-inline-svg"></svg>
                     <span class="canvas-toolbar-right">
                         <button
-                            class="btn-formula-speed"
-                            id="btn-formula-speed"
-                            title="等效分析卡片打字机速度（动效 25ms/字 → 快速 8ms/字 → 瞬时）"
-                            onclick="cycleFormulaAnimSpeed()"
-                        >
-                            动效
-                        </button>
-                        <button
                             class="btn-sim"
                             id="btn-start-sim"
                             disabled
@@ -3104,29 +3073,6 @@
                 var toggle = document.getElementById("ai-mode-toggle-flow");
                 if (toggle) toggle.checked = workflowMode === "agent";
             }
-
-            // ── Formula Card Animation Speed ──
-            function cycleFormulaAnimSpeed() {
-                var speeds = ["normal", "fast", "instant"];
-                var labels = { normal: "动效", fast: "快速", instant: "瞬时" };
-                var current = localStorage.getItem("formulaAnimSpeed") || "normal";
-                var idx = speeds.indexOf(current);
-                var next = speeds[(idx + 1) % speeds.length];
-                if (typeof window.setFormulaAnimSpeed === "function") {
-                    window.setFormulaAnimSpeed(next);
-                } else {
-                    localStorage.setItem("formulaAnimSpeed", next);
-                    var btn = document.getElementById("btn-formula-speed");
-                    if (btn) btn.textContent = labels[next];
-                }
-            }
-            // Init button label from saved preference
-            (function () {
-                var saved = localStorage.getItem("formulaAnimSpeed") || "normal";
-                var labels = { normal: "动效", fast: "快速", instant: "瞬时" };
-                var btn = document.getElementById("btn-formula-speed");
-                if (btn) btn.textContent = labels[saved] || "动效";
-            })();
 
             // ── API mode submit stubs (called when workflowMode === "api") ──
 
