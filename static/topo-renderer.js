@@ -2927,7 +2927,7 @@ function canvasRebuild(targetSelector) {
   // ═══ Render topology ═══
   if (hasTopo) {
     if (meshOriginal && meshEquivalent && !_isSimulation) {
-      // ── Three-Part Mode: Orig + Card + Eq ──
+      // ── Three-Part Mode: Orig + Eq + Card ──
       _safeHideMeshInputs();
       _safeHideToolbarButton();
       _safeSetNpuCount(
@@ -2967,7 +2967,7 @@ function canvasRebuild(targetSelector) {
         .text(meshOriginal.name || "原始组网");
       zoomLayer
         .append("text")
-        .attr("x", _origW + _gap + _cardW + _gap + _eqW / 2)
+        .attr("x", _origW + _gap + _eqW / 2)
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "#58a6ff")
@@ -2996,15 +2996,6 @@ function canvasRebuild(targetSelector) {
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
-      _renderFormulaCard(
-        zoomLayer.append("g"),
-        _origW + _gap,
-        _tH,
-        _cardW,
-        _contentH,
-      );
-      _replayFormulaLines();
-
       _meshBuildView(
         zoomLayer.append("g"),
         meshBuildData(
@@ -3015,7 +3006,7 @@ function canvasRebuild(targetSelector) {
         ),
         "mesh-dp-sel-eq",
         "meshSwitchDpEq",
-        _origW + _gap + _cardW + _gap,
+        _origW + _gap,
         _tH,
         _eqW,
         _contentH,
@@ -3025,6 +3016,15 @@ function canvasRebuild(targetSelector) {
       );
       _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
+      _renderFormulaCard(
+        zoomLayer.append("g"),
+        _origW + _gap + _eqW + _gap,
+        _tH,
+        _cardW,
+        _contentH,
+      );
+      _replayFormulaLines();
+
       _topoLayout = {
         mode: "three",
         origW: _origW,
@@ -3032,7 +3032,7 @@ function canvasRebuild(targetSelector) {
         eqW: _eqW,
         gap: _gap,
         titleH: _tH,
-        cardX: _origW + _gap,
+        cardX: _origW + _gap + _eqW + _gap,
       };
       _renderState.mode = "compare";
       _renderState.orig.tp = meshOriginal.tp;
@@ -3044,7 +3044,7 @@ function canvasRebuild(targetSelector) {
       _renderState.eq.dp = meshEquivalent.dp;
       _renderState.eq.activeDp = meshEqDp;
     } else if (meshOriginal && meshEquivalent && _isSimulation) {
-      // ── Simulation Mode: Orig + Card + Eq (card shows bar chart on rank pin) ──
+      // ── Simulation Mode: Orig + Eq + Card (card shows bar chart on rank pin) ──
       if (!isSim) {
         _safeHideMeshInputs();
         _safeHideToolbarButton();
@@ -3061,8 +3061,8 @@ function canvasRebuild(targetSelector) {
       var _sContentH = topoH - _sTH;
       var _sScale = isSim ? _topoScale : 0.5;
 
-      var _cardX = _sW + _sGap + 150;
-      var _eqX = _cardX + _cardW + _sGap;
+      var _eqX = _sW + _sGap;
+      var _cardX = _eqX + _sW + _sGap;
 
       if (meshOrigDp >= meshOriginal.dp) meshOrigDp = meshOriginal.dp - 1;
       if (meshEqDp >= meshEquivalent.dp) meshEqDp = meshEquivalent.dp - 1;
@@ -3097,7 +3097,15 @@ function canvasRebuild(targetSelector) {
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
-      // Center card — only visible when a rank is pinned
+      _meshBuildView(
+        zoomLayer.append("g"),
+        meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
+        "mesh-dp-sel-eq", "meshSwitchDpEq",
+        _eqX, _sTH, _sW, _sContentH, _sScale, false, true,
+      );
+      _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
+
+      // Right card — only visible when a rank is pinned
       // Preserve sim-specific detail state across rebuilds (not from _centerPanelState)
       var _simDetail = _simPanelLayout ? {
         detailVisible: _simPanelLayout.detailVisible,
@@ -3165,14 +3173,6 @@ function canvasRebuild(targetSelector) {
         detailH: detailH, _allocDetailH: detailH,
         detailY: barAreaY + barAreaH + 8,
       };
-
-      _meshBuildView(
-        zoomLayer.append("g"),
-        meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
-        "mesh-dp-sel-eq", "meshSwitchDpEq",
-        _eqX, _sTH, _sW, _sContentH, _sScale, false, true,
-      );
-      _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
       _topoLayout = { mode: "simulation", origW: _sW, eqW: _sW, cardW: _cardW, gap: _sGap, titleH: _sTH, cardX: _cardX };
       _renderState.mode = "simulation";
@@ -3311,7 +3311,7 @@ function canvasRebuild(targetSelector) {
       modelX0 = 8;
       modelAreaWEq = _meW3 - 16;
       modelX0Eq =
-        _moW3 + _topoLayout.gap + _topoLayout.cardW + _topoLayout.gap + 8;
+        _moW3 + _topoLayout.gap + 8;
     } else if (_topoLayout && _topoLayout.mode === "two") {
       // Two-part: only original model, use full topology width
       var _moW2 = _topoLayout.origW;
