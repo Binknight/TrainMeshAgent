@@ -794,9 +794,9 @@ function _meshBuildView(
   var dpX = viewX + (viewW - dpW * scale) / 2;
   var dpY = viewY + 8 * scale;
 
-  // DP Stack shadows — 5 layers for original, 2 for equivalent
-  var dpStackCount = isOrig ? 5 : 2;
-  var dpGap = 90 / 5; // fixed gap from original 5-layer spacing
+  // DP Stack shadows — 5 layers for original, 3 layers for equivalent (wider spacing)
+  var dpStackCount = isOrig ? 5 : 3;
+  var dpGap = isOrig ? 90 / 5 : 90 / 3; // original: 18px gap, equivalent: 30px gap
   var dpShadows = [];
   for (var si = 0; si < dpStackCount; si++) {
     var off = dpGap * (dpStackCount - si);
@@ -2954,6 +2954,12 @@ function canvasRebuild(targetSelector) {
       var _eqW = _availForTopos * (1 - origShare);
       var _contentH = topoH - _tH;
       var _sharedScale = 0.5;
+      // Align equivalent bottom with original bottom:
+      // orig bottom = _tH + 8*scale + dpH_orig*scale + stackOffset_orig
+      // eq bottom   = eqViewY + 8*scale + dpH_eq*scale + stackOffset_eq
+      // Both stack offsets now equal (90*scale), so:
+      // eqViewY = _tH + (dpH_orig - dpH_eq)*scale
+      var _eqViewY = _tH + (dimsOrig.dpH - dimsEq.dpH) * _sharedScale;
 
       zoomLayer
         .append("text")
@@ -3007,7 +3013,7 @@ function canvasRebuild(targetSelector) {
         "mesh-dp-sel-eq",
         "meshSwitchDpEq",
         _origW + _gap,
-        _tH,
+        _eqViewY,
         _eqW,
         _contentH,
         _sharedScale,
@@ -3060,6 +3066,10 @@ function canvasRebuild(targetSelector) {
       var _sW = _availForTopos / 2;
       var _sContentH = topoH - _sTH;
       var _sScale = isSim ? _topoScale : 0.5;
+      var _sDimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
+      var _sDimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
+      // Align equivalent bottom with original bottom
+      var _eqViewY = _sTH + (_sDimsOrig.dpH - _sDimsEq.dpH) * _sScale;
 
       var _eqX = _sW + _sGap;
       var _cardX = _eqX + _sW + _sGap;
@@ -3101,7 +3111,7 @@ function canvasRebuild(targetSelector) {
         zoomLayer.append("g"),
         meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
         "mesh-dp-sel-eq", "meshSwitchDpEq",
-        _eqX, _sTH, _sW, _sContentH, _sScale, false, true,
+        _eqX, _eqViewY, _sW, _sContentH, _sScale, false, true,
       );
       _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
