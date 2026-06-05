@@ -1356,7 +1356,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   // If ranks are above the card center → curve downward, card above
   // If ranks are below → curve upward, card below
   var isUpper = midRankY < cardCenterY;
-  var arcOffset = isUpper ? 50 : -50;
+  var arcOffset = isUpper ? -50 : 50;
 
   // Curved bezier path: arc direction depends on rank position
   // Upper ranks → arc downward: control point below the ranks
@@ -1448,11 +1448,11 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     var cardX = cardCX - BAR_CARD_W / 2;
     var cardY;
     if (isUpper) {
-      // Ranks are upper, curve arcs down → card above the ranks
-      cardY = minY - barCardH - 10;
-    } else {
-      // Ranks are lower, curve arcs up → card below the ranks
+      // Ranks are upper → curve arcs upward, card below the ranks
       cardY = maxY + 10;
+    } else {
+      // Ranks are lower → curve arcs downward, card above the ranks
+      cardY = minY - barCardH - 10;
     }
 
     _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
