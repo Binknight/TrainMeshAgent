@@ -1397,15 +1397,15 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     var cardX = cardCX - BAR_CARD_W / 2;
     var cardY = showBelow ? cardTopY + 10 : cardTopY - barCardH - 10;
 
-    _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
+    _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group")
+      .attr("opacity", 0.75);
 
     // Card background
     _linkBarCardG.append("rect")
       .attr("x", cardX).attr("y", cardY)
       .attr("width", BAR_CARD_W).attr("height", barCardH)
       .attr("rx", 8).attr("ry", 8)
-      .attr("class", "formula-card-rect")
-      .attr("opacity", 0.92);
+      .attr("class", "formula-card-rect");
 
     // Card title
     _linkBarCardG.append("text")
