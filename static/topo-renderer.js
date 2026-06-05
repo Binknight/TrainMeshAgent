@@ -1397,15 +1397,18 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     var cardX = cardCX - BAR_CARD_W / 2;
     var cardY = showBelow ? cardTopY + 10 : cardTopY - barCardH - 10;
 
-    _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group")
-      .attr("opacity", 0.75);
+    _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
 
-    // Card background
+    // Card background — solid fill, animated border
     _linkBarCardG.append("rect")
       .attr("x", cardX).attr("y", cardY)
       .attr("width", BAR_CARD_W).attr("height", barCardH)
       .attr("rx", 8).attr("ry", 8)
-      .attr("class", "formula-card-rect");
+      .attr("class", "formula-card-rect")
+      .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "6 3")
+      .attr("stroke-linecap", "round");
 
     // Card title
     _linkBarCardG.append("text")
@@ -1479,6 +1482,18 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     var alpha = 0.4 + 0.35 * Math.sin(blinkT * 2 * Math.PI);
     var sw = 1.6 + 0.8 * Math.sin(blinkT * 2 * Math.PI);
     linePath.attr("opacity", alpha).attr("stroke-width", sw);
+
+    // ── Card border dash flowing animation ──
+    if (_linkBarCardG) {
+      var borderRect = _linkBarCardG.select("rect.formula-card-rect");
+      if (!borderRect.empty()) {
+        var borderOffset = -(elapsed * 0.03) % 18;
+        var borderAlpha = 0.5 + 0.3 * Math.sin(blinkT * 2 * Math.PI);
+        borderRect
+          .attr("stroke-dashoffset", borderOffset)
+          .attr("stroke-opacity", borderAlpha);
+      }
+    }
 
     // ── Particle animation ──
     var pT = (elapsed % CYCLE_MS) / CYCLE_MS;
