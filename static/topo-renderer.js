@@ -1274,10 +1274,12 @@ function _meshBuildView(
 // ── Draw connecting line between pinned linked ranks ──
 var _linkLineG = null; // group for the link line, cleared on each rebuild
 var _linkAnimId = null;
+var _linkBarCardG = null; // floating bar chart card at link midpoint
 function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   // Clean up previous link animation
   if (_linkAnimId) { cancelAnimationFrame(_linkAnimId); _linkAnimId = null; }
   _linkLineG = null;
+  _linkBarCardG = null;
 
   var pinned = isSimCanvas ? _simPinnedRank : meshPinnedRank;
   if (!pinned || pinned.mappedRank == null) return;
@@ -1361,6 +1363,102 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
     .attr("opacity", 0);
 
+  // ── Floating bar chart card at path midpoint ──
+  if (!isSimCanvas) {
+    var pathNode0 = linePath.node();
+    var pathLen0 = pathNode0.getTotalLength();
+    var pathMid = pathNode0.getPointAtLength(pathLen0 / 2);
+
+    var BAR_CARD_W = 220;
+    var BAR_CARD_MIN_H = 140;
+    var BAR_CARD_PAD = 10;
+    var BAR_CARD_TITLE_FONT = 13;
+    var BAR_CARD_HEADER_H = BAR_CARD_PAD + BAR_CARD_TITLE_FONT + 8;
+
+    // Determine card height based on rank data
+    var rd = _centerPanelState.rankData;
+    var hasBoth = !!(rd && rd.orig && rd.eq);
+    var hasSim = !!(rd &&
+      ((rd.orig && rd.orig.metrics.actual && Object.keys(rd.orig.metrics.actual).length > 0) ||
+       (rd.eq && rd.eq.metrics.actual && Object.keys(rd.eq.metrics.actual).length > 0)));
+    var estBarsPerMetric = hasBoth && hasSim ? 4 : (hasBoth || hasSim ? 2 : 1);
+    var estMetricH = estBarsPerMetric > 2 ? 74 : (estBarsPerMetric > 1 ? 46 : 44);
+    var contentH = 4 + 20 + 14 + _BAR_METRICS.length * estMetricH + 6 + BAR_CARD_PAD;
+    var barCardH = Math.max(BAR_CARD_HEADER_H + contentH, BAR_CARD_MIN_H);
+
+    // Position: centered on path midpoint x, and below the curve if space allows, above otherwise
+    var cardCX = pathMid.x;
+    var cardTopY = pathMid.y; // the highest point of the curve (arc peak)
+    // Show below the midpoint line if there's space; above if too close to bottom
+    var viewBoxH = parseFloat(svg.getAttribute("viewBox").split(" ")[3]) || 480;
+    var spaceBelow = viewBoxH - cardTopY - 8;
+    var spaceAbove = cardTopY - 8;
+    var showBelow = spaceBelow >= barCardH + 10 || spaceBelow > spaceAbove;
+    var cardX = cardCX - BAR_CARD_W / 2;
+    var cardY = showBelow ? cardTopY + 10 : cardTopY - barCardH - 10;
+
+    _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
+
+    // Card background
+    _linkBarCardG.append("rect")
+      .attr("x", cardX).attr("y", cardY)
+      .attr("width", BAR_CARD_W).attr("height", barCardH)
+      .attr("rx", 8).attr("ry", 8)
+      .attr("class", "formula-card-rect")
+      .attr("opacity", 0.92);
+
+    // Card title
+    _linkBarCardG.append("text")
+      .attr("x", cardX + BAR_CARD_PAD).attr("y", cardY + BAR_CARD_PAD + BAR_CARD_TITLE_FONT)
+      .attr("fill", "#39bae6")
+      .attr("font-weight", "bold")
+      .attr("font-size", BAR_CARD_TITLE_FONT + "px")
+      .attr("font-family", "var(--font-sans)")
+      .text("📊 Rank 性能详情");
+
+    // Bar area group
+    var barG = _linkBarCardG.append("g").attr("class", "rank-bar-chart-group");
+    var barAreaY = cardY + BAR_CARD_HEADER_H;
+    var barAreaH = barCardH - BAR_CARD_HEADER_H - BAR_CARD_PAD;
+
+    // Placeholder when no rank data
+    if (!rd) {
+      barG.append("text")
+        .attr("x", cardX + BAR_CARD_W / 2)
+        .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "11px")
+        .attr("font-family", "var(--font-sans)")
+        .text("点击拓扑中的 Rank 查看性能详情");
+    }
+
+    // Detail charts group (hidden by default)
+    var detailG = _linkBarCardG.append("g").attr("class", "detail-charts-group");
+    detailG.attr("display", "none");
+
+    // ── Update _centerPanelState so _drawRankBars renders in the floating card ──
+    _centerPanelState.g = _linkBarCardG;
+    _centerPanelState.barG = barG;
+    _centerPanelState.barW = BAR_CARD_W - BAR_CARD_PAD * 2;
+    _centerPanelState.barY = BAR_CARD_HEADER_H;
+    _centerPanelState.barH = barAreaH;
+    _centerPanelState.cardX = cardX;
+    _centerPanelState.cardY = cardY;
+    _centerPanelState.barAreaY = barAreaY;
+    _centerPanelState.barCardG = _linkBarCardG;
+    _centerPanelState.barCardRect = _linkBarCardG.select("rect.formula-card-rect");
+    _centerPanelState.barCardTitle = _linkBarCardG.select("text");
+    _centerPanelState.barHeaderH = BAR_CARD_HEADER_H;
+    _centerPanelState.detailG = detailG;
+    _centerPanelState.detailY = barAreaY + barAreaH + 8;
+
+    // Draw bars if we have rank data
+    if (rd) {
+      _drawRankBars(rd);
+    }
+  }
+
   // ── Animation ──
   _startFlowAnimation();
   var pathNode = linePath.node();
@@ -1383,10 +1481,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     linePath.attr("opacity", alpha).attr("stroke-width", sw);
 
     // ── Particle animation ──
-    // Both particles start from midpoint (0.5) and spread outward
-    // particleOrig: travels midpoint→orig, i.e. from 0.5 → 0
-    // particleEq:   travels midpoint→eq,   i.e. from 0.5 → 1
-    var pT = (elapsed % CYCLE_MS) / CYCLE_MS; // 0→1
+    var pT = (elapsed % CYCLE_MS) / CYCLE_MS;
 
     // Ease-in-out
     var eased = pT < 0.5 ? 2 * pT * pT : 1 - Math.pow(-2 * pT + 2, 2) / 2;
@@ -1394,7 +1489,6 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     // particleOrig: midpoint → orig (pathLen 0.5 → 0)
     var origLen = pathLen * (0.5 - eased * 0.5);
     var origPt = pathNode.getPointAtLength(origLen);
-    // Fade: bright in middle of travel, fade at endpoints
     var origFade = pT < 0.05 ? pT / 0.05 : pT > 0.9 ? (1 - pT) / 0.1 : 1;
     particleOrig
       .attr("cx", origPt.x).attr("cy", origPt.y)
@@ -1448,7 +1542,7 @@ function _updateDpSelect(selId, activeDp) {
 
 // ── Center Panel: independent formula card + bar chart card ──
 
-function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
+function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
   var cardG = parentG.append("g").attr("class", "formula-card-group");
   var pad = 14;
   var titleFont = 16;
@@ -1604,7 +1698,32 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   });
 
 
-  // ═══ Bar chart card (bottom) ═══
+  // ═══ Bar chart card (bottom) ═══ — skip in compare mode (rendered by _drawPinnedLink instead)
+  if (skipBarCard) {
+    // Store minimal state for formula card only
+    st2.g = cardG;
+    st2.barG = null;
+    st2.barW = 0;
+    st2.barY = 0;
+    st2.barH = 0;
+    st2.cardX = viewX;
+    st2.cardY = viewY;
+    st2.toggleG = toggleG;
+    st2.toggleChev = toggleChev;
+    st2.formulaG = formulaG;
+    st2.formulaContentH = formulaContentH;
+    st2.headerH = headerH;
+    st2.formulasCollapsed = st2.formulasCollapsed || false;
+    st2._formulaTexts = formulaTexts;
+    st2.formulaCardRect = formulaCardRect;
+    st2.formulaCardFullH = formulaCardFullH;
+    st2.barCardVisible = false;
+    st2.barCardG = null;
+    st2.barCardRect = null;
+    st2.barCardTitle = null;
+    return;
+  }
+
   var effFormulaH = _centerPanelState.formulasCollapsed ? headerH : formulaCardFullH;
   var barCardY = viewY + effFormulaH + cardGap;
   var maxBarCardH = viewY + viewH - barCardY;
@@ -1746,7 +1865,7 @@ function _updateFormulaCollapse() {
     newBarCardY = st.cardY + effFormulaH + st.cardGap;
   } else {
     // Expand: show formulas, restore formula card, hide bar card
-    st.barCardG.attr("display", "none");
+    if (st.barCardG) st.barCardG.attr("display", "none");
     st.formulaCardRect.attr("height", st.formulaCardFullH);
     effFormulaH = st.formulaCardFullH;
     newBarCardY = st.cardY + effFormulaH + st.cardGap;
@@ -3172,6 +3291,7 @@ function canvasRebuild(targetSelector) {
         _tH,
         _cardW,
         _contentH,
+        true, // skipBarCard: bar chart rendered by _drawPinnedLink at link midpoint
       );
       _replayFormulaLines();
 
