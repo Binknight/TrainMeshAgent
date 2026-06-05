@@ -1287,17 +1287,12 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   if (!origRect || !eqRect) return;
 
   // Compute center of each rect in the zoom-layer coordinate space.
-  // Both rects are children of <g> groups inside zoomLayer.
-  // Use getScreenCTM to map rect center → screen coords → SVG coords → zoomLayer coords.
   function _rectCenterInZoomLayer(rect) {
     var bbox = rect.getBBox();
-    // Point in rect's own local coords (center)
     var pt = svg.createSVGPoint();
     pt.x = bbox.x + bbox.width / 2;
     pt.y = bbox.y + bbox.height / 2;
-    // Transform to screen coords via the rect's accumulated CTM
     var screenPt = pt.matrixTransform(rect.getScreenCTM());
-    // Transform from screen coords back to the zoom-layer's local coords
     var zoomG = svg.querySelector(".zoom-layer");
     var zoomCTM = zoomG.getScreenCTM();
     return screenPt.matrixTransform(zoomCTM.inverse());
@@ -1309,21 +1304,23 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   var x1 = origCenter.x, y1 = origCenter.y;
   var x2 = eqCenter.x, y2 = eqCenter.y;
 
-  // Draw a curved bezier path from orig center to eq center
-  // The curve arcs upward to avoid passing through the card column
+  // Curved bezier path from orig center to eq center, arcs upward
   var midX = (x1 + x2) / 2;
-  var midY = Math.min(y1, y2) - 50; // arc above the higher rect
+  var midY = Math.min(y1, y2) - 50;
   var pathD = "M" + x1 + "," + y1 +
     " Q" + midX + "," + midY + " " + x2 + "," + y2;
 
   _linkLineG = zoomLayer.append("g").attr("class", "pinned-link-group");
 
-  // Gradient from cyan (orig) to teal (eq)
+  // ── Defs: gradient + arrow marker + glow filter ──
   var linkDefs = _linkLineG.append("defs");
+
+  // Gradient cyan→green
   var linkGrad = linkDefs.append("linearGradient")
     .attr("id", _currentFilterPrefix + "link-gradient")
-    .attr("x1", "0%").attr("y1", "0%")
-    .attr("x2", "100%").attr("y2", "0%");
+    .attr("gradientUnits", "userSpaceOnUse")
+    .attr("x1", x1).attr("y1", y1)
+    .attr("x2", x2).attr("y2", y2);
   linkGrad.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff");
   linkGrad.append("stop").attr("offset", "100%").attr("stop-color", "#3fb950");
 
@@ -1332,32 +1329,94 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     .attr("id", _currentFilterPrefix + "link-arrow")
     .attr("viewBox", "0 0 10 10")
     .attr("refX", 9).attr("refY", 5)
-    .attr("markerWidth", 5).attr("markerHeight", 5)
+    .attr("markerWidth", 6).attr("markerHeight", 6)
     .attr("orient", "auto");
   linkMarker.append("path")
     .attr("d", "M 0 0 L 10 5 L 0 10 z")
     .attr("fill", "#3fb950");
 
-  // The curved line with glow
+  // Glow filter for particles
+  var glowFilter = linkDefs.append("filter")
+    .attr("id", _currentFilterPrefix + "link-particle-glow")
+    .attr("x", "-50%").attr("y", "-50%")
+    .attr("width", "200%").attr("height", "200%");
+  glowFilter.append("feGaussianBlur")
+    .attr("stdDeviation", 3)
+    .attr("result", "blur");
+  glowFilter.append("feMerge")
+    .selectAll("feMergeNode")
+    .data(["blur", "SourceGraphic"])
+    .enter().append("feMergeNode")
+    .attr("in", function(d) { return d; });
+
+  // ── Background line (thin, muted) ──
   _linkLineG.append("path")
     .attr("d", pathD)
     .attr("fill", "none")
     .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
-    .attr("stroke-width", 2.5)
-    .attr("stroke-dasharray", "6 4")
-    .attr("marker-end", "url(#" + _currentFilterPrefix + "link-arrow)")
-    .attr("opacity", 0.85);
+    .attr("stroke-width", 1.5)
+    .attr("opacity", 0.4);
 
-  // Start the flowing dash animation
+  // ── Animated dashed overlay line ──
+  var dashPath = _linkLineG.append("path")
+    .attr("d", pathD)
+    .attr("fill", "none")
+    .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
+    .attr("stroke-width", 2.5)
+    .attr("stroke-dasharray", "8 6")
+    .attr("stroke-linecap", "round")
+    .attr("marker-end", "url(#" + _currentFilterPrefix + "link-arrow)")
+    .attr("opacity", 0.9);
+
+  // ── Flowing particles: 3 circles traveling along the path ──
+  var PARTICLE_COUNT = 3;
+  var PARTICLE_R = 4;
+  var particles = [];
+  for (var pi = 0; pi < PARTICLE_COUNT; pi++) {
+    var pCircle = _linkLineG.append("circle")
+      .attr("r", PARTICLE_R)
+      .attr("fill", pi === 0 ? "#58a6ff" : pi === 1 ? "#7ecbff" : "#3fb950")
+      .attr("opacity", 0.9)
+      .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)");
+    particles.push({ el: pCircle, phase: pi / PARTICLE_COUNT });
+  }
+
+  // ── Start all animations via RAF ──
   _startFlowAnimation();
 
-  // Animate link line dash offset separately for a flowing effect
+  var pathNode = dashPath.node();
+  var pathLen = pathNode.getTotalLength();
+  var cycleMs = 1400; // one full traversal time
+  var startTime = null;
+
   function _linkFlowTick(ts) {
-    if (!_linkLineG) { _linkAnimId = null; return; }
-    var offset = -(ts * 0.03) % 20;
-    var pathEl = _linkLineG.select("path");
-    if (pathEl.empty()) { _linkAnimId = null; return; }
-    pathEl.attr("stroke-dashoffset", offset);
+    if (!_linkLineG || !pathNode || pathNode.parentNode === null) {
+      _linkAnimId = null; return;
+    }
+    if (!startTime) startTime = ts;
+    var elapsed = (ts - startTime) % cycleMs;
+    var t = elapsed / cycleMs; // 0 → 1
+
+    // Dash offset animation
+    var dashOffset = -(t * pathLen * 2) % (8 + 6);
+    dashPath.attr("stroke-dashoffset", dashOffset);
+
+    // Particle animation: each particle moves along the path
+    for (var i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      var pT = (t + p.phase) % 1; // staggered phase
+      // Ease-in-out for smooth movement
+      var eased = pT < 0.5
+        ? 2 * pT * pT
+        : 1 - Math.pow(-2 * pT + 2, 2) / 2;
+      var pt = pathNode.getPointAtLength(eased * pathLen);
+      // Fade in at start, fade out at end
+      var fadeAlpha = pT < 0.08 ? pT / 0.08 : pT > 0.92 ? (1 - pT) / 0.08 : 1;
+      p.el.attr("cx", pt.x).attr("cy", pt.y)
+        .attr("opacity", 0.9 * fadeAlpha)
+        .attr("r", PARTICLE_R * (0.6 + 0.4 * fadeAlpha));
+    }
+
     _linkAnimId = requestAnimationFrame(_linkFlowTick);
   }
   _linkAnimId = requestAnimationFrame(_linkFlowTick);
