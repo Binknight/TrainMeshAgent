@@ -1215,8 +1215,8 @@ function _meshBuildView(
               if (typeof window._onSimRankPinned === "function") window._onSimRankPinned();
             } else {
               _centerPanelState.formulasCollapsed = true;
-              _updateCenterBarChart(globalRank, side);
               canvasRebuild("#canvas-section");
+              _updateCenterBarChart(globalRank, side);
             }
           }
         });
