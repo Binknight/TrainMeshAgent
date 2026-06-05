@@ -1271,6 +1271,98 @@ function _meshBuildView(
   });
 }
 
+// ── Draw connecting line between pinned linked ranks ──
+var _linkLineG = null; // group for the link line, cleared on each rebuild
+var _linkAnimId = null;
+function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
+  // Clean up previous link animation
+  if (_linkAnimId) { cancelAnimationFrame(_linkAnimId); _linkAnimId = null; }
+  _linkLineG = null;
+
+  var pinned = isSimCanvas ? _simPinnedRank : meshPinnedRank;
+  if (!pinned || pinned.mappedRank == null) return;
+
+  var origRect = svg.querySelector('.tp-rect.pinned[data-side="orig"]');
+  var eqRect = svg.querySelector('.tp-rect.pinned[data-side="eq"]');
+  if (!origRect || !eqRect) return;
+
+  // Compute center of each rect in the zoom-layer coordinate space.
+  // Both rects are children of <g> groups inside zoomLayer.
+  // Use getScreenCTM to map rect center → screen coords → SVG coords → zoomLayer coords.
+  function _rectCenterInZoomLayer(rect) {
+    var bbox = rect.getBBox();
+    // Point in rect's own local coords (center)
+    var pt = svg.createSVGPoint();
+    pt.x = bbox.x + bbox.width / 2;
+    pt.y = bbox.y + bbox.height / 2;
+    // Transform to screen coords via the rect's accumulated CTM
+    var screenPt = pt.matrixTransform(rect.getScreenCTM());
+    // Transform from screen coords back to the zoom-layer's local coords
+    var zoomG = svg.querySelector(".zoom-layer");
+    var zoomCTM = zoomG.getScreenCTM();
+    return screenPt.matrixTransform(zoomCTM.inverse());
+  }
+
+  var origCenter = _rectCenterInZoomLayer(origRect);
+  var eqCenter = _rectCenterInZoomLayer(eqRect);
+
+  var x1 = origCenter.x, y1 = origCenter.y;
+  var x2 = eqCenter.x, y2 = eqCenter.y;
+
+  // Draw a curved bezier path from orig center to eq center
+  // The curve arcs upward to avoid passing through the card column
+  var midX = (x1 + x2) / 2;
+  var midY = Math.min(y1, y2) - 50; // arc above the higher rect
+  var pathD = "M" + x1 + "," + y1 +
+    " Q" + midX + "," + midY + " " + x2 + "," + y2;
+
+  _linkLineG = zoomLayer.append("g").attr("class", "pinned-link-group");
+
+  // Gradient from cyan (orig) to teal (eq)
+  var linkDefs = _linkLineG.append("defs");
+  var linkGrad = linkDefs.append("linearGradient")
+    .attr("id", _currentFilterPrefix + "link-gradient")
+    .attr("x1", "0%").attr("y1", "0%")
+    .attr("x2", "100%").attr("y2", "0%");
+  linkGrad.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff");
+  linkGrad.append("stop").attr("offset", "100%").attr("stop-color", "#3fb950");
+
+  // Arrow marker at the eq end
+  var linkMarker = linkDefs.append("marker")
+    .attr("id", _currentFilterPrefix + "link-arrow")
+    .attr("viewBox", "0 0 10 10")
+    .attr("refX", 9).attr("refY", 5)
+    .attr("markerWidth", 5).attr("markerHeight", 5)
+    .attr("orient", "auto");
+  linkMarker.append("path")
+    .attr("d", "M 0 0 L 10 5 L 0 10 z")
+    .attr("fill", "#3fb950");
+
+  // The curved line with glow
+  _linkLineG.append("path")
+    .attr("d", pathD)
+    .attr("fill", "none")
+    .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
+    .attr("stroke-width", 2.5)
+    .attr("stroke-dasharray", "6 4")
+    .attr("marker-end", "url(#" + _currentFilterPrefix + "link-arrow)")
+    .attr("opacity", 0.85);
+
+  // Start the flowing dash animation
+  _startFlowAnimation();
+
+  // Animate link line dash offset separately for a flowing effect
+  function _linkFlowTick(ts) {
+    if (!_linkLineG) { _linkAnimId = null; return; }
+    var offset = -(ts * 0.03) % 20;
+    var pathEl = _linkLineG.select("path");
+    if (pathEl.empty()) { _linkAnimId = null; return; }
+    pathEl.attr("stroke-dashoffset", offset);
+    _linkAnimId = requestAnimationFrame(_linkFlowTick);
+  }
+  _linkAnimId = requestAnimationFrame(_linkFlowTick);
+}
+
 function _populateDpSelect(selId, dpCount, activeDp) {
   var sel = document.getElementById(selId);
   if (!sel) return;
@@ -3031,6 +3123,8 @@ function canvasRebuild(targetSelector) {
       );
       _replayFormulaLines();
 
+      _drawPinnedLink(zoomLayer, svg.node(), false);
+
       _topoLayout = {
         mode: "three",
         origW: _origW,
@@ -3185,6 +3279,8 @@ function canvasRebuild(targetSelector) {
       };
 
       _topoLayout = { mode: "simulation", origW: _sW, eqW: _sW, cardW: _cardW, gap: _sGap, titleH: _sTH, cardX: _cardX };
+
+      _drawPinnedLink(zoomLayer, svg.node(), true);
       _renderState.mode = "simulation";
     } else if (_formulaCardReady && meshOriginal) {
       // ── Two-Part Mode: Orig + Card ──
