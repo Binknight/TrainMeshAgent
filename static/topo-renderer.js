@@ -1448,11 +1448,11 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     var cardX = cardCX - BAR_CARD_W / 2;
     var cardY;
     if (isUpper) {
-      // Ranks are upper → curve arcs upward, card below the ranks
-      cardY = maxY + 10;
+      // Ranks are upper, curve arcs upward → card below the curve
+      cardY = maxY + arcOffset + 10;
     } else {
-      // Ranks are lower → curve arcs downward, card above the ranks
-      cardY = minY - barCardH - 10;
+      // Ranks are lower, curve arcs downward → card above the curve
+      cardY = minY + arcOffset - barCardH - 10;
     }
 
     _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
