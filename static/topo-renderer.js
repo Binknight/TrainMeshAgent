@@ -1308,9 +1308,18 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   var x1 = origCenter.x, y1 = origCenter.y;
   var x2 = eqCenter.x, y2 = eqCenter.y;
 
-  // Curved bezier path from orig center to eq center, arcs upward
+  // Determine curve direction based on rank positions
+  // If ranks are in the upper portion of the content, curve arcs downward (card above)
+  // If ranks are in the lower portion, curve arcs upward (card below)
+  var viewBoxH = parseFloat(svg.getAttribute("viewBox").split(" ")[3]) || 480;
+  var avgRankY = (y1 + y2) / 2;
+  var isUpperPosition = avgRankY < viewBoxH * 0.45; // ranks in upper ~45% of viewBox
+  var curveDir = isUpperPosition ? 1 : -1; // 1 = arc downward, -1 = arc upward
+  var arcOffset = 50 * curveDir;
+
+  // Curved bezier path: arc direction depends on rank position
   var midX = (x1 + x2) / 2;
-  var midY = Math.min(y1, y2) - 50;
+  var midY = Math.max(y1, y2) + arcOffset; // curve peak opposite to card side
   var pathD = "M" + x1 + "," + y1 +
     " Q" + midX + "," + midY + " " + x2 + "," + y2;
 
@@ -1388,16 +1397,20 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     var contentH = 4 + 20 + 14 + _BAR_METRICS.length * estMetricH + 6 + BAR_CARD_PAD;
     var barCardH = Math.max(BAR_CARD_HEADER_H + contentH, BAR_CARD_MIN_H);
 
-    // Position: centered on path midpoint x, and below the curve if space allows, above otherwise
+    // Position: centered on path midpoint x
+    // Card appears on the opposite side of the curve arc:
+    //   curveDir=1 (arc downward, ranks upper) → card above the ranks
+    //   curveDir=-1 (arc upward, ranks lower) → card below the ranks
     var cardCX = pathMid.x;
-    var cardTopY = pathMid.y; // the highest point of the curve (arc peak)
-    // Show below the midpoint line if there's space; above if too close to bottom
-    var viewBoxH = parseFloat(svg.getAttribute("viewBox").split(" ")[3]) || 480;
-    var spaceBelow = viewBoxH - cardTopY - 8;
-    var spaceAbove = cardTopY - 8;
-    var showBelow = spaceBelow >= barCardH + 10 || spaceBelow > spaceAbove;
     var cardX = cardCX - BAR_CARD_W / 2;
-    var cardY = showBelow ? cardTopY + 10 : cardTopY - barCardH - 10;
+    var cardY;
+    if (curveDir === 1) {
+      // Ranks are upper, curve arcs down → card above the ranks
+      cardY = Math.min(y1, y2) - barCardH - 10;
+    } else {
+      // Ranks are lower, curve arcs up → card below the ranks
+      cardY = Math.max(y1, y2) + 10;
+    }
 
     _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
 
