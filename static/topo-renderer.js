@@ -1701,26 +1701,26 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
   // ═══ Bar chart card (bottom) ═══ — skip in compare mode (rendered by _drawPinnedLink instead)
   if (skipBarCard) {
     // Store minimal state for formula card only
-    st2.g = cardG;
-    st2.barG = null;
-    st2.barW = 0;
-    st2.barY = 0;
-    st2.barH = 0;
-    st2.cardX = viewX;
-    st2.cardY = viewY;
-    st2.toggleG = toggleG;
-    st2.toggleChev = toggleChev;
-    st2.formulaG = formulaG;
-    st2.formulaContentH = formulaContentH;
-    st2.headerH = headerH;
-    st2.formulasCollapsed = st2.formulasCollapsed || false;
-    st2._formulaTexts = formulaTexts;
-    st2.formulaCardRect = formulaCardRect;
-    st2.formulaCardFullH = formulaCardFullH;
-    st2.barCardVisible = false;
-    st2.barCardG = null;
-    st2.barCardRect = null;
-    st2.barCardTitle = null;
+    _centerPanelState.g = cardG;
+    _centerPanelState.barG = null;
+    _centerPanelState.barW = 0;
+    _centerPanelState.barY = 0;
+    _centerPanelState.barH = 0;
+    _centerPanelState.cardX = viewX;
+    _centerPanelState.cardY = viewY;
+    _centerPanelState.toggleG = toggleG;
+    _centerPanelState.toggleChev = toggleChev;
+    _centerPanelState.formulaG = formulaG;
+    _centerPanelState.formulaContentH = formulaContentH;
+    _centerPanelState.headerH = headerH;
+    _centerPanelState.formulasCollapsed = _centerPanelState.formulasCollapsed || false;
+    _centerPanelState._formulaTexts = formulaTexts;
+    _centerPanelState.formulaCardRect = formulaCardRect;
+    _centerPanelState.formulaCardFullH = formulaCardFullH;
+    _centerPanelState.barCardVisible = false;
+    _centerPanelState.barCardG = null;
+    _centerPanelState.barCardRect = null;
+    _centerPanelState.barCardTitle = null;
     return;
   }
 
