@@ -1309,17 +1309,60 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   var x2 = eqCenter.x, y2 = eqCenter.y;
 
   // Determine curve direction based on rank positions
-  // If ranks are in the upper portion of the content, curve arcs downward (card above)
-  // If ranks are in the lower portion, curve arcs upward (card below)
-  var viewBoxH = parseFloat(svg.getAttribute("viewBox").split(" ")[3]) || 480;
-  var avgRankY = (y1 + y2) / 2;
-  var isUpperPosition = avgRankY < viewBoxH * 0.45; // ranks in upper ~45% of viewBox
-  var curveDir = isUpperPosition ? 1 : -1; // 1 = arc downward, -1 = arc upward
-  var arcOffset = 50 * curveDir;
+  // Ranks in the upper half of the topology card → curve arcs downward (card goes above ranks)
+  // Ranks in the lower half → curve arcs upward (card goes below ranks)
+  var midRankY = (y1 + y2) / 2;
+
+  // Actually: compare rank Y positions to the vertical center of the content area
+  // The topo content spans from viewY to viewY+viewH for the orig topology.
+  // Use a simple rule: if both ranks are above the midpoint of the DP card height, curve downward;
+  // if below, curve upward.
+  // For three-part mode, the orig DP card is at y=viewY..viewY+dpH*scale
+  // But simpler: just check if avgRankY is above or below the average center of the two topologies
+  // Most importantly: upper ranks → curve downward, lower ranks → curve upward
+
+  // The orig side DP card starts at some Y. The ranks within it have y values.
+  // If y1,y2 are relatively small (upper part), curve downward.
+  // If y1,y2 are relatively large (lower part), curve upward.
+  // Use the midpoint Y between min and max rank positions as reference
+  var minY = Math.min(y1, y2);
+  var maxY = Math.max(y1, y2);
+  var midYRange = (minY + maxY) / 2;
+
+  // Estimate the vertical extent of the topology card area
+  // Find the overall card boundaries: the DP card shadows give us a range
+  // Simpler: use the rect centers. If average rank Y is in upper half → curve downward
+  // If in lower half → curve upward
+  // The "half" boundary is roughly the Y where we'd want to flip direction
+  // Using the content area from _tH (title) to _tH+_contentH
+  // But we don't have these values here. Instead, use a heuristic:
+  // If minY (topmost rank) is less than half of the range between minY and maxY+offset
+  // → ranks are upper → curve downward
+  // Heuristic based on actual testing: ranks 0-7 should curve downward, 8-16 upward
+  // The DP card spans vertically. Ranks increase downward (y increases with rank index).
+  // The boundary is roughly the midpoint of the vertical span.
+  // Calculate the vertical span of ALL possible rank positions in the card
+  // by looking at the dp card shadow rects
+  var dpCardEl = svg.querySelector('.dp-card');
+  var dpCardYRange = dpCardEl ? dpCardEl.getBBox() : null;
+  var cardCenterY;
+  if (dpCardEl && dpCardYRange) {
+    cardCenterY = dpCardYRange.y + dpCardYRange.height / 2;
+  } else {
+    // Fallback: use average of rank positions with offset
+    cardCenterY = midYRange;
+  }
+
+  // If ranks are above the card center → curve downward, card above
+  // If ranks are below → curve upward, card below
+  var isUpper = midRankY < cardCenterY;
+  var arcOffset = isUpper ? 50 : -50;
 
   // Curved bezier path: arc direction depends on rank position
+  // Upper ranks → arc downward: control point below the ranks
+  // Lower ranks → arc upward: control point above the ranks
   var midX = (x1 + x2) / 2;
-  var midY = Math.max(y1, y2) + arcOffset; // curve peak opposite to card side
+  var midY = isUpper ? (maxY + arcOffset) : (minY + arcOffset);
   var pathD = "M" + x1 + "," + y1 +
     " Q" + midX + "," + midY + " " + x2 + "," + y2;
 
@@ -1399,17 +1442,17 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
 
     // Position: centered on path midpoint x
     // Card appears on the opposite side of the curve arc:
-    //   curveDir=1 (arc downward, ranks upper) → card above the ranks
-    //   curveDir=-1 (arc upward, ranks lower) → card below the ranks
+    //   Upper ranks (curve downward) → card above the ranks
+    //   Lower ranks (curve upward) → card below the ranks
     var cardCX = pathMid.x;
     var cardX = cardCX - BAR_CARD_W / 2;
     var cardY;
-    if (curveDir === 1) {
+    if (isUpper) {
       // Ranks are upper, curve arcs down → card above the ranks
-      cardY = Math.min(y1, y2) - barCardH - 10;
+      cardY = minY - barCardH - 10;
     } else {
       // Ranks are lower, curve arcs up → card below the ranks
-      cardY = Math.max(y1, y2) + 10;
+      cardY = maxY + 10;
     }
 
     _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
