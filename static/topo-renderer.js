@@ -1126,7 +1126,8 @@ function _meshBuildView(
         .attr("class", rectClass)
         .attr("data-rank", tp.globalRank)
         .attr("data-side", side)
-        .attr("fill", isPinned ? "url(#" + _currentFilterPrefix + (isOrig ? "pinned-orig-fill" : "pinned-eq-fill") + ")" : null)
+        .attr("fill", isPinned ? null : "#161b22")
+        .style("fill", isPinned ? "url(#" + _currentFilterPrefix + (isOrig ? "pinned-orig-fill" : "pinned-eq-fill") + ")" : null)
         .on("mouseover", function () {
           if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
           d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
@@ -3173,15 +3174,15 @@ function canvasRebuild(targetSelector) {
       .attr("id", _currentFilterPrefix + "pinned-orig-fill")
       .attr("x1", "0%").attr("y1", "0%")
       .attr("x2", "100%").attr("y2", "100%");
-    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff").attr("stop-opacity", 0.25);
-    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "#39bae6").attr("stop-opacity", 0.08);
+    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff").attr("stop-opacity", 0.35);
+    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "#39bae6").attr("stop-opacity", 0.12);
     // Equivalent side: green gradient
     var pinnedEqFill = defs.append("linearGradient")
       .attr("id", _currentFilterPrefix + "pinned-eq-fill")
       .attr("x1", "0%").attr("y1", "0%")
       .attr("x2", "100%").attr("y2", "100%");
-    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "#3fb950").attr("stop-opacity", 0.25);
-    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "#2ea043").attr("stop-opacity", 0.08);
+    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "#3fb950").attr("stop-opacity", 0.35);
+    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "#2ea043").attr("stop-opacity", 0.12);
 
     defs
       .append("style")
