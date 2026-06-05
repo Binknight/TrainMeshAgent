@@ -1126,6 +1126,7 @@ function _meshBuildView(
         .attr("class", rectClass)
         .attr("data-rank", tp.globalRank)
         .attr("data-side", side)
+        .attr("fill", isPinned ? "url(#" + _currentFilterPrefix + (isOrig ? "pinned-orig-fill" : "pinned-eq-fill") + ")" : null)
         .on("mouseover", function () {
           if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
           d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
@@ -3166,14 +3167,21 @@ function canvasRebuild(targetSelector) {
       .attr("y", "-40%")
       .attr("width", "180%")
       .attr("height", "180%");
-    tensorCellFilter
-      .append("feDropShadow")
-      .attr("dx", 0)
-      .attr("dy", 2)
-      .attr("stdDeviation", 4)
-      .attr("flood-color", "#ff8f40")
-      .attr("flood-opacity", 0.6);
-
+    // ── Pinned highlight gradient fills ──
+    // Original side: cyan gradient
+    var pinnedOrigFill = defs.append("linearGradient")
+      .attr("id", _currentFilterPrefix + "pinned-orig-fill")
+      .attr("x1", "0%").attr("y1", "0%")
+      .attr("x2", "100%").attr("y2", "100%");
+    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff").attr("stop-opacity", 0.25);
+    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "#39bae6").attr("stop-opacity", 0.08);
+    // Equivalent side: green gradient
+    var pinnedEqFill = defs.append("linearGradient")
+      .attr("id", _currentFilterPrefix + "pinned-eq-fill")
+      .attr("x1", "0%").attr("y1", "0%")
+      .attr("x2", "100%").attr("y2", "100%");
+    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "#3fb950").attr("stop-opacity", 0.25);
+    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "#2ea043").attr("stop-opacity", 0.08);
 
     defs
       .append("style")
@@ -5600,13 +5608,16 @@ function _renderOneModel(
     var tcx = D.TENSOR_X + col * cellW;
     var tcy = D.TENSOR_Y + row * cellH;
     var cellClass = "tensor-cell" + (isHighlighted ? " pinned" : "");
+    var cellFill = isHighlighted
+      ? "url(#" + _currentFilterPrefix + (labelColor === "var(--cyan)" ? "pinned-orig-fill" : "pinned-eq-fill") + ")"
+      : "var(--bg-surface)";
     var cellRect = sg
       .append("rect")
       .attr("x", tcx)
       .attr("y", tcy)
       .attr("width", cellW)
       .attr("height", cellH)
-      .attr("fill", "var(--bg-surface)")
+      .attr("fill", cellFill)
       .attr("stroke", isHighlighted ? "#ff8f40" : "var(--text-muted)")
       .attr("stroke-width", isHighlighted ? 2 : 0.5)
       .attr("stroke-dasharray", isHighlighted ? "3 2" : "none")
@@ -5698,12 +5709,13 @@ function _renderOneModel(
     if (hasHighlight) {
       var hlPi = highlightPpIdx;
       var hlRowY = mapTableY + HEADER_H + hlPi * ROW_H;
+      var hlRowFill = "url(#" + _currentFilterPrefix + (labelColor === "var(--cyan)" ? "pinned-orig-fill" : "pinned-eq-fill") + ")";
       sg.append("rect")
         .attr("x", tableX)
         .attr("y", hlRowY)
         .attr("width", tableW)
         .attr("height", ROW_H)
-        .attr("fill", hlPi % 2 === 0 ? "var(--bg-surface)" : "#161b22")
+        .attr("fill", hlRowFill)
         .attr("stroke", "#ff8f40")
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "3 2")
