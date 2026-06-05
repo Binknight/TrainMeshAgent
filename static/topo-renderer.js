@@ -3174,15 +3174,15 @@ function canvasRebuild(targetSelector) {
       .attr("id", _currentFilterPrefix + "pinned-orig-fill")
       .attr("x1", "0%").attr("y1", "0%")
       .attr("x2", "100%").attr("y2", "100%");
-    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff").attr("stop-opacity", 0.35);
-    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "#39bae6").attr("stop-opacity", 0.12);
+    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff").attr("stop-opacity", 0.6);
+    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "#39bae6").attr("stop-opacity", 0.2);
     // Equivalent side: green gradient
     var pinnedEqFill = defs.append("linearGradient")
       .attr("id", _currentFilterPrefix + "pinned-eq-fill")
       .attr("x1", "0%").attr("y1", "0%")
       .attr("x2", "100%").attr("y2", "100%");
-    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "#3fb950").attr("stop-opacity", 0.35);
-    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "#2ea043").attr("stop-opacity", 0.12);
+    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "#3fb950").attr("stop-opacity", 0.6);
+    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "#2ea043").attr("stop-opacity", 0.2);
 
     defs
       .append("style")
