@@ -1312,7 +1312,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
 
   _linkLineG = zoomLayer.append("g").attr("class", "pinned-link-group");
 
-  // ── Defs: gradient + glow filter ──
+  // ── Defs ──
   var linkDefs = _linkLineG.append("defs");
 
   // Gradient cyan→green
@@ -1324,13 +1324,13 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   linkGrad.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff");
   linkGrad.append("stop").attr("offset", "100%").attr("stop-color", "#3fb950");
 
-  // Glow filter
+  // Glow filter for particles
   var glowFilter = linkDefs.append("filter")
-    .attr("id", _currentFilterPrefix + "link-glow")
-    .attr("x", "-30%").attr("y", "-30%")
-    .attr("width", "160%").attr("height", "160%");
+    .attr("id", _currentFilterPrefix + "link-particle-glow")
+    .attr("x", "-60%").attr("y", "-60%")
+    .attr("width", "220%").attr("height", "220%");
   glowFilter.append("feGaussianBlur")
-    .attr("stdDeviation", 4)
+    .attr("stdDeviation", 3)
     .attr("result", "blur");
   glowFilter.append("feMerge")
     .selectAll("feMergeNode")
@@ -1338,34 +1338,81 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     .enter().append("feMergeNode")
     .attr("in", function(d) { return d; });
 
-  // ── The line (gradient stroke with glow) ──
+  // ── Dense dashed line ──
   var linePath = _linkLineG.append("path")
     .attr("d", pathD)
     .attr("fill", "none")
     .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
-    .attr("stroke-width", 2.5)
+    .attr("stroke-width", 2)
+    .attr("stroke-dasharray", "3 3")
     .attr("stroke-linecap", "round")
-    .attr("filter", "url(#" + _currentFilterPrefix + "link-glow)")
-    .attr("opacity", 0.85);
+    .attr("opacity", 0.65);
 
-  // ── Blink animation: smooth pulse between bright and dim ──
+  // ── Two particles: one flows from midpoint → orig, another from midpoint → eq ──
+  var PARTICLE_R = 4;
+  var particleOrig = _linkLineG.append("circle")
+    .attr("r", PARTICLE_R)
+    .attr("fill", "#58a6ff")
+    .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
+    .attr("opacity", 0);
+  var particleEq = _linkLineG.append("circle")
+    .attr("r", PARTICLE_R)
+    .attr("fill", "#3fb950")
+    .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
+    .attr("opacity", 0);
+
+  // ── Animation ──
   _startFlowAnimation();
-  var blinkStart = null;
-  var BLINK_PERIOD = 1200; // ms per cycle
+  var pathNode = linePath.node();
+  var pathLen = pathNode.getTotalLength();
+  var CYCLE_MS = 1600; // particle cycle period
+  var BLINK_MS = 1200; // blink period
+  var animStart = null;
 
-  function _blinkTick(ts) {
-    if (!_linkLineG) { _linkAnimId = null; return; }
-    if (!blinkStart) blinkStart = ts;
-    var t = ((ts - blinkStart) % BLINK_PERIOD) / BLINK_PERIOD;
-    // Smooth sine wave: opacity oscillates 0.35 ↔ 0.9
-    var alpha = 0.625 + 0.275 * Math.sin(t * 2 * Math.PI);
-    linePath.attr("opacity", alpha);
-    // Also pulse the glow strength by scaling stroke-width
-    var sw = 2.5 + 0.8 * Math.sin(t * 2 * Math.PI);
-    linePath.attr("stroke-width", sw);
-    _linkAnimId = requestAnimationFrame(_blinkTick);
+  function _animTick(ts) {
+    if (!_linkLineG || !pathNode || pathNode.parentNode === null) {
+      _linkAnimId = null; return;
+    }
+    if (!animStart) animStart = ts;
+    var elapsed = ts - animStart;
+
+    // ── Line blink: sine wave pulsing ──
+    var blinkT = (elapsed % BLINK_MS) / BLINK_MS;
+    var alpha = 0.4 + 0.35 * Math.sin(blinkT * 2 * Math.PI);
+    var sw = 1.6 + 0.8 * Math.sin(blinkT * 2 * Math.PI);
+    linePath.attr("opacity", alpha).attr("stroke-width", sw);
+
+    // ── Particle animation ──
+    // Both particles start from midpoint (0.5) and spread outward
+    // particleOrig: travels midpoint→orig, i.e. from 0.5 → 0
+    // particleEq:   travels midpoint→eq,   i.e. from 0.5 → 1
+    var pT = (elapsed % CYCLE_MS) / CYCLE_MS; // 0→1
+
+    // Ease-in-out
+    var eased = pT < 0.5 ? 2 * pT * pT : 1 - Math.pow(-2 * pT + 2, 2) / 2;
+
+    // particleOrig: midpoint → orig (pathLen 0.5 → 0)
+    var origLen = pathLen * (0.5 - eased * 0.5);
+    var origPt = pathNode.getPointAtLength(origLen);
+    // Fade: bright in middle of travel, fade at endpoints
+    var origFade = pT < 0.05 ? pT / 0.05 : pT > 0.9 ? (1 - pT) / 0.1 : 1;
+    particleOrig
+      .attr("cx", origPt.x).attr("cy", origPt.y)
+      .attr("opacity", 0.9 * origFade)
+      .attr("r", PARTICLE_R * (0.5 + 0.5 * origFade));
+
+    // particleEq: midpoint → eq (pathLen 0.5 → 1)
+    var eqLen = pathLen * (0.5 + eased * 0.5);
+    var eqPt = pathNode.getPointAtLength(eqLen);
+    var eqFade = pT < 0.05 ? pT / 0.05 : pT > 0.9 ? (1 - pT) / 0.1 : 1;
+    particleEq
+      .attr("cx", eqPt.x).attr("cy", eqPt.y)
+      .attr("opacity", 0.9 * eqFade)
+      .attr("r", PARTICLE_R * (0.5 + 0.5 * eqFade));
+
+    _linkAnimId = requestAnimationFrame(_animTick);
   }
-  _linkAnimId = requestAnimationFrame(_blinkTick);
+  _linkAnimId = requestAnimationFrame(_animTick);
 }
 
 function _populateDpSelect(selId, dpCount, activeDp) {
