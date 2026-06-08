@@ -1457,7 +1457,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   var pathLen0 = pathNode0.getTotalLength();
   var pathMid = pathNode0.getPointAtLength(pathLen0 / 2);
 
-  var BAR_CARD_W = 220;
+  var BAR_CARD_W = 300;
   var BAR_CARD_MIN_H = 140;
   var BAR_CARD_PAD = 10;
   var BAR_CARD_TITLE_FONT = 13;
@@ -1473,7 +1473,9 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   var estBarsPerMetric = hasBoth && hasSim ? 4 : (hasBoth || hasSim ? 2 : 1);
   var estMetricH = estBarsPerMetric > 2 ? 74 : (estBarsPerMetric > 1 ? 46 : 44);
   var contentH = 4 + 20 + 14 + _BAR_METRICS.length * estMetricH + 6 + BAR_CARD_PAD;
-  var barCardH = Math.max(BAR_CARD_HEADER_H + contentH, BAR_CARD_MIN_H);
+  // When detail charts are visible, add extra height for the detail section
+  var _detailH = (st.detailVisible && st.detailMetric) ? 160 : 0;
+  var barCardH = Math.max(BAR_CARD_HEADER_H + contentH + _detailH, BAR_CARD_MIN_H);
 
   // Position: centered on path midpoint x
   // Card appears on the opposite side of the curve arc:
@@ -2967,13 +2969,15 @@ function _drawRankBars(data, isSim) {
   });
   st._barsBottomY = y;
 
-  // Resize card background rect to fit the rendered bar content
+  // Resize card background rect to fit the rendered bar content + detail charts
   // This handles the case where the card was initially created without rank data
   // (e.g., on the sim tab, rankData may be null during _drawPinnedLink, then populated later)
   if (st.barCardRect && !st.barCardRect.empty()) {
     var _contentBottom = y; // absolute Y where bars ended
     var _padBottom = 10;
-    var _newH = Math.max(_contentBottom - st.cardY + _padBottom, 140);
+    // When detail charts are visible, add extra height for the detail section
+    var _detailH = (st.detailVisible && st.detailMetric) ? 160 : 0;
+    var _newH = Math.max(_contentBottom - st.cardY + _padBottom + _detailH, 140);
     st.barCardRect.attr("height", _newH);
     // Update derived layout fields for detail chart positioning
     st.barH = _newH - st.barHeaderH - _padBottom;
