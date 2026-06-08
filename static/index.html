@@ -6096,9 +6096,6 @@
                                 }
                                 _initTimelineIncr(timelineId, newOps, totalUs);
                                 _initOpspecIncr(opspecId);
-                                // Fetch secondary (HBM / Comm) details in parallel
-                                _renderHbmDetail(prefix, globalRank);
-                                _renderCommDetail(prefix, globalRank);
                             }
                             // Append new operators
                             for (var i = 0; i < newOps.length; i++) {
@@ -6450,9 +6447,7 @@
                 // Build the multi-section layout
                 var sections = [
                     { id: "timeline", title: "算子执行时序", sub: "Operator Timeline — 横轴时间 · 颜色区分算子类型", type: "svg" },
-                    { id: "opspec", title: "负载描述文件", sub: "Operator Spec — 算子 Shape · Stage · Phase 描述", type: "table" },
-                    { id: "hbm", title: "HBM 内存分项", sub: "Weights / Gradients / Optimizer / Activations (GB)", type: "hbm" },
-                    { id: "comm", title: "通信详情", sub: "TP / PP / DP — 次数 · 参与卡数 · 单次/总量 (GB)", type: "comm" }
+                    { id: "opspec", title: "负载描述文件", sub: "Operator Spec — 算子 Shape · Stage · Phase 描述", type: "table" }
                 ];
 
                 // Frozen header
@@ -6478,8 +6473,6 @@
                     var chartStyle;
                     if (sec.id === "opspec") {
                         chartStyle = 'min-height:100px;max-height:360px;overflow:auto;padding:0;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
-                    } else if (sec.id === "hbm" || sec.id === "comm") {
-                        chartStyle = 'min-height:80px;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text-primary)';
                     } else {
                         chartStyle = 'min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
                     }
