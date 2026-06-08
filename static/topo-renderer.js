@@ -15,6 +15,48 @@
 
 // ── Estimation engine — fetched from backend ──
 
+// ── Safe DOM helpers (mesh-config-toolbar removed) ──
+function _safeGet(id) { return document.getElementById(id); }
+function _safeHideMeshInputs() {
+  ["mesh-tpInput", "mesh-ppInput", "mesh-dpInput"].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && el.parentElement) el.parentElement.style.display = "none";
+  });
+}
+function _safeShowMeshInputs() {
+  ["mesh-tpInput", "mesh-ppInput", "mesh-dpInput"].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && el.parentElement) el.parentElement.style.display = "";
+  });
+}
+function _safeSetMeshInputs(tp, pp, dp) {
+  var tpEl = document.getElementById("mesh-tpInput");
+  var ppEl = document.getElementById("mesh-ppInput");
+  var dpEl = document.getElementById("mesh-dpInput");
+  if (tpEl) tpEl.value = tp;
+  if (ppEl) ppEl.value = pp;
+  if (dpEl) dpEl.value = dp;
+}
+function _safeSetNpuCount(text) {
+  var el = document.getElementById("mesh-npu-count");
+  if (el) el.textContent = text;
+}
+function _safeShowToolbar() {
+  var el = document.getElementById("mesh-config-toolbar");
+  if (el) el.classList.add("visible");
+}
+function _safeHideToolbar() {
+  var el = document.getElementById("mesh-config-toolbar");
+  if (el) el.classList.remove("visible");
+}
+function _safeHideToolbarButton() {
+  var tb = document.getElementById("mesh-config-toolbar");
+  if (tb) {
+    var btn = tb.querySelector("button");
+    if (btn) btn.style.display = "none";
+  }
+}
+
 var _estimateFetchAbort = {}; // track abort controllers per side to cancel stale requests
 var _estimateInFlight = {};  // track in-flight estimate requests per side to avoid duplicate calls
 
@@ -752,9 +794,9 @@ function _meshBuildView(
   var dpX = viewX + (viewW - dpW * scale) / 2;
   var dpY = viewY + 8 * scale;
 
-  // DP Stack shadows — 5 layers for original, 2 for equivalent
-  var dpStackCount = isOrig ? 5 : 2;
-  var dpGap = 90 / 5; // fixed gap from original 5-layer spacing
+  // DP Stack shadows — 5 layers for original, 3 layers for equivalent (wider spacing)
+  var dpStackCount = isOrig ? 5 : 3;
+  var dpGap = isOrig ? 90 / 5 : 90 / 3; // original: 18px gap, equivalent: 30px gap
   var dpShadows = [];
   for (var si = 0; si < dpStackCount; si++) {
     var off = dpGap * (dpStackCount - si);
@@ -1084,6 +1126,8 @@ function _meshBuildView(
         .attr("class", rectClass)
         .attr("data-rank", tp.globalRank)
         .attr("data-side", side)
+        .attr("fill", isPinned ? null : "#161b22")
+        .style("fill", isPinned ? "url(#" + _currentFilterPrefix + (isOrig ? "pinned-orig-fill" : "pinned-eq-fill") + ")" : null)
         .on("mouseover", function () {
           if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
           d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
@@ -1171,8 +1215,8 @@ function _meshBuildView(
               if (typeof window._onSimRankPinned === "function") window._onSimRankPinned();
             } else {
               _centerPanelState.formulasCollapsed = true;
-              _updateCenterBarChart(globalRank, side);
               canvasRebuild("#canvas-section");
+              _updateCenterBarChart(globalRank, side);
             }
           }
         });
@@ -1229,6 +1273,315 @@ function _meshBuildView(
   });
 }
 
+// ── Draw connecting line between pinned linked ranks ──
+var _linkLineG = null; // group for the link line, cleared on each rebuild
+var _linkAnimId = null;
+var _linkBarCardG = null; // floating bar chart card at link midpoint
+function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
+  // Clean up previous link animation
+  if (_linkAnimId) { cancelAnimationFrame(_linkAnimId); _linkAnimId = null; }
+  _linkLineG = null;
+  _linkBarCardG = null;
+
+  var pinned = isSimCanvas ? _simPinnedRank : meshPinnedRank;
+  if (!pinned || pinned.mappedRank == null) return;
+
+  var origRect = svg.querySelector('.tp-rect.pinned[data-side="orig"]');
+  var eqRect = svg.querySelector('.tp-rect.pinned[data-side="eq"]');
+  if (!origRect || !eqRect) return;
+
+  // Compute center of each rect in the zoom-layer coordinate space.
+  function _rectCenterInZoomLayer(rect) {
+    var bbox = rect.getBBox();
+    var pt = svg.createSVGPoint();
+    pt.x = bbox.x + bbox.width / 2;
+    pt.y = bbox.y + bbox.height / 2;
+    var screenPt = pt.matrixTransform(rect.getScreenCTM());
+    var zoomG = svg.querySelector(".zoom-layer");
+    var zoomCTM = zoomG.getScreenCTM();
+    return screenPt.matrixTransform(zoomCTM.inverse());
+  }
+
+  var origCenter = _rectCenterInZoomLayer(origRect);
+  var eqCenter = _rectCenterInZoomLayer(eqRect);
+
+  var x1 = origCenter.x, y1 = origCenter.y;
+  var x2 = eqCenter.x, y2 = eqCenter.y;
+
+  // Determine curve direction based on rank positions
+  // Ranks in the upper half of the topology card → curve arcs downward (card goes above ranks)
+  // Ranks in the lower half → curve arcs upward (card goes below ranks)
+  var midRankY = (y1 + y2) / 2;
+
+  // Actually: compare rank Y positions to the vertical center of the content area
+  // The topo content spans from viewY to viewY+viewH for the orig topology.
+  // Use a simple rule: if both ranks are above the midpoint of the DP card height, curve downward;
+  // if below, curve upward.
+  // For three-part mode, the orig DP card is at y=viewY..viewY+dpH*scale
+  // But simpler: just check if avgRankY is above or below the average center of the two topologies
+  // Most importantly: upper ranks → curve downward, lower ranks → curve upward
+
+  // The orig side DP card starts at some Y. The ranks within it have y values.
+  // If y1,y2 are relatively small (upper part), curve downward.
+  // If y1,y2 are relatively large (lower part), curve upward.
+  // Use the midpoint Y between min and max rank positions as reference
+  var minY = Math.min(y1, y2);
+  var maxY = Math.max(y1, y2);
+  var midYRange = (minY + maxY) / 2;
+
+  // Estimate the vertical extent of the topology card area
+  // Find the overall card boundaries: the DP card shadows give us a range
+  // Simpler: use the rect centers. If average rank Y is in upper half → curve downward
+  // If in lower half → curve upward
+  // The "half" boundary is roughly the Y where we'd want to flip direction
+  // Using the content area from _tH (title) to _tH+_contentH
+  // But we don't have these values here. Instead, use a heuristic:
+  // If minY (topmost rank) is less than half of the range between minY and maxY+offset
+  // → ranks are upper → curve downward
+  // Heuristic based on actual testing: ranks 0-7 should curve downward, 8-16 upward
+  // The DP card spans vertically. Ranks increase downward (y increases with rank index).
+  // The boundary is roughly the midpoint of the vertical span.
+  // Calculate the vertical span of ALL possible rank positions in the card
+  // by looking at the dp card shadow rects
+  var dpCardEl = svg.querySelector('.dp-card');
+  var dpCardYRange = dpCardEl ? dpCardEl.getBBox() : null;
+  var cardCenterY;
+  if (dpCardEl && dpCardYRange) {
+    cardCenterY = dpCardYRange.y + dpCardYRange.height / 2;
+  } else {
+    // Fallback: use average of rank positions with offset
+    cardCenterY = midYRange;
+  }
+
+  // If ranks are above the card center → curve downward, card above
+  // If ranks are below → curve upward, card below
+  var isUpper = midRankY < cardCenterY;
+  var arcOffset = isUpper ? -50 : 50;
+
+  // Curved bezier path: arc direction depends on rank position
+  // Upper ranks → arc downward: control point below the ranks
+  // Lower ranks → arc upward: control point above the ranks
+  var midX = (x1 + x2) / 2;
+  var midY = isUpper ? (maxY + arcOffset) : (minY + arcOffset);
+  var pathD = "M" + x1 + "," + y1 +
+    " Q" + midX + "," + midY + " " + x2 + "," + y2;
+
+  _linkLineG = zoomLayer.append("g").attr("class", "pinned-link-group");
+
+  // ── Defs ──
+  var linkDefs = _linkLineG.append("defs");
+
+  // Gradient cyan→green
+  var linkGrad = linkDefs.append("linearGradient")
+    .attr("id", _currentFilterPrefix + "link-gradient")
+    .attr("gradientUnits", "userSpaceOnUse")
+    .attr("x1", x1).attr("y1", y1)
+    .attr("x2", x2).attr("y2", y2);
+  linkGrad.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff");
+  linkGrad.append("stop").attr("offset", "100%").attr("stop-color", "#3fb950");
+
+  // Glow filter for particles
+  var glowFilter = linkDefs.append("filter")
+    .attr("id", _currentFilterPrefix + "link-particle-glow")
+    .attr("x", "-60%").attr("y", "-60%")
+    .attr("width", "220%").attr("height", "220%");
+  glowFilter.append("feGaussianBlur")
+    .attr("stdDeviation", 3)
+    .attr("result", "blur");
+  glowFilter.append("feMerge")
+    .selectAll("feMergeNode")
+    .data(["blur", "SourceGraphic"])
+    .enter().append("feMergeNode")
+    .attr("in", function(d) { return d; });
+
+  // ── Dense dashed line ──
+  var linePath = _linkLineG.append("path")
+    .attr("d", pathD)
+    .attr("fill", "none")
+    .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
+    .attr("stroke-width", 2)
+    .attr("stroke-dasharray", "3 3")
+    .attr("stroke-linecap", "round")
+    .attr("opacity", 0.65);
+
+  // ── Two particles: one flows from midpoint → orig, another from midpoint → eq ──
+  var PARTICLE_R = 4;
+  var particleOrig = _linkLineG.append("circle")
+    .attr("r", PARTICLE_R)
+    .attr("fill", "#58a6ff")
+    .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
+    .attr("opacity", 0);
+  var particleEq = _linkLineG.append("circle")
+    .attr("r", PARTICLE_R)
+    .attr("fill", "#3fb950")
+    .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
+    .attr("opacity", 0);
+
+  // ── Floating bar chart card at path midpoint ──
+  if (!isSimCanvas) {
+    var pathNode0 = linePath.node();
+    var pathLen0 = pathNode0.getTotalLength();
+    var pathMid = pathNode0.getPointAtLength(pathLen0 / 2);
+
+    var BAR_CARD_W = 220;
+    var BAR_CARD_MIN_H = 140;
+    var BAR_CARD_PAD = 10;
+    var BAR_CARD_TITLE_FONT = 13;
+    var BAR_CARD_HEADER_H = BAR_CARD_PAD + BAR_CARD_TITLE_FONT + 8;
+
+    // Determine card height based on rank data
+    var rd = _centerPanelState.rankData;
+    var hasBoth = !!(rd && rd.orig && rd.eq);
+    var hasSim = !!(rd &&
+      ((rd.orig && rd.orig.metrics.actual && Object.keys(rd.orig.metrics.actual).length > 0) ||
+       (rd.eq && rd.eq.metrics.actual && Object.keys(rd.eq.metrics.actual).length > 0)));
+    var estBarsPerMetric = hasBoth && hasSim ? 4 : (hasBoth || hasSim ? 2 : 1);
+    var estMetricH = estBarsPerMetric > 2 ? 74 : (estBarsPerMetric > 1 ? 46 : 44);
+    var contentH = 4 + 20 + 14 + _BAR_METRICS.length * estMetricH + 6 + BAR_CARD_PAD;
+    var barCardH = Math.max(BAR_CARD_HEADER_H + contentH, BAR_CARD_MIN_H);
+
+    // Position: centered on path midpoint x
+    // Card appears on the opposite side of the curve arc:
+    //   Upper ranks (curve downward) → card above the ranks
+    //   Lower ranks (curve upward) → card below the ranks
+    var cardCX = pathMid.x;
+    var cardX = cardCX - BAR_CARD_W / 2;
+    var cardY;
+    if (isUpper) {
+      // Ranks are upper, curve arcs upward → card below the curve
+      cardY = maxY + arcOffset + 10;
+    } else {
+      // Ranks are lower, curve arcs downward → card above the curve
+      cardY = minY + arcOffset - barCardH - 10;
+    }
+
+    _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
+
+    // Card background — solid fill, animated border
+    _linkBarCardG.append("rect")
+      .attr("x", cardX).attr("y", cardY)
+      .attr("width", BAR_CARD_W).attr("height", barCardH)
+      .attr("rx", 8).attr("ry", 8)
+      .attr("class", "formula-card-rect")
+      .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "6 3")
+      .attr("stroke-linecap", "round");
+
+    // Card title
+    _linkBarCardG.append("text")
+      .attr("x", cardX + BAR_CARD_PAD).attr("y", cardY + BAR_CARD_PAD + BAR_CARD_TITLE_FONT)
+      .attr("fill", "#39bae6")
+      .attr("font-weight", "bold")
+      .attr("font-size", BAR_CARD_TITLE_FONT + "px")
+      .attr("font-family", "var(--font-sans)")
+      .text("📊 Rank 性能详情");
+
+    // Bar area group
+    var barG = _linkBarCardG.append("g").attr("class", "rank-bar-chart-group");
+    var barAreaY = cardY + BAR_CARD_HEADER_H;
+    var barAreaH = barCardH - BAR_CARD_HEADER_H - BAR_CARD_PAD;
+
+    // Placeholder when no rank data
+    if (!rd) {
+      barG.append("text")
+        .attr("x", cardX + BAR_CARD_W / 2)
+        .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "11px")
+        .attr("font-family", "var(--font-sans)")
+        .text("点击拓扑中的 Rank 查看性能详情");
+    }
+
+    // Detail charts group (hidden by default)
+    var detailG = _linkBarCardG.append("g").attr("class", "detail-charts-group");
+    detailG.attr("display", "none");
+
+    // ── Update _centerPanelState so _drawRankBars renders in the floating card ──
+    _centerPanelState.g = _linkBarCardG;
+    _centerPanelState.barG = barG;
+    _centerPanelState.barW = BAR_CARD_W - BAR_CARD_PAD * 2;
+    _centerPanelState.barY = BAR_CARD_HEADER_H;
+    _centerPanelState.barH = barAreaH;
+    _centerPanelState.cardX = cardX;
+    _centerPanelState.cardY = cardY;
+    _centerPanelState.barAreaY = barAreaY;
+    _centerPanelState.barCardG = _linkBarCardG;
+    _centerPanelState.barCardRect = _linkBarCardG.select("rect.formula-card-rect");
+    _centerPanelState.barCardTitle = _linkBarCardG.select("text");
+    _centerPanelState.barHeaderH = BAR_CARD_HEADER_H;
+    _centerPanelState.detailG = detailG;
+    _centerPanelState.detailY = barAreaY + barAreaH + 8;
+
+    // Draw bars if we have rank data
+    if (rd) {
+      _drawRankBars(rd);
+    }
+  }
+
+  // ── Animation ──
+  _startFlowAnimation();
+  var pathNode = linePath.node();
+  var pathLen = pathNode.getTotalLength();
+  var CYCLE_MS = 1600; // particle cycle period
+  var BLINK_MS = 1200; // blink period
+  var animStart = null;
+
+  function _animTick(ts) {
+    if (!_linkLineG || !pathNode || pathNode.parentNode === null) {
+      _linkAnimId = null; return;
+    }
+    if (!animStart) animStart = ts;
+    var elapsed = ts - animStart;
+
+    // ── Line blink: sine wave pulsing ──
+    var blinkT = (elapsed % BLINK_MS) / BLINK_MS;
+    var alpha = 0.4 + 0.35 * Math.sin(blinkT * 2 * Math.PI);
+    var sw = 1.6 + 0.8 * Math.sin(blinkT * 2 * Math.PI);
+    linePath.attr("opacity", alpha).attr("stroke-width", sw);
+
+    // ── Card border dash flowing animation ──
+    if (_linkBarCardG) {
+      var borderRect = _linkBarCardG.select("rect.formula-card-rect");
+      if (!borderRect.empty()) {
+        var borderOffset = -(elapsed * 0.03) % 18;
+        var borderAlpha = 0.5 + 0.3 * Math.sin(blinkT * 2 * Math.PI);
+        borderRect
+          .attr("stroke-dashoffset", borderOffset)
+          .attr("stroke-opacity", borderAlpha);
+      }
+    }
+
+    // ── Particle animation ──
+    var pT = (elapsed % CYCLE_MS) / CYCLE_MS;
+
+    // Ease-in-out
+    var eased = pT < 0.5 ? 2 * pT * pT : 1 - Math.pow(-2 * pT + 2, 2) / 2;
+
+    // particleOrig: midpoint → orig (pathLen 0.5 → 0)
+    var origLen = pathLen * (0.5 - eased * 0.5);
+    var origPt = pathNode.getPointAtLength(origLen);
+    var origFade = pT < 0.05 ? pT / 0.05 : pT > 0.9 ? (1 - pT) / 0.1 : 1;
+    particleOrig
+      .attr("cx", origPt.x).attr("cy", origPt.y)
+      .attr("opacity", 0.9 * origFade)
+      .attr("r", PARTICLE_R * (0.5 + 0.5 * origFade));
+
+    // particleEq: midpoint → eq (pathLen 0.5 → 1)
+    var eqLen = pathLen * (0.5 + eased * 0.5);
+    var eqPt = pathNode.getPointAtLength(eqLen);
+    var eqFade = pT < 0.05 ? pT / 0.05 : pT > 0.9 ? (1 - pT) / 0.1 : 1;
+    particleEq
+      .attr("cx", eqPt.x).attr("cy", eqPt.y)
+      .attr("opacity", 0.9 * eqFade)
+      .attr("r", PARTICLE_R * (0.5 + 0.5 * eqFade));
+
+    _linkAnimId = requestAnimationFrame(_animTick);
+  }
+  _linkAnimId = requestAnimationFrame(_animTick);
+}
+
 function _populateDpSelect(selId, dpCount, activeDp) {
   var sel = document.getElementById(selId);
   if (!sel) return;
@@ -1262,7 +1615,7 @@ function _updateDpSelect(selId, activeDp) {
 
 // ── Center Panel: independent formula card + bar chart card ──
 
-function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
+function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
   var cardG = parentG.append("g").attr("class", "formula-card-group");
   var pad = 14;
   var titleFont = 16;
@@ -1418,7 +1771,32 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH) {
   });
 
 
-  // ═══ Bar chart card (bottom) ═══
+  // ═══ Bar chart card (bottom) ═══ — skip in compare mode (rendered by _drawPinnedLink instead)
+  if (skipBarCard) {
+    // Store minimal state for formula card only
+    _centerPanelState.g = cardG;
+    _centerPanelState.barG = null;
+    _centerPanelState.barW = 0;
+    _centerPanelState.barY = 0;
+    _centerPanelState.barH = 0;
+    _centerPanelState.cardX = viewX;
+    _centerPanelState.cardY = viewY;
+    _centerPanelState.toggleG = toggleG;
+    _centerPanelState.toggleChev = toggleChev;
+    _centerPanelState.formulaG = formulaG;
+    _centerPanelState.formulaContentH = formulaContentH;
+    _centerPanelState.headerH = headerH;
+    _centerPanelState.formulasCollapsed = _centerPanelState.formulasCollapsed || false;
+    _centerPanelState._formulaTexts = formulaTexts;
+    _centerPanelState.formulaCardRect = formulaCardRect;
+    _centerPanelState.formulaCardFullH = formulaCardFullH;
+    _centerPanelState.barCardVisible = false;
+    _centerPanelState.barCardG = null;
+    _centerPanelState.barCardRect = null;
+    _centerPanelState.barCardTitle = null;
+    return;
+  }
+
   var effFormulaH = _centerPanelState.formulasCollapsed ? headerH : formulaCardFullH;
   var barCardY = viewY + effFormulaH + cardGap;
   var maxBarCardH = viewY + viewH - barCardY;
@@ -1560,7 +1938,7 @@ function _updateFormulaCollapse() {
     newBarCardY = st.cardY + effFormulaH + st.cardGap;
   } else {
     // Expand: show formulas, restore formula card, hide bar card
-    st.barCardG.attr("display", "none");
+    if (st.barCardG) st.barCardG.attr("display", "none");
     st.formulaCardRect.attr("height", st.formulaCardFullH);
     effFormulaH = st.formulaCardFullH;
     newBarCardY = st.cardY + effFormulaH + st.cardGap;
@@ -1714,7 +2092,7 @@ function _rebuildSimWithBars(skipFetch) {
   canvasRebuild("#sim-canvas-section");
   // Suppress bar grow animation on detail-toggle rebuilds
   if (_simPanelLayout) _simPanelLayout._skipBarAnim = true;
-  if (window._pinnedSim && typeof _drawRankBars === "function" && _centerPanelState && _simPanelLayout) {
+  if (window._simCompleted && window._pinnedSim && typeof _drawRankBars === "function" && _centerPanelState && _simPanelLayout) {
     var pinned = window._pinnedSim;
     var origRank = pinned.side === "orig" ? pinned.globalRank : pinned.mappedRank;
     var eqRank = pinned.side === "orig" ? pinned.mappedRank : pinned.globalRank;
@@ -2279,7 +2657,15 @@ function _drawRankBars(data, isSim) {
       .text(label);
     legX += 56;
   };
-  if (hasBoth) {
+  if (isSim) {
+    // Simulation tab: only show simulation result legends
+    if (hasBoth) {
+      drawLegend("#3fb950", "原始仿真");
+      drawLegend("#7ee787", "等效仿真");
+    } else {
+      drawLegend("#3fb950", "仿真结果");
+    }
+  } else if (hasBoth) {
     drawLegend("#58a6ff", "原始估算");
     drawLegend("#79c0ff", "等效估算");
     var simPanel = document.getElementById("tab-panel-simulation");
@@ -2442,7 +2828,16 @@ function _drawRankBars(data, isSim) {
     var eqActV =
       data.eq && data.eq.metrics.actual ? data.eq.metrics.actual[key] : null;
 
-    if (hasBoth) {
+    if (isSim) {
+      // Simulation tab: only show simulation result bars (no theoretical estimates)
+      if (hasBoth) {
+        if (origActV != null) barY += drawBar(origActV, "#3fb950", "原始仿");
+        if (eqActV != null) barY += drawBar(eqActV, "#7ee787", "等效仿");
+      } else {
+        if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
+        if (eqActV != null && !data.orig) barY += drawBar(eqActV, "#3fb950", "仿");
+      }
+    } else if (hasBoth) {
       // Estimate bars first
       if (origEstV != null)
         barY += drawBar(origEstV, "#58a6ff", "原始估");
@@ -2640,7 +3035,7 @@ function canvasRebuild(targetSelector) {
     if (!isSim) {
       document.getElementById("canvas-section").style.display = "none";
       document.getElementById("canvas-placeholder").classList.remove("hidden");
-      document.getElementById("mesh-config-toolbar").classList.remove("visible");
+      _safeHideToolbar();
       document.getElementById("canvas-label").textContent = "等待组网数据...";
     }
     _renderState.mode = null;
@@ -2649,9 +3044,8 @@ function canvasRebuild(targetSelector) {
 
   if (!isSim) {
     document.getElementById("canvas-placeholder").classList.add("hidden");
-    var toolbar = document.getElementById("mesh-config-toolbar");
-    if (hasTopo) toolbar.classList.add("visible");
-    else toolbar.classList.remove("visible");
+    if (hasTopo) _safeShowToolbar();
+    else _safeHideToolbar();
   }
 
   var container = d3.select(targetSelector);
@@ -2830,14 +3224,21 @@ function canvasRebuild(targetSelector) {
       .attr("y", "-40%")
       .attr("width", "180%")
       .attr("height", "180%");
-    tensorCellFilter
-      .append("feDropShadow")
-      .attr("dx", 0)
-      .attr("dy", 2)
-      .attr("stdDeviation", 4)
-      .attr("flood-color", "#ff8f40")
-      .attr("flood-opacity", 0.6);
-
+    // ── Pinned highlight gradient fills ──
+    // Original side: cyan gradient
+    var pinnedOrigFill = defs.append("linearGradient")
+      .attr("id", _currentFilterPrefix + "pinned-orig-fill")
+      .attr("x1", "0%").attr("y1", "0%")
+      .attr("x2", "100%").attr("y2", "100%");
+    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff").attr("stop-opacity", 0.6);
+    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "#39bae6").attr("stop-opacity", 0.2);
+    // Equivalent side: green gradient
+    var pinnedEqFill = defs.append("linearGradient")
+      .attr("id", _currentFilterPrefix + "pinned-eq-fill")
+      .attr("x1", "0%").attr("y1", "0%")
+      .attr("x2", "100%").attr("y2", "100%");
+    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "#3fb950").attr("stop-opacity", 0.6);
+    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "#2ea043").attr("stop-opacity", 0.2);
 
     defs
       .append("style")
@@ -2869,21 +3270,16 @@ function canvasRebuild(targetSelector) {
   // ═══ Render topology ═══
   if (hasTopo) {
     if (meshOriginal && meshEquivalent && !_isSimulation) {
-      // ── Three-Part Mode: Orig + Card + Eq ──
-      document.getElementById("mesh-tpInput").parentElement.style.display =
-        "none";
-      document.getElementById("mesh-ppInput").parentElement.style.display =
-        "none";
-      document.getElementById("mesh-dpInput").parentElement.style.display =
-        "none";
-      toolbar.querySelector("button").style.display = "none";
-      document.getElementById("mesh-npu-count").textContent =
+      // ── Three-Part Mode: Orig + Eq + Card ──
+      _safeHideMeshInputs();
+      _safeHideToolbarButton();
+      _safeSetNpuCount(
         "原始组网 " +
         _meshNpuTotal(meshOriginal) +
         " NPUs  |  " +
         (meshEquivalent.name || "等效组网") + " " +
         _meshNpuTotal(meshEquivalent) +
-        " NPUs";
+        " NPUs");
       document.getElementById("canvas-label").textContent =
         (meshOriginal.name || "原始组网") +
         "  vs  " +
@@ -2901,6 +3297,12 @@ function canvasRebuild(targetSelector) {
       var _eqW = _availForTopos * (1 - origShare);
       var _contentH = topoH - _tH;
       var _sharedScale = 0.5;
+      // Align equivalent bottom with original bottom:
+      // orig bottom = _tH + 8*scale + dpH_orig*scale + stackOffset_orig
+      // eq bottom   = eqViewY + 8*scale + dpH_eq*scale + stackOffset_eq
+      // Both stack offsets now equal (90*scale), so:
+      // eqViewY = _tH + (dpH_orig - dpH_eq)*scale
+      var _eqViewY = _tH + (dimsOrig.dpH - dimsEq.dpH) * _sharedScale;
 
       zoomLayer
         .append("text")
@@ -2914,7 +3316,7 @@ function canvasRebuild(targetSelector) {
         .text(meshOriginal.name || "原始组网");
       zoomLayer
         .append("text")
-        .attr("x", _origW + _gap + _cardW + _gap + _eqW / 2)
+        .attr("x", _origW + _gap + _eqW / 2)
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
         .attr("fill", "#58a6ff")
@@ -2943,15 +3345,6 @@ function canvasRebuild(targetSelector) {
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
-      _renderFormulaCard(
-        zoomLayer.append("g"),
-        _origW + _gap,
-        _tH,
-        _cardW,
-        _contentH,
-      );
-      _replayFormulaLines();
-
       _meshBuildView(
         zoomLayer.append("g"),
         meshBuildData(
@@ -2962,8 +3355,8 @@ function canvasRebuild(targetSelector) {
         ),
         "mesh-dp-sel-eq",
         "meshSwitchDpEq",
-        _origW + _gap + _cardW + _gap,
-        _tH,
+        _origW + _gap,
+        _eqViewY,
         _eqW,
         _contentH,
         _sharedScale,
@@ -2972,6 +3365,18 @@ function canvasRebuild(targetSelector) {
       );
       _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
+      _renderFormulaCard(
+        zoomLayer.append("g"),
+        _origW + _gap + _eqW + _gap,
+        _tH,
+        _cardW,
+        _contentH,
+        true, // skipBarCard: bar chart rendered by _drawPinnedLink at link midpoint
+      );
+      _replayFormulaLines();
+
+      _drawPinnedLink(zoomLayer, svg.node(), false);
+
       _topoLayout = {
         mode: "three",
         origW: _origW,
@@ -2979,7 +3384,7 @@ function canvasRebuild(targetSelector) {
         eqW: _eqW,
         gap: _gap,
         titleH: _tH,
-        cardX: _origW + _gap,
+        cardX: _origW + _gap + _eqW + _gap,
       };
       _renderState.mode = "compare";
       _renderState.orig.tp = meshOriginal.tp;
@@ -2991,14 +3396,12 @@ function canvasRebuild(targetSelector) {
       _renderState.eq.dp = meshEquivalent.dp;
       _renderState.eq.activeDp = meshEqDp;
     } else if (meshOriginal && meshEquivalent && _isSimulation) {
-      // ── Simulation Mode: Orig + Card + Eq (card shows bar chart on rank pin) ──
+      // ── Simulation Mode: Orig + Eq + Card (card shows bar chart on rank pin) ──
       if (!isSim) {
-        document.getElementById("mesh-tpInput").parentElement.style.display = "none";
-        document.getElementById("mesh-ppInput").parentElement.style.display = "none";
-        document.getElementById("mesh-dpInput").parentElement.style.display = "none";
-        if (toolbar.querySelector("button")) toolbar.querySelector("button").style.display = "none";
-        document.getElementById("mesh-npu-count").textContent =
-          "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs";
+        _safeHideMeshInputs();
+        _safeHideToolbarButton();
+        _safeSetNpuCount(
+          "原始组网 " + _meshNpuTotal(meshOriginal) + " NPUs  |  等效组网 " + _meshNpuTotal(meshEquivalent) + " NPUs");
         document.getElementById("canvas-label").textContent =
           (meshOriginal.name || "原始组网") + "  vs  " + (meshEquivalent.name || "等效组网");
       }
@@ -3009,9 +3412,13 @@ function canvasRebuild(targetSelector) {
       var _sW = _availForTopos / 2;
       var _sContentH = topoH - _sTH;
       var _sScale = isSim ? _topoScale : 0.5;
+      var _sDimsOrig = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
+      var _sDimsEq = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
+      // Align equivalent bottom with original bottom
+      var _eqViewY = _sTH + (_sDimsOrig.dpH - _sDimsEq.dpH) * _sScale;
 
-      var _cardX = _sW + _sGap + 150;
-      var _eqX = _cardX + _cardW + _sGap;
+      var _eqX = _sW + _sGap;
+      var _cardX = _eqX + _sW + _sGap;
 
       if (meshOrigDp >= meshOriginal.dp) meshOrigDp = meshOriginal.dp - 1;
       if (meshEqDp >= meshEquivalent.dp) meshEqDp = meshEquivalent.dp - 1;
@@ -3046,7 +3453,15 @@ function canvasRebuild(targetSelector) {
       );
       _populateDpSelect("mesh-dp-sel-orig", meshOriginal.dp, meshOrigDp);
 
-      // Center card — only visible when a rank is pinned
+      _meshBuildView(
+        zoomLayer.append("g"),
+        meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
+        "mesh-dp-sel-eq", "meshSwitchDpEq",
+        _eqX, _eqViewY, _sW, _sContentH, _sScale, false, true,
+      );
+      _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
+
+      // Right card — only visible when a rank is pinned
       // Preserve sim-specific detail state across rebuilds (not from _centerPanelState)
       var _simDetail = _simPanelLayout ? {
         detailVisible: _simPanelLayout.detailVisible,
@@ -3062,7 +3477,9 @@ function canvasRebuild(targetSelector) {
       var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
       var cardH = Math.max(_detailVisible ? 420 : 280, _sContentH);
       var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
-      if (!window._pinnedSim) cardG.attr("display", "none");
+      // Hide card when no rank pinned OR simulation not yet completed
+      var _simDone = !!(window._simCompleted);
+      if (!window._pinnedSim || !_simDone) cardG.attr("display", "none");
       cardG.append("rect")
         .attr("x", _cardX).attr("y", _sTH)
         .attr("width", _cardW).attr("height", cardH)
@@ -3084,8 +3501,8 @@ function canvasRebuild(targetSelector) {
       }
       var barAreaH = Math.max(0, availH - detailH);
       var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
-      // Placeholder when no rank pinned
-      if (!window._pinnedSim) {
+      // Placeholder when sim completed but no rank pinned yet
+      if (_simDone && !window._pinnedSim) {
         barG.append("text")
           .attr("x", _cardX + _cardW / 2)
           .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
@@ -3113,15 +3530,9 @@ function canvasRebuild(targetSelector) {
         detailY: barAreaY + barAreaH + 8,
       };
 
-      _meshBuildView(
-        zoomLayer.append("g"),
-        meshBuildData(meshEquivalent.tp, meshEquivalent.pp, meshEquivalent.dp, meshEqDp),
-        "mesh-dp-sel-eq", "meshSwitchDpEq",
-        _eqX, _sTH, _sW, _sContentH, _sScale, false, true,
-      );
-      _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
-
       _topoLayout = { mode: "simulation", origW: _sW, eqW: _sW, cardW: _cardW, gap: _sGap, titleH: _sTH, cardX: _cardX };
+
+      _drawPinnedLink(zoomLayer, svg.node(), true);
       _renderState.mode = "simulation";
     } else if (_formulaCardReady && meshOriginal) {
       // ── Two-Part Mode: Orig + Card ──
@@ -3135,15 +3546,9 @@ function canvasRebuild(targetSelector) {
 
       if (meshOrigDp >= entry2.dp) meshOrigDp = entry2.dp - 1;
 
-      document.getElementById("mesh-tpInput").parentElement.style.display =
-        "none";
-      document.getElementById("mesh-ppInput").parentElement.style.display =
-        "none";
-      document.getElementById("mesh-dpInput").parentElement.style.display =
-        "none";
-      toolbar.querySelector("button").style.display = "none";
-      document.getElementById("mesh-npu-count").textContent =
-        "Total NPUs: " + _meshNpuTotal(entry2);
+      _safeHideMeshInputs();
+      _safeHideToolbarButton();
+      _safeSetNpuCount("Total NPUs: " + _meshNpuTotal(entry2));
       document.getElementById("canvas-label").textContent =
         (entry2.name || "组网拓扑") +
         " | " +
@@ -3208,15 +3613,11 @@ function canvasRebuild(targetSelector) {
       var entry = meshOriginal || meshEquivalent;
       if (meshOrigDp >= entry.dp) meshOrigDp = entry.dp - 1;
 
-      document.getElementById("mesh-tpInput").value = entry.tp;
-      document.getElementById("mesh-ppInput").value = entry.pp;
-      document.getElementById("mesh-dpInput").value = entry.dp;
-      document.getElementById("mesh-tpInput").parentElement.style.display = "";
-      document.getElementById("mesh-ppInput").parentElement.style.display = "";
-      document.getElementById("mesh-dpInput").parentElement.style.display = "";
-      toolbar.querySelector("button").style.display = "";
-      document.getElementById("mesh-npu-count").textContent =
-        "Total NPUs: " + _meshNpuTotal(entry);
+      _safeSetMeshInputs(entry.tp, entry.pp, entry.dp);
+      _safeShowMeshInputs();
+      var _tb = document.getElementById("mesh-config-toolbar");
+      if (_tb) { var _btn = _tb.querySelector("button"); if (_btn) _btn.style.display = ""; }
+      _safeSetNpuCount("Total NPUs: " + _meshNpuTotal(entry));
       document.getElementById("canvas-label").textContent =
         (entry.name || "组网拓扑") +
         " | " +
@@ -3268,7 +3669,7 @@ function canvasRebuild(targetSelector) {
       modelX0 = 8;
       modelAreaWEq = _meW3 - 16;
       modelX0Eq =
-        _moW3 + _topoLayout.gap + _topoLayout.cardW + _topoLayout.gap + 8;
+        _moW3 + _topoLayout.gap + 8;
     } else if (_topoLayout && _topoLayout.mode === "two") {
       // Two-part: only original model, use full topology width
       var _moW2 = _topoLayout.origW;
@@ -3681,48 +4082,58 @@ function canvasRecenter(targetSelector, _retry, skipTransition) {
 
 // ── _appendFormulaLine: append one line to the formula card with animation ──
 
-var _formulaLineY = 0;       // current Y position for appending
-var _formulaCardG = null;    // reference to formula card group
-var _formulaCardRect = null; // reference to formula card rect
+// ── Typewriter effect: character-by-character formula card loading ──
+// Fixed at 8ms/char for smooth typewriter animation
+var FORMULA_CHAR_INTERVAL = 8;
+var FORMULA_EASE = d3.easeCubicOut;
+
+// ── Typewriter state ──
+var _typewriterQueue = [];       // lines waiting to be typed
+var _typewriterState = null;     // { textEl, fullText, charIdx, lineH, isSectionLabel }
+var _typewriterTimer = null;
+var _formulaLineY = 0;
+var _formulaCardG = null;
+var _formulaCardRect = null;
 var _formulaCardPad = 14;
 var _formulaCardHeaderH = 0;
 
-function _appendFormulaLine(section, line) {
-  // Always buffer so lines survive SVG rebuilds (e.g. Two-Part → Three-Part)
-  if (!window._pendingFormulaLines) window._pendingFormulaLines = [];
-  window._pendingFormulaLines.push({ section: section, line: line });
-
+function _ensureFormulaCard() {
   var cardGroups = d3.selectAll(".formula-card-inner");
-  if (cardGroups.empty()) return;
-
+  if (cardGroups.empty()) return null;
   var cardG = d3.select(cardGroups.nodes()[0]);
   _formulaCardG = cardG;
   _formulaCardRect = cardG.select("rect.formula-card-rect");
 
-  // Read card origin from the rect to offset text into card coordinate space
-  var cardX = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("x")) || 0;
-  var cardY = _formulaCardRect.empty() ? 0 : parseFloat(_formulaCardRect.attr("y")) || 0;
-
   if (_formulaLineY === 0) {
-    // Initialize Y from header
-    _formulaCardHeaderH = _formulaCardPad + 16 + 10; // pad + titleFont + gap
+    _formulaCardHeaderH = _formulaCardPad + 16 + 10;
     _formulaLineY = _formulaCardHeaderH;
   }
 
   var contentG = cardG.select(".formula-content-group");
   if (contentG.empty()) {
     contentG = cardG.append("g").attr("class", "formula-content-group");
-    // Re-register with _centerPanelState so collapse toggle affects this group
     if (typeof _centerPanelState !== "undefined") {
       _centerPanelState.formulaG = contentG;
       _centerPanelState._formulaTexts = [];
     }
   }
-  if (contentG.attr("display") === "none") {
-    contentG.attr("display", null);
+  if (contentG.attr("display") === "none") contentG.attr("display", null);
+  return contentG;
+}
+
+function _startTypewriterItem(item) {
+  var contentG = _ensureFormulaCard();
+  if (!contentG) {
+    // Card not ready yet — put item back in queue
+    _typewriterQueue.unshift(item);
+    return;
   }
 
-  var isSectionLabel = line.indexOf("▸") === 0;
+  var cardRect = _formulaCardRect;
+  var cardX = cardRect.empty() ? 0 : parseFloat(cardRect.attr("x")) || 0;
+  var cardY = cardRect.empty() ? 0 : parseFloat(cardRect.attr("y")) || 0;
+
+  var isSectionLabel = item.line.indexOf("▸") === 0;
   var fontSize = isSectionLabel ? "12px" : "10px";
   var fontFamily = isSectionLabel ? "var(--font-sans)" : "var(--font-mono)";
   var fontColor = isSectionLabel ? "var(--teal)" : "var(--text-primary)";
@@ -3738,32 +4149,85 @@ function _appendFormulaLine(section, line) {
     .attr("font-weight", fontWeight)
     .attr("font-size", fontSize)
     .attr("font-family", fontFamily)
-    .attr("opacity", 0)
-    .text(line);
+    .attr("opacity", 1)
+    .text("");
 
-  textEl
-    .transition()
-    .duration(350)
-    .ease(d3.easeCubicOut)
-    .attr("opacity", 1);
+  _typewriterState = {
+    textEl: textEl,
+    fullText: item.line,
+    charIdx: 0,
+    lineH: lineH,
+    isSectionLabel: isSectionLabel,
+  };
 
-  _formulaLineY += lineH;
-
-  // Expand card rect
-  if (_formulaCardRect && !_formulaCardRect.empty()) {
-    var newH = _formulaLineY + _formulaCardPad;
-    _formulaCardRect
-      .transition()
-      .duration(300)
-      .ease(d3.easeCubicOut)
-      .attr("height", newH);
-  }
-
-  // Recenter canvas after each line
-  canvasRecenter();
+  // Kick off the character-by-character tick
+  _typewriterTimer = setTimeout(_typewriterTick, FORMULA_CHAR_INTERVAL);
 }
 
+function _typewriterTick() {
+  var st = _typewriterState;
+  if (!st) { _typewriterTimer = null; return; }
+
+  if (st.charIdx >= st.fullText.length) {
+    // Current line fully typed — move to next line
+    _typewriterState = null;
+    _formulaLineY += st.lineH;
+
+    // Expand card height
+    if (_formulaCardRect && !_formulaCardRect.empty()) {
+      var newH = _formulaLineY + _formulaCardPad;
+      _formulaCardRect.attr("height", newH);
+    }
+
+    // Recenter once per completed line
+    canvasRecenter();
+
+    // Process next queued line
+    if (_typewriterQueue.length) {
+      _startTypewriterItem(_typewriterQueue.shift());
+    } else {
+      _typewriterTimer = null;
+    }
+    return;
+  }
+
+  // Reveal next character
+  st.charIdx++;
+  st.textEl.text(st.fullText.substring(0, st.charIdx));
+
+  // Schedule next tick
+  _typewriterTimer = setTimeout(_typewriterTick, FORMULA_CHAR_INTERVAL);
+}
+
+function _appendFormulaLine(section, line) {
+  // Always buffer so lines survive SVG rebuilds (e.g. Two-Part → Three-Part)
+  if (!window._pendingFormulaLines) window._pendingFormulaLines = [];
+  window._pendingFormulaLines.push({ section: section, line: line });
+
+  // Enqueue for typewriter effect
+  _typewriterQueue.push({ section: section, line: line });
+
+  // Kick off typewriter if idle
+  if (!_typewriterTimer && !_typewriterState) {
+    _typewriterTimer = setTimeout(function () {
+      _startTypewriterItem(_typewriterQueue.shift());
+    }, FORMULA_CHAR_INTERVAL);
+  }
+}
+
+// Public API: reset typewriter (called on new session)
+window._resetFormulaQueue = function () {
+  _typewriterQueue = [];
+  _typewriterState = null;
+  if (_typewriterTimer) { clearTimeout(_typewriterTimer); _typewriterTimer = null; }
+};
+
 function _replayFormulaLines() {
+  // Clear typewriter — replay renders all saved lines at once (no animation)
+  _typewriterQueue = [];
+  _typewriterState = null;
+  if (_typewriterTimer) { clearTimeout(_typewriterTimer); _typewriterTimer = null; }
+
   var cardGroups = d3.selectAll(".formula-card-inner");
   if (cardGroups.empty()) return;
   var cardG = d3.select(cardGroups.nodes()[0]);
@@ -5201,13 +5665,16 @@ function _renderOneModel(
     var tcx = D.TENSOR_X + col * cellW;
     var tcy = D.TENSOR_Y + row * cellH;
     var cellClass = "tensor-cell" + (isHighlighted ? " pinned" : "");
+    var cellFill = isHighlighted
+      ? "url(#" + _currentFilterPrefix + (labelColor === "var(--cyan)" ? "pinned-orig-fill" : "pinned-eq-fill") + ")"
+      : "var(--bg-surface)";
     var cellRect = sg
       .append("rect")
       .attr("x", tcx)
       .attr("y", tcy)
       .attr("width", cellW)
       .attr("height", cellH)
-      .attr("fill", "var(--bg-surface)")
+      .attr("fill", cellFill)
       .attr("stroke", isHighlighted ? "#ff8f40" : "var(--text-muted)")
       .attr("stroke-width", isHighlighted ? 2 : 0.5)
       .attr("stroke-dasharray", isHighlighted ? "3 2" : "none")
@@ -5299,12 +5766,13 @@ function _renderOneModel(
     if (hasHighlight) {
       var hlPi = highlightPpIdx;
       var hlRowY = mapTableY + HEADER_H + hlPi * ROW_H;
+      var hlRowFill = "url(#" + _currentFilterPrefix + (labelColor === "var(--cyan)" ? "pinned-orig-fill" : "pinned-eq-fill") + ")";
       sg.append("rect")
         .attr("x", tableX)
         .attr("y", hlRowY)
         .attr("width", tableW)
         .attr("height", ROW_H)
-        .attr("fill", hlPi % 2 === 0 ? "var(--bg-surface)" : "#161b22")
+        .attr("fill", hlRowFill)
         .attr("stroke", "#ff8f40")
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "3 2")
