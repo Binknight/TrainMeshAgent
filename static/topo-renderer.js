@@ -1442,7 +1442,17 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     .attr("opacity", 0);
 
   // ── Floating bar chart card at path midpoint ──
-  // Works for both modeling and simulation canvases — same floating style
+  // On simulation canvas: only show card when sim is running or completed
+  //   - Sim not started: no card, just the connecting line
+  //   - Sim running: card with animated "仿真任务正在执行中" placeholder
+  //   - Sim completed: card with bar chart data
+  // On modeling canvas: always show card
+  var _simStartedFlag = typeof window !== "undefined" && window._simStarted;
+  var _simDoneFlag = typeof window !== "undefined" && window._simCompleted;
+  if (isSimCanvas && !_simStartedFlag && !_simDoneFlag) {
+    // Sim not started → skip card creation, only show connecting line
+    // (animation still runs for the line blink and particles)
+  } else {
   var pathNode0 = linePath.node();
   var pathLen0 = pathNode0.getTotalLength();
   var pathMid = pathNode0.getPointAtLength(pathLen0 / 2);
@@ -1509,14 +1519,47 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
 
   // Placeholder when no rank data
   if (!rd) {
-    barG.append("text")
-      .attr("x", cardX + BAR_CARD_W / 2)
-      .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
-      .attr("text-anchor", "middle")
-      .attr("fill", "var(--text-muted)")
-      .attr("font-size", "11px")
-      .attr("font-family", "var(--font-sans)")
-      .text("点击拓扑中的 Rank 查看性能详情");
+    if (isSimCanvas && _simStartedFlag && !_simDoneFlag) {
+      // ── Sim running: animated "仿真任务正在执行中" placeholder ──
+      var _simRunG = barG.append("g").attr("class", "sim-running-placeholder");
+      // Spinner circle (animated via CSS / dashoffset)
+      var spinnerCX = cardX + BAR_CARD_W / 2;
+      var spinnerCY = barAreaY + Math.max(barAreaH / 2, 20) - 14;
+      _simRunG.append("circle")
+        .attr("cx", spinnerCX).attr("cy", spinnerCY)
+        .attr("r", 10).attr("fill", "none")
+        .attr("stroke", "#39bae6").attr("stroke-width", 2.5)
+        .attr("stroke-dasharray", "16 48")
+        .attr("stroke-linecap", "round")
+        .attr("opacity", 0.8);
+      // Animated dots for the "执行中" text
+      _simRunG.append("text")
+        .attr("x", spinnerCX).attr("y", spinnerCY + 24)
+        .attr("text-anchor", "middle")
+        .attr("fill", "#39bae6")
+        .attr("font-weight", "600")
+        .attr("font-size", "12px")
+        .attr("font-family", "var(--font-sans)")
+        .text("仿真任务正在执行中");
+      // Pulsing sub-label
+      _simRunG.append("text")
+        .attr("x", spinnerCX).attr("y", spinnerCY + 40)
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "9px")
+        .attr("font-family", "var(--font-sans)")
+        .attr("opacity", 0.6)
+        .text("完成后将自动显示性能数据");
+    } else {
+      barG.append("text")
+        .attr("x", cardX + BAR_CARD_W / 2)
+        .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "11px")
+        .attr("font-family", "var(--font-sans)")
+        .text("点击拓扑中的 Rank 查看性能详情");
+    }
   }
 
   // Detail charts group (hidden by default)
@@ -1562,6 +1605,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
       _drawRankBars(rd);
     }
   }
+  } // end of else block (card creation — skipped when sim not started)
 
   // ── Animation ──
   _startFlowAnimation();
@@ -1593,6 +1637,12 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
         borderRect
           .attr("stroke-dashoffset", borderOffset)
           .attr("stroke-opacity", borderAlpha);
+      }
+      // ── Sim-running spinner animation ──
+      var spinnerCircle = _linkBarCardG.select(".sim-running-placeholder circle");
+      if (!spinnerCircle.empty()) {
+        var spinOffset = -(elapsed * 0.08) % 64;
+        spinnerCircle.attr("stroke-dashoffset", spinOffset);
       }
     }
 

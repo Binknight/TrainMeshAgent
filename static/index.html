@@ -4699,7 +4699,7 @@
                 window._simCompleted = false;
                 _comparisonReport = null;
                 _simStarted = false;
-                _pendingWorkflowState = null;
+                window._simStarted = false;
                 _pendingSimData = false;
                 checkSimReady();
                 initWorkflow();
@@ -5022,7 +5022,7 @@
                         }
                         // Defer workflow update to done handler for canvas sync
                         _simStarted = false;
-                        _simCompleted = true;
+                        window._simStarted = false;
                         window._simCompleted = true;
                         _pendingSimData = true;
                         break;
@@ -6586,6 +6586,7 @@
 
                 // Switch to simulation tab immediately
                 _simStarted = true;
+                window._simStarted = true;
                 checkSimReady();
                 switchCanvasTab("simulation");
 
@@ -6617,7 +6618,7 @@
                         btn.classList.add("sim-retry");
                         setStatus("验证失败");
                         _simStarted = false;
-                        _simFailed = true;
+                        window._simStarted = false;
                         checkSimReady();
                         return;
                     }
@@ -6640,7 +6641,7 @@
                     }
 
                     _simStarted = false;
-                    _simStreamDone = true; // no mock streaming — data comes from MCP
+                    window._simStarted = false; // no mock streaming — data comes from MCP
                     _showActualData = true;
 
                     if (results.comparison) {
@@ -6676,7 +6677,7 @@
                     });
                 } catch (e) {
                     _simStarted = false;
-                    _simFailed = true;
+                    window._simStarted = false;
                     setStatus("验证失败");
                     addMessage("error", "仿真任务失败: " + (e.message || "MCP Server 不可用"));
                     updateWorkflowNode("simulation", "failed");
@@ -6694,7 +6695,7 @@
             var _simWs = null; // WebSocket for simulation status
             var _simStreamDone = false; // true when 60s mock streaming countdown expires
             var _simStarted = false;
-            var _comparisonReport = null; // ComparisonReport from backend, set when simulation completes
+            window._simStarted = false;
 
             function _connectSimWebSocket(taskIds) {
                 // Close any existing connection
