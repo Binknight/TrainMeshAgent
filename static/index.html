@@ -2593,6 +2593,10 @@
                                     <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" disabled />
                                 </div>
                                 <div class="workflow-param-row">
+                                    <label>V (词表)</label>
+                                    <input id="wf-orig-model-vocab" type="number" value="32000" min="1" max="1048576" />
+                                </div>
+                                <div class="workflow-param-row">
                                     <label>S</label>
                                     <input id="wf-orig-model-s" type="number" value="2048" min="1" max="131072" />
                                 </div>
@@ -4148,6 +4152,7 @@
                 var origB = document.getElementById("wf-orig-model-b").value;
                 var origB_micro = document.getElementById("wf-orig-model-b-micro").value;
                 var origDff = document.getElementById("wf-orig-model-dff").value;
+                var origVocab = document.getElementById("wf-orig-model-vocab").value;
                 var strategy =
                     document.getElementById("wf-equiv-strategy").value;
                 closeWorkflowParams();
@@ -4168,6 +4173,7 @@
                         B: parseInt(origB),
                         b_micro: parseInt(origB_micro),
                         dff: parseInt(origDff),
+                        vocab_size: parseInt(origVocab),
                         strategy: strategy,
                     });
                 } else {
@@ -4188,6 +4194,8 @@
                         origH +
                         ", A=" +
                         origA +
+                        ", V=" +
+                        origVocab +
                         ", S=" +
                         origS +
                         ", B=" +
@@ -4201,6 +4209,7 @@
                         original_seq_len: parseInt(origS) || 2048,
                         original_batch_size: parseInt(origB) || 32,
                         original_dff: parseInt(origDff) || 14336,
+                        original_vocab_size: parseInt(origVocab) || 32000,
                         strategy: strategy,
                     });
                 }
@@ -4699,7 +4708,7 @@
                 window._simCompleted = false;
                 _comparisonReport = null;
                 _simStarted = false;
-                _pendingWorkflowState = null;
+                window._simStarted = false;
                 _pendingSimData = false;
                 checkSimReady();
                 initWorkflow();
@@ -5022,7 +5031,7 @@
                         }
                         // Defer workflow update to done handler for canvas sync
                         _simStarted = false;
-                        _simCompleted = true;
+                        window._simStarted = false;
                         window._simCompleted = true;
                         _pendingSimData = true;
                         break;
@@ -6096,9 +6105,6 @@
                                 }
                                 _initTimelineIncr(timelineId, newOps, totalUs);
                                 _initOpspecIncr(opspecId);
-                                // Fetch secondary (HBM / Comm) details in parallel
-                                _renderHbmDetail(prefix, globalRank);
-                                _renderCommDetail(prefix, globalRank);
                             }
                             // Append new operators
                             for (var i = 0; i < newOps.length; i++) {
@@ -6450,9 +6456,7 @@
                 // Build the multi-section layout
                 var sections = [
                     { id: "timeline", title: "算子执行时序", sub: "Operator Timeline — 横轴时间 · 颜色区分算子类型", type: "svg" },
-                    { id: "opspec", title: "负载描述文件", sub: "Operator Spec — 算子 Shape · Stage · Phase 描述", type: "table" },
-                    { id: "hbm", title: "HBM 内存分项", sub: "Weights / Gradients / Optimizer / Activations (GB)", type: "hbm" },
-                    { id: "comm", title: "通信详情", sub: "TP / PP / DP — 次数 · 参与卡数 · 单次/总量 (GB)", type: "comm" }
+                    { id: "opspec", title: "负载描述文件", sub: "Operator Spec — 算子 Shape · Stage · Phase 描述", type: "table" }
                 ];
 
                 // Frozen header
@@ -6478,8 +6482,6 @@
                     var chartStyle;
                     if (sec.id === "opspec") {
                         chartStyle = 'min-height:100px;max-height:360px;overflow:auto;padding:0;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
-                    } else if (sec.id === "hbm" || sec.id === "comm") {
-                        chartStyle = 'min-height:80px;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text-primary)';
                     } else {
                         chartStyle = 'min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
                     }
@@ -6586,6 +6588,7 @@
 
                 // Switch to simulation tab immediately
                 _simStarted = true;
+                window._simStarted = true;
                 checkSimReady();
                 switchCanvasTab("simulation");
 
@@ -6617,7 +6620,7 @@
                         btn.classList.add("sim-retry");
                         setStatus("验证失败");
                         _simStarted = false;
-                        _simFailed = true;
+                        window._simStarted = false;
                         checkSimReady();
                         return;
                     }
@@ -6640,7 +6643,7 @@
                     }
 
                     _simStarted = false;
-                    _simStreamDone = true; // no mock streaming — data comes from MCP
+                    window._simStarted = false; // no mock streaming — data comes from MCP
                     _showActualData = true;
 
                     if (results.comparison) {
@@ -6676,7 +6679,7 @@
                     });
                 } catch (e) {
                     _simStarted = false;
-                    _simFailed = true;
+                    window._simStarted = false;
                     setStatus("验证失败");
                     addMessage("error", "仿真任务失败: " + (e.message || "MCP Server 不可用"));
                     updateWorkflowNode("simulation", "failed");
@@ -6694,7 +6697,7 @@
             var _simWs = null; // WebSocket for simulation status
             var _simStreamDone = false; // true when 60s mock streaming countdown expires
             var _simStarted = false;
-            var _comparisonReport = null; // ComparisonReport from backend, set when simulation completes
+            window._simStarted = false;
 
             function _connectSimWebSocket(taskIds) {
                 // Close any existing connection

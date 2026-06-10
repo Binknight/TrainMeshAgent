@@ -25,13 +25,6 @@ _MICRO_BATCH = 4
 _QUANT_COEFF = 1
 
 
-def _estimate_flops_old(
-    L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int
-) -> float:
-    """FLOPs = [(72*B*S*H^2 + 12*B*S^2*H) / TP] * L/PP"""
-    return ((72 * B * S * H**2 + 12 * B * S**2 * H) / tp) * L / pp
-
-
 def _estimate_flops(
     L: int, H: int, S: int, B: int, dff: int, dp: int, tp: int, pp: int
 ) -> float:
@@ -39,15 +32,15 @@ def _estimate_flops(
     return (6 * B * S * L * H / (dp * pp * tp)) * (4 * H + 3 * dff + 2 * S)
 
 
-def _estimate_hbm_gb_old(
-    L: int, H: int, S: int, B: int, dp: int, tp: int, pp: int, a: float = 1
+def _estimate_flops_first_last(
+    L: int, H: int, S: int, B: int, dff: int, dp: int, tp: int, pp: int, V: int
 ) -> float:
-    """HBM = [L*(12*H^2+4H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4H)/(TP*PP)] * a / 1e9"""
-    param_term = L * (12 * H**2 + 4 * H)
-    term1 = param_term / (tp * pp)
-    term2 = B * S * H * L / pp
-    term3 = param_term / (tp * pp)
-    return (term1 + term2 + term3) * a / 1e9
+    """首末PP rank的FLOPs = 中间计算值 + (6 * V * H) / TP * (B / DP) * S
+
+    首/末PP stage 额外包含 embedding / lm_head 的前向+反向计算量。
+    """
+    middle = _estimate_flops(L, H, S, B, dff, dp, tp, pp)
+    return middle + (6 * V * H) / tp * (B / dp) * S
 
 
 def _estimate_hbm_gb(L: int, H: int, dff: int, tp: int, pp: int) -> float:
@@ -55,16 +48,19 @@ def _estimate_hbm_gb(L: int, H: int, dff: int, tp: int, pp: int) -> float:
     return 18 * L / pp * ((4 * H**2 + 3 * H * dff) / tp + 2 * H) / 1e9
 
 
-def _estimate_dp_comm_gb_old(L: int, H: int, tp: int, pp: int) -> float:
-    """DP comm = 8*L*(4H^2+3H*4)/(TP*PP) / 1e9"""
-    return 8 * L * (4 * H**2 + 3 * H * 4 * H) / (tp * pp) / 1e9
+def _estimate_hbm_gb_first_last(
+    L: int, H: int, dff: int, tp: int, pp: int, V: int
+) -> float:
+    """首末PP rank的HBM = 中间计算值 + (V * H) / (TP * 1e9)
+
+    首/末PP stage 额外持有 embedding / lm_head 权重，大小为 V*H，
+    按 TP 切分后每个 rank 持有 V*H/TP 个元素，转换为 GB。
+    """
+    middle = _estimate_hbm_gb(L, H, dff, tp, pp)
+    return middle + V * H / (tp * 1e9)
 
 
-def _estimate_dp_comm_gb_old_lh(L: int, H: int, dp: int) -> float:
-    """DP comm = 2*(DP-1)/DP * 12*L*H^2 / 1e9"""
-    if dp <= 1:
-        return 0.0
-    return 2 * (dp - 1) / dp * 12 * L * H**2 / 1e9
+_DEFAULT_VOCAB_SIZE = 32000
 
 
 def _estimate_dp_comm_gb(L: int, H: int, dff: int, dp: int, tp: int, pp: int) -> float:
@@ -245,13 +241,24 @@ class MeshProfilerSkill(BaseSkill):
                 or 14336
             )
             a = float(arguments.get("quant_coeff", _QUANT_COEFF))
+            V = int(
+                arguments.get("vocab_size")
+                or (training_model.config.vocab_size if training_model and hasattr(training_model.config, "vocab_size") else None)
+                or _DEFAULT_VOCAB_SIZE
+            )
 
-            flops = _estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
-            hbm = _estimate_hbm_gb(L, H, dff_val, tp, pp)
+            flops_mid = _estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
+            flops_edge = _estimate_flops_first_last(L, H, S, B, dff_val, dp, tp, pp, V)
+            hbm_mid = _estimate_hbm_gb(L, H, dff_val, tp, pp)
+            hbm_edge = _estimate_hbm_gb_first_last(L, H, dff_val, tp, pp, V)
             dp_comm = _estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
             tp_comm = _estimate_tp_comm_gb(L, H, S, b_micro, pp)
             pp_comm = _estimate_pp_comm_mb(H, S, b_micro)
             for rank in range(total_nodes):
+                pp_rank = rank % pp
+                is_edge = pp > 1 and (pp_rank == 0 or pp_rank == pp - 1)
+                flops = flops_edge if is_edge else flops_mid
+                hbm = hbm_edge if is_edge else hbm_mid
                 cards.append(
                     CardMetrics(
                         card_id=f"card_{rank}",

@@ -145,9 +145,12 @@ def _persist_session(session: SessionState) -> None:
             step1_seq_len = getattr(session, f"{role}_seq_len", None)
             step1_batch_size = getattr(session, f"{role}_batch_size", None)
             step1_dff = getattr(session, f"{role}_dff", None)
+            step1_vocab_size = getattr(session, f"{role}_vocab_size", None)
             params.setdefault("seq_len", step1_seq_len or _profiler._SEQ_LEN)
             params.setdefault("batch_size", step1_batch_size or _profiler._TOTAL_BATCH)
             params.setdefault("d_ffn", step1_dff or 14336)
+            if step1_vocab_size is not None:
+                params.setdefault("vocab_size", step1_vocab_size)
             if role == "equivalent":
                 orig_model = getattr(session, "original_training_model", None)
                 base_name = (

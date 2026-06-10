@@ -73,6 +73,7 @@ async function fetchEstimates(
   seqLen,
   batchSize,
   microBatch,
+  vocabSize,
 ) {
   // ── Cancel any previous in-flight request for the same side ──
   var oldCtrl = _estimateFetchAbort[side];
@@ -102,6 +103,7 @@ async function fetchEstimates(
     if (seqLen != null) body.seq_len = seqLen;
     if (batchSize != null) body.total_batch = batchSize;
     if (microBatch != null) body.micro_batch = microBatch;
+    if (vocabSize != null) body.vocab_size = vocabSize;
 
     var resp = await fetch(API + "/session/estimate", {
       method: "POST",
@@ -1284,11 +1286,35 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   _linkBarCardG = null;
 
   var pinned = isSimCanvas ? _simPinnedRank : meshPinnedRank;
-  if (!pinned || pinned.mappedRank == null) return;
+  if (!pinned || pinned.mappedRank == null) {
+    // If on sim canvas and no pinned link, ensure _simPanelLayout has null card fields
+    // so the state swap in _rebuildSimWithBars doesn't pollute _centerPanelState
+    if (isSimCanvas && _simPanelLayout) {
+      _simPanelLayout.barG = null;
+      _simPanelLayout.g = null;
+      _simPanelLayout.barCardG = null;
+      _simPanelLayout.barCardRect = null;
+      _simPanelLayout.barCardTitle = null;
+      _simPanelLayout.barCardVisible = false;
+      _simPanelLayout.detailG = null;
+    }
+    return;
+  }
 
   var origRect = svg.querySelector('.tp-rect.pinned[data-side="orig"]');
   var eqRect = svg.querySelector('.tp-rect.pinned[data-side="eq"]');
-  if (!origRect || !eqRect) return;
+  if (!origRect || !eqRect) {
+    if (isSimCanvas && _simPanelLayout) {
+      _simPanelLayout.barG = null;
+      _simPanelLayout.g = null;
+      _simPanelLayout.barCardG = null;
+      _simPanelLayout.barCardRect = null;
+      _simPanelLayout.barCardTitle = null;
+      _simPanelLayout.barCardVisible = false;
+      _simPanelLayout.detailG = null;
+    }
+    return;
+  }
 
   // Compute center of each rect in the zoom-layer coordinate space.
   function _rectCenterInZoomLayer(rect) {
@@ -1418,72 +1444,117 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     .attr("opacity", 0);
 
   // ── Floating bar chart card at path midpoint ──
-  if (!isSimCanvas) {
-    var pathNode0 = linePath.node();
-    var pathLen0 = pathNode0.getTotalLength();
-    var pathMid = pathNode0.getPointAtLength(pathLen0 / 2);
+  // On simulation canvas: only show card when sim is running or completed
+  //   - Sim not started: no card, just the connecting line
+  //   - Sim running: card with animated "仿真任务正在执行中" placeholder
+  //   - Sim completed: card with bar chart data
+  // On modeling canvas: always show card
+  var _simStartedFlag = typeof window !== "undefined" && window._simStarted;
+  var _simDoneFlag = typeof window !== "undefined" && window._simCompleted;
+  if (isSimCanvas && !_simStartedFlag && !_simDoneFlag) {
+    // Sim not started → skip card creation, only show connecting line
+    // (animation still runs for the line blink and particles)
+  } else {
+  var pathNode0 = linePath.node();
+  var pathLen0 = pathNode0.getTotalLength();
+  var pathMid = pathNode0.getPointAtLength(pathLen0 / 2);
 
-    var BAR_CARD_W = 220;
-    var BAR_CARD_MIN_H = 140;
-    var BAR_CARD_PAD = 10;
-    var BAR_CARD_TITLE_FONT = 13;
-    var BAR_CARD_HEADER_H = BAR_CARD_PAD + BAR_CARD_TITLE_FONT + 8;
+  var BAR_CARD_W = 300;
+  var BAR_CARD_MIN_H = 140;
+  var BAR_CARD_PAD = 10;
+  var BAR_CARD_TITLE_FONT = 13;
+  var BAR_CARD_HEADER_H = BAR_CARD_PAD + BAR_CARD_TITLE_FONT + 8;
 
-    // Determine card height based on rank data
-    var rd = _centerPanelState.rankData;
-    var hasBoth = !!(rd && rd.orig && rd.eq);
-    var hasSim = !!(rd &&
-      ((rd.orig && rd.orig.metrics.actual && Object.keys(rd.orig.metrics.actual).length > 0) ||
-       (rd.eq && rd.eq.metrics.actual && Object.keys(rd.eq.metrics.actual).length > 0)));
-    var estBarsPerMetric = hasBoth && hasSim ? 4 : (hasBoth || hasSim ? 2 : 1);
-    var estMetricH = estBarsPerMetric > 2 ? 74 : (estBarsPerMetric > 1 ? 46 : 44);
-    var contentH = 4 + 20 + 14 + _BAR_METRICS.length * estMetricH + 6 + BAR_CARD_PAD;
-    var barCardH = Math.max(BAR_CARD_HEADER_H + contentH, BAR_CARD_MIN_H);
+  // Determine card height based on rank data — use the correct state object per canvas
+  var st = isSimCanvas ? _simPanelLayout : _centerPanelState;
+  var rd = st.rankData;
+  var hasBoth = !!(rd && rd.orig && rd.eq);
+  var hasSim = !!(rd &&
+    ((rd.orig && rd.orig.metrics.actual && Object.keys(rd.orig.metrics.actual).length > 0) ||
+     (rd.eq && rd.eq.metrics.actual && Object.keys(rd.eq.metrics.actual).length > 0)));
+  var estBarsPerMetric = hasBoth && hasSim ? 4 : (hasBoth || hasSim ? 2 : 1);
+  var estMetricH = estBarsPerMetric > 2 ? 74 : (estBarsPerMetric > 1 ? 46 : 44);
+  var contentH = 4 + 20 + 14 + _BAR_METRICS.length * estMetricH + 6 + BAR_CARD_PAD;
+  // When detail charts are visible, add extra height for the detail section
+  var _detailH = (st.detailVisible && st.detailMetric) ? 160 : 0;
+  var barCardH = Math.max(BAR_CARD_HEADER_H + contentH + _detailH, BAR_CARD_MIN_H);
 
-    // Position: centered on path midpoint x
-    // Card appears on the opposite side of the curve arc:
-    //   Upper ranks (curve downward) → card above the ranks
-    //   Lower ranks (curve upward) → card below the ranks
-    var cardCX = pathMid.x;
-    var cardX = cardCX - BAR_CARD_W / 2;
-    var cardY;
-    if (isUpper) {
-      // Ranks are upper, curve arcs upward → card below the curve
-      cardY = maxY + arcOffset + 10;
+  // Position: centered on path midpoint x
+  // Card appears on the opposite side of the curve arc:
+  //   Upper ranks (curve downward) → card above the ranks
+  //   Lower ranks (curve upward) → card below the ranks
+  var cardCX = pathMid.x;
+  var cardX = cardCX - BAR_CARD_W / 2;
+  var cardY;
+  if (isUpper) {
+    // Ranks are upper, curve arcs upward → card below the curve
+    cardY = maxY + arcOffset + 10;
+  } else {
+    // Ranks are lower, curve arcs downward → card above the curve
+    cardY = minY + arcOffset - barCardH - 10;
+  }
+
+  _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
+
+  // Card background — solid fill, animated border
+  _linkBarCardG.append("rect")
+    .attr("x", cardX).attr("y", cardY)
+    .attr("width", BAR_CARD_W).attr("height", barCardH)
+    .attr("rx", 8).attr("ry", 8)
+    .attr("class", "formula-card-rect")
+    .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
+    .attr("stroke-width", 2)
+    .attr("stroke-dasharray", "6 3")
+    .attr("stroke-linecap", "round");
+
+  // Card title
+  _linkBarCardG.append("text")
+    .attr("x", cardX + BAR_CARD_PAD).attr("y", cardY + BAR_CARD_PAD + BAR_CARD_TITLE_FONT)
+    .attr("fill", "#39bae6")
+    .attr("font-weight", "bold")
+    .attr("font-size", BAR_CARD_TITLE_FONT + "px")
+    .attr("font-family", "var(--font-sans)")
+    .text("📊 Rank 性能详情");
+
+  // Bar area group
+  var barG = _linkBarCardG.append("g").attr("class", "rank-bar-chart-group");
+  var barAreaY = cardY + BAR_CARD_HEADER_H;
+  var barAreaH = barCardH - BAR_CARD_HEADER_H - BAR_CARD_PAD;
+
+  // Placeholder when no rank data
+  if (!rd) {
+    if (isSimCanvas && _simStartedFlag && !_simDoneFlag) {
+      // ── Sim running: animated "仿真任务正在执行中" placeholder ──
+      var _simRunG = barG.append("g").attr("class", "sim-running-placeholder");
+      // Spinner circle (animated via CSS / dashoffset)
+      var spinnerCX = cardX + BAR_CARD_W / 2;
+      var spinnerCY = barAreaY + Math.max(barAreaH / 2, 20) - 14;
+      _simRunG.append("circle")
+        .attr("cx", spinnerCX).attr("cy", spinnerCY)
+        .attr("r", 10).attr("fill", "none")
+        .attr("stroke", "#39bae6").attr("stroke-width", 2.5)
+        .attr("stroke-dasharray", "16 48")
+        .attr("stroke-linecap", "round")
+        .attr("opacity", 0.8);
+      // Animated dots for the "执行中" text
+      _simRunG.append("text")
+        .attr("x", spinnerCX).attr("y", spinnerCY + 24)
+        .attr("text-anchor", "middle")
+        .attr("fill", "#39bae6")
+        .attr("font-weight", "600")
+        .attr("font-size", "12px")
+        .attr("font-family", "var(--font-sans)")
+        .text("仿真任务正在执行中");
+      // Pulsing sub-label
+      _simRunG.append("text")
+        .attr("x", spinnerCX).attr("y", spinnerCY + 40)
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--text-muted)")
+        .attr("font-size", "9px")
+        .attr("font-family", "var(--font-sans)")
+        .attr("opacity", 0.6)
+        .text("完成后将自动显示性能数据");
     } else {
-      // Ranks are lower, curve arcs downward → card above the curve
-      cardY = minY + arcOffset - barCardH - 10;
-    }
-
-    _linkBarCardG = _linkLineG.append("g").attr("class", "link-bar-card-group");
-
-    // Card background — solid fill, animated border
-    _linkBarCardG.append("rect")
-      .attr("x", cardX).attr("y", cardY)
-      .attr("width", BAR_CARD_W).attr("height", barCardH)
-      .attr("rx", 8).attr("ry", 8)
-      .attr("class", "formula-card-rect")
-      .attr("stroke", "url(#" + _currentFilterPrefix + "link-gradient)")
-      .attr("stroke-width", 2)
-      .attr("stroke-dasharray", "6 3")
-      .attr("stroke-linecap", "round");
-
-    // Card title
-    _linkBarCardG.append("text")
-      .attr("x", cardX + BAR_CARD_PAD).attr("y", cardY + BAR_CARD_PAD + BAR_CARD_TITLE_FONT)
-      .attr("fill", "#39bae6")
-      .attr("font-weight", "bold")
-      .attr("font-size", BAR_CARD_TITLE_FONT + "px")
-      .attr("font-family", "var(--font-sans)")
-      .text("📊 Rank 性能详情");
-
-    // Bar area group
-    var barG = _linkBarCardG.append("g").attr("class", "rank-bar-chart-group");
-    var barAreaY = cardY + BAR_CARD_HEADER_H;
-    var barAreaH = barCardH - BAR_CARD_HEADER_H - BAR_CARD_PAD;
-
-    // Placeholder when no rank data
-    if (!rd) {
       barG.append("text")
         .attr("x", cardX + BAR_CARD_W / 2)
         .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
@@ -1493,32 +1564,52 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
         .attr("font-family", "var(--font-sans)")
         .text("点击拓扑中的 Rank 查看性能详情");
     }
+  }
 
-    // Detail charts group (hidden by default)
-    var detailG = _linkBarCardG.append("g").attr("class", "detail-charts-group");
+  // Detail charts group (hidden by default)
+  var detailG = _linkBarCardG.append("g").attr("class", "detail-charts-group");
+  // Preserve detail visibility from the state object
+  var _detailVisible = st.detailVisible || false;
+  if (!_detailVisible) {
     detailG.attr("display", "none");
+  }
 
-    // ── Update _centerPanelState so _drawRankBars renders in the floating card ──
-    _centerPanelState.g = _linkBarCardG;
-    _centerPanelState.barG = barG;
-    _centerPanelState.barW = BAR_CARD_W - BAR_CARD_PAD * 2;
-    _centerPanelState.barY = BAR_CARD_HEADER_H;
-    _centerPanelState.barH = barAreaH;
-    _centerPanelState.cardX = cardX;
-    _centerPanelState.cardY = cardY;
-    _centerPanelState.barAreaY = barAreaY;
-    _centerPanelState.barCardG = _linkBarCardG;
-    _centerPanelState.barCardRect = _linkBarCardG.select("rect.formula-card-rect");
-    _centerPanelState.barCardTitle = _linkBarCardG.select("text");
-    _centerPanelState.barHeaderH = BAR_CARD_HEADER_H;
-    _centerPanelState.detailG = detailG;
-    _centerPanelState.detailY = barAreaY + barAreaH + 8;
+  // ── Update state object so _drawRankBars renders in the floating card ──
+  st.g = _linkBarCardG;
+  st.barG = barG;
+  st.barW = BAR_CARD_W - BAR_CARD_PAD * 2;
+  st.barY = BAR_CARD_HEADER_H;
+  st.barH = barAreaH;
+  st.cardX = cardX;
+  st.cardY = cardY;
+  st.barAreaY = barAreaY;
+  st.barCardG = _linkBarCardG;
+  st.barCardRect = _linkBarCardG.select("rect.formula-card-rect");
+  st.barCardTitle = _linkBarCardG.select("text");
+  st.barHeaderH = BAR_CARD_HEADER_H;
+  st.barCardVisible = true;
+  st.detailG = detailG;
+  st.detailY = barAreaY + barAreaH + 8;
 
-    // Draw bars if we have rank data
-    if (rd) {
+  // Draw bars if we have rank data
+  if (rd) {
+    if (isSimCanvas) {
+      // For sim canvas, swap state into _centerPanelState so _drawRankBars uses it
+      var saved = {};
+      for (var k in _centerPanelState) { if (_centerPanelState.hasOwnProperty(k)) saved[k] = _centerPanelState[k]; }
+      for (var k2 in _simPanelLayout) { if (_simPanelLayout.hasOwnProperty(k2)) _centerPanelState[k2] = _simPanelLayout[k2]; }
+      _drawRankBars(rd, true);
+      for (var k3 in _centerPanelState) {
+        if (_centerPanelState.hasOwnProperty(k3) && _simPanelLayout.hasOwnProperty(k3)) {
+          _simPanelLayout[k3] = _centerPanelState[k3];
+        }
+      }
+      for (var k4 in saved) { if (saved.hasOwnProperty(k4)) _centerPanelState[k4] = saved[k4]; }
+    } else {
       _drawRankBars(rd);
     }
   }
+  } // end of else block (card creation — skipped when sim not started)
 
   // ── Animation ──
   _startFlowAnimation();
@@ -1550,6 +1641,12 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
         borderRect
           .attr("stroke-dashoffset", borderOffset)
           .attr("stroke-opacity", borderAlpha);
+      }
+      // ── Sim-running spinner animation ──
+      var spinnerCircle = _linkBarCardG.select(".sim-running-placeholder circle");
+      if (!spinnerCircle.empty()) {
+        var spinOffset = -(elapsed * 0.08) % 64;
+        spinnerCircle.attr("stroke-dashoffset", spinOffset);
       }
     }
 
@@ -2873,6 +2970,21 @@ function _drawRankBars(data, isSim) {
     if (barIdx > 0) metricBase += (barIdx - 1) * animStagger + interMetricGap;
   });
   st._barsBottomY = y;
+
+  // Resize card background rect to fit the rendered bar content + detail charts
+  // This handles the case where the card was initially created without rank data
+  // (e.g., on the sim tab, rankData may be null during _drawPinnedLink, then populated later)
+  if (st.barCardRect && !st.barCardRect.empty()) {
+    var _contentBottom = y; // absolute Y where bars ended
+    var _padBottom = 10;
+    // When detail charts are visible, add extra height for the detail section
+    var _detailH = (st.detailVisible && st.detailMetric) ? 160 : 0;
+    var _newH = Math.max(_contentBottom - st.cardY + _padBottom + _detailH, 140);
+    st.barCardRect.attr("height", _newH);
+    // Update derived layout fields for detail chart positioning
+    st.barH = _newH - st.barHeaderH - _padBottom;
+    st.detailY = st.cardY + st.barHeaderH + st.barH + 8;
+  }
 }
 
 // ── Sim panel layout (stored during canvasRebuild for _drawRankBars reuse) ──
@@ -3407,8 +3519,8 @@ function canvasRebuild(targetSelector) {
       }
 
       var _sTH = 26, _sGap = 8;
-      var _cardW = 340; // always include card area (shows placeholder when no rank pinned)
-      var _availForTopos = meshWidth - _cardW - _sGap * 2;
+      // No fixed card column — performance card floats between topologies (same as modeling tab)
+      var _availForTopos = meshWidth - _sGap;
       var _sW = _availForTopos / 2;
       var _sContentH = topoH - _sTH;
       var _sScale = isSim ? _topoScale : 0.5;
@@ -3418,7 +3530,6 @@ function canvasRebuild(targetSelector) {
       var _eqViewY = _sTH + (_sDimsOrig.dpH - _sDimsEq.dpH) * _sScale;
 
       var _eqX = _sW + _sGap;
-      var _cardX = _eqX + _sW + _sGap;
 
       if (meshOrigDp >= meshOriginal.dp) meshOrigDp = meshOriginal.dp - 1;
       if (meshEqDp >= meshEquivalent.dp) meshEqDp = meshEquivalent.dp - 1;
@@ -3461,8 +3572,8 @@ function canvasRebuild(targetSelector) {
       );
       _populateDpSelect("mesh-dp-sel-eq", meshEquivalent.dp, meshEqDp);
 
-      // Right card — only visible when a rank is pinned
       // Preserve sim-specific detail state across rebuilds (not from _centerPanelState)
+      // The floating card is now created by _drawPinnedLink — same style as modeling tab
       var _simDetail = _simPanelLayout ? {
         detailVisible: _simPanelLayout.detailVisible,
         detailMetric: _simPanelLayout.detailMetric,
@@ -3470,67 +3581,16 @@ function canvasRebuild(targetSelector) {
         detailH: _simPanelLayout.detailH,
         _allocDetailH: _simPanelLayout._allocDetailH,
       } : {};
-      var _detailVisible = _simDetail.detailVisible || _centerPanelState.detailVisible;
-      var _detailMetric = _simDetail.detailMetric || _centerPanelState.detailMetric;
-      var _detailData = _simDetail.detailData || _centerPanelState.detailData;
-
-      var pad = 14, titleFont = 16, barHeaderH = pad + titleFont + 10;
-      var cardH = Math.max(_detailVisible ? 420 : 280, _sContentH);
-      var cardG = zoomLayer.append("g").attr("class", "sim-bar-card");
-      // Hide card when no rank pinned OR simulation not yet completed
-      var _simDone = !!(window._simCompleted);
-      if (!window._pinnedSim || !_simDone) cardG.attr("display", "none");
-      cardG.append("rect")
-        .attr("x", _cardX).attr("y", _sTH)
-        .attr("width", _cardW).attr("height", cardH)
-        .attr("rx", 8).attr("ry", 8)
-        .attr("class", "formula-card-rect");
-      cardG.append("text")
-        .attr("x", _cardX + pad).attr("y", _sTH + pad + titleFont)
-        .attr("fill", "#39bae6")
-        .attr("font-weight", "bold")
-        .attr("font-size", titleFont + "px")
-        .attr("font-family", "var(--font-sans)")
-        .text("📊 Rank 性能详情");
-      var barAreaY = _sTH + barHeaderH;
-      var availH = cardH - barHeaderH - pad;
-      var detailH = 0;
-      if (_detailVisible) {
-        var _prevDetailH = _simDetail.detailH || _simDetail._allocDetailH || _centerPanelState.detailH || 140;
-        detailH = Math.min(_prevDetailH, Math.floor(availH * 0.45));
-      }
-      var barAreaH = Math.max(0, availH - detailH);
-      var barG = cardG.append("g").attr("class", "rank-bar-chart-group");
-      // Placeholder when sim completed but no rank pinned yet
-      if (_simDone && !window._pinnedSim) {
-        barG.append("text")
-          .attr("x", _cardX + _cardW / 2)
-          .attr("y", barAreaY + Math.max(barAreaH / 2, 20))
-          .attr("text-anchor", "middle")
-          .attr("fill", "var(--text-muted)")
-          .attr("font-size", "11px")
-          .attr("font-family", "var(--font-sans)")
-          .text("点击拓扑中的 Rank 查看性能详情");
-      }
-      var detailG = cardG.append("g").attr("class", "detail-charts-group");
-      if (!_detailVisible) {
-        detailG.attr("display", "none");
-      }
+      // Store detail state temporarily so _drawPinnedLink can use it when creating the floating card
       _simPanelLayout = {
-        g: cardG,
-        barG: barG, barCardG: cardG, barCardRect: cardG.select("rect.formula-card-rect"),
-        barCardTitle: cardG.select("text"),
-        cardX: _cardX, cardY: _sTH, barW: _cardW - pad * 2,
-        barY: barHeaderH, barH: barAreaH, barAreaY: barAreaY,
-        barCardVisible: !!window._pinnedSim, barHeaderH: barHeaderH,
-        detailG: detailG, detailVisible: _detailVisible,
-        detailMetric: _detailMetric,
-        detailData: _detailData,
-        detailH: detailH, _allocDetailH: detailH,
-        detailY: barAreaY + barAreaH + 8,
+        detailVisible: _simDetail.detailVisible || _centerPanelState.detailVisible,
+        detailMetric: _simDetail.detailMetric || _centerPanelState.detailMetric,
+        detailData: _simDetail.detailData || _centerPanelState.detailData,
+        detailH: _simDetail.detailH || 140,
+        _allocDetailH: _simDetail._allocDetailH || 140,
       };
 
-      _topoLayout = { mode: "simulation", origW: _sW, eqW: _sW, cardW: _cardW, gap: _sGap, titleH: _sTH, cardX: _cardX };
+      _topoLayout = { mode: "simulation", origW: _sW, eqW: _sW, gap: _sGap, titleH: _sTH };
 
       _drawPinnedLink(zoomLayer, svg.node(), true);
       _renderState.mode = "simulation";
@@ -3956,6 +4016,10 @@ async function loadMeshData(topoData) {
     topoData.micro_batch_size != null
       ? topoData.micro_batch_size
       : (meshModel && meshModel.micro_batch_size) || null;
+  var vocabSize =
+    topoData.vocab_size != null
+      ? topoData.vocab_size
+      : (modelSide && modelSide.config ? modelSide.config.vocab_size : null);
 
   var hasModelParams = numLayers != null;
   var alreadyInFlight = _estimateInFlight[side];
@@ -3975,6 +4039,7 @@ async function loadMeshData(topoData) {
         seqLen,
         batchSize,
         microBatch,
+        vocabSize,
       );
       if (isOrig) {
         meshEstimateOrig = estimates;
@@ -4994,6 +5059,7 @@ async function _refetchMeshEstimate(side) {
       model.seq_len,
       model.batch_size,
       model.micro_batch_size,
+      model.vocab_size,
     );
     if (side === "orig") {
       meshEstimateOrig = estimates;
