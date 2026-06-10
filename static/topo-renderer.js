@@ -2067,9 +2067,11 @@ function _updateFormulaCollapse() {
     newBarH = Math.min(st.barHeaderH + contentH, totalBottom - newBarCardY);
   }
 
-  // Update bar card rect
-  st.barCardRect.attr("y", newBarCardY).attr("height", newBarH);
-  st.barCardTitle.attr("y", newBarCardY + st.barHeaderH - 10);
+  // Update bar card rect — skip when no bar card (skipBarCard mode)
+  if (st.barCardRect && !st.barCardRect.empty()) {
+    st.barCardRect.attr("y", newBarCardY).attr("height", newBarH);
+    st.barCardTitle.attr("y", newBarCardY + st.barHeaderH - 10);
+  }
 
   // Recalculate derived positions with the same allocation as _renderFormulaCard
   st.barY = effFormulaH + st.cardGap + st.barHeaderH;
@@ -3652,6 +3654,7 @@ function canvasRebuild(targetSelector) {
         _tH2,
         _cardW2,
         _contentH2,
+        true, // skipBarCard: bar chart rendered by _drawPinnedLink at link midpoint
       );
       _replayFormulaLines();
 
