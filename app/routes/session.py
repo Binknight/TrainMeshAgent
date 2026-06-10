@@ -102,7 +102,7 @@ def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
-def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None):
+def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None, vocab_size=None):
     """Attach model config + runtime params onto a topology dict for MCP execute_task."""
     if topo is None:
         return None
@@ -111,6 +111,8 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
         d["num_layers"] = training_model.config.num_layers
         d["hidden_dim"] = training_model.config.d_model
         d["num_heads"] = training_model.config.num_heads
+        if training_model.config.vocab_size:
+            d.setdefault("vocab_size", training_model.config.vocab_size)
     if seq_len is not None:
         d["seq_len"] = seq_len
     if batch_size is not None:
@@ -123,6 +125,8 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
         d["d_ffn"] = training_model.config.d_ffn
     if micro_batch_size is not None:
         d["micro_batch_size"] = micro_batch_size
+    if vocab_size is not None:
+        d["vocab_size"] = vocab_size
     return d
 
 
@@ -143,6 +147,7 @@ def get_topology(session_id: str):
             model_name=session.original_model_name,
             d_ffn=session.original_dff,
             micro_batch_size=session.original_micro_batch,
+            vocab_size=session.original_vocab_size,
         ),
         "equivalent_topology": _topo_with_model(
             session.equivalent_topology, session.equivalent_training_model,
@@ -151,6 +156,7 @@ def get_topology(session_id: str):
             model_name=session.original_model_name,  # model is the same, just different topo
             d_ffn=session.equivalent_dff,
             micro_batch_size=session.equivalent_micro_batch,
+            vocab_size=session.original_vocab_size,
         ),
         "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
         "equivalent_training_model": session.equivalent_training_model.model_dump() if session.equivalent_training_model else None,
@@ -202,15 +208,22 @@ def estimate_metrics():
     B = int(data.get("total_batch", _estimator._TOTAL_BATCH))
     b_micro = int(data.get("micro_batch", _estimator._MICRO_BATCH))
     dff_val = int(data.get("d_ffn", 14336))
+    V = int(data.get("vocab_size", _estimator._DEFAULT_VOCAB_SIZE))
 
-    flops = _estimator._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
-    hbm = _estimator._estimate_hbm_gb(L, H, dff_val, tp, pp)
+    flops_mid = _estimator._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
+    flops_edge = _estimator._estimate_flops_first_last(L, H, S, B, dff_val, dp, tp, pp, V)
+    hbm_mid = _estimator._estimate_hbm_gb(L, H, dff_val, tp, pp)
+    hbm_edge = _estimator._estimate_hbm_gb_first_last(L, H, dff_val, tp, pp, V)
     dp_comm = _estimator._estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
     tp_comm = _estimator._estimate_tp_comm_gb(L, H, S, b_micro, pp)
     pp_comm = _estimator._estimate_pp_comm_mb(H, S, b_micro)
 
     cards = []
     for rank in range(total_nodes):
+        pp_rank = rank % pp
+        is_edge = pp > 1 and (pp_rank == 0 or pp_rank == pp - 1)
+        flops = flops_edge if is_edge else flops_mid
+        hbm = hbm_edge if is_edge else hbm_mid
         cards.append(CardMetrics(
             card_id=f"card_{rank}",
             global_rank=rank,
@@ -232,7 +245,7 @@ def estimate_metrics():
     })
 
 
-def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, micro_batch_size=None) -> tuple[str | None, SimulationResult | None]:
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, micro_batch_size=None, vocab_size=None) -> tuple[str | None, SimulationResult | None]:
     """Submit MCP task for a single topology. Returns (task_id, SimulationResult or None if not ready)."""
     if not topo:
         return task_id_in, None
@@ -240,7 +253,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     # Submit MCP task (fire-and-forget)
     task_id = task_id_in
     if not task_id:
-        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, micro_batch_size=micro_batch_size) or topo.model_dump()
+        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, micro_batch_size=micro_batch_size, vocab_size=vocab_size) or topo.model_dump()
         task_id = mcp_client.execute_task(topo_payload, params=sim_params)
         if not task_id:
             raise RuntimeError(f"MCP execute_task returned empty task_id for {label}")
@@ -388,6 +401,7 @@ def run_simulation(session_id: str):
             batch_size=session.original_batch_size,
             model_name=session.original_model_name,
             micro_batch_size=session.original_micro_batch,
+            vocab_size=session.original_vocab_size,
         )
         session.original_task_id = orig_tid or session.original_task_id
         if orig_sim:
@@ -402,6 +416,7 @@ def run_simulation(session_id: str):
             batch_size=session.equivalent_batch_size,
             model_name=session.original_model_name,
             micro_batch_size=session.equivalent_micro_batch,
+            vocab_size=session.original_vocab_size,
         )
         session.equivalent_task_id = eq_tid or session.equivalent_task_id
         if eq_sim:
@@ -817,6 +832,7 @@ def workflow_step1(session_id: str):
     B = data.get("B", 32)
     b_micro = data.get("b_micro", 4)
     dff = data.get("dff", 14336)
+    vocab_size = data.get("vocab_size", 32000)
     strategy = data.get("strategy", "min_equiv")
 
     # 1. Guardrail validation (silent — no workflow node)
@@ -858,6 +874,7 @@ def workflow_step1(session_id: str):
         "d_ffn": dff,
         "pp": pp,
         "is_equivalent": False,
+        "vocab_size": vocab_size,
     }
     model_result: SkillResult = registry.execute_tool("training-model-gen-skill", model_args, context)
     if not model_result.success:
@@ -878,6 +895,7 @@ def workflow_step1(session_id: str):
     # Store model params for equivalent model
     session._equiv_model_params = {
         "L": eq_L, "H": H, "A": A, "S": S, "B": eq_B, "dff": dff,
+        "vocab_size": vocab_size,
         "strategy": strategy,
         "L_orig": L,  # original layer count for SSE formula display
         "B_orig": B,  # original batch size for SSE formula display
@@ -886,6 +904,7 @@ def workflow_step1(session_id: str):
     session.original_dff = dff
     session.original_batch_size = B
     session.original_micro_batch = b_micro
+    session.original_vocab_size = vocab_size
     session.equivalent_batch_size = eq_B
     session.equivalent_dff = dff  # dff unchanged between original and equivalent
     session.equivalent_micro_batch = b_micro  # b unchanged between original and equivalent
@@ -901,7 +920,7 @@ def workflow_step1(session_id: str):
         "original_mesh": _topo_with_model(
             orig_mesh, orig_model,
             seq_len=S, batch_size=B, model_name=model_name, d_ffn=dff,
-            micro_batch_size=b_micro,
+            micro_batch_size=b_micro, vocab_size=vocab_size,
         ),
         "original_model": orig_model_dict,
         "equivalent_params": session.equivalent_params.model_dump() if hasattr(session.equivalent_params, "model_dump") else session.equivalent_params,
@@ -954,6 +973,7 @@ def workflow_step2_stream(session_id: str):
     B_orig = model_meta.get("B_orig", B_val)
     b_micro_val = model_meta.get("b_micro", 4)
     dff_val = model_meta.get("dff", 14336)
+    vocab_val = model_meta.get("vocab_size", 32000)
     L_orig = model_meta.get("L_orig", eq_L)  # fallback to eq_L if not stored
     strategy = model_meta.get("strategy", "min_equiv")
     strategy_label = "最小集群等效" if strategy == "min_equiv" else ("单卡极限等效" if strategy == "single_card_extreme" else strategy)
@@ -969,7 +989,7 @@ def workflow_step2_stream(session_id: str):
             f"▸ 等效策略: {strategy_label} ({strategy})",
             f"  原始组网  {orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}  →  {npu_orig} NPU",
             f"  等效组网  {eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}  →  {npu_eq} NPU",
-            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  dff={dff_val}  S={S_val}  B={B_orig}  b={b_micro_val}  →  B_eq={B_val}",
+            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  V={vocab_val}  dff={dff_val}  S={S_val}  B={B_orig}  b={b_micro_val}  →  B_eq={B_val}",
             f"  NPU 压缩比  {npu_orig} : {npu_eq}  ≈  {comp_ratio} : 1",
         ]
         for line in lines_strategy:
@@ -979,22 +999,33 @@ def workflow_step2_stream(session_id: str):
 
         # ═══ Phase 2: 指标分析 ═══
         flops_per_card = _estimator._estimate_flops(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp)
+        flops_edge = _estimator._estimate_flops_first_last(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp, vocab_val)
         flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
+        flops_edge_str = f"{flops_edge / 1e15:.2f} × 10¹⁵" if flops_edge >= 1e15 else f"{flops_edge / 1e12:.2f} × 10¹²"
 
         hbm_gb = _estimator._estimate_hbm_gb(L_orig, H_val, dff_val, tp, pp)
+        hbm_edge_gb = _estimator._estimate_hbm_gb_first_last(L_orig, H_val, dff_val, tp, pp, vocab_val)
         tp_comm = _estimator._estimate_tp_comm_gb(L_orig, H_val, S_val, b_micro_val, pp)
         dp_comm = _estimator._estimate_dp_comm_gb(L_orig, H_val, dff_val, orig_dp, tp, pp)
         pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
 
         lines_metrics = [
-            f"▸ 单卡计算量 (FLOPs)",
+            f"▸ 单卡计算量 (FLOPs) — 中间 PP",
             f"  FLOPs = (6·B·S·L·H/(DP·PP·TP)) × (4·H + 3·dff + 2·S)",
             f"  = (6×{B_orig}×{S_val}×{L_orig}×{H_val}/({orig_dp}×{pp}×{tp})) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
             f"  ≈ {flops_str} FLOPs",
-            f"▸ 显存占用 (HBM)",
+            f"▸ 单卡计算量 (FLOPs) — 首/末 PP",
+            f"  FLOPs = 中间值 + (6·V·H)/TP × (B/DP) × S",
+            f"  = {flops_per_card:.4e} + (6×{vocab_val}×{H_val})/{tp} × ({B_orig}/{orig_dp}) × {S_val}",
+            f"  ≈ {flops_edge_str} FLOPs  (+{flops_edge - flops_per_card:.4e})",
+            f"▸ 显存占用 (HBM) — 中间 PP",
             f"  HBM = L/PP × ((4·H² + 3·H·dff)/TP + 2·H) / 1e9",
             f"  = {L_orig}/{pp} × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val}) / 1e9",
-            f"  ≈ {hbm_gb:.1f} GB",
+            f"  ≈ {hbm_gb:.4f} GB",
+            f"▸ 显存占用 (HBM) — 首/末 PP",
+            f"  HBM = 中间值 + (V·H) / (TP·1e9)",
+            f"  = {hbm_gb:.4f} + ({vocab_val}×{H_val}) / ({tp}×1e9)",
+            f"  ≈ {hbm_edge_gb:.4f} GB  (+{hbm_edge_gb - hbm_gb:.4f} GB)",
             f"▸ 通信流量 (GB / step)",
             f"  TP 通信 = L/PP * 15 * b * S * H / 1e9",
             f"  = {L_orig}/{pp} * 15 * {b_micro_val} * {S_val} * {H_val} / 1e9",
@@ -1068,6 +1099,7 @@ def workflow_step3(session_id: str):
         "d_ffn": model_meta.get("dff", 14336),
         "pp": eq_params.pp,
         "is_equivalent": True,
+        "vocab_size": model_meta.get("vocab_size", 32000),
     }
     eq_model_result: SkillResult = registry.execute_tool("training-model-gen-skill", eq_model_args, context)
     if not eq_model_result.success:
@@ -1088,6 +1120,7 @@ def workflow_step3(session_id: str):
             seq_len=model_meta.get("S"), batch_size=model_meta.get("B"),
             model_name=model_meta.get("model_name"), d_ffn=model_meta.get("dff"),
             micro_batch_size=model_meta.get("b_micro"),
+            vocab_size=model_meta.get("vocab_size"),
         ),
         "equivalent_model": eq_model_dict,
         "step": session.step,

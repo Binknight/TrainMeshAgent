@@ -671,6 +671,10 @@ async def agent_stream(
                 if training_model:
                     profiler_args["num_layers"] = training_model.config.num_layers
                     profiler_args["hidden_dim"] = training_model.config.d_model
+                # Pass vocab_size from session step1 metadata for edge PP HBM/FLOPs calculation
+                vocab_size = getattr(session, "original_vocab_size", None)
+                if vocab_size is not None:
+                    profiler_args["vocab_size"] = vocab_size
                 _execute_skill_tool(
                     "training-mesh-profiler-skill", profiler_args, session
                 )
