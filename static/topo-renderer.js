@@ -73,6 +73,7 @@ async function fetchEstimates(
   seqLen,
   batchSize,
   microBatch,
+  vocabSize,
 ) {
   // ── Cancel any previous in-flight request for the same side ──
   var oldCtrl = _estimateFetchAbort[side];
@@ -102,6 +103,7 @@ async function fetchEstimates(
     if (seqLen != null) body.seq_len = seqLen;
     if (batchSize != null) body.total_batch = batchSize;
     if (microBatch != null) body.micro_batch = microBatch;
+    if (vocabSize != null) body.vocab_size = vocabSize;
 
     var resp = await fetch(API + "/session/estimate", {
       method: "POST",
@@ -4014,6 +4016,10 @@ async function loadMeshData(topoData) {
     topoData.micro_batch_size != null
       ? topoData.micro_batch_size
       : (meshModel && meshModel.micro_batch_size) || null;
+  var vocabSize =
+    topoData.vocab_size != null
+      ? topoData.vocab_size
+      : (modelSide && modelSide.config ? modelSide.config.vocab_size : null);
 
   var hasModelParams = numLayers != null;
   var alreadyInFlight = _estimateInFlight[side];
@@ -4033,6 +4039,7 @@ async function loadMeshData(topoData) {
         seqLen,
         batchSize,
         microBatch,
+        vocabSize,
       );
       if (isOrig) {
         meshEstimateOrig = estimates;
@@ -5052,6 +5059,7 @@ async function _refetchMeshEstimate(side) {
       model.seq_len,
       model.batch_size,
       model.micro_batch_size,
+      model.vocab_size,
     );
     if (side === "orig") {
       meshEstimateOrig = estimates;

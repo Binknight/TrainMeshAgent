@@ -17,14 +17,14 @@ import importlib
 _skill = importlib.import_module("app.skills.training-mesh-profiler-skill")
 
 _estimate_flops = _skill._estimate_flops
-_estimate_flops_old = _skill._estimate_flops_old
+_estimate_flops_first_last = _skill._estimate_flops_first_last
 _estimate_hbm_gb = _skill._estimate_hbm_gb
-_estimate_hbm_gb_old = _skill._estimate_hbm_gb_old
+_estimate_hbm_gb_first_last = _skill._estimate_hbm_gb_first_last
 _estimate_dp_comm_gb = _skill._estimate_dp_comm_gb
-_estimate_dp_comm_gb_old_lh = _skill._estimate_dp_comm_gb_old_lh
 _estimate_tp_comm_gb = _skill._estimate_tp_comm_gb
 _estimate_pp_comm_mb = _skill._estimate_pp_comm_mb
 _MODEL_CONFIG = _skill._MODEL_CONFIG
+_DEFAULT_VOCAB_SIZE = _skill._DEFAULT_VOCAB_SIZE
 
 S = 2048
 B = 32
@@ -64,11 +64,10 @@ for name, device_type, dp, tp, pp, overrides in topologies:
 
     # -- Compute --
     flops = _estimate_flops(L, H, S, B_val, dff_val, dp, tp, pp)
-    flops_old = _estimate_flops_old(L, H, S, B_val, dp, tp, pp)
+    flops_edge = _estimate_flops_first_last(L, H, S, B_val, dff_val, dp, tp, pp, _DEFAULT_VOCAB_SIZE)
     hbm = _estimate_hbm_gb(L, H, dff_val, tp, pp)
-    hbm_old = _estimate_hbm_gb_old(L, H, S, B_val, dp, tp, pp, a)
+    hbm_edge = _estimate_hbm_gb_first_last(L, H, dff_val, tp, pp, _DEFAULT_VOCAB_SIZE)
     dp_comm = _estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
-    dp_comm_old = _estimate_dp_comm_gb_old_lh(L, H, dp)
     tp_comm = _estimate_tp_comm_gb(L, H, S, b, pp)
     pp_comm = _estimate_pp_comm_mb(H, S, b)
 
@@ -92,7 +91,7 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     print(f"  dff          = {dff_val}")
     print(f"  quant_coeff  = {a}")
 
-    print(f"\n  -- NEW FLOPs Formula --")
+    print(f"\n  -- FLOPs Formula --")
     print(f"  FLOPs = (6*B*S*L*H/(DP*PP*TP)) * (4*H + 3*dff + 2*S)")
     print(
         f"        = (6*{B_val}*{S}*{L}*{H}/({dp}*{pp}*{tp})) * (4*{H} + 3*{dff_val} + 2*{S})"
@@ -104,12 +103,7 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     print(f"        = {numerator / denominator:.2f} * {factor2}")
     print(f"        = {flops:.4e} FLOPs/card")
 
-    print(f"\n  -- OLD FLOPs Formula (reference) --")
-    print(f"  FLOPs = (72*B*S*H^2 + 12*B*S^2*H) / TP * L/PP")
-    print(f"        = (72*{B_val}*{S}*{H}^2 + 12*{B_val}*{S}^2*{H}) / {tp} * {L}/{pp}")
-    print(f"        = {flops_old:.4e} FLOPs/card")
-
-    print(f"\n  -- NEW HBM Formula --")
+    print(f"\n  -- HBM Formula --")
     print(f"  HBM = L/PP * ((4*H^2 + 3*H*dff)/TP + 2*H) / 1e9")
     term_a = 4 * H**2 + 3 * H * dff_val
     term_b = term_a / tp
@@ -120,19 +114,22 @@ for name, device_type, dp, tp, pp, overrides in topologies:
     print(f"      = {L}/{pp} * ({term_b:.2f} + {2*H}) / 1e9")
     print(f"      = {L}/{pp} * {term_c:.2f} / 1e9")
     print(f"      = {hbm:.4f} GB")
-    print(f"\n  -- OLD HBM Formula (reference) --")
-    print(f"  HBM = [L*(12*H^2+4*H)/(TP*PP) + B*S*H*L/PP + L*(12*H^2+4*H)/(TP*PP)] * a / 1e9")
-    print(f"       = {hbm_old:.4f} GB")
 
     print(f"\n  -- Communication --")
     print(f"  DP comm = 2*(DP-1)/DP * 4 * L/PP * (4*H^2/TP + 3*H*dff/TP) / 1e9")
     print(f"          = {dp_comm:.4f} GB/step")
-    print(f"  (OLD)   = 2*(DP-1)/DP * 12*L*H^2 / 1e9")
-    print(f"          = {dp_comm_old:.4f} GB/step")
     print(f"  TP comm = L/PP * 15*b*S*H / 1e9")
     print(f"          = {tp_comm:.2f} GB/micro-step")
     print(f"  PP comm = 4*b*S*H / 1e6")
     print(f"          = {pp_comm:.4f} MB/micro-step")
+
+    flops_extra = flops_edge - flops
+    hbm_extra = hbm_edge - hbm
+    print(f"\n  -- First/Last PP (V={_DEFAULT_VOCAB_SIZE}) --")
+    print(f"  Middle FLOPs   = {flops:.4e}")
+    print(f"  Edge FLOPs     = {flops_edge:.4e}  (+{flops_extra:.4e})")
+    print(f"  Middle HBM     = {hbm:.4f} GB")
+    print(f"  Edge HBM       = {hbm_edge:.4f} GB  (+{hbm_extra:.4f} GB from embedding/lm_head)")
 
 # -- B scaling verification --
 print(f"\n{'=' * 100}")

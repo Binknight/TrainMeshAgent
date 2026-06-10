@@ -177,6 +177,7 @@ class TrainingModelGenSkill(BaseSkill):
             d_model=d_model,
             num_heads=num_heads,
             d_ffn=d_ffn,
+            vocab_size=vocab_size,
         )
 
         computed = TrainingModelComputed(

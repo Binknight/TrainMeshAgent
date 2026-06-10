@@ -2593,6 +2593,10 @@
                                     <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" disabled />
                                 </div>
                                 <div class="workflow-param-row">
+                                    <label>V (词表)</label>
+                                    <input id="wf-orig-model-vocab" type="number" value="32000" min="1" max="1048576" />
+                                </div>
+                                <div class="workflow-param-row">
                                     <label>S</label>
                                     <input id="wf-orig-model-s" type="number" value="2048" min="1" max="131072" />
                                 </div>
@@ -4148,6 +4152,7 @@
                 var origB = document.getElementById("wf-orig-model-b").value;
                 var origB_micro = document.getElementById("wf-orig-model-b-micro").value;
                 var origDff = document.getElementById("wf-orig-model-dff").value;
+                var origVocab = document.getElementById("wf-orig-model-vocab").value;
                 var strategy =
                     document.getElementById("wf-equiv-strategy").value;
                 closeWorkflowParams();
@@ -4168,6 +4173,7 @@
                         B: parseInt(origB),
                         b_micro: parseInt(origB_micro),
                         dff: parseInt(origDff),
+                        vocab_size: parseInt(origVocab),
                         strategy: strategy,
                     });
                 } else {
@@ -4188,6 +4194,8 @@
                         origH +
                         ", A=" +
                         origA +
+                        ", V=" +
+                        origVocab +
                         ", S=" +
                         origS +
                         ", B=" +
@@ -4201,6 +4209,7 @@
                         original_seq_len: parseInt(origS) || 2048,
                         original_batch_size: parseInt(origB) || 32,
                         original_dff: parseInt(origDff) || 14336,
+                        original_vocab_size: parseInt(origVocab) || 32000,
                         strategy: strategy,
                     });
                 }
