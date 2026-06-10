@@ -137,6 +137,19 @@
                 display: flex;
                 flex-direction: column;
                 flex-shrink: 0;
+                position: relative;
+                transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                    min-width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+                overflow: hidden;
+            }
+            .panel-left.collapsed {
+                width: 36px;
+                min-width: 36px;
+            }
+            .panel-left.collapsed .panel-header,
+            .panel-left.collapsed .history-list,
+            .panel-left.collapsed .panel-footer {
+                display: none;
             }
             .panel-header {
                 padding: 14px 18px;
@@ -478,6 +491,72 @@
             }
             .fullscreen-edge-trigger.right {
                 right: 0;
+            }
+
+            /* ── Panel Collapse Handle (拉手) ── */
+            .panel-collapse-handle {
+                position: absolute;
+                top: 50%;
+                transform: translateY(-50%);
+                z-index: 15;
+                width: 22px;
+                height: 64px;
+                border: 1px solid var(--border);
+                background: var(--bg-panel);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 5px;
+                transition: all 0.2s ease;
+                color: var(--text-muted);
+                padding: 0;
+            }
+            .panel-collapse-handle:hover {
+                background: var(--bg-hover);
+                border-color: var(--cyan-dim);
+                color: var(--cyan);
+                box-shadow: 0 0 8px rgba(57, 186, 230, 0.2);
+            }
+            .panel-collapse-handle svg {
+                width: 14px;
+                height: 14px;
+                transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+                flex-shrink: 0;
+            }
+            /* Left panel handle: attached to right edge, protrudes inward */
+            .panel-left .panel-collapse-handle {
+                right: -11px;
+                border-left: none;
+                border-radius: 0 5px 5px 0;
+            }
+            /* Right panel handle: attached to left edge, protrudes inward */
+            .panel-right .panel-collapse-handle {
+                left: -11px;
+                border-right: none;
+                border-radius: 5px 0 0 5px;
+            }
+            /* Collapsed state: handle centered in thin strip */
+            .panel-left.collapsed .panel-collapse-handle {
+                right: auto;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                border: 1px solid var(--border);
+                border-radius: 5px;
+            }
+            .panel-right.collapsed .panel-collapse-handle {
+                left: auto;
+                right: 50%;
+                transform: translate(50%, -50%);
+                border: 1px solid var(--border);
+                border-radius: 5px;
+            }
+            /* Chevron rotation when collapsed */
+            .panel-left.collapsed .panel-collapse-handle svg {
+                transform: rotate(180deg);
+            }
+            .panel-right.collapsed .panel-collapse-handle svg {
+                transform: rotate(180deg);
             }
 
             /* ── Canvas Tabs ── */
@@ -933,6 +1012,17 @@
                 display: flex;
                 flex-direction: column;
                 flex-shrink: 0;
+                position: relative;
+                transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                    min-width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+                overflow: hidden;
+            }
+            .panel-right.collapsed {
+                width: 36px;
+                min-width: 36px;
+            }
+            .panel-right.collapsed .chat-panel {
+                display: none;
             }
             .session-id {
                 font-family: var(--font-mono);
@@ -2489,6 +2579,11 @@
                         + 新任务
                     </button>
                 </div>
+                <button class="panel-collapse-handle" onclick="toggleLeftPanel()" title="折叠/展开左侧栏">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
             </aside>
 
             <!-- CENTER: Canvas -->
@@ -2918,6 +3013,11 @@
                         </button>
                     </div>
                 </div>
+                <button class="panel-collapse-handle" onclick="toggleRightPanel()" title="折叠/展开右侧栏">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </button>
             </aside>
             <!-- Fullscreen edge hover triggers -->
             <div class="fullscreen-edge-trigger left" id="edge-trigger-left"></div>
@@ -5202,6 +5302,36 @@
                             if (typeof canvasRebuild === "function") canvasRebuild();
                             if (typeof canvasRecenter === "function") canvasRecenter();
                         }
+                    });
+                });
+            }
+
+            // ── Panel Collapse Toggle ──
+            var _leftPanelCollapsed = false;
+            var _rightPanelCollapsed = false;
+            function toggleLeftPanel() {
+                _leftPanelCollapsed = !_leftPanelCollapsed;
+                var panel = document.querySelector(".panel-left");
+                if (!panel) return;
+                panel.classList.toggle("collapsed", _leftPanelCollapsed);
+                // Rebuild canvas after layout reflow
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        if (typeof canvasRebuild === "function") canvasRebuild();
+                        if (typeof canvasRecenter === "function") canvasRecenter();
+                    });
+                });
+            }
+            function toggleRightPanel() {
+                _rightPanelCollapsed = !_rightPanelCollapsed;
+                var panel = document.querySelector(".panel-right");
+                if (!panel) return;
+                panel.classList.toggle("collapsed", _rightPanelCollapsed);
+                // Rebuild canvas after layout reflow
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        if (typeof canvasRebuild === "function") canvasRebuild();
+                        if (typeof canvasRecenter === "function") canvasRecenter();
                     });
                 });
             }
