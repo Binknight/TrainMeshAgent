@@ -204,6 +204,7 @@ class TrainingModelConfig(BaseModel):
     d_model: int = Field(ge=1, description="Model hidden dimension")
     num_heads: int = Field(ge=1, description="Number of attention heads")
     d_ffn: int = Field(ge=1, description="FFN hidden dimension")
+    vocab_size: int = Field(default=32000, description="Vocabulary size")
 
 
 class TrainingModelComputed(BaseModel):
@@ -275,6 +276,7 @@ class SessionState(BaseModel):
     original_seq_len: int | None = None
     original_batch_size: int | None = None
     original_dff: int | None = None
+    original_vocab_size: int | None = None
     equivalent_seq_len: int | None = None
     equivalent_batch_size: int | None = None
     equivalent_dff: int | None = None

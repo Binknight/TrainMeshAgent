@@ -48,12 +48,18 @@ def chat_stream():
         role_model_name = data.get(f"{role}_model_name")
         role_seq_len = data.get(f"{role}_seq_len")
         role_batch_size = data.get(f"{role}_batch_size")
+        role_dff = data.get(f"{role}_dff")
+        role_vocab_size = data.get(f"{role}_vocab_size")
         if role_model_name is not None:
             setattr(session, f"{role}_model_name", role_model_name)
         if role_seq_len is not None:
             setattr(session, f"{role}_seq_len", int(role_seq_len))
         if role_batch_size is not None:
             setattr(session, f"{role}_batch_size", int(role_batch_size))
+        if role_dff is not None:
+            setattr(session, f"{role}_dff", int(role_dff))
+        if role_vocab_size is not None:
+            setattr(session, f"{role}_vocab_size", int(role_vocab_size))
 
     logger.info(f"[chat_stream] session={session.session_id} message={message[:80]}...")
 
