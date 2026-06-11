@@ -2502,6 +2502,77 @@
                 color: var(--text-primary);
             }
 
+            .result-section-header {
+                font-family: var(--font-sans);
+                font-size: 14px;
+                font-weight: 700;
+                color: var(--text-primary);
+                margin-bottom: 14px;
+                padding-bottom: 8px;
+                border-bottom: 2px solid var(--border);
+            }
+
+            .result-config-section-3col {
+                grid-template-columns: repeat(3, 1fr);
+            }
+
+            .result-script-section {
+                margin-top: 16px;
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 16px 18px;
+            }
+            .result-script-title {
+                font-family: var(--font-sans);
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--text-primary);
+                margin-bottom: 12px;
+            }
+            .result-script-buttons {
+                display: flex;
+                gap: 12px;
+            }
+            .btn-script {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 20px;
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                font-family: var(--font-mono);
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+            .btn-script:hover {
+                filter: brightness(1.2);
+                transform: translateY(-1px);
+            }
+            .btn-script:active {
+                transform: translateY(0);
+            }
+            .btn-script-orig {
+                background: rgba(88, 166, 255, 0.12);
+                color: #58a6ff;
+                border-color: rgba(88, 166, 255, 0.3);
+            }
+            .btn-script-orig:hover {
+                background: rgba(88, 166, 255, 0.2);
+                border-color: #58a6ff;
+            }
+            .btn-script-eq {
+                background: rgba(57, 211, 175, 0.12);
+                color: var(--teal);
+                border-color: rgba(57, 211, 175, 0.3);
+            }
+            .btn-script-eq:hover {
+                background: rgba(57, 211, 175, 0.2);
+                border-color: var(--teal);
+            }
+
 
         </style>
     </head>
@@ -6320,7 +6391,12 @@
 
                 var html = '';
 
-                // ═══ 1. Verdict Card ═══
+                // ═══════════════════════════════════════════
+                // SECTION 1: 等效验证结论
+                // ═══════════════════════════════════════════
+                html += '<div class="result-section-header">等效验证结论</div>';
+
+                // 1a. Verdict Card
                 html += '<div class="result-verdict-card">';
                 html += '<div class="result-verdict-icon ' + (isEq ? 'pass' : 'fail') + '">' + (isEq ? '✅' : '❌') + '</div>';
                 html += '<div class="result-verdict-text">';
@@ -6331,7 +6407,7 @@
                 html += '<span>结论: <strong>' + (cr.details && cr.details.conclusion || (isEq ? '通过' : '不通过')) + '</strong></span>';
                 html += '</div></div></div>';
 
-                // ═══ 2. Five-dimension diff bars ═══
+                // 1b. Five-dimension diff bars — 原始组网 vs 等效组网 的仿真验证值对比
                 var diffs = [
                     { label: 'FLOPs', val: cr.flops_diff_pct },
                     { label: 'HBM', val: cr.hbm_diff_pct },
@@ -6339,10 +6415,10 @@
                     { label: 'PP通信', val: cr.pp_comm_diff_pct },
                     { label: 'DP通信', val: cr.dp_comm_diff_pct }
                 ];
-                var barMaxPct = Math.max(10, maxDiff * 1.5); // scale so max diff is ~66% of bar width
+                var barMaxPct = Math.max(10, maxDiff * 1.5);
 
                 html += '<div class="result-diff-section">';
-                html += '<div class="result-diff-title">五维差异对比</div>';
+                html += '<div class="result-diff-title">五维差异对比 (原始组网 vs 等效组网 · 仿真验证值)</div>';
                 diffs.forEach(function (d) {
                     var pass = d.val <= tol;
                     var pctW = Math.min(100, (d.val / barMaxPct) * 100);
@@ -6362,7 +6438,12 @@
                 html += '</div>';
                 html += '</div>';
 
-                // ═══ 3. Config comparison tables ═══
+                // ═══════════════════════════════════════════
+                // SECTION 2: 等效输出结果
+                // ═══════════════════════════════════════════
+                html += '<div class="result-section-header" style="margin-top:24px;">等效输出结果</div>';
+
+                // Prepare data
                 var origMesh = meshOriginal || {};
                 var eqMesh = meshEquivalent || {};
                 var origModel = modelOriginal || {};
@@ -6376,18 +6457,19 @@
                 var eqNpu = (eqMesh.dp || 0) * (eqMesh.tp || 0) * (eqMesh.pp || 0);
                 var compRatio = eqNpu > 0 ? (origNpu / eqNpu).toFixed(1) : '—';
 
-                html += '<div class="result-config-section">';
+                // ── 2a. Parameters comparison (3 cards) ──
+                html += '<div class="result-config-section result-config-section-3col">';
 
-                // Topology config card
+                // Card 1: 组网参数
                 html += '<div class="result-config-card">';
-                html += '<div class="result-config-card-header">组网配置对比</div>';
+                html += '<div class="result-config-card-header">组网参数对比</div>';
                 html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
                 var topoRows = [
                     ['设备', origMesh.device_type || '—', eqMesh.device_type || '—'],
-                    ['DP', origMesh.dp, eqMesh.dp],
-                    ['TP', origMesh.tp, eqMesh.tp],
-                    ['PP', origMesh.pp, eqMesh.pp],
-                    ['NPU总数', origNpu, eqNpu, true],
+                    ['DP', origMesh.dp || '—', eqMesh.dp || '—'],
+                    ['TP', origMesh.tp || '—', eqMesh.tp || '—'],
+                    ['PP', origMesh.pp || '—', eqMesh.pp || '—'],
+                    ['NPU总数', origNpu || '—', eqNpu || '—', true],
                     ['压缩比', '—', compRatio + ':1', true]
                 ];
                 topoRows.forEach(function (r) {
@@ -6396,9 +6478,9 @@
                 });
                 html += '</tbody></table></div>';
 
-                // Model config card
+                // Card 2: 模型结构参数
                 html += '<div class="result-config-card">';
-                html += '<div class="result-config-card-header">模型配置对比</div>';
+                html += '<div class="result-config-card-header">模型结构参数对比</div>';
                 html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
                 var modelRows = [
                     ['L (层数)', origCfg.num_layers || '—', eqCfg.num_layers || '—', true],
@@ -6414,10 +6496,89 @@
                 });
                 html += '</tbody></table></div>';
 
+                // Card 3: 模型训练参数 (mock data)
+                html += '<div class="result-config-card">';
+                html += '<div class="result-config-card-header">模型训练参数对比</div>';
+                html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
+                var trainRows = [
+                    ['global_batch_size', '2048', '2048'],
+                    ['micro_batch_size', '1', '1'],
+                    ['seq_length', '4096', '4096'],
+                    ['learning_rate', '1.5e-4', '1.5e-4'],
+                    ['optimizer', 'AdamW', 'AdamW'],
+                    ['grad_accum_steps', '1', '2', true]
+                ];
+                trainRows.forEach(function (r) {
+                    var hl = r[3] ? ' val-highlight' : '';
+                    html += '<tr><td>' + r[0] + '</td><td class="val-orig' + hl + '">' + r[1] + '</td><td class="val-eq' + hl + '">' + r[2] + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+
                 html += '</div>'; // end result-config-section
 
+                // ── 2b. Script output buttons ──
+                html += '<div class="result-script-section">';
+                html += '<div class="result-script-title">输出训练脚本</div>';
+                html += '<div class="result-script-buttons">';
+                html += '<button class="btn-script btn-script-orig" onclick="_outputTrainingScript(\'orig\')">';
+                html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+                html += '<span>输出原始组网训练脚本</span></button>';
+                html += '<button class="btn-script btn-script-eq" onclick="_outputTrainingScript(\'eq\')">';
+                html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+                html += '<span>输出等效组网训练脚本</span></button>';
+                html += '</div>';
+                html += '</div>';
 
                 wrap.innerHTML = html;
+            }
+
+            // ── Mock: Output training script ──
+            function _outputTrainingScript(side) {
+                var label = side === 'orig' ? '原始组网' : '等效组网';
+                var mesh = side === 'orig' ? (meshOriginal || {}) : (meshEquivalent || {});
+                var model = side === 'orig' ? (modelOriginal || {}) : (modelEquivalent || {});
+                var cfg = model.config || {};
+                var comp = model.computed || {};
+
+                var lines = [];
+                lines.push('#!/bin/bash');
+                lines.push('# ' + label + ' 训练脚本 (Mock)');
+                lines.push('# 生成时间: ' + new Date().toISOString());
+                lines.push('');
+                lines.push('# ═══ 组网参数 ═══');
+                lines.push('DP=' + (mesh.dp || '—'));
+                lines.push('TP=' + (mesh.tp || '—'));
+                lines.push('PP=' + (mesh.pp || '—'));
+                lines.push('DEVICE=' + (mesh.device_type || '—'));
+                lines.push('');
+                lines.push('# ═══ 模型参数 ═══');
+                lines.push('NUM_LAYERS=' + (cfg.num_layers || '—'));
+                lines.push('D_MODEL=' + (cfg.d_model || '—'));
+                lines.push('NUM_HEADS=' + (cfg.num_heads || '—'));
+                lines.push('D_FFN=' + (cfg.d_ffn || '—'));
+                lines.push('');
+                lines.push('# ═══ 训练超参 ═══');
+                lines.push('GLOBAL_BATCH_SIZE=2048');
+                lines.push('MICRO_BATCH_SIZE=1');
+                lines.push('SEQ_LENGTH=4096');
+                lines.push('LEARNING_RATE=1.5e-4');
+                lines.push('');
+                lines.push('# ═══ 启动命令 ═══');
+                lines.push('torchrun --nproc_per_node=8 \\');
+                lines.push('  train.py \\');
+                lines.push('  --dp $DP --tp $TP --pp $PP \\');
+                lines.push('  --num-layers $NUM_LAYERS \\');
+                lines.push('  --d-model $D_MODEL \\');
+                lines.push('  --num-heads $NUM_HEADS \\');
+                lines.push('  --d-ffn $D_FFN \\');
+                lines.push('  --global-batch-size $GLOBAL_BATCH_SIZE \\');
+                lines.push('  --micro-batch-size $MICRO_BATCH_SIZE \\');
+                lines.push('  --seq-length $SEQ_LENGTH \\');
+                lines.push('  --lr $LEARNING_RATE');
+
+                var script = lines.join('\n');
+                alert(label + ' 训练脚本 (Mock):\n\n' + script);
+                console.log('[' + label + ' 训练脚本]\n' + script);
             }
 
             function _renderSimResults() {
