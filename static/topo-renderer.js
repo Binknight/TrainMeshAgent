@@ -1782,7 +1782,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .attr("font-weight", "bold")
     .attr("font-size", titleFont + "px")
     .attr("font-family", "var(--font-sans)")
-    .text("\u{1F4D0} 等效计算分析");
+    .text("\u{1F4D0} 等效计算推导");
 
   // Toggle
   var toggleCX = viewX + viewW - pad - toggleSize / 2;
