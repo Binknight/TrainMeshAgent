@@ -499,58 +499,144 @@
                 top: 50%;
                 transform: translateY(-50%);
                 z-index: 15;
-                width: 22px;
-                height: 64px;
-                border: 1px solid var(--border);
-                background: var(--bg-panel);
+                width: 28px;
+                height: 72px;
+                background: linear-gradient(
+                    180deg,
+                    rgba(22, 28, 36, 0.96) 0%,
+                    rgba(17, 22, 29, 0.98) 100%
+                );
+                border: 1.5px solid var(--border);
                 cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                border-radius: 5px;
-                transition: all 0.2s ease;
-                color: var(--text-muted);
+                border-radius: 7px;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                color: var(--text-secondary);
                 padding: 0;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025),
+                    0 2px 8px rgba(0, 0, 0, 0.3);
+                backdrop-filter: blur(6px);
+                -webkit-backdrop-filter: blur(6px);
+            }
+            /* Three grip dots (vertical ellipsis pattern) */
+            .panel-collapse-handle::before {
+                content: "";
+                position: absolute;
+                width: 3px;
+                height: 3px;
+                background: var(--text-muted);
+                border-radius: 50%;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: 0 9px 0 var(--text-muted),
+                    0 -9px 0 var(--text-muted);
+            }
+            /* Outer glow ring (invisible until hover) */
+            .panel-collapse-handle::after {
+                content: "";
+                position: absolute;
+                inset: -3px;
+                border-radius: 10px;
+                border: 1.5px solid transparent;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                pointer-events: none;
+                opacity: 0;
             }
             .panel-collapse-handle:hover {
-                background: var(--bg-hover);
-                border-color: var(--cyan-dim);
+                background: linear-gradient(
+                    180deg,
+                    rgba(28, 36, 48, 0.98) 0%,
+                    rgba(22, 28, 36, 0.98) 100%
+                );
+                border-color: var(--cyan);
                 color: var(--cyan);
-                box-shadow: 0 0 8px rgba(57, 186, 230, 0.2);
+                box-shadow: inset 0 1px 0 rgba(57, 186, 230, 0.08),
+                    0 0 24px rgba(57, 186, 230, 0.18),
+                    0 0 6px rgba(57, 186, 230, 0.1);
+                transform: translateY(-50%) scale(1.06);
+            }
+            .panel-collapse-handle:hover::before {
+                background: var(--cyan);
+                box-shadow: 0 9px 0 var(--cyan),
+                    0 -9px 0 var(--cyan);
+                filter: drop-shadow(0 0 3px rgba(57, 186, 230, 0.5));
+            }
+            .panel-collapse-handle:hover::after {
+                border-color: rgba(57, 186, 230, 0.22);
+                opacity: 1;
+                box-shadow: 0 0 14px rgba(57, 186, 230, 0.06);
+            }
+            .panel-collapse-handle:active {
+                transform: translateY(-50%) scale(0.97) !important;
+                transition: all 0.08s ease;
             }
             .panel-collapse-handle svg {
-                width: 14px;
-                height: 14px;
-                transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+                width: 15px;
+                height: 15px;
+                transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                    filter 0.3s ease;
                 flex-shrink: 0;
             }
-            /* Left panel handle: attached to right edge, protrudes inward */
+            .panel-collapse-handle:hover svg {
+                filter: drop-shadow(0 0 4px rgba(57, 186, 230, 0.35));
+            }
+
+            /* ── Left panel handle (attached to right edge) ── */
             .panel-left .panel-collapse-handle {
-                right: -11px;
+                right: -14px;
                 border-left: none;
-                border-radius: 0 5px 5px 0;
+                border-radius: 0 7px 7px 0;
             }
-            /* Right panel handle: attached to left edge, protrudes inward */
+            .panel-left .panel-collapse-handle::before {
+                left: 6px;
+            }
+
+            /* ── Right panel handle (attached to left edge) ── */
             .panel-right .panel-collapse-handle {
-                left: -11px;
+                left: -14px;
                 border-right: none;
-                border-radius: 5px 0 0 5px;
+                border-radius: 7px 0 0 7px;
             }
-            /* Collapsed state: handle centered in thin strip */
+            .panel-right .panel-collapse-handle::before {
+                right: 6px;
+            }
+
+            /* ── Collapsed state: handle centered in thin strip ── */
             .panel-left.collapsed .panel-collapse-handle {
                 right: auto;
                 left: 50%;
                 transform: translate(-50%, -50%);
-                border: 1px solid var(--border);
-                border-radius: 5px;
+                border: 1.5px solid var(--border);
+                border-radius: 7px;
             }
+            .panel-left.collapsed .panel-collapse-handle:hover {
+                border-color: var(--cyan);
+                box-shadow: 0 0 24px rgba(57, 186, 230, 0.18),
+                    0 0 6px rgba(57, 186, 230, 0.1);
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+            .panel-left.collapsed .panel-collapse-handle:active {
+                transform: translate(-50%, -50%) scale(0.96) !important;
+            }
+
             .panel-right.collapsed .panel-collapse-handle {
                 left: auto;
                 right: 50%;
                 transform: translate(50%, -50%);
-                border: 1px solid var(--border);
-                border-radius: 5px;
+                border: 1.5px solid var(--border);
+                border-radius: 7px;
             }
+            .panel-right.collapsed .panel-collapse-handle:hover {
+                border-color: var(--cyan);
+                box-shadow: 0 0 24px rgba(57, 186, 230, 0.18),
+                    0 0 6px rgba(57, 186, 230, 0.1);
+                transform: translate(50%, -50%) scale(1.1);
+            }
+            .panel-right.collapsed .panel-collapse-handle:active {
+                transform: translate(50%, -50%) scale(0.96) !important;
+            }
+
             /* Chevron rotation when collapsed */
             .panel-left.collapsed .panel-collapse-handle svg {
                 transform: rotate(180deg);
@@ -643,27 +729,67 @@
                 height: 100%;
             }
             .sim-resize-handle {
-                flex: 0 0 6px;
-                background: var(--border);
+                flex: 0 0 8px;
+                background: transparent;
                 cursor: row-resize;
-                transition: background 0.15s;
+                transition: background 0.2s ease;
                 position: relative;
                 z-index: 10;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
-            .sim-resize-handle:hover,
-            .sim-resize-handle.active {
-                background: var(--cyan);
+            /* Central grip bar */
+            .sim-resize-handle::before {
+                content: "";
+                width: 40px;
+                height: 3px;
+                background: var(--border-active);
+                border-radius: 2px;
+                transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             }
+            /* Three grip dots */
             .sim-resize-handle::after {
                 content: "";
                 position: absolute;
                 left: 50%;
                 top: 50%;
                 transform: translate(-50%, -50%);
-                width: 30px;
-                height: 2px;
+                width: 4px;
+                height: 4px;
                 background: var(--text-muted);
-                border-radius: 1px;
+                border-radius: 50%;
+                box-shadow: 8px 0 0 var(--text-muted),
+                    -8px 0 0 var(--text-muted);
+                transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .sim-resize-handle:hover {
+                background: rgba(57, 186, 230, 0.04);
+            }
+            .sim-resize-handle:hover::before {
+                background: var(--cyan);
+                box-shadow: 0 0 10px rgba(57, 186, 230, 0.3);
+                width: 52px;
+            }
+            .sim-resize-handle:hover::after {
+                background: var(--cyan);
+                box-shadow: 8px 0 0 var(--cyan),
+                    -8px 0 0 var(--cyan);
+                filter: drop-shadow(0 0 3px rgba(57, 186, 230, 0.4));
+            }
+            .sim-resize-handle.active {
+                background: rgba(57, 186, 230, 0.07);
+            }
+            .sim-resize-handle.active::before {
+                background: var(--cyan);
+                box-shadow: 0 0 14px rgba(57, 186, 230, 0.4);
+                width: 60px;
+            }
+            .sim-resize-handle.active::after {
+                background: var(--cyan);
+                box-shadow: 8px 0 0 var(--cyan),
+                    -8px 0 0 var(--cyan);
+                filter: drop-shadow(0 0 4px rgba(57, 186, 230, 0.5));
             }
             .sim-topo-placeholder {
                 display: flex;
