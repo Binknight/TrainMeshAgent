@@ -2651,7 +2651,7 @@
                 >
                     <div class="workflow-param-card">
                         <div class="workflow-param-title">
-                            Step 1 — 参数输入
+                            Step 1 — 等效参数设定
                         </div>
                         <div class="workflow-param-row">
                             <label>模型名称</label>
@@ -2747,10 +2747,10 @@
                         </div>
                     </div>
                 </div>
-                <!-- Step 4 仿真参数 Overlay -->
+                <!-- Step 3 仿真参数 Overlay -->
                 <div class="workflow-param-overlay" id="sim-param-overlay" style="display: none">
                     <div class="workflow-param-card sim-param-card">
-                        <div class="workflow-param-title">Step 4 — 仿真参数</div>
+                        <div class="workflow-param-title">Step 3 — 仿真参数</div>
                         <div class="workflow-param-row">
                             <label>Epoch Num</label>
                             <input id="sim-epoch-num" type="number" value="1" min="1" max="1000" />
@@ -3080,14 +3080,14 @@
             const WORKFLOW_STEPS = [
                 {
                     id: "params",
-                    label: "等效参数输入",
+                    label: "等效参数设定",
                     icon: "\u{1F4DD}",
                     requiresInput: true,
                     requiresConfirm: false,
                 },
                 {
                     id: "equiv_calc",
-                    label: "等效计算",
+                    label: "等效计算推导",
                     icon: "\u{1F4D0}",
                     requiresInput: false,
                     requiresConfirm: true,
@@ -3129,14 +3129,14 @@
                 },
                 {
                     id: "simulation",
-                    label: "仿真验证",
+                    label: "等效仿真验证",
                     icon: "\u{1F52C}",
                     requiresInput: false,
                     requiresConfirm: true,
                 },
                 {
                     id: "comparison",
-                    label: "结果分析",
+                    label: "等效方案输出",
                     icon: "\u{1F4CA}",
                     requiresInput: false,
                     requiresConfirm: false,
@@ -3287,9 +3287,9 @@
                             if (event.type === "done") {
                                 step2Done = true;
                                 eventSource.close();
-                                // Auto-trigger Step 3 after Step 2 SSE stream ends (with visible pause)
+                                // Step2 now includes equivalent mesh+model generation (formerly step3)
                                 setTimeout(function () {
-                                    submitStep3();
+                                    _submitStep2GenerateMesh();
                                 }, 1500);
                             }
                             if (event.type === "error") {
@@ -3305,7 +3305,6 @@
                             setStatus("error");
                             addMessage("error", "等效计算 SSE 连接中断");
                         }
-                        // If step2Done is true, submitStep3 already called in onmessage
                     };
                 } catch (e) {
                     setStatus("error");
@@ -3314,8 +3313,8 @@
                 }
             }
 
-            async function submitStep3() {
-                console.log("[DEBUG] submitStep3 called");
+            async function _submitStep2GenerateMesh() {
+                console.log("[DEBUG] _submitStep2GenerateMesh called");
                 setStatus("等效建模中");
                 addMessage("system", "📡 [API] 生成等效组网与模型结构...");
                 updateWorkflowNode("equiv_gen", "active");
@@ -3326,7 +3325,7 @@
                             method: "POST",
                         },
                     );
-                    console.log("[DEBUG] step3 response status:", resp.status);
+                    console.log("[DEBUG] step2 mesh-gen response status:", resp.status);
                     if (!resp.ok) {
                         var err = await resp.json().catch(function () {
                             return {};
@@ -3334,12 +3333,12 @@
                         throw new Error(
                             err.message ||
                                 err.error ||
-                                "Step3 请求失败 (" + resp.status + ")",
+                                "Step2 等效生成失败 (" + resp.status + ")",
                         );
                     }
                     var data = await resp.json();
                     console.log(
-                        "[DEBUG] step3 data:",
+                        "[DEBUG] step2 mesh-gen data:",
                         Object.keys(data),
                         "has eq_mesh:",
                         !!data.equivalent_mesh,
@@ -3347,11 +3346,9 @@
                         !!data.equivalent_model,
                     );
 
-                    // Staged rendering: mesh first, pause, then model, pause, then done
+                    // Staged rendering: mesh first, pause, then model, pause, then done (all under step2)
                     if (data.equivalent_mesh) {
-                        console.log(
-                            "[DEBUG] dispatching mesh_json for equivalent",
-                        );
+                        console.log("[DEBUG] dispatching mesh_json for equivalent");
                         handleWorkflowEvent({
                             type: "mesh_json",
                             data: data.equivalent_mesh,
@@ -3362,9 +3359,7 @@
                         await renderThenSleep(800);
                     }
                     if (data.equivalent_model) {
-                        console.log(
-                            "[DEBUG] dispatching model_json for equivalent",
-                        );
+                        console.log("[DEBUG] dispatching model_json for equivalent");
                         handleWorkflowEvent({
                             type: "model_json",
                             data: data.equivalent_model,
@@ -3374,15 +3369,15 @@
                             canvasRecenter();
                         await renderThenSleep(800);
                     }
-                    console.log("[DEBUG] dispatching done stage=step3");
+                    console.log("[DEBUG] dispatching done stage=step2");
                     handleWorkflowEvent({
                         type: "done",
-                        data: { stage: "step3" },
+                        data: { stage: "step2" },
                     });
                 } catch (e) {
-                    console.error("[DEBUG] step3 error:", e);
+                    console.error("[DEBUG] step2 mesh-gen error:", e);
                     setStatus("error");
-                    addMessage("error", "Step 3 失败: " + e.message);
+                    addMessage("error", "Step 2 等效生成失败: " + e.message);
                     updateWorkflowNode("equiv_gen", "failed");
                 }
             }
@@ -3514,9 +3509,9 @@
                     _pendingMeshList = [];
                 }
 
-                // ── Stage "step2": 等效计算完成 → only when all sub-steps are done ──
+                // ── Stage "step2": 等效计算推导 (等效计算 + 组网模型渲染) ──
                 else if (stage === "step2" || stage === "auto") {
-                    // Wait for all 3 sub-steps to complete (formula card fully loaded)
+                    // Part A: Wait for all 3 sub-steps to complete (formula card fully loaded)
                     var _subWaitStart = Date.now();
                     while (
                         workflowNodeStates["equiv_calc_sub3"] !== "completed" &&
@@ -3537,12 +3532,10 @@
                             updateWorkflowNode("equiv_calc", "completed");
                         }
                     }
-                }
 
-                // ── Stage "step3": 等效组网 + 模型结构 → compare mode, centered ──
-                if (stage === "step3" || (stage === "auto" && eqMesh)) {
+                    // Part B: Load equivalent mesh + model (merged from old step3)
                     console.log(
-                        "[DEBUG] handleDone stage=step3, eqMesh:",
+                        "[DEBUG] handleDone stage=step2, eqMesh:",
                         !!eqMesh,
                         "window.meshOriginal:",
                         !!window.meshOriginal,
@@ -3579,9 +3572,9 @@
                     updateWorkflowNode("simulation", "active");
                 }
 
-                // ── Stage "step4": 仿真验证完成 → switch to simulation tab ──
+                // ── Stage "step3": 等效仿真验证 → switch to simulation tab ──
                 if (
-                    stage === "step4" ||
+                    stage === "step3" ||
                     (_pendingSimData && stage === "auto")
                 ) {
                     if (_pendingSimData) {
@@ -3597,7 +3590,7 @@
                     }
                 }
 
-                // ── Stage "step5": 结果分析 ──
+                // ── Stage "step4": 等效方案输出 ──
                 if (
                     _pendingWorkflowState &&
                     _pendingWorkflowState.comparison_report
@@ -3884,7 +3877,7 @@
                     return;
                 }
 
-                // Step 4: simulation → open params form instead of auto-confirm
+                // Step 3: simulation → open params form instead of auto-confirm
                 if (
                     step.id === "simulation" &&
                     step.requiresConfirm &&
@@ -4338,7 +4331,7 @@
                 }
             }
 
-            // ── Step 4 Simulation Params ──
+            // ── Step 3 Simulation Params ──
 
             function getDefaultSimParams() {
                 var modelName =
