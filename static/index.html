@@ -2502,55 +2502,7 @@
                 color: var(--text-primary);
             }
 
-            .result-metric-section {
-                background: var(--bg-surface);
-                border: 1px solid var(--border);
-                border-radius: var(--radius);
-                padding: 14px 18px;
-            }
-            .result-metric-title {
-                font-family: var(--font-sans);
-                font-size: 12px;
-                font-weight: 600;
-                color: var(--text-primary);
-                margin-bottom: 12px;
-            }
-            .result-metric-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-                gap: 10px;
-            }
-            .result-metric-item {
-                padding: 10px 12px;
-                background: var(--bg-panel);
-                border-radius: var(--radius-sm);
-                border: 1px solid var(--border);
-            }
-            .result-metric-item-label {
-                font-family: var(--font-mono);
-                font-size: 10px;
-                color: var(--text-muted);
-                margin-bottom: 6px;
-            }
-            .result-metric-item-row {
-                display: flex;
-                justify-content: space-between;
-                font-family: var(--font-mono);
-                font-size: 11px;
-                margin-bottom: 2px;
-            }
-            .result-metric-item-row .tag-orig {
-                color: #58a6ff;
-                font-weight: 500;
-            }
-            .result-metric-item-row .tag-eq {
-                color: var(--teal);
-                font-weight: 500;
-            }
-            .result-metric-item-row .val {
-                color: var(--text-primary);
-                font-weight: 600;
-            }
+
         </style>
     </head>
     <body>
@@ -6464,68 +6416,6 @@
 
                 html += '</div>'; // end result-config-section
 
-                // ═══ 4. Per-card metric summary ═══
-                html += '<div class="result-metric-section">';
-                html += '<div class="result-metric-title">每卡仿真指标摘要 (avg / min / max)</div>';
-
-                function _aggMetrics(cardsMap) {
-                    if (!cardsMap) return null;
-                    var cards = Object.values(cardsMap);
-                    if (!cards.length) return null;
-                    function _stat(key) {
-                        var vals = cards.map(function (c) { return c[key] || 0; }).filter(function (v) { return v != null; });
-                        if (!vals.length) return { avg: 0, min: 0, max: 0 };
-                        var sum = vals.reduce(function (a, b) { return a + b; }, 0);
-                        return { avg: sum / vals.length, min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) };
-                    }
-                    return {
-                        flops: _stat('flops_per_card'),
-                        hbm: _stat('hbm_gb'),
-                        tp: _stat('tp_comm_gb_per_micro'),
-                        pp: _stat('pp_comm_mb_per_micro'),
-                        dp: _stat('dp_comm_gb_per_step')
-                    };
-                }
-
-                var origStats = _aggMetrics(meshActualOrig);
-                var eqStats = _aggMetrics(meshActualEq);
-
-                function _fmt(v, unit) {
-                    if (unit === 'FLOPs') return v >= 1e12 ? (v / 1e12).toFixed(2) + ' T' : (v / 1e9).toFixed(2) + ' G';
-                    if (unit === 'MB') return v.toFixed(3) + ' MB';
-                    return v.toFixed(4) + ' GB';
-                }
-
-                var metricItems = [
-                    { label: 'FLOPs / 卡', key: 'flops', unit: 'FLOPs' },
-                    { label: 'HBM 占用', key: 'hbm', unit: 'GB' },
-                    { label: 'TP 通信 / micro', key: 'tp', unit: 'GB' },
-                    { label: 'PP 通信 / micro', key: 'pp', unit: 'MB' },
-                    { label: 'DP 通信 / step', key: 'dp', unit: 'GB' }
-                ];
-
-                html += '<div class="result-metric-grid">';
-                metricItems.forEach(function (mi) {
-                    html += '<div class="result-metric-item">';
-                    html += '<div class="result-metric-item-label">' + mi.label + '</div>';
-                    if (origStats && origStats[mi.key]) {
-                        var os = origStats[mi.key];
-                        html += '<div class="result-metric-item-row"><span class="tag-orig">原始 avg</span><span class="val">' + _fmt(os.avg, mi.unit) + '</span></div>';
-                        html += '<div class="result-metric-item-row"><span class="tag-orig"> min / max</span><span class="val">' + _fmt(os.min, mi.unit) + ' / ' + _fmt(os.max, mi.unit) + '</span></div>';
-                    } else {
-                        html += '<div class="result-metric-item-row"><span class="tag-orig">原始</span><span class="val">—</span></div>';
-                    }
-                    if (eqStats && eqStats[mi.key]) {
-                        var es = eqStats[mi.key];
-                        html += '<div class="result-metric-item-row"><span class="tag-eq">等效 avg</span><span class="val">' + _fmt(es.avg, mi.unit) + '</span></div>';
-                        html += '<div class="result-metric-item-row"><span class="tag-eq"> min / max</span><span class="val">' + _fmt(es.min, mi.unit) + ' / ' + _fmt(es.max, mi.unit) + '</span></div>';
-                    } else {
-                        html += '<div class="result-metric-item-row"><span class="tag-eq">等效</span><span class="val">—</span></div>';
-                    }
-                    html += '</div>';
-                });
-                html += '</div>'; // end result-metric-grid
-                html += '</div>'; // end result-metric-section
 
                 wrap.innerHTML = html;
             }
