@@ -178,8 +178,8 @@ _UTILITY_TOOLS = [
             "description": (
                 "当用户在交互区输入或提及大模型名称时调用：从 HuggingFace/ModelScope 官方 config.json 获取该稠密模型的架构参数"
                 "(层数L、隐藏维度H、注意力头数A、FFN维度dff、词表V)，推送到前端自动填充 Step1 表单。"
-                "传入完整的仓库 ID 效果最佳(如 Qwen/Qwen2.5-7B、meta-llama/Llama-2-7b-hf)；"
-                "也支持内置表的简写名称(如 Qwen3-32B、Qwen2.5-7B)。"
+                "传入完整仓库 ID 效果最佳(如 Qwen/Qwen2.5-7B、meta-llama/Llama-2-7b-hf)；"
+                "也支持裸名(如 Qwen3-32B、DeepSeek-V4-Pro)，会自动搜索 HuggingFace 匹配官方仓库。"
                 "当前仅支持稠密模型，稀疏/MoE 模型会返回不支持提示。"
                 "注意：该工具只填充模型架构参数；设备类型、DP/TP/PP、序列长度S、批次B 等组网与运行参数仍由用户设定。"
             ),

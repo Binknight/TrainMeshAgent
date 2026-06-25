@@ -185,6 +185,78 @@ def _builtin_match(model_name: str) -> dict | None:
     return None
 
 
+# Official-ish vendor orgs on HuggingFace — used to prefer canonical repos when
+# a bare-name search returns both official and community/quantized variants.
+_OFFICIAL_ORGS = {
+    "deepseek-ai", "qwen", "qwenlm", "meta-llama", "mistralai",
+    "google", "allenai", "bigscience", "eleutherai", "tiiuae",
+    "microsoft", "nvidia", "baai", "thudm", "internlm", "alibaba-pai",
+}
+
+
+def _normalize_for_match(name: str) -> str:
+    """Normalize for fuzzy name comparison: lowercase, strip - _ and spaces."""
+    return (name or "").lower().replace("-", "").replace("_", "").replace(" ", "")
+
+
+def _remote_fetch(repo_id: str) -> dict | None:
+    """Fetch + normalize config from HuggingFace then ModelScope."""
+    hf_raw = _fetch_hf_config(repo_id)
+    if hf_raw:
+        normalized = _normalize_hf_config(hf_raw, "huggingface")
+        if normalized:
+            return normalized
+    ms_raw = _fetch_modelscope_config(repo_id)
+    if ms_raw:
+        return _normalize_hf_config(ms_raw, "modelscope")
+    return None
+
+
+def _search_hf_model(bare_name: str) -> str | None:
+    """Search HuggingFace for a bare model name; return the best canonical repo id.
+
+    Prefers an exact name-segment match from an official vendor org, falling back
+    to the highest-scoring public/non-gated result. Returns 'org/name' or None.
+    """
+    try:
+        resp = requests.get(
+            "https://huggingface.co/api/models",
+            params={"search": bare_name, "limit": 20},
+            timeout=_HTTP_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            return None
+        items = resp.json()
+    except Exception as e:
+        logger.warning(f"[model_catalog] HF search failed for {bare_name}: {e}")
+        return None
+
+    target = _normalize_for_match(bare_name)
+    best_id = None
+    best_score = -1
+    for it in items:
+        repo_id = it.get("id", "")
+        if not repo_id or "/" not in repo_id:
+            continue
+        if it.get("private"):
+            continue
+        org, _, name = repo_id.partition("/")
+        name_norm = _normalize_for_match(name)
+        score = 0
+        if name_norm == target:
+            score += 100
+        elif target and target in name_norm:
+            score += 30
+        if org.lower() in _OFFICIAL_ORGS:
+            score += 20
+        if it.get("gated") in (None, False, "false"):
+            score += 5
+        if score > best_score:
+            best_score = score
+            best_id = repo_id
+    return best_id if best_score > 0 else None
+
+
 def _persist_resolved(model_name: str, resolved: dict) -> None:
     """Persist a resolved config to disk cache + PostgreSQL (best-effort).
 
@@ -213,7 +285,8 @@ def resolve_model_config(model_name: str) -> dict | None:
     Layered resolution:
       1. PostgreSQL catalog (curated + previously fetched; shared across instances)
       2. local JSON disk cache (per-instance fallback)
-      3. remote fetch (requires full org/name repo id): HF → ModelScope
+      3. remote fetch: full org/name repo id → direct (HF → ModelScope);
+         bare name → HF search resolves the canonical repo, then fetch
       4. builtin fuzzy fallback (offline, handles bare names like 'Qwen3-32B')
 
     On a remote hit the result is upserted into PG so future lookups hit PG.
@@ -244,18 +317,21 @@ def resolve_model_config(model_name: str) -> dict | None:
         except Exception:
             pass  # corrupt cache → fall through
 
-    # 3. Remote fetch (authoritative) — only for full org/name repo ids
+    # 3. Remote fetch (authoritative):
+    #    - full org/name repo id → direct fetch
+    #    - bare name → HF search resolves the canonical repo, then fetch
     resolved = None
     if "/" in model_name:
-        hf_raw = _fetch_hf_config(model_name)
-        if hf_raw:
-            resolved = _normalize_hf_config(hf_raw, "huggingface")
-        if not resolved:
-            ms_raw = _fetch_modelscope_config(model_name)
-            if ms_raw:
-                resolved = _normalize_hf_config(ms_raw, "modelscope")
+        resolved = _remote_fetch(model_name)
+    else:
+        repo_id = _search_hf_model(model_name)
+        if repo_id:
+            logger.info(
+                f"[model_catalog] search resolved {model_name!r} -> {repo_id!r}"
+            )
+            resolved = _remote_fetch(repo_id)
 
-    # 4. Builtin fuzzy fallback (offline / bare names / remote miss)
+    # 4. Builtin fuzzy fallback (offline / remote miss)
     if not resolved:
         resolved = _builtin_match(model_name)
 
