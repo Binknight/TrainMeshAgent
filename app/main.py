@@ -6,6 +6,7 @@ from flask_cors import CORS
 
 from app.config import config
 from app.routes.chat import chat_bp
+from app.routes.model_catalog import model_catalog_bp
 from app.routes.session import session_bp
 from app.routes.simulation import sim_bp, sock
 
@@ -33,6 +34,7 @@ def create_app() -> Flask:
     app.register_blueprint(chat_bp)
     app.register_blueprint(session_bp)
     app.register_blueprint(sim_bp)
+    app.register_blueprint(model_catalog_bp)
 
     # Initialize WebSocket
     sock.init_app(app)
@@ -64,6 +66,7 @@ def create_app() -> Flask:
                 "get_simulation": "GET /api/session/<id>/simulation",
                 "run_simulation": "POST /api/session/<id>/run-simulation",
                 "simulation_ws": "WS /ws/simulation/<session_id>",
+                "model_catalog": "GET/POST/DELETE /api/model-catalog, POST /api/model-catalog/seed|fetch",
             },
             "sse_event_types": [
                 "thinking", "tool_call", "guard_check",
