@@ -295,3 +295,138 @@ def delete_messages(session_id: str) -> None:
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM conversation_messages WHERE session_id=%s", (session_id,))
+
+
+# ── model_catalog ──
+
+def _name_key(name: str) -> str:
+    """Normalize a model name for fuzzy matching: lowercase, strip - _ / space."""
+    return (name or "").lower().replace("-", "").replace("_", "").replace("/", "").replace(" ", "")
+
+
+def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
+    """Look up a model by exact (case-insensitive) name or normalized name_key.
+
+    Returns the internal-shape config dict (num_layers/d_model/num_heads/d_ffn/
+    vocab_size/model_type/num_key_value_heads/_source/model_name) or None.
+    """
+    if not model_name:
+        return None
+    nk = _name_key(model_name)
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT model_name, model_type, num_layers, d_model, num_heads,
+                          d_ffn, vocab_size, num_kv_heads, source
+                   FROM model_catalog
+                   WHERE model_name ILIKE %s OR name_key = %s
+                   ORDER BY (model_name ILIKE %s) DESC
+                   LIMIT 1""",
+                (model_name, nk, model_name),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "model_name": row[0],
+        "model_type": row[1],
+        "num_layers": row[2],
+        "d_model": row[3],
+        "num_heads": row[4],
+        "d_ffn": row[5],
+        "vocab_size": row[6],
+        "num_key_value_heads": row[7],
+        "_source": row[8] or "pg",
+    }
+
+
+def upsert_model_catalog(model_name: str, cfg: dict[str, Any]) -> None:
+    """Insert or update a single model catalog entry.
+
+    cfg is the internal-shape dict produced by the resolver (num_layers,
+    d_model, num_heads, d_ffn, vocab_size, model_type, optional
+    num_key_value_heads, _source).
+    """
+    if not model_name or not cfg:
+        return
+    nk = _name_key(model_name)
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO model_catalog
+                   (model_name, name_key, model_type, num_layers, d_model, num_heads,
+                    d_ffn, vocab_size, num_kv_heads, source)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (model_name) DO UPDATE SET
+                   name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
+                   num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
+                   num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
+                   vocab_size=EXCLUDED.vocab_size, num_kv_heads=EXCLUDED.num_kv_heads,
+                   source=EXCLUDED.source, updated_at=NOW()""",
+                (
+                    model_name, nk, cfg.get("model_type", "dense"),
+                    cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
+                    cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"),
+                    cfg.get("_source"),
+                ),
+            )
+
+
+def list_model_catalog() -> list[dict[str, Any]]:
+    """Return all model catalog entries (for admin/management views)."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT model_name, model_type, num_layers, d_model, num_heads,
+                          d_ffn, vocab_size, num_kv_heads, source, description, updated_at
+                   FROM model_catalog ORDER BY model_name"""
+            )
+            rows = cur.fetchall()
+    return [{
+        "model_name": r[0], "model_type": r[1], "num_layers": r[2], "d_model": r[3],
+        "num_heads": r[4], "d_ffn": r[5], "vocab_size": r[6], "num_key_value_heads": r[7],
+        "source": r[8], "description": r[9],
+        "updated_at": r[10].isoformat() if r[10] else None,
+    } for r in rows]
+
+
+def delete_model_catalog_entry(model_name: str) -> bool:
+    """Delete a model catalog entry by exact name. Returns True if a row was deleted."""
+    if not model_name:
+        return False
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM model_catalog WHERE model_name ILIKE %s", (model_name,)
+            )
+            return cur.rowcount > 0
+
+
+def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
+    """Bulk-upsert builtin model entries (source='builtin'). Returns count."""
+    if not entries:
+        return 0
+    rows = [
+        (
+            name, _name_key(name), cfg.get("model_type", "dense"),
+            cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
+            cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"), "builtin",
+        )
+        for name, cfg in entries.items()
+    ]
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO model_catalog
+                   (model_name, name_key, model_type, num_layers, d_model, num_heads,
+                    d_ffn, vocab_size, num_kv_heads, source)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (model_name) DO UPDATE SET
+                   name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
+                   num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
+                   num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
+                   vocab_size=EXCLUDED.vocab_size, num_kv_heads=EXCLUDED.num_kv_heads,
+                   source=EXCLUDED.source, updated_at=NOW()""",
+                rows,
+            )
+    return len(rows)

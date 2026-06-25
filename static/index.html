@@ -4367,6 +4367,22 @@
                     document.getElementById("wf-orig-model-a").value;
             }
 
+            function updateModelNameSelect(modelName) {
+                var select = document.getElementById("wf-orig-model-name");
+                if (!select || !modelName) return;
+                for (var i = 0; i < select.options.length; i++) {
+                    if (select.options[i].value === modelName) {
+                        select.value = modelName;
+                        return;
+                    }
+                }
+                var opt = document.createElement("option");
+                opt.value = modelName;
+                opt.textContent = modelName;
+                select.appendChild(opt);
+                select.value = modelName;
+            }
+
             function openWorkflowParams() {
                 var overlay = document.getElementById("workflow-param-overlay");
                 if (overlay) overlay.style.display = "flex";
@@ -5245,6 +5261,56 @@
                             };
                             var subId = subMap[data.section];
                             if (subId) updateWorkflowNode(subId, "completed");
+                        }
+                        break;
+                    case "model_params_fill":
+                        setStatus("responding");
+                        const fillData = data.data || data;
+                        if (fillData.found && fillData.model_type === "dense") {
+                            document.getElementById("wf-orig-model-l").value =
+                                fillData.L;
+                            document.getElementById("wf-orig-model-h").value =
+                                fillData.H;
+                            document.getElementById("wf-orig-model-a").value =
+                                fillData.A;
+                            document.getElementById("wf-orig-model-dff").value =
+                                fillData.dff;
+                            document.getElementById("wf-orig-model-vocab").value =
+                                fillData.V;
+                            updateModelNameSelect(fillData.model_name);
+                            updateEquivalentModelL();
+                            addMessage(
+                                "system",
+                                "✅ 已自动填充模型 " +
+                                    fillData.model_name +
+                                    " 的架构参数 (L=" +
+                                    fillData.L +
+                                    ", H=" +
+                                    fillData.H +
+                                    ", A=" +
+                                    fillData.A +
+                                    ", dff=" +
+                                    fillData.dff +
+                                    ", V=" +
+                                    fillData.V +
+                                    ")",
+                            );
+                        } else if (fillData.model_type === "sparse") {
+                            addMessage(
+                                "error",
+                                fillData.message ||
+                                    "模型 " +
+                                        fillData.model_name +
+                                        " 是稀疏(MoE)模型，当前仅支持稠密模型",
+                            );
+                        } else {
+                            addMessage(
+                                "error",
+                                fillData.message ||
+                                    "未找到模型 " +
+                                        fillData.model_name +
+                                        " 的配置",
+                            );
                         }
                         break;
                     case "message":

@@ -21,6 +21,7 @@ from openai import OpenAI
 from app.agent.guardrails import validate_input_params
 from app.config import config
 from app.mcp.client import mcp_client
+from app.models.model_catalog import resolve_model_config
 from app.models.schemas import (
     AgentEvent,
     CardMetrics,
@@ -48,7 +49,7 @@ SYSTEM_PROMPT = """你是 TrainMesh Agent，一个专为 AI 训练组网仿真�
 6. 对比原始组网和等效组网的仿真结果，判断等效性
 
 分阶段工作流程：
-- Step 1 (等效参数设定): 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
+- Step 1 (等效参数设定): 用户在交互区提及大模型名称时，先调用 auto_fill_model_params 获取该模型的架构参数(L/H/A/dff/V)并推送前端自动填充表单(仅支持稠密模型；稀疏/MoE模型会返回不支持提示) → 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
 - Step 2 (等效计算推导): 用户确认 → 逐条推送等效策略/指标/公式 → 生成等效组网 → 生成等效模型结构 → 前端渲染
 - Step 3 (等效仿真验证): 用户确认 → 下发仿真 → 切换到仿真验证tab
 - Step 4 (等效方案输出): 自动对比 → 输出等效性结论
@@ -170,6 +171,30 @@ _UTILITY_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "auto_fill_model_params",
+            "description": (
+                "当用户在交互区输入或提及大模型名称时调用：从 HuggingFace/ModelScope 官方 config.json 获取该稠密模型的架构参数"
+                "(层数L、隐藏维度H、注意力头数A、FFN维度dff、词表V)，推送到前端自动填充 Step1 表单。"
+                "传入完整的仓库 ID 效果最佳(如 Qwen/Qwen2.5-7B、meta-llama/Llama-2-7b-hf)；"
+                "也支持内置表的简写名称(如 Qwen3-32B、Qwen2.5-7B)。"
+                "当前仅支持稠密模型，稀疏/MoE 模型会返回不支持提示。"
+                "注意：该工具只填充模型架构参数；设备类型、DP/TP/PP、序列长度S、批次B 等组网与运行参数仍由用户设定。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "model_name": {
+                        "type": "string",
+                        "description": "大模型名称或仓库 ID，如 Qwen/Qwen2.5-7B、Qwen3-32B、meta-llama/Llama-2-7b-hf",
+                    },
+                },
+                "required": ["model_name"],
+            },
+        },
+    },
 ]
 
 
@@ -283,6 +308,40 @@ def _execute_utility_tool(
             "section": section,
             "line": line,
             "section_done": section_done,
+        }
+
+    elif tool_name == "auto_fill_model_params":
+        model_name = (arguments.get("model_name") or "").strip()
+        cfg = resolve_model_config(model_name)
+        if not cfg:
+            return {
+                "_event_type": "model_params_fill",
+                "found": False,
+                "model_name": model_name,
+                "message": (
+                    f"未找到模型 {model_name} 的配置，请确认模型名称"
+                    "(建议使用完整仓库 ID 如 Qwen/Qwen2.5-7B)或联系管理员添加"
+                ),
+            }
+        if cfg.get("model_type") == "sparse":
+            return {
+                "_event_type": "model_params_fill",
+                "found": False,
+                "model_name": model_name,
+                "model_type": "sparse",
+                "message": f"模型 {model_name} 是稀疏(MoE)模型，当前仅支持稠密模型",
+            }
+        return {
+            "_event_type": "model_params_fill",
+            "found": True,
+            "model_name": model_name,
+            "model_type": "dense",
+            "L": cfg["num_layers"],
+            "H": cfg["d_model"],
+            "A": cfg["num_heads"],
+            "dff": cfg["d_ffn"],
+            "V": cfg["vocab_size"],
+            "source": cfg.get("_source", "unknown"),
         }
 
     return {"error": f"Unknown utility tool: {tool_name}"}
@@ -609,6 +668,14 @@ async def agent_stream(
                 result_msg = (
                     f"对比分析完成: {result.get('details', {}).get('conclusion', '')}"
                 )
+            elif tool_name == "auto_fill_model_params":
+                if result.get("found") and result.get("model_type") == "dense":
+                    result_msg = (
+                        f"已获取模型 {result.get('model_name')} 架构参数"
+                        f"(L={result.get('L')}, H={result.get('H')}, A={result.get('A')})并填充表单"
+                    )
+                else:
+                    result_msg = result.get("message", "模型参数获取失败")
             else:
                 result_msg = f"工具 {tool_name} 执行完成"
 

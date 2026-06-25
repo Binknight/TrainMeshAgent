@@ -88,6 +88,25 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
     timestamp       TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS model_catalog (
+    id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    model_name      VARCHAR(100) NOT NULL UNIQUE,
+    name_key        VARCHAR(100) NOT NULL UNIQUE,
+    model_type      VARCHAR(10) NOT NULL DEFAULT 'dense',
+    num_layers      INT NOT NULL,
+    d_model         INT NOT NULL,
+    num_heads       INT NOT NULL,
+    d_ffn           INT NOT NULL,
+    vocab_size      INT NOT NULL,
+    num_kv_heads    INT,
+    source          VARCHAR(20),
+    description     TEXT,
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_catalog_name_key ON model_catalog(name_key);
+
 ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_flops;
 ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_hbm;
 ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_tp_comm;
@@ -166,6 +185,16 @@ def init_db():
         with conn.cursor() as cur:
             cur.execute(SCHEMA_SQL)
             cur.execute(MIGRATE_UUID_SQL)
+
+    # Seed builtin dense models into model_catalog (idempotent upsert)
+    try:
+        from app.dao import seed_model_catalog_builtin
+        from app.models.model_catalog import BUILTIN_DENSE_MODELS
+        count = seed_model_catalog_builtin(BUILTIN_DENSE_MODELS)
+        print(f"[migration] model_catalog seeded {count} builtin models.")
+    except Exception as e:
+        print(f"[migration] model_catalog seed skipped: {e}")
+
     print("[migration] All tables created and UUID migration applied successfully.")
 
 
