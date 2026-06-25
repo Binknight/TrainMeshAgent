@@ -340,12 +340,16 @@ def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
     }
 
 
-def upsert_model_catalog(model_name: str, cfg: dict[str, Any]) -> None:
+def upsert_model_catalog(
+    model_name: str, cfg: dict[str, Any], description: str | None = None
+) -> None:
     """Insert or update a single model catalog entry.
 
     cfg is the internal-shape dict produced by the resolver (num_layers,
     d_model, num_heads, d_ffn, vocab_size, model_type, optional
-    num_key_value_heads, _source).
+    num_key_value_heads, _source). description is an optional admin note;
+    on update a NULL description preserves the existing value (so resolver
+    upserts never wipe a manually-set description).
     """
     if not model_name or not cfg:
         return
@@ -355,19 +359,21 @@ def upsert_model_catalog(model_name: str, cfg: dict[str, Any]) -> None:
             cur.execute(
                 """INSERT INTO model_catalog
                    (model_name, name_key, model_type, num_layers, d_model, num_heads,
-                    d_ffn, vocab_size, num_kv_heads, source)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    d_ffn, vocab_size, num_kv_heads, source, description)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (model_name) DO UPDATE SET
                    name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
                    num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
                    num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
                    vocab_size=EXCLUDED.vocab_size, num_kv_heads=EXCLUDED.num_kv_heads,
-                   source=EXCLUDED.source, updated_at=NOW()""",
+                   source=EXCLUDED.source,
+                   description=COALESCE(EXCLUDED.description, model_catalog.description),
+                   updated_at=NOW()""",
                 (
                     model_name, nk, cfg.get("model_type", "dense"),
                     cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
                     cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"),
-                    cfg.get("_source"),
+                    cfg.get("_source"), description,
                 ),
             )
 
