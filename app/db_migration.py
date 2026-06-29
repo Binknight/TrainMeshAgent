@@ -123,68 +123,13 @@ CREATE INDEX IF NOT EXISTS idx_comparison_reports_session ON comparison_reports(
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_session ON conversation_messages(session_id);
 """
 
-# Migration from SERIAL/INT PKs to UUID.
-# Safe to run on a fresh DB (all ALTERs use IF EXISTS / IF NOT EXISTS).
-MIGRATE_UUID_SQL = """
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.table_constraints
-               WHERE constraint_name = 'comparison_reports_original_id_fkey') THEN
-        ALTER TABLE comparison_reports DROP CONSTRAINT comparison_reports_original_id_fkey;
-    END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.table_constraints
-               WHERE constraint_name = 'comparison_reports_equivalent_id_fkey') THEN
-        ALTER TABLE comparison_reports DROP CONSTRAINT comparison_reports_equivalent_id_fkey;
-    END IF;
-END $$;
-
-ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS new_id UUID DEFAULT gen_random_uuid();
-ALTER TABLE topology_params DROP COLUMN IF EXISTS id CASCADE;
-ALTER TABLE topology_params RENAME COLUMN new_id TO id;
-ALTER TABLE topology_params ADD PRIMARY KEY (id);
-
-ALTER TABLE simulation_params ADD COLUMN IF NOT EXISTS new_id UUID DEFAULT gen_random_uuid();
-ALTER TABLE simulation_params DROP COLUMN IF EXISTS id CASCADE;
-ALTER TABLE simulation_params RENAME COLUMN new_id TO id;
-ALTER TABLE simulation_params ADD PRIMARY KEY (id);
-
-ALTER TABLE simulation_results ADD COLUMN IF NOT EXISTS new_id UUID DEFAULT gen_random_uuid();
-ALTER TABLE simulation_results DROP COLUMN IF EXISTS id CASCADE;
-ALTER TABLE simulation_results RENAME COLUMN new_id TO id;
-ALTER TABLE simulation_results ADD PRIMARY KEY (id);
-
-ALTER TABLE comparison_reports ADD COLUMN IF NOT EXISTS new_original_id UUID;
-ALTER TABLE comparison_reports ADD COLUMN IF NOT EXISTS new_equivalent_id UUID;
-ALTER TABLE comparison_reports DROP COLUMN IF EXISTS original_id;
-ALTER TABLE comparison_reports DROP COLUMN IF EXISTS equivalent_id;
-ALTER TABLE comparison_reports RENAME COLUMN new_original_id TO original_id;
-ALTER TABLE comparison_reports RENAME COLUMN new_equivalent_id TO equivalent_id;
-
-ALTER TABLE comparison_reports ADD COLUMN IF NOT EXISTS new_id UUID DEFAULT gen_random_uuid();
-ALTER TABLE comparison_reports DROP COLUMN IF EXISTS id CASCADE;
-ALTER TABLE comparison_reports RENAME COLUMN new_id TO id;
-ALTER TABLE comparison_reports ADD PRIMARY KEY (id);
-
-ALTER TABLE conversation_messages ADD COLUMN IF NOT EXISTS new_id UUID DEFAULT gen_random_uuid();
-ALTER TABLE conversation_messages DROP COLUMN IF EXISTS id CASCADE;
-ALTER TABLE conversation_messages RENAME COLUMN new_id TO id;
-ALTER TABLE conversation_messages ADD PRIMARY KEY (id);
-
-ALTER TABLE comparison_reports ADD CONSTRAINT comparison_reports_original_id_fkey
-    FOREIGN KEY (original_id) REFERENCES simulation_results(id);
-ALTER TABLE comparison_reports ADD CONSTRAINT comparison_reports_equivalent_id_fkey
-    FOREIGN KEY (equivalent_id) REFERENCES simulation_results(id);
-"""
-
-
 def init_db():
-    """Run migration to create all tables and migrate SERIAL→UUID if needed."""
+    """Run migration to create all tables (UUID PKs from the start)."""
     from app.db import get_db
 
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(SCHEMA_SQL)
-            cur.execute(MIGRATE_UUID_SQL)
 
     # Seed builtin dense models into model_catalog (idempotent upsert)
     try:
@@ -195,7 +140,7 @@ def init_db():
     except Exception as e:
         print(f"[migration] model_catalog seed skipped: {e}")
 
-    print("[migration] All tables created and UUID migration applied successfully.")
+    print("[migration] All tables created successfully.")
 
 
 if __name__ == "__main__":
