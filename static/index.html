@@ -191,9 +191,7 @@
                 transition: background var(--transition);
                 margin-bottom: 3px;
                 border: 1px solid transparent;
-                display: flex;
-                align-items: flex-start;
-                gap: 6px;
+                position: relative;
             }
             .history-item:hover {
                 background: var(--bg-hover);
@@ -217,21 +215,25 @@
                 text-overflow: ellipsis;
             }
             .history-delete {
-                flex-shrink: 0;
-                width: 20px;
-                height: 20px;
+                position: absolute;
+                right: 8px;
+                bottom: 6px;
+                width: 18px;
+                height: 18px;
                 border: none;
                 background: transparent;
                 color: var(--text-muted);
-                font-size: 15px;
-                line-height: 1;
                 cursor: pointer;
                 border-radius: 3px;
                 padding: 0;
                 opacity: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
                 transition:
                     opacity var(--transition),
-                    color var(--transition);
+                    color var(--transition),
+                    background var(--transition);
             }
             .history-item:hover .history-delete {
                 opacity: 1;
@@ -239,6 +241,11 @@
             .history-delete:hover {
                 color: var(--red);
                 background: rgba(242, 109, 120, 0.1);
+            }
+            .history-delete svg {
+                width: 14px;
+                height: 14px;
+                fill: currentColor;
             }
             .history-empty {
                 padding: 32px 16px;
@@ -4705,7 +4712,7 @@
                             "</div></div>" +
                             '<button class="history-delete" onclick="deleteHistory(event, \'' +
                             h.session_id +
-                            '\')" title="删除">×</button>' +
+                            '\')" title="删除"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>' +
                             "</div>"
                         );
                     })
@@ -4721,7 +4728,6 @@
 
             async function deleteHistory(e, id) {
                 e.stopPropagation();
-                if (!confirm("确定要删除此任务？此操作不可撤销。")) return;
                 try {
                     await fetch(API + "/session/" + id, { method: "DELETE" });
                 } catch (err) {}
