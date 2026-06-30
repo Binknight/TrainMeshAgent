@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import random
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, request, jsonify, Response
@@ -807,6 +808,100 @@ def get_dp_comm_detail(session_id: str, side: str, global_rank: int):
     task_id = session.original_task_id if side == "original" else session.equivalent_task_id
     mcp_result = mcp_client.get_comm_detail(task_id, global_rank, "dp")
     return jsonify(CommDetail(**mcp_result).model_dump())
+
+
+# ── Training script download (MCP get_training_script) ──
+
+_SCRIPT_FIELD_ALIASES = {
+    "topology": {
+        "device_type": ["device_type", "DEVICE", "device"],
+        "dp": ["dp", "DP"],
+        "tp": ["tp", "TP"],
+        "pp": ["pp", "PP"],
+    },
+    "model": {
+        "num_layers": ["num_layers", "NUM_LAYERS", "num-layers", "n_layer", "n-layer"],
+        "d_model": ["d_model", "D_MODEL", "d-model", "hidden_dim", "HIDDEN_DIM", "hidden_size", "hidden-size"],
+        "num_heads": ["num_heads", "NUM_HEADS", "num-heads", "n_head", "n-head"],
+        "d_ffn": ["d_ffn", "D_FFN", "d-ffn", "ffn_dim", "intermediate_size"],
+        "vocab_size": ["vocab_size", "VOCAB_SIZE", "vocab-size"],
+    },
+    "training": {
+        "global_batch_size": ["global_batch_size", "GLOBAL_BATCH_SIZE", "global-batch-size", "batch_size", "BATCH_SIZE", "batch-size"],
+        "micro_batch_size": ["micro_batch_size", "MICRO_BATCH_SIZE", "micro-batch-size", "per_device_batch_size"],
+        "seq_length": ["seq_length", "SEQ_LENGTH", "seq-length", "seq_len", "SEQ_LEN", "max_seq_length"],
+        "learning_rate": ["learning_rate", "LEARNING_RATE", "learning-rate", "lr", "LR"],
+        "optimizer": ["optimizer", "OPTIMIZER"],
+        "grad_accum_steps": ["grad_accum_steps", "GRAD_ACCUM_STEPS", "grad-accum-steps", "grad_accum", "gradient_accumulation_steps"],
+    },
+}
+
+
+def _parse_script_params(script_content: str) -> dict[str, dict[str, str]]:
+    """Best-effort parse of topology/model/training params from a pretrain.sh script.
+
+    Tolerant of bash variable assignments (``KEY=value`` / ``export KEY=value``) and
+    CLI flags (``--key value`` / ``--key=value``). Full-line comments are skipped so
+    example values in comments do not shadow real ones. Missing keys are omitted; the
+    frontend renders '—' for absent fields. See docs/mcp-server-spec.md §11.
+    """
+    out: dict[str, dict[str, str]] = {"topology": {}, "model": {}, "training": {}}
+    if not script_content:
+        return out
+    text = "\n".join(ln for ln in script_content.splitlines() if not ln.lstrip().startswith("#"))
+
+    def _find(aliases: list[str]) -> str | None:
+        for key in aliases:
+            k = re.escape(key)
+            # bash assignment: KEY=value / KEY="value" / export KEY=value  (line-anchored)
+            m = re.search(r'(?:^|\n)\s*(?:export\s+)?' + k + r'\s*=\s*"?([^\s"#]+)', text)
+            if m:
+                return m.group(1).strip().strip('"').strip("'")
+            # CLI flag: --key value / --key=value
+            m = re.search(r'\b--' + k + r'(?:=|\s+)\s*"?([^\s"#]+)', text)
+            if m:
+                return m.group(1).strip().strip('"').strip("'")
+        return None
+
+    for group, fields in _SCRIPT_FIELD_ALIASES.items():
+        for field, aliases in fields.items():
+            val = _find(aliases)
+            if val is not None:
+                out[group][field] = val
+    return out
+
+
+@session_bp.route("/<session_id>/training-script/<side>", methods=["GET"])
+def get_training_script(session_id: str, side: str):
+    """Return the MCP server-generated pretrain.sh for a side + parsed params for the result cards."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    if side not in ("original", "equivalent"):
+        return {"error": "side must be 'original' or 'equivalent'"}, 400
+
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    if not task_id:
+        return {"error": f"no simulation task for {side} (run simulation first)"}, 400
+
+    mcp_result = mcp_client.get_training_script(task_id)
+    if mcp_result.get("status") == "unavailable":
+        return {"error": mcp_result.get("error", "mcp server unavailable")}, 502
+
+    script_content = mcp_result.get("script_content") or ""
+    if not script_content:
+        return {"error": "training script not available for this task"}, 404
+
+    topology_name = mcp_result.get("topology_name") or ("原始组网" if side == "original" else "等效组网")
+    script_filename = mcp_result.get("script_filename") or ("pretrain_" + ("orig" if side == "original" else "equiv") + ".sh")
+    return jsonify({
+        "task_id": task_id,
+        "topology_name": topology_name,
+        "script_path": mcp_result.get("script_path", ""),
+        "script_filename": script_filename,
+        "script_content": script_content,
+        "params": _parse_script_params(script_content),
+    })
 
 
 # ══════════════════════════════════════════════════════════════════════════════
