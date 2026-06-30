@@ -6690,21 +6690,24 @@
                 });
                 html += '</tbody></table></div>';
 
-                // Card 3: 模型训练参数 (mock data)
+                // Card 3: 模型训练参数 (fetched from MCP training script — see _fillTrainingParams)
                 html += '<div class="result-config-card">';
                 html += '<div class="result-config-card-header">模型训练参数对比</div>';
                 html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
                 var trainRows = [
-                    ['global_batch_size', '2048', '2048'],
-                    ['micro_batch_size', '1', '1'],
-                    ['seq_length', '4096', '4096'],
-                    ['learning_rate', '1.5e-4', '1.5e-4'],
-                    ['optimizer', 'AdamW', 'AdamW'],
-                    ['grad_accum_steps', '1', '2', true]
+                    ['global_batch_size', 'global_batch_size'],
+                    ['micro_batch_size', 'micro_batch_size'],
+                    ['seq_length', 'seq_length'],
+                    ['learning_rate', 'learning_rate'],
+                    ['optimizer', 'optimizer'],
+                    ['grad_accum_steps', 'grad_accum_steps', true]
                 ];
                 trainRows.forEach(function (r) {
-                    var hl = r[3] ? ' val-highlight' : '';
-                    html += '<tr><td>' + r[0] + '</td><td class="val-orig' + hl + '">' + r[1] + '</td><td class="val-eq' + hl + '">' + r[2] + '</td></tr>';
+                    var hl = r[2] ? ' val-highlight' : '';
+                    var key = r[1];
+                    html += '<tr><td>' + r[0] + '</td>'
+                        + '<td class="val-orig' + hl + '" id="train-orig-' + key + '">—</td>'
+                        + '<td class="val-eq' + hl + '" id="train-eq-' + key + '">—</td></tr>';
                 });
                 html += '</tbody></table></div>';
 
@@ -6714,65 +6717,64 @@
                 html += '<div class="result-script-section">';
                 html += '<div class="result-script-title">输出训练脚本</div>';
                 html += '<div class="result-script-buttons">';
-                html += '<button class="btn-script btn-script-orig" onclick="_outputTrainingScript(\'orig\')">';
+                html += '<button class="btn-script btn-script-orig" onclick="_outputTrainingScript(\'orig\', this)">';
                 html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
                 html += '<span>输出原始组网训练脚本</span></button>';
-                html += '<button class="btn-script btn-script-eq" onclick="_outputTrainingScript(\'eq\')">';
+                html += '<button class="btn-script btn-script-eq" onclick="_outputTrainingScript(\'eq\', this)">';
                 html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
                 html += '<span>输出等效组网训练脚本</span></button>';
                 html += '</div>';
                 html += '</div>';
 
                 wrap.innerHTML = html;
+                _fillTrainingParams();
             }
 
-            // ── Mock: Output training script ──
-            function _outputTrainingScript(side) {
+            // ── Output training script (MCP get_training_script) ──
+            async function _outputTrainingScript(side, btn) {
+                var restSide = side === 'orig' ? 'original' : 'equivalent';
                 var label = side === 'orig' ? '原始组网' : '等效组网';
-                var mesh = side === 'orig' ? (meshOriginal || {}) : (meshEquivalent || {});
-                var model = side === 'orig' ? (modelOriginal || {}) : (modelEquivalent || {});
-                var cfg = model.config || {};
-                var comp = model.computed || {};
+                if (btn) btn.disabled = true;
+                try {
+                    var resp = await fetch(API + "/session/" + sessionId + "/training-script/" + restSide);
+                    if (!resp.ok) {
+                        var err = await resp.json().catch(function () { return {}; });
+                        throw new Error(err.error || ("HTTP " + resp.status));
+                    }
+                    var data = await resp.json();
+                    var content = data.script_content || "";
+                    if (!content) throw new Error("脚本内容为空");
+                    var filename = data.script_filename || ("pretrain_" + side + ".sh");
+                    var blob = new Blob([content], { type: "text/x-shellscript" });
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement("a");
+                    a.href = url; a.download = filename;
+                    document.body.appendChild(a); a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } catch (e) {
+                    alert(label + " 训练脚本下载失败: " + e.message);
+                } finally {
+                    if (btn) btn.disabled = false;
+                }
+            }
 
-                var lines = [];
-                lines.push('#!/bin/bash');
-                lines.push('# ' + label + ' 训练脚本 (Mock)');
-                lines.push('# 生成时间: ' + new Date().toISOString());
-                lines.push('');
-                lines.push('# ═══ 组网参数 ═══');
-                lines.push('DP=' + (mesh.dp || '—'));
-                lines.push('TP=' + (mesh.tp || '—'));
-                lines.push('PP=' + (mesh.pp || '—'));
-                lines.push('DEVICE=' + (mesh.device_type || '—'));
-                lines.push('');
-                lines.push('# ═══ 模型参数 ═══');
-                lines.push('NUM_LAYERS=' + (cfg.num_layers || '—'));
-                lines.push('D_MODEL=' + (cfg.d_model || '—'));
-                lines.push('NUM_HEADS=' + (cfg.num_heads || '—'));
-                lines.push('D_FFN=' + (cfg.d_ffn || '—'));
-                lines.push('');
-                lines.push('# ═══ 训练超参 ═══');
-                lines.push('GLOBAL_BATCH_SIZE=2048');
-                lines.push('MICRO_BATCH_SIZE=1');
-                lines.push('SEQ_LENGTH=4096');
-                lines.push('LEARNING_RATE=1.5e-4');
-                lines.push('');
-                lines.push('# ═══ 启动命令 ═══');
-                lines.push('torchrun --nproc_per_node=8 \\');
-                lines.push('  train.py \\');
-                lines.push('  --dp $DP --tp $TP --pp $PP \\');
-                lines.push('  --num-layers $NUM_LAYERS \\');
-                lines.push('  --d-model $D_MODEL \\');
-                lines.push('  --num-heads $NUM_HEADS \\');
-                lines.push('  --d-ffn $D_FFN \\');
-                lines.push('  --global-batch-size $GLOBAL_BATCH_SIZE \\');
-                lines.push('  --micro-batch-size $MICRO_BATCH_SIZE \\');
-                lines.push('  --seq-length $SEQ_LENGTH \\');
-                lines.push('  --lr $LEARNING_RATE');
-
-                var script = lines.join('\n');
-                alert(label + ' 训练脚本 (Mock):\n\n' + script);
-                console.log('[' + label + ' 训练脚本]\n' + script);
+            // ── Fill Card 3 training params from MCP training script ──
+            async function _fillTrainingParams() {
+                var fields = ["global_batch_size", "micro_batch_size", "seq_length", "learning_rate", "optimizer", "grad_accum_steps"];
+                await Promise.all(["original", "equivalent"].map(async function (side) {
+                    var pre = side === "original" ? "train-orig-" : "train-eq-";
+                    try {
+                        var resp = await fetch(API + "/session/" + sessionId + "/training-script/" + side);
+                        if (!resp.ok) return;
+                        var data = await resp.json();
+                        var tp = (data.params && data.params.training) || {};
+                        fields.forEach(function (f) {
+                            var el = document.getElementById(pre + f);
+                            if (el && tp[f] != null) el.textContent = tp[f];
+                        });
+                    } catch (e) {}
+                }));
             }
 
             function _renderSimResults() {
