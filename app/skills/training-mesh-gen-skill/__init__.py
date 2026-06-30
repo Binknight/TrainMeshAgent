@@ -96,8 +96,10 @@ class MeshGenSkill(BaseSkill):
         for global_rank in range(total_nodes):
             dp_rank = global_rank // (tp * pp)
             remainder = global_rank % (tp * pp)
-            tp_rank = remainder // pp
-            pp_rank = remainder % pp
+            # 与前端 meshBuildData 一致：TP 最低位、PP 居中
+            # global_rank = dp*(tp*pp) + pp*tp + tp
+            pp_rank = remainder // tp
+            tp_rank = remainder % tp
 
             neighbors = []
             if dp > 1:

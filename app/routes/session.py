@@ -220,7 +220,8 @@ def estimate_metrics():
 
     cards = []
     for rank in range(total_nodes):
-        pp_rank = rank % pp
+        # 与前端 meshBuildData 一致：pp_idx = (rank // tp) % pp（TP 最低位）
+        pp_rank = (rank // tp) % pp
         is_edge = pp > 1 and (pp_rank == 0 or pp_rank == pp - 1)
         flops = flops_edge if is_edge else flops_mid
         hbm = hbm_edge if is_edge else hbm_mid
@@ -534,7 +535,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
         return op
 
     # Embedding (first PP stage only)
-    if pp == 1 or global_rank % pp == 0:
+    if pp == 1 or (global_rank // tp) % pp == 0:
         emb_op = _FWD_OPS[0]
         dur = 800 * dur_scale
         flops = 1.5e12 * dur_scale
@@ -572,7 +573,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
                 comm_time_us += dur
 
         # PP Send (if not last PP stage)
-        if pp > 1 and global_rank % pp != pp - 1:
+        if pp > 1 and (global_rank // tp) % pp != pp - 1:
             dur = rng.uniform(50, 150) * dur_scale
             msg_bytes = rng.uniform(20e6, 60e6)
             extra_send = {"data_shape": "[B,S,d_model]", "data_type": "bf16", "comm_group": "pp_group", "additional": f"{msg_bytes/1e6:.1f}MB"}
@@ -601,7 +602,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
                 comm_time_us += dur
 
         # PP Recv (if not first PP stage)
-        if pp > 1 and global_rank % pp != 0:
+        if pp > 1 and (global_rank // tp) % pp != 0:
             dur = rng.uniform(50, 150) * dur_scale
             msg_bytes = rng.uniform(20e6, 60e6)
             extra_recv = {"data_shape": "[B,S,d_model]", "data_type": "bf16", "comm_group": "pp_group", "additional": f"{msg_bytes/1e6:.1f}MB"}
