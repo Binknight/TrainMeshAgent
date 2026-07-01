@@ -6581,7 +6581,7 @@
                 var cr = _comparisonReport;
                 var tol = cr.error_tolerance_pct || 5.0;
                 var isEq = cr.is_equivalent !== false;
-                var maxDiff = (cr.details && cr.details.max_diff_pct != null) ? cr.details.max_diff_pct : Math.max(cr.flops_diff_pct, cr.hbm_diff_pct, cr.tp_comm_diff_pct, cr.pp_comm_diff_pct, cr.dp_comm_diff_pct);
+                var maxDiff = (cr.details && cr.details.max_diff_pct != null) ? cr.details.max_diff_pct : Math.max(cr.flops_diff_pct, cr.hbm_diff_pct, cr.tp_comm_diff_pct, cr.pp_comm_diff_pct);
 
                 var html = '';
 
@@ -6601,18 +6601,17 @@
                 html += '<span>结论: <strong>' + (cr.details && cr.details.conclusion || (isEq ? '通过' : '不通过')) + '</strong></span>';
                 html += '</div></div></div>';
 
-                // 1b. Five-dimension diff bars — 原始组网 vs 等效组网 的仿真验证值对比
+                // 1b. Four-dimension diff bars — 原始组网 vs 等效组网 的仿真验证值对比 (DP 不纳入判定)
                 var diffs = [
                     { label: 'FLOPs', val: cr.flops_diff_pct },
                     { label: 'HBM', val: cr.hbm_diff_pct },
                     { label: 'TP通信', val: cr.tp_comm_diff_pct },
-                    { label: 'PP通信', val: cr.pp_comm_diff_pct },
-                    { label: 'DP通信', val: cr.dp_comm_diff_pct }
+                    { label: 'PP通信', val: cr.pp_comm_diff_pct }
                 ];
                 var barMaxPct = Math.max(10, maxDiff * 1.5);
 
                 html += '<div class="result-diff-section">';
-                html += '<div class="result-diff-title">五维差异对比 (原始组网 vs 等效组网 · 仿真验证值)</div>';
+                html += '<div class="result-diff-title">四维差异对比 (原始组网 vs 等效组网 · 仿真验证值)</div>';
                 diffs.forEach(function (d) {
                     var pass = d.val <= tol;
                     var pctW = Math.min(100, (d.val / barMaxPct) * 100);
@@ -6630,6 +6629,12 @@
                 html += '<div style="display:flex;justify-content:space-between;margin-top:8px;padding-left:80px;font-family:var(--font-mono);font-size:9px;color:var(--text-muted)">';
                 html += '<span>0%</span><span>' + (barMaxPct / 2).toFixed(1) + '%</span><span>' + barMaxPct.toFixed(1) + '%</span>';
                 html += '</div>';
+                html += '</div>';
+
+                // 1c. DP exclusion note — DP 是缩减维度，通信量天然不等效，不纳入判定
+                html += '<div style="margin-top:12px;padding:10px 14px;border-left:3px solid #3b82f6;background:rgba(59,130,246,0.10);border-radius:4px;font-size:12px;line-height:1.6;color:var(--text-muted)">';
+                html += '<div style="font-weight:700;color:var(--text-muted);margin-bottom:4px">DP 通信（不纳入判定）</div>';
+                html += '等效组网通过缩减 DP 维度压缩集群规模（DP_eq = max(DP_orig/4, 1)），DP all-reduce 通信量天然随 DP 组规模变化，属预期不等效，不计入等效判定。当前差异 <strong style="color:var(--text-muted)">' + (cr.dp_comm_diff_pct || 0).toFixed(2) + '%</strong>（仅供参考）。判定仅依据 FLOPs / HBM / TP 通信 / PP 通信 四维。';
                 html += '</div>';
 
                 // ═══════════════════════════════════════════

@@ -236,21 +236,21 @@ elif tool_name == "compare_results":
 # orchestrator.py: _build_comparison_report()
 
 def _build_comparison_report(original, equivalent):
-    # 计算原始与等效的 5 项差异百分比
+    # 计算原始与等效的差异百分比（DP 单列，不纳入判定）
     flops_diff_pct  = abs(orig - equiv) / max(abs(orig), eps) * 100   # 计算强度差异
     hbm_diff_pct    = abs(orig - equiv) / max(abs(orig), eps) * 100   # HBM 内存差异
     tp_comm_diff_pct = abs(orig - equiv) / max(abs(orig), eps) * 100  # TP 通信差异
     pp_comm_diff_pct = abs(orig - equiv) / max(abs(orig), eps) * 100  # PP 通信差异
-    dp_comm_diff_pct = abs(orig - equiv) / max(abs(orig), eps) * 100  # DP 通信差异
+    dp_comm_diff_pct = abs(orig - equiv) / max(abs(orig), eps) * 100  # DP 通信差异（仅供参考）
 
     tolerance = 5.0   # 容忍度 5%
 
+    # DP 是等效建模的缩减维度 (DP_eq = max(DP/4,1))，其通信量天然不等效，不纳入判定
     is_equivalent = (
         flops_diff_pct <= tolerance
         and hbm_diff_pct <= tolerance
         and tp_comm_diff_pct <= tolerance
         and pp_comm_diff_pct <= tolerance
-        and dp_comm_diff_pct <= tolerance
     )
 
     return ComparisonReport(

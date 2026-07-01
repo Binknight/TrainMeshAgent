@@ -463,12 +463,12 @@ def _build_comparison_report(
     dp_comm_diff = _diff_pct(odp, edp)
 
     tolerance = 5.0
+    # DP 是等效建模的缩减维度 (DP_eq = max(DP/4,1))，其通信量天然不等效，不纳入判定
     is_equivalent = (
         flops_diff <= tolerance
         and hbm_diff <= tolerance
         and tp_comm_diff <= tolerance
         and pp_comm_diff <= tolerance
-        and dp_comm_diff <= tolerance
     )
 
     return ComparisonReport(
@@ -484,7 +484,7 @@ def _build_comparison_report(
         details={
             "conclusion": "✅ 等效验证通过" if is_equivalent else "❌ 等效验证不通过",
             "max_diff_pct": round(
-                max(flops_diff, hbm_diff, tp_comm_diff, pp_comm_diff, dp_comm_diff), 2
+                max(flops_diff, hbm_diff, tp_comm_diff, pp_comm_diff), 2
             ),
         },
     )
