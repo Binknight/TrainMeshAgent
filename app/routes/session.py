@@ -350,7 +350,8 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
     dp_diff = _diff_pct(_per_card(original.cards, "dp_comm_gb_per_step"), _per_card(equivalent.cards, "dp_comm_gb_per_step"))
 
     tolerance = 5.0
-    is_eq = all(d <= tolerance for d in [flops_diff, hbm_diff, tp_diff, pp_diff, dp_diff])
+    # DP 是等效建模的缩减维度 (DP_eq = max(DP/4,1))，其通信量天然不等效，不纳入判定
+    is_eq = all(d <= tolerance for d in [flops_diff, hbm_diff, tp_diff, pp_diff])
 
     return ComparisonReport(
         original=original,
@@ -364,7 +365,7 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
         error_tolerance_pct=tolerance,
         details={
             "conclusion": "✅ 等效验证通过" if is_eq else "❌ 等效验证不通过",
-            "max_diff_pct": round(max(flops_diff, hbm_diff, tp_diff, pp_diff, dp_diff), 2),
+            "max_diff_pct": round(max(flops_diff, hbm_diff, tp_diff, pp_diff), 2),
         }
     )
 
