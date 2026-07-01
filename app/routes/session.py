@@ -403,6 +403,7 @@ def run_simulation(session_id: str):
             seq_len=session.original_seq_len,
             batch_size=session.original_batch_size,
             model_name=session.original_model_name,
+            d_ffn=session.original_dff,
             micro_batch_size=session.original_micro_batch,
             vocab_size=session.original_vocab_size,
         )
@@ -418,6 +419,7 @@ def run_simulation(session_id: str):
             seq_len=session.equivalent_seq_len,
             batch_size=session.equivalent_batch_size,
             model_name=session.original_model_name,
+            d_ffn=session.equivalent_dff,
             micro_batch_size=session.equivalent_micro_batch,
             vocab_size=session.original_vocab_size,
         )
