@@ -4481,6 +4481,16 @@
                     if (refRow) refRow.style.display = "none";
                     return;
                 }
+                // Reset topology/runtime fields to defaults before applying catalog entry,
+                // so fields absent from the entry (e.g. device_type, dp) don't retain
+                // stale values from a previously-selected model.
+                document.getElementById("wf-orig-device").value = "A3";
+                document.getElementById("wf-orig-dp").value = "8";
+                document.getElementById("wf-orig-tp").value = "16";
+                document.getElementById("wf-orig-pp").value = "8";
+                document.getElementById("wf-orig-model-s").value = "2048";
+                document.getElementById("wf-orig-model-b").value = "32";
+                document.getElementById("wf-orig-model-b-micro").value = "4";
                 try {
                     var resp = await fetch(API + "/model-catalog?name=" + encodeURIComponent(modelName));
                     if (!resp.ok) throw new Error("model not found");
@@ -4492,7 +4502,7 @@
                     document.getElementById("wf-orig-model-a").value = entry.num_heads;
                     document.getElementById("wf-orig-model-dff").value = entry.d_ffn;
                     document.getElementById("wf-orig-model-vocab").value = entry.vocab_size;
-                    // Fill topology & runtime fields (from training script defaults)
+                    // Fill topology & runtime fields (overrides defaults when present)
                     if (entry.device_type) {
                         document.getElementById("wf-orig-device").value = entry.device_type;
                     }
