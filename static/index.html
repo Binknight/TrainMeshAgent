@@ -3117,28 +3117,18 @@
                     <div class="chat-messages" id="chat-messages">
                         <div class="msg-group fade-in">
                             <span class="msg-label agent">TrainMesh Agent</span>
-                            <div class="msg-bubble agent">
-                                欢迎使用 TrainMesh
-                                Agent。输入组网参数开始仿真测试。
-                            </div>
+                            <div class="msg-bubble agent">欢迎使用 TrainMesh Agent。输入模型名称，开始等效建模。</div>
                         </div>
 
                         <div class="msg-group fade-in">
                             <span class="msg-label system">建议</span>
-                            <div class="msg-bubble system">
-                                试试下方的快捷操作，或直接输入组网参数（设备类型
-                                + DP/TP/PP）
-                            </div>
+                            <div class="msg-bubble system">试试下方的快捷操作</div>
                         </div>
                         <div class="quick-actions" id="quick-actions">
                             <span
                                 class="quick-chip"
-                                onclick="
-                                    sendQuick(
-                                        '请帮我生成原始组网: 设备类型A3, DP=8, TP=16, PP=8 | 等效组网: 设备类型A3, DP=2, TP=16, PP=3',
-                                    )
-                                "
-                                >A3 DP8/TP16/PP8 → A3 DP2/TP16/PP3</span
+                                onclick="sendQuick('请用Qwen2.5-72B开始等效建模')"
+                                >Qwen2.5-72B 等效建模</span
                             >
                         </div>
                     </div>
