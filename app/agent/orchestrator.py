@@ -549,8 +549,29 @@ async def agent_stream(
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
     ]
+    # Collect all tool_call_ids that have a matching tool response in history
+    responded_ids = {
+        h.get("tool_call_id")
+        for h in session.history[-20:]
+        if h.get("role") == "tool" and h.get("tool_call_id")
+    }
     for h in session.history[-20:]:
-        messages.append(h)
+        if h.get("role") == "assistant" and h.get("tool_calls"):
+            # Strip tool_calls that lack a tool response (orphaned from a crashed round)
+            valid_calls = [
+                tc for tc in h["tool_calls"]
+                if tc.get("id") in responded_ids
+            ]
+            if valid_calls:
+                h_copy = dict(h)
+                h_copy["tool_calls"] = valid_calls
+                messages.append(h_copy)
+            elif h.get("content"):
+                # No valid tool_calls left — keep as plain assistant message
+                messages.append({"role": "assistant", "content": h.get("content", "")})
+            # else: entirely orphaned — drop the message
+        else:
+            messages.append(h)
     messages.append({"role": "user", "content": user_message})
     session.history.append({"role": "user", "content": user_message})
 
@@ -639,6 +660,16 @@ async def agent_stream(
             except Exception as e:
                 logger.exception(f"[agent_stream] tool execution error: {tool_name}")
                 yield AgentEvent(event_type="error", message=f"工具执行异常: {e}")
+                # Append error tool response so the assistant's tool_calls
+                # message isn't left orphaned in session history, which would
+                # cause a 400 error on the next request.
+                err_content = json.dumps({"error": str(e)}, ensure_ascii=False)
+                messages.append(
+                    {"role": "tool", "tool_call_id": tool_call.id, "content": err_content}
+                )
+                session.history.append(
+                    {"role": "tool", "tool_call_id": tool_call.id, "content": err_content}
+                )
                 break
 
             logger.info(
