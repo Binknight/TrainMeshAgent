@@ -1223,6 +1223,12 @@
                 user-select: none;
                 flex-shrink: 0;
             }
+            /* In chat input area: sit inline before the textarea */
+            .chat-input-area .ai-toggle {
+                padding: 0 8px;
+                border-right: 1px solid var(--border);
+                margin-right: 4px;
+            }
             .ai-toggle input[type="checkbox"] {
                 display: none;
             }
@@ -2769,11 +2775,6 @@
                                 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
                             </svg>
                         </button>
-                        <label class="ai-toggle" title="切换 Agent 对话驱动模式">
-                            <span class="ai-toggle-label">AI</span>
-                            <input type="checkbox" id="ai-mode-toggle-flow" onchange="toggleWorkflowMode()" />
-                            <span class="ai-toggle-slider"></span>
-                        </label>
                     </span>
                 </div>
                 <!-- Parameter Input Overlay -->
@@ -3132,6 +3133,11 @@
                     </div>
 
                     <div class="chat-input-area">
+                        <label class="ai-toggle" id="ai-toggle-chat" title="AI 对话模式：开启可与 Agent 交互，关闭后仅展示系统消息">
+                            <span class="ai-toggle-label">AI</span>
+                            <input type="checkbox" id="ai-mode-toggle-flow" onchange="toggleWorkflowMode()" checked />
+                            <span class="ai-toggle-slider"></span>
+                        </label>
                         <textarea
                             class="chat-input"
                             id="chat-input"
@@ -3278,7 +3284,7 @@
                 },
             ];
 
-            var workflowMode = "api"; // "api" (default) | "agent" (AI toggle on)
+            var workflowMode = "agent"; // "agent" (default, AI on) | "api" (AI off)
             var workflowNodeStates = {}; // { stepId: 'pending' | 'active' | 'completed' | 'failed' | 'waiting_input' | 'disabled' }
             var workflowHighestCompleted = -1; // index of the furthest completed step
             var _pendingWorkflowState = null; // deferred workflow_state SSE data, applied after staged rendering
@@ -3295,7 +3301,7 @@
 
             function initWorkflow() {
                 // restore persisted mode
-                workflowMode = localStorage.getItem("workflowMode") || "api";
+                workflowMode = localStorage.getItem("workflowMode") || "agent";
                 updateModeSwitchUI();
                 workflowNodeStates = {};
                 workflowHighestCompleted = -1;
@@ -3322,10 +3328,28 @@
                 var toggle = document.getElementById("ai-mode-toggle-flow");
                 workflowMode = toggle && toggle.checked ? "agent" : "api";
                 localStorage.setItem("workflowMode", workflowMode);
+                var input = document.getElementById("chat-input");
+                var btn = document.getElementById("btn-send");
+                if (workflowMode === "api") {
+                    if (input) { input.disabled = true; input.placeholder = "AI 已关闭 — 仅展示系统消息"; }
+                    if (btn) btn.disabled = true;
+                } else {
+                    if (input) { input.disabled = false; input.placeholder = "输入消息..."; }
+                    if (btn) btn.disabled = false;
+                }
             }
             function updateModeSwitchUI() {
                 var toggle = document.getElementById("ai-mode-toggle-flow");
                 if (toggle) toggle.checked = workflowMode === "agent";
+                var input = document.getElementById("chat-input");
+                var btn = document.getElementById("btn-send");
+                if (workflowMode === "api") {
+                    if (input) { input.disabled = true; input.placeholder = "AI 已关闭 — 仅展示系统消息"; }
+                    if (btn) btn.disabled = true;
+                } else {
+                    if (input) { input.disabled = false; input.placeholder = "输入消息..."; }
+                    if (btn) btn.disabled = false;
+                }
             }
 
             // ── API mode submit stubs (called when workflowMode === "api") ──
@@ -5145,6 +5169,8 @@
 
             // ── SSE Streaming ──
             async function sendMessage(text, extraParams) {
+                // Block user-initiated messages when AI is off (system-driven calls still pass)
+                if (workflowMode === "api" && !text) return;
                 const input =
                     text || document.getElementById("chat-input").value.trim();
                 if (!input || isStreaming) return;
