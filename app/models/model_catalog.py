@@ -42,92 +42,92 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "num_layers": 28, "d_model": 1024, "num_heads": 16,
         "d_ffn": 3072, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/qwen3/pretrain_qwen3_0point6b_4K_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_0point6b_4K_ptd.sh",
     },
     "Qwen3-1.7B": {
         "num_layers": 28, "d_model": 2048, "num_heads": 16,
         "d_ffn": 6144, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/qwen3/pretrain_qwen3_1point7b_4K_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_1point7b_4K_ptd.sh",
     },
     "Qwen3-4B": {
         "num_layers": 36, "d_model": 2560, "num_heads": 32,
         "d_ffn": 9728, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/qwen3/pretrain_qwen3_4b_4K_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_4b_4K_ptd.sh",
     },
     "Qwen3-8B": {
         "num_layers": 36, "d_model": 4096, "num_heads": 32,
         "d_ffn": 12288, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/qwen3/pretrain_qwen3_8b_4K_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_8b_4K_ptd.sh",
     },
     "Qwen3-14B": {
         "num_layers": 40, "d_model": 5120, "num_heads": 40,
         "d_ffn": 17408, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/qwen3/pretrain_qwen3_14b_4K_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_14b_4K_ptd.sh",
     },
     "Qwen3-32B": {
         "num_layers": 64, "d_model": 5120, "num_heads": 64,
         "d_ffn": 25600, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/qwen3/pretrain_qwen3_32b_4K_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_32b_4K_ptd.sh",
     },
     # ── Qwen2.5 (MCore) ──
     "Qwen2.5-72B": {
         "num_layers": 80, "d_model": 8192, "num_heads": 64,
         "d_ffn": 29568, "vocab_size": 152064, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/qwen25/pretrain_qwen25_72b_4k_pack.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen25/pretrain_qwen25_72b_4k_pack.sh",
     },
     # ── Gemma2 (MCore) ──
     "Gemma2-9B": {
         "num_layers": 42, "d_model": 3584, "num_heads": 16,
         "d_ffn": 14336, "vocab_size": 256000, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/gemma2/pretrain_gemma2_9b_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/gemma2/pretrain_gemma2_9b_ptd.sh",
     },
     "Gemma2-27B": {
         "num_layers": 46, "d_model": 4608, "num_heads": 32,
         "d_ffn": 36864, "vocab_size": 256000, "num_key_value_heads": 16,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/gemma2/pretrain_gemma2_27b_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/gemma2/pretrain_gemma2_27b_ptd.sh",
     },
     # ── Llama-2 (MCore) ──
     "Llama-2-13B": {
         "num_layers": 40, "d_model": 5120, "num_heads": 40,
         "d_ffn": 13824, "vocab_size": 32000, "num_key_value_heads": None,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/llama2/pretrain_llama2_13b_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/llama2/pretrain_llama2_13b_ptd.sh",
     },
     # ── Phi3.5 (MCore) ──
     "Phi3.5-Mini": {
         "num_layers": 32, "d_model": 3072, "num_heads": 32,
         "d_ffn": 8192, "vocab_size": 32064, "num_key_value_heads": None,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/phi35/pretrain_phi35_mini_A3_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/phi35/pretrain_phi35_mini_A3_ptd.sh",
     },
     # ── PLM (MCore) ──
     "PLM-1.8B": {
         "num_layers": 32, "d_model": 2048, "num_heads": 16,
         "d_ffn": 8192, "vocab_size": 151936, "num_key_value_heads": 16,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/plm/pretrain_plm_1point8b_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/plm/pretrain_plm_1point8b_ptd.sh",
     },
     # ── Seed-OSS (MCore) ──
     "Seed-OSS-36B": {
         "num_layers": 64, "d_model": 5120, "num_heads": 80,
         "d_ffn": 27648, "vocab_size": 155136, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/seed_oss/pretrain_seed_oss_36b_ptd_2k_A3.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/seed_oss/pretrain_seed_oss_36b_ptd_2k_A3.sh",
     },
     # ── Magistral (MCore) ──
     "Magistral-Small-24B": {
         "num_layers": 40, "d_model": 5120, "num_heads": 32,
         "d_ffn": 32768, "vocab_size": 131072, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
-        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/main/examples/mcore/magistral/pretrain_magistral_small_24b_A3_ptd.sh",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/magistral/pretrain_magistral_small_24b_A3_ptd.sh",
     },
 }
 
@@ -278,7 +278,7 @@ def _is_sparse(hf_config: dict) -> bool:
     return False
 
 
-def _normalize_hf_config(hf_config: dict, source: str) -> dict | None:
+def _normalize_hf_config(hf_config: dict, source: str, model_id: str = "") -> dict | None:
     """Map a raw HF/ModelScope config.json to the internal arch dict."""
     out: dict = {}
     for hf_key, our_key in _HF_FIELD_MAP.items():
@@ -298,6 +298,12 @@ def _normalize_hf_config(hf_config: dict, source: str) -> dict | None:
         out["num_key_value_heads"] = kv
     out["model_type"] = "sparse" if _is_sparse(hf_config) else "dense"
     out["_source"] = source
+    # Set reference URL pointing to the model page
+    if model_id:
+        if source == "huggingface":
+            out["reference"] = f"https://huggingface.co/{model_id}"
+        elif source == "modelscope":
+            out["reference"] = f"https://modelscope.cn/models/{model_id}"
     return out
 
 
@@ -373,12 +379,12 @@ def _remote_fetch(repo_id: str) -> dict | None:
     """Fetch + normalize config from HuggingFace then ModelScope."""
     hf_raw = _fetch_hf_config(repo_id)
     if hf_raw:
-        normalized = _normalize_hf_config(hf_raw, "huggingface")
+        normalized = _normalize_hf_config(hf_raw, "huggingface", repo_id)
         if normalized:
             return normalized
     ms_raw = _fetch_modelscope_config(repo_id)
     if ms_raw:
-        return _normalize_hf_config(ms_raw, "modelscope")
+        return _normalize_hf_config(ms_raw, "modelscope", repo_id)
     return None
 
 

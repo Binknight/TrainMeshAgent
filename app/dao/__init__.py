@@ -327,6 +327,14 @@ def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
             row = cur.fetchone()
     if not row:
         return None
+    source = row[8] or "pg"
+    reference = row[9]
+    # Auto-generate reference URL for remote-sourced models that were cached
+    # before the reference column was added (backfill on read)
+    if not reference and source == "huggingface":
+        reference = f"https://huggingface.co/{row[0]}"
+    elif not reference and source == "modelscope":
+        reference = f"https://modelscope.cn/models/{row[0]}"
     return {
         "model_name": row[0],
         "model_type": row[1],
@@ -336,8 +344,8 @@ def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
         "d_ffn": row[5],
         "vocab_size": row[6],
         "num_key_value_heads": row[7],
-        "_source": row[8] or "pg",
-        "reference": row[9],
+        "_source": source,
+        "reference": reference,
     }
 
 
