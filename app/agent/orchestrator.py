@@ -334,7 +334,7 @@ def _execute_utility_tool(
         return {
             "_event_type": "model_params_fill",
             "found": True,
-            "model_name": model_name,
+            "model_name": cfg.get("model_name", model_name),
             "model_type": "dense",
             "L": cfg["num_layers"],
             "H": cfg["d_model"],
