@@ -3300,7 +3300,7 @@
 
             function initWorkflow() {
                 // restore persisted mode
-                workflowMode = localStorage.getItem("workflowMode") || "agent";
+                workflowMode = localStorage.getItem("wfAiMode") || "agent";
                 updateModeSwitchUI();
                 workflowNodeStates = {};
                 workflowHighestCompleted = -1;
@@ -3326,7 +3326,7 @@
             function toggleWorkflowMode() {
                 var toggle = document.getElementById("ai-mode-toggle-flow");
                 workflowMode = toggle && toggle.checked ? "agent" : "api";
-                localStorage.setItem("workflowMode", workflowMode);
+                localStorage.setItem("wfAiMode", workflowMode);
                 var input = document.getElementById("chat-input");
                 var btn = document.getElementById("btn-send");
                 if (workflowMode === "api") {
