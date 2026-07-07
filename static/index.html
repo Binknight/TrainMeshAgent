@@ -2788,9 +2788,13 @@
                         </div>
                         <div class="workflow-param-row">
                             <label>模型名称</label>
-                            <select id="wf-orig-model-name">
-                                <option value="Qwen3-32B">Qwen3-32B</option>
+                            <select id="wf-orig-model-name" onchange="onModelNameChange()">
+                                <option value="">— 请选择或输入模型名 —</option>
                             </select>
+                        </div>
+                        <div class="workflow-param-row" id="wf-model-ref-row" style="display:none">
+                            <label>参考脚本</label>
+                            <span id="wf-orig-model-ref" style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);word-break:break-all"></span>
                         </div>
                         <div class="wf-param-columns">
                             <div class="wf-param-col">
@@ -4390,6 +4394,64 @@
                 select.value = modelName;
             }
 
+            // ── Model catalog dropdown: dynamic population + auto-fill on select ──
+
+            async function loadModelCatalogDropdown() {
+                var select = document.getElementById("wf-orig-model-name");
+                if (!select) return;
+                try {
+                    var resp = await fetch(API + "/model-catalog");
+                    if (!resp.ok) return;
+                    var models = await resp.json();
+                    if (!Array.isArray(models) || models.length === 0) return;
+                    // Keep the placeholder, append catalog models
+                    models.forEach(function (m) {
+                        // Skip non-dense or entries already in the list
+                        if (m.model_type !== "dense") return;
+                        var existing = select.querySelector('option[value="' + m.model_name + '"]');
+                        if (existing) return;
+                        var opt = document.createElement("option");
+                        opt.value = m.model_name;
+                        opt.textContent = m.model_name + " (" + (m.source || "") + ")";
+                        select.appendChild(opt);
+                    });
+                } catch (e) {
+                    console.warn("[modelCatalog] dropdown load failed:", e);
+                }
+            }
+
+            async function onModelNameChange() {
+                var modelName = document.getElementById("wf-orig-model-name").value;
+                if (!modelName) {
+                    // Clear reference display
+                    var refRow = document.getElementById("wf-model-ref-row");
+                    if (refRow) refRow.style.display = "none";
+                    return;
+                }
+                try {
+                    var resp = await fetch(API + "/model-catalog?name=" + encodeURIComponent(modelName));
+                    if (!resp.ok) throw new Error("model not found");
+                    var entry = await resp.json();
+                    if (!entry || entry.model_type !== "dense") return;
+                    // Fill architecture fields
+                    document.getElementById("wf-orig-model-l").value = entry.num_layers;
+                    document.getElementById("wf-orig-model-h").value = entry.d_model;
+                    document.getElementById("wf-orig-model-a").value = entry.num_heads;
+                    document.getElementById("wf-orig-model-dff").value = entry.d_ffn;
+                    document.getElementById("wf-orig-model-vocab").value = entry.vocab_size;
+                    updateEquivalentModelL();
+                    // Show reference if available
+                    if (entry.reference) {
+                        var refRow = document.getElementById("wf-model-ref-row");
+                        var refSpan = document.getElementById("wf-orig-model-ref");
+                        if (refRow) refRow.style.display = "flex";
+                        if (refSpan) refSpan.textContent = entry.reference;
+                    }
+                } catch (e) {
+                    console.warn("[modelCatalog] auto-fill failed for", modelName, ":", e);
+                }
+            }
+
             function openWorkflowParams() {
                 var overlay = document.getElementById("workflow-param-overlay");
                 if (overlay) overlay.style.display = "flex";
@@ -5285,6 +5347,16 @@
                                 fillData.V;
                             updateModelNameSelect(fillData.model_name);
                             updateEquivalentModelL();
+                            // Show reference if provided
+                            if (fillData.reference) {
+                                var refRow = document.getElementById("wf-model-ref-row");
+                                var refSpan = document.getElementById("wf-orig-model-ref");
+                                if (refRow) refRow.style.display = "flex";
+                                if (refSpan) refSpan.textContent = fillData.reference;
+                            }
+                            var refNote = fillData.reference
+                                ? "\n📁 参考脚本: " + fillData.reference
+                                : "";
                             addMessage(
                                 "system",
                                 "✅ 已自动填充模型 " +
@@ -5299,7 +5371,8 @@
                                     fillData.dff +
                                     ", V=" +
                                     fillData.V +
-                                    ")",
+                                    ")" +
+                                    refNote,
                             );
                         } else if (fillData.model_type === "sparse") {
                             addMessage(
@@ -7311,6 +7384,7 @@
                 }
                 await ensureSession();
                 initWorkflow();
+                loadModelCatalogDropdown();
                 document.getElementById("chat-input").focus();
             })();
         </script>

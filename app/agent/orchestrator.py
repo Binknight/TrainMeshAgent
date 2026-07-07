@@ -342,6 +342,7 @@ def _execute_utility_tool(
             "dff": cfg["d_ffn"],
             "V": cfg["vocab_size"],
             "source": cfg.get("_source", "unknown"),
+            "reference": cfg.get("reference"),
         }
 
     return {"error": f"Unknown utility tool: {tool_name}"}
