@@ -13,17 +13,11 @@ result can be reused directly:
 
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
 
 import requests
 
 logger = logging.getLogger(__name__)
-
-# ── Local JSON cache (gitignored) ──
-_CACHE_DIR = Path(__file__).parent / ".model_cache"
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Builtin dense model fallback table (offline) ──
 # Values match public config.json. Used when network fetch fails or for bare
@@ -338,11 +332,6 @@ def _fetch_modelscope_config(model_id: str) -> dict | None:
     return None
 
 
-def _cache_path(model_name: str) -> Path:
-    safe = model_name.replace("/", "__").replace("\\", "__")
-    return _CACHE_DIR / f"{safe}.json"
-
-
 def _builtin_match(model_name: str) -> dict | None:
     """Fuzzy match a (possibly bare) model name against offline catalog tables."""
     norm = model_name.lower().replace("-", "").replace("_", "").replace(" ", "")
@@ -434,19 +423,12 @@ def _search_hf_model(bare_name: str) -> str | None:
 
 
 def _persist_resolved(model_name: str, resolved: dict) -> None:
-    """Persist a resolved config to disk cache + PostgreSQL (best-effort).
+    """Persist a resolved config to PostgreSQL (best-effort).
 
     All sources (megatron / huggingface / modelscope / mindspeed / manual) are
-    persisted uniformly to both disk and PG. Failures are logged and swallowed
-    so a DB/disk outage never breaks resolution.
+    persisted uniformly. Failures are logged and swallowed so a DB outage never
+    breaks resolution.
     """
-    # disk cache (local fallback when PG is unavailable)
-    try:
-        with open(_cache_path(model_name), "w", encoding="utf-8") as f:
-            json.dump(resolved, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.warning(f"[model_catalog] cache write failed: {e}")
-    # PG upsert (shared store)
     try:
         from app.dao import upsert_model_catalog
         upsert_model_catalog(model_name, resolved)
@@ -457,11 +439,13 @@ def _persist_resolved(model_name: str, resolved: dict) -> None:
 def resolve_model_config(model_name: str) -> dict | None:
     """
     Layered resolution:
-      1. PostgreSQL catalog (curated + previously fetched; shared across instances)
-      2. local JSON disk cache (per-instance fallback)
-      3. remote fetch: full org/name repo id → direct (HF → ModelScope);
+      1. PostgreSQL catalog — source priority: mindspeed > megatron > huggingface > modelscope
+      2. remote fetch: full org/name repo id → direct (HF → ModelScope);
          bare name → HF search resolves the canonical repo, then fetch
-      4. offline fuzzy fallback (MINDSPEED_DENSE_MODELS → BUILTIN_DENSE_MODELS)
+
+    Builtin models (MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS) are seeded
+    into PG at startup via init_db(). The DB query's source priority ensures
+    official entries always outrank previously cached remote fetches.
 
     On a remote hit the result is upserted into PG so future lookups hit PG.
     Returns dict with num_layers/d_model/num_heads/d_ffn/vocab_size/model_type/
@@ -471,29 +455,17 @@ def resolve_model_config(model_name: str) -> dict | None:
     if not model_name:
         return None
 
-    # 1. PostgreSQL catalog
+    # 1. PostgreSQL catalog (source-prioritized: mindspeed > megatron > hf > ms)
     try:
         from app.dao import get_model_catalog_entry
         pg = get_model_catalog_entry(model_name)
         if pg:
-            logger.info(f"[model_catalog] pg hit: {model_name}")
+            logger.info(f"[model_catalog] pg hit: {model_name} (source={pg.get('_source')})")
             return pg
     except Exception as e:
         logger.warning(f"[model_catalog] pg lookup failed for {model_name}: {e}")
 
-    # 2. Local disk cache
-    cache_file = _cache_path(model_name)
-    if cache_file.exists():
-        try:
-            with open(cache_file, encoding="utf-8") as f:
-                logger.info(f"[model_catalog] cache hit: {model_name}")
-                return json.load(f)
-        except Exception:
-            pass  # corrupt cache → fall through
-
-    # 3. Remote fetch (authoritative):
-    #    - full org/name repo id → direct fetch
-    #    - bare name → HF search resolves the canonical repo, then fetch
+    # 2. Remote fetch — only when DB has no match
     resolved = None
     if "/" in model_name:
         resolved = _remote_fetch(model_name)
@@ -505,13 +477,9 @@ def resolve_model_config(model_name: str) -> dict | None:
             )
             resolved = _remote_fetch(repo_id)
 
-    # 4. Builtin fuzzy fallback (offline / remote miss)
-    if not resolved:
-        resolved = _builtin_match(model_name)
-
     if not resolved:
         return None
 
-    # Persist so future lookups hit PG (and refresh disk cache)
+    # Persist so future lookups hit PG
     _persist_resolved(model_name, resolved)
     return resolved
