@@ -2794,7 +2794,7 @@
                         </div>
                         <div class="workflow-param-row" id="wf-model-ref-row" style="display:none">
                             <label>参考脚本</label>
-                            <span id="wf-orig-model-ref" style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);word-break:break-all"></span>
+                            <a id="wf-orig-model-ref" href="#" target="_blank" style="font-family:var(--font-mono);font-size:11px;color:var(--cyan);text-decoration:none;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></a>
                         </div>
                         <div class="wf-param-columns">
                             <div class="wf-param-col">
@@ -2814,38 +2814,38 @@
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>DP</label>
-                                    <input id="wf-orig-dp" type="number" value="8" min="1" max="1024" disabled />
+                                    <input id="wf-orig-dp" type="number" value="8" min="1" max="1024" />
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>TP</label>
-                                    <select id="wf-orig-tp" disabled>
+                                    <select id="wf-orig-tp">
                                         <option value="16">16</option>
                                     </select>
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>PP</label>
-                                    <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()" disabled />
+                                    <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-section">原始模型参数</div>
                                 <div class="workflow-param-row">
                                     <label>L</label>
-                                    <input id="wf-orig-model-l" type="number" value="64" min="1" max="512" onchange="updateEquivalentModelL()" disabled />
+                                    <input id="wf-orig-model-l" type="number" value="64" min="1" max="512" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>H</label>
-                                    <input id="wf-orig-model-h" type="number" value="4096" min="128" max="32768" step="64" onchange="updateEquivalentModelL()" disabled />
+                                    <input id="wf-orig-model-h" type="number" value="4096" min="128" max="32768" step="64" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>A</label>
-                                    <input id="wf-orig-model-a" type="number" value="32" min="1" max="256" onchange="updateEquivalentModelL()" disabled />
+                                    <input id="wf-orig-model-a" type="number" value="32" min="1" max="256" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>b</label>
-                                    <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" disabled />
+                                    <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" />
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>dff</label>
-                                    <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" disabled />
+                                    <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" />
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>V (词表)</label>
@@ -4420,6 +4420,22 @@
                 }
             }
 
+            function _showModelRef(referenceUrl) {
+                var refRow = document.getElementById("wf-model-ref-row");
+                var refLink = document.getElementById("wf-orig-model-ref");
+                if (!refRow || !refLink) return;
+                if (!referenceUrl) {
+                    refRow.style.display = "none";
+                    return;
+                }
+                // Extract script filename from URL path
+                var parts = referenceUrl.split("/");
+                var filename = parts[parts.length - 1] || referenceUrl;
+                refLink.textContent = "📄 " + filename;
+                refLink.href = referenceUrl;
+                refRow.style.display = "flex";
+            }
+
             async function onModelNameChange() {
                 var modelName = document.getElementById("wf-orig-model-name").value;
                 if (!modelName) {
@@ -4440,13 +4456,8 @@
                     document.getElementById("wf-orig-model-dff").value = entry.d_ffn;
                     document.getElementById("wf-orig-model-vocab").value = entry.vocab_size;
                     updateEquivalentModelL();
-                    // Show reference if available
-                    if (entry.reference) {
-                        var refRow = document.getElementById("wf-model-ref-row");
-                        var refSpan = document.getElementById("wf-orig-model-ref");
-                        if (refRow) refRow.style.display = "flex";
-                        if (refSpan) refSpan.textContent = entry.reference;
-                    }
+                    // Show reference as clickable link (script name only)
+                    _showModelRef(entry.reference);
                 } catch (e) {
                     console.warn("[modelCatalog] auto-fill failed for", modelName, ":", e);
                 }
@@ -5347,13 +5358,8 @@
                                 fillData.V;
                             updateModelNameSelect(fillData.model_name);
                             updateEquivalentModelL();
-                            // Show reference if provided
-                            if (fillData.reference) {
-                                var refRow = document.getElementById("wf-model-ref-row");
-                                var refSpan = document.getElementById("wf-orig-model-ref");
-                                if (refRow) refRow.style.display = "flex";
-                                if (refSpan) refSpan.textContent = fillData.reference;
-                            }
+                            // Show reference as clickable link (script name only)
+                            _showModelRef(fillData.reference);
                             var refNote = fillData.reference
                                 ? "\n📁 参考脚本: " + fillData.reference
                                 : "";
