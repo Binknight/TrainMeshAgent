@@ -556,6 +556,11 @@ async def agent_stream(
         if h.get("role") == "tool" and h.get("tool_call_id")
     }
     for h in session.history[-20:]:
+        if h.get("role") == "system":
+            # System messages in history are human-readable summaries
+            # (guardrail results, errors). They must never appear between
+            # assistant(tool_calls) and tool responses — skip them here.
+            continue
         if h.get("role") == "assistant" and h.get("tool_calls"):
             # Strip tool_calls that lack a tool response (orphaned from a crashed round)
             valid_calls = [
@@ -685,16 +690,8 @@ async def agent_stream(
             if "error" in result:
                 event_type = "error"
                 result_msg = f"执行失败: {result.get('error')}"
-                session.history.append(
-                    {"role": "system", "content": "❌ " + result_msg}
-                )
             elif tool_name == "validate_mesh_params":
                 result_msg = "护栏校验" + ("通过" if result.get("passed") else "失败")
-                session.history.append(
-                    {"role": "system", "content": "✅ " + result_msg}
-                    if result.get("passed")
-                    else {"role": "system", "content": "❌ " + result_msg}
-                )
             elif tool_name == "training-mesh-gen-skill":
                 result_msg = f"组网 '{result.get('name', '')}' 生成成功"
             elif tool_name == "training-model-gen-skill":
@@ -739,6 +736,21 @@ async def agent_stream(
                     "content": tool_content,
                 }
             )
+
+            # Append system summary message AFTER tool response, so the
+            # history ordering is: assistant(tool_calls) → tool → system.
+            # Placing system before tool breaks OpenAI's requirement that
+            # tool responses directly follow tool_calls messages.
+            if event_type == "error":
+                session.history.append(
+                    {"role": "system", "content": "❌ " + result_msg}
+                )
+            elif tool_name == "validate_mesh_params":
+                session.history.append(
+                    {"role": "system", "content": "✅ " + result_msg}
+                    if result.get("passed")
+                    else {"role": "system", "content": "❌ " + result_msg}
+                )
 
     # Auto-profiling: if topologies have task_ids but no simulation data, run profiler now
     for label, topo, task_id in [

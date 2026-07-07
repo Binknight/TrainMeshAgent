@@ -3344,9 +3344,16 @@
             });
 
             function initWorkflow() {
-                // restore persisted mode
+                // Full init: reset state + apply mode UI (page load, newSession)
+                resetWorkflowState();
                 workflowMode = localStorage.getItem("wfAiMode") || "agent";
-                updateModeSwitchUI();
+                updateModeSwitchUI(); // calls applyWorkflowModeUI() internally
+            }
+
+            function resetWorkflowState() {
+                // Reset workflow node states only — does NOT touch chat panel UI.
+                // Used by syncWorkflowFromSession to restore node progress without
+                // wiping the conversation.
                 workflowNodeStates = {};
                 workflowHighestCompleted = -1;
                 WORKFLOW_STEPS.forEach(function (step, i) {
@@ -3358,7 +3365,7 @@
                         workflowNodeStates[step.id] = "pending";
                     }
                 });
-                // Reset formula card state for new session
+                // Reset formula card state
                 _formulaCardReady = false;
                 _pendingFormulaLines = [];
                 if (typeof window._resetFormulaQueue === "function") window._resetFormulaQueue();
@@ -4161,32 +4168,11 @@
             function confirmWorkflowStep(step) {
                 switch (step.id) {
                     case "equiv_calc":
-                        if (workflowMode === "api") {
-                            submitStep2();
-                        } else {
-                            sendMessage("确认开始等效计算");
-                        }
+                        // Both modes use direct API — agent only handles auto-fill, not workflow execution
+                        submitStep2();
                         break;
                     case "simulation":
-                        if (workflowMode === "api") {
-                            openSimParams();
-                        } else {
-                            var parts = [];
-                            if (
-                                typeof meshOriginal !== "undefined" &&
-                                meshOriginal
-                            )
-                                parts.push("原始组网");
-                            if (
-                                typeof meshEquivalent !== "undefined" &&
-                                meshEquivalent
-                            )
-                                parts.push("等效组网");
-                            var msg =
-                                (parts.length ? parts.join("和") : "组网") +
-                                " 数据已就绪，请开始仿真";
-                            sendMessage(msg);
-                        }
+                        openSimParams();
                         break;
                     default:
                         sendMessage("确认执行下一步");
@@ -4335,7 +4321,7 @@
             }
 
             function syncWorkflowFromSession(sessionData) {
-                initWorkflow(); // reset all nodes first, then apply session-specific state
+                resetWorkflowState(); // reset nodes only, don't touch chat UI
                 var hasTopology = !!(
                     sessionData.original_topology ||
                     sessionData.equivalent_topology
@@ -4625,13 +4611,18 @@
 
             async function submitWorkflowParams() {
                 await ensureSession();
+                var origModelName =
+                    document.getElementById("wf-orig-model-name").value;
+                // Require model name — guardrail does not validate it
+                if (!origModelName.trim()) {
+                    alert("请先在参数表中选择或输入模型名称");
+                    return;
+                }
                 var origDevice =
                     document.getElementById("wf-orig-device").value;
                 var origDp = document.getElementById("wf-orig-dp").value;
                 var origTp = document.getElementById("wf-orig-tp").value;
                 var origPp = document.getElementById("wf-orig-pp").value;
-                var origModelName =
-                    document.getElementById("wf-orig-model-name").value;
                 var origL = document.getElementById("wf-orig-model-l").value;
                 var origH = document.getElementById("wf-orig-model-h").value;
                 var origA = document.getElementById("wf-orig-model-a").value;
@@ -4646,60 +4637,24 @@
                 updateWorkflowNode("params", "completed");
                 updateWorkflowNode("equiv_calc", "active");
 
-                if (workflowMode === "api") {
-                    submitStep1({
-                        device_type: origDevice,
-                        dp: parseInt(origDp),
-                        tp: parseInt(origTp),
-                        pp: parseInt(origPp),
-                        model_name: origModelName,
-                        L: parseInt(origL),
-                        H: parseInt(origH),
-                        A: parseInt(origA),
-                        S: parseInt(origS),
-                        B: parseInt(origB),
-                        b_micro: parseInt(origB_micro),
-                        dff: parseInt(origDff),
-                        vocab_size: parseInt(origVocab),
-                        strategy: strategy,
-                    });
-                } else {
-                    var msg =
-                        "原始组网: 设备类型" +
-                        origDevice +
-                        ", DP=" +
-                        origDp +
-                        ", TP=" +
-                        origTp +
-                        ", PP=" +
-                        origPp +
-                        ", 模型名称=" +
-                        origModelName +
-                        ", L=" +
-                        origL +
-                        ", H=" +
-                        origH +
-                        ", A=" +
-                        origA +
-                        ", V=" +
-                        origVocab +
-                        ", S=" +
-                        origS +
-                        ", B=" +
-                        origB +
-                        ", dff=" +
-                        origDff +
-                        " | 等效策略: " +
-                        strategy;
-                    sendMessage(msg, {
-                        original_model_name: origModelName,
-                        original_seq_len: parseInt(origS) || 2048,
-                        original_batch_size: parseInt(origB) || 32,
-                        original_dff: parseInt(origDff) || 14336,
-                        original_vocab_size: parseInt(origVocab) || 32000,
-                        strategy: strategy,
-                    });
-                }
+                // Both agent and API modes use the same direct API call.
+                // Agent's role is auto-filling params; workflow execution is deterministic.
+                submitStep1({
+                    device_type: origDevice,
+                    dp: parseInt(origDp),
+                    tp: parseInt(origTp),
+                    pp: parseInt(origPp),
+                    model_name: origModelName,
+                    L: parseInt(origL),
+                    H: parseInt(origH),
+                    A: parseInt(origA),
+                    S: parseInt(origS),
+                    B: parseInt(origB),
+                    b_micro: parseInt(origB_micro),
+                    dff: parseInt(origDff),
+                    vocab_size: parseInt(origVocab),
+                    strategy: strategy,
+                });
             }
 
             // ── Step 3 Simulation Params ──
