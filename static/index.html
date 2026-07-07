@@ -2818,9 +2818,7 @@
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>TP</label>
-                                    <select id="wf-orig-tp">
-                                        <option value="16">16</option>
-                                    </select>
+                                    <input id="wf-orig-tp" type="number" value="16" min="1" max="64" />
                                 </div>
                                 <div class="workflow-param-row">
                                     <label>PP</label>
@@ -4321,28 +4319,9 @@
 
             // ── Workflow Parameter Panel ──
 
-            // TP options per device type
-            var TP_OPTIONS = { A2: [8], A3: [16], A5: [16] };
-
-            function syncTP(deviceSelectId, tpSelectId) {
-                var device = document.getElementById(deviceSelectId).value;
-                var tpSelect = document.getElementById(tpSelectId);
-                var options = TP_OPTIONS[device] || [8];
-                tpSelect.innerHTML = "";
-                options.forEach(function (v) {
-                    var opt = document.createElement("option");
-                    opt.value = v;
-                    opt.textContent = v;
-                    tpSelect.appendChild(opt);
-                });
-            }
-
             function onOrigDeviceChange() {
                 var v = document.getElementById("wf-orig-device").value;
                 document.getElementById("wf-equiv-device").value = v;
-                syncTP("wf-orig-device", "wf-orig-tp");
-                var options = TP_OPTIONS[v] || [16];
-                document.getElementById("wf-equiv-tp").value = options[0];
             }
 
             function onEquivDeviceChange() {
@@ -4456,10 +4435,7 @@
             function openWorkflowParams() {
                 var overlay = document.getElementById("workflow-param-overlay");
                 if (overlay) overlay.style.display = "flex";
-                syncTP("wf-orig-device", "wf-orig-tp");
-                var device = document.getElementById("wf-orig-device").value;
-                var options = TP_OPTIONS[device] || [16];
-                document.getElementById("wf-equiv-tp").value = options[0];
+                document.getElementById("wf-equiv-tp").value = document.getElementById("wf-orig-tp").value;
                 updateEquivalentModelL();
             }
 
@@ -5369,7 +5345,7 @@
                             _showModelRef(fillData.reference);
                             // Auto-open Step1 params form (syncs TP options from device)
                             openWorkflowParams();
-                            // Set TP/PP after openWorkflowParams has populated TP options
+                            // Set TP/PP after openWorkflowParams
                             if (fillData.tp != null) {
                                 document.getElementById("wf-orig-tp").value = fillData.tp;
                             }
