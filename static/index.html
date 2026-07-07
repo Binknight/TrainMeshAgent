@@ -4424,6 +4424,28 @@
                     document.getElementById("wf-orig-model-a").value = entry.num_heads;
                     document.getElementById("wf-orig-model-dff").value = entry.d_ffn;
                     document.getElementById("wf-orig-model-vocab").value = entry.vocab_size;
+                    // Fill topology & runtime fields (from training script defaults)
+                    if (entry.device_type) {
+                        document.getElementById("wf-orig-device").value = entry.device_type;
+                    }
+                    if (entry.dp != null) {
+                        document.getElementById("wf-orig-dp").value = entry.dp;
+                    }
+                    if (entry.tp != null) {
+                        document.getElementById("wf-orig-tp").value = entry.tp;
+                    }
+                    if (entry.pp != null) {
+                        document.getElementById("wf-orig-pp").value = entry.pp;
+                    }
+                    if (entry.seq_len != null) {
+                        document.getElementById("wf-orig-model-s").value = entry.seq_len;
+                    }
+                    if (entry.global_batch_size != null) {
+                        document.getElementById("wf-orig-model-b").value = entry.global_batch_size;
+                    }
+                    if (entry.micro_batch_size != null) {
+                        document.getElementById("wf-orig-model-b-micro").value = entry.micro_batch_size;
+                    }
                     updateEquivalentModelL();
                     // Show reference as clickable link (script name only)
                     _showModelRef(entry.reference);
