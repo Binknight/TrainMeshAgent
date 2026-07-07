@@ -4925,8 +4925,19 @@
                         requestAnimationFrame(function () {
                             _renderResultPanel();
                         });
+                    } else if (meshOriginal || meshEquivalent) {
+                        canvasRebuild();
                     } else {
-                        if (meshOriginal || meshEquivalent) canvasRebuild();
+                        // Restored an empty session — clear canvas & chat to avoid
+                        // showing stale content from the previously viewed session.
+                        d3.select("#canvas-section").selectAll("svg").remove();
+                        document.getElementById("canvas-section").style.display = "none";
+                        var mct = document.getElementById("mesh-config-toolbar");
+                        if (mct) mct.classList.remove("visible");
+                        document.getElementById("canvas-placeholder").classList.remove("hidden");
+                        document.getElementById("canvas-label").textContent = "等待组网数据...";
+                        document.getElementById("chat-messages").innerHTML =
+                            '<div class="msg-group fade-in"><span class="msg-label agent">TrainMesh Agent</span><div class="msg-bubble agent">新任务已创建。输入组网参数开始。</div></div>';
                     }
 
                     // Restore chat message for topology summaries
