@@ -2813,48 +2813,48 @@
                                     </select>
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>DP</label>
+                                    <label>DP (数据并行)</label>
                                     <input id="wf-orig-dp" type="number" value="8" min="1" max="1024" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>TP</label>
+                                    <label>TP (张量并行)</label>
                                     <input id="wf-orig-tp" type="number" value="16" min="1" max="64" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>PP</label>
+                                    <label>PP (流水线并行)</label>
                                     <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-section">原始模型参数</div>
                                 <div class="workflow-param-row">
-                                    <label>L</label>
+                                    <label>L (层数)</label>
                                     <input id="wf-orig-model-l" type="number" value="64" min="1" max="512" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>H</label>
+                                    <label>H (隐藏维度)</label>
                                     <input id="wf-orig-model-h" type="number" value="4096" min="128" max="32768" step="64" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>A</label>
+                                    <label>A (注意力头数)</label>
                                     <input id="wf-orig-model-a" type="number" value="32" min="1" max="256" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>dff</label>
+                                    <label>dff (前馈维度)</label>
                                     <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>V (词表)</label>
+                                    <label>V (词表大小)</label>
                                     <input id="wf-orig-model-vocab" type="number" value="32000" min="1" max="1048576" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>S</label>
+                                    <label>S (序列长度)</label>
                                     <input id="wf-orig-model-s" type="number" value="2048" min="1" max="131072" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>B</label>
+                                    <label>B (全局批次)</label>
                                     <input id="wf-orig-model-b" type="number" value="32" min="1" max="1048576" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>b</label>
+                                    <label>b (微批次)</label>
                                     <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" />
                                 </div>
                                 <div class="workflow-param-section" style="margin-top: 16px">默认等效策略</div>
