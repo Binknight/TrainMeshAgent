@@ -1223,11 +1223,10 @@
                 user-select: none;
                 flex-shrink: 0;
             }
-            /* In chat input area: sit inline before the textarea */
-            .chat-input-area .ai-toggle {
-                padding: 0 8px;
-                border-right: 1px solid var(--border);
-                margin-right: 4px;
+            /* In panel header: sit to the right of the title */
+            .panel-header .ai-toggle {
+                margin-left: auto;
+                margin-right: 10px;
             }
             .ai-toggle input[type="checkbox"] {
                 display: none;
@@ -3108,6 +3107,11 @@
                 <div class="chat-panel">
                     <div class="panel-header">
                         <span>💬 Agent 交互</span>
+                        <label class="ai-toggle" id="ai-toggle-chat" title="AI 对话模式：开启可与 Agent 交互，关闭后仅展示系统消息">
+                            <span class="ai-toggle-label">AI</span>
+                            <input type="checkbox" id="ai-mode-toggle-flow" onchange="toggleWorkflowMode()" checked />
+                            <span class="ai-toggle-slider"></span>
+                        </label>
                         <span class="session-id" id="session-id-display"
                             >—</span
                         >
@@ -3133,11 +3137,6 @@
                     </div>
 
                     <div class="chat-input-area">
-                        <label class="ai-toggle" id="ai-toggle-chat" title="AI 对话模式：开启可与 Agent 交互，关闭后仅展示系统消息">
-                            <span class="ai-toggle-label">AI</span>
-                            <input type="checkbox" id="ai-mode-toggle-flow" onchange="toggleWorkflowMode()" checked />
-                            <span class="ai-toggle-slider"></span>
-                        </label>
                         <textarea
                             class="chat-input"
                             id="chat-input"
