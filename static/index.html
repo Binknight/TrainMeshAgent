@@ -1824,6 +1824,47 @@
                 cursor: not-allowed;
             }
 
+            /* ── System Log Mode (AI off) ── */
+            .chat-panel.log-mode .chat-input-area {
+                display: none;
+            }
+            .chat-panel.log-mode #quick-actions {
+                display: none;
+            }
+            .chat-panel.log-mode .chat-messages {
+                font-family: var(--font-mono);
+                font-size: 12px;
+                gap: 6px;
+                padding: 12px 14px;
+            }
+            .chat-panel.log-mode .msg-bubble {
+                font-size: 11px;
+                padding: 6px 10px;
+                line-height: 1.45;
+                border-radius: var(--radius-sm);
+            }
+            .chat-panel.log-mode .msg-label {
+                font-size: 8px;
+            }
+            .system-log-status {
+                padding: 6px 14px;
+                border-top: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-family: var(--font-mono);
+                font-size: 10px;
+                color: var(--text-muted);
+                flex-shrink: 0;
+            }
+            .system-log-status .system-log-indicator {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--green);
+                animation: pulse-status 2s ease-in-out infinite;
+            }
+
             /* ── Quick actions ── */
             .quick-actions {
                 padding: 8px 16px 0;
@@ -3106,7 +3147,7 @@
                 <!-- ── Chat Panel ── -->
                 <div class="chat-panel">
                     <div class="panel-header">
-                        <span>💬 Agent 交互</span>
+                        <span id="panel-header-title">💬 Agent 交互</span>
                         <label class="ai-toggle" id="ai-toggle-chat" title="AI 对话模式：开启可与 Agent 交互，关闭后仅展示系统消息">
                             <span class="ai-toggle-label">AI</span>
                             <input type="checkbox" id="ai-mode-toggle-flow" onchange="toggleWorkflowMode()" checked />
@@ -3164,6 +3205,10 @@
                                 />
                             </svg>
                         </button>
+                    </div>
+                    <div class="system-log-status" id="system-log-status" style="display:none">
+                        <span class="system-log-indicator"></span>
+                        <span id="system-log-status-text">系统日志</span>
                     </div>
                 </div>
                 <button class="panel-collapse-handle" onclick="toggleRightPanel()" title="折叠/展开右侧栏">
@@ -3363,27 +3408,61 @@
                 var toggle = document.getElementById("ai-mode-toggle-flow");
                 workflowMode = toggle && toggle.checked ? "agent" : "api";
                 localStorage.setItem("wfAiMode", workflowMode);
-                var input = document.getElementById("chat-input");
-                var btn = document.getElementById("btn-send");
-                if (workflowMode === "api") {
-                    if (input) { input.disabled = true; input.placeholder = "AI 已关闭 — 仅展示系统消息"; }
-                    if (btn) btn.disabled = true;
-                } else {
-                    if (input) { input.disabled = false; input.placeholder = "输入消息..."; }
-                    if (btn) btn.disabled = false;
-                }
+                applyWorkflowModeUI();
             }
             function updateModeSwitchUI() {
                 var toggle = document.getElementById("ai-mode-toggle-flow");
                 if (toggle) toggle.checked = workflowMode === "agent";
+                applyWorkflowModeUI();
+            }
+            function applyWorkflowModeUI() {
+                var chatPanel = document.querySelector(".chat-panel");
+                var headerTitle = document.getElementById("panel-header-title");
                 var input = document.getElementById("chat-input");
                 var btn = document.getElementById("btn-send");
+                var logStatus = document.getElementById("system-log-status");
+                var messages = document.getElementById("chat-messages");
+
                 if (workflowMode === "api") {
-                    if (input) { input.disabled = true; input.placeholder = "AI 已关闭 — 仅展示系统消息"; }
-                    if (btn) btn.disabled = true;
+                    // System log mode — hide input, show log status
+                    if (chatPanel) chatPanel.classList.add("log-mode");
+                    if (headerTitle) headerTitle.textContent = "📋 系统日志";
+                    if (logStatus) logStatus.style.display = "flex";
+                    // Clear messages and init log view
+                    if (messages) {
+                        messages.innerHTML =
+                            '<div class="msg-group fade-in">' +
+                            '<span class="msg-label system">系统</span>' +
+                            '<div class="msg-bubble system">系统日志模式 — 实时监控系统状态</div>' +
+                            '</div>';
+                    }
+                    // Disable input (hidden by CSS, but ensure disabled for safety)
+                    if (input) { input.disabled = true; }
+                    if (btn) { btn.disabled = true; }
                 } else {
+                    // Agent mode — show input, hide log status
+                    if (chatPanel) chatPanel.classList.remove("log-mode");
+                    if (headerTitle) headerTitle.textContent = "💬 Agent 交互";
+                    if (logStatus) logStatus.style.display = "none";
+                    // Clear messages and show welcome
+                    if (messages) {
+                        messages.innerHTML =
+                            '<div class="msg-group fade-in">' +
+                            '<span class="msg-label agent">TrainMesh Agent</span>' +
+                            '<div class="msg-bubble agent">欢迎使用 TrainMesh Agent。输入模型名称，开始等效建模。</div>' +
+                            '</div>' +
+                            '<div class="msg-group fade-in">' +
+                            '<span class="msg-label system">建议</span>' +
+                            '<div class="msg-bubble system">试试下方的快捷操作</div>' +
+                            '</div>' +
+                            '<div class="quick-actions" id="quick-actions">' +
+                            '<span class="quick-chip" onclick="sendQuick(\'请用Qwen2.5-72B开始等效建模\')">Qwen2.5-72B 等效建模</span>' +
+                            '</div>';
+                    }
                     if (input) { input.disabled = false; input.placeholder = "输入消息..."; }
-                    if (btn) btn.disabled = false;
+                    if (btn) { btn.disabled = false; }
+                    // Focus input for immediate typing
+                    if (input) setTimeout(function () { input.focus(); }, 100);
                 }
             }
 
@@ -5090,11 +5169,7 @@
                 _pendingModelList = [];
                 localStorage.removeItem("mesh_session");
                 document.getElementById("session-id-display").textContent = "—";
-                document.getElementById("chat-messages").innerHTML = `
-    <div class="msg-group fade-in">
-      <span class="msg-label agent">TrainMesh Agent</span>
-      <div class="msg-bubble agent">新任务已创建。输入组网参数开始。</div>
-    </div>`;
+                // Chat messages are set by initWorkflow() → applyWorkflowModeUI() below
                 // Clear topology state
                 meshOriginal = null;
                 meshEquivalent = null;
