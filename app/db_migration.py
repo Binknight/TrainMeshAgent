@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS model_catalog (
     vocab_size      INT NOT NULL,
     num_kv_heads    INT,
     source          VARCHAR(20),
+    reference       TEXT,
     description     TEXT,
     created_at      TIMESTAMP DEFAULT NOW(),
     updated_at      TIMESTAMP DEFAULT NOW()
@@ -116,6 +117,8 @@ ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_dp_comm;
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS d_ffn INT;
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS micro_batch_size INT;
 
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS reference TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_topology_params_session ON topology_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_params_session ON simulation_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_results_session ON simulation_results(session_id, role);
@@ -129,14 +132,23 @@ def init_db():
 
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute(SCHEMA_SQL)
+            # psycopg2 execute() only handles one statement per call.
+            # Split on semicolons and execute each individually.
+            for stmt in SCHEMA_SQL.split(";"):
+                stmt = stmt.strip()
+                if stmt and not stmt.startswith("--"):
+                    try:
+                        cur.execute(stmt)
+                    except Exception as e:
+                        print(f"[migration] SKIP: {e}")
 
-    # Seed builtin dense models into model_catalog (idempotent upsert)
+    # Seed model catalog entries (idempotent upsert)
     try:
         from app.dao import seed_model_catalog_builtin
-        from app.models.model_catalog import BUILTIN_DENSE_MODELS
-        count = seed_model_catalog_builtin(BUILTIN_DENSE_MODELS)
-        print(f"[migration] model_catalog seeded {count} builtin models.")
+        from app.models.model_catalog import MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS
+        count1 = seed_model_catalog_builtin(MINDSPEED_DENSE_MODELS)
+        count2 = seed_model_catalog_builtin(MEGATRON_DENSE_MODELS)
+        print(f"[migration] model_catalog seeded {count1} mindspeed + {count2} megatron models.")
     except Exception as e:
         print(f"[migration] model_catalog seed skipped: {e}")
 

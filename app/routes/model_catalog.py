@@ -16,7 +16,7 @@ from app.dao import (
     seed_model_catalog_builtin,
     upsert_model_catalog,
 )
-from app.models.model_catalog import BUILTIN_DENSE_MODELS, resolve_model_config
+from app.models.model_catalog import MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS, resolve_model_config
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def upsert():
     """Create or update a model entry (idempotent upsert).
 
     Body: {model_name, num_layers, d_model, num_heads, d_ffn, vocab_size,
-           model_type?, num_key_value_heads?, description?, source?}
+           model_type?, num_key_value_heads?, description?, source?, reference?}
     """
     data = request.get_json(silent=True) or {}
     model_name = (data.get("model_name") or "").strip()
@@ -66,6 +66,7 @@ def upsert():
             "vocab_size": int(data["vocab_size"]),
             "num_key_value_heads": data.get("num_key_value_heads"),
             "_source": data.get("source") or "manual",
+            "reference": data.get("reference"),
         }
     except (TypeError, ValueError) as e:
         return {"error": f"架构字段必须为整数: {e}"}, 400
@@ -89,10 +90,11 @@ def delete():
 
 @model_catalog_bp.route("/seed", methods=["POST"])
 def reseed():
-    """Re-seed the builtin dense models (idempotent upsert)."""
-    count = seed_model_catalog_builtin(BUILTIN_DENSE_MODELS)
-    logger.info(f"[model_catalog_api] re-seeded {count} builtin models")
-    return jsonify({"seeded": count})
+    """Re-seed the model catalog (idempotent upsert)."""
+    count1 = seed_model_catalog_builtin(MINDSPEED_DENSE_MODELS)
+    count2 = seed_model_catalog_builtin(MEGATRON_DENSE_MODELS)
+    logger.info(f"[model_catalog_api] re-seeded {count1} mindspeed + {count2} megatron models")
+    return jsonify({"mindspeed": count1, "megatron": count2, "total": count1 + count2})
 
 
 @model_catalog_bp.route("/fetch", methods=["POST"])

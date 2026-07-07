@@ -317,7 +317,7 @@ def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT model_name, model_type, num_layers, d_model, num_heads,
-                          d_ffn, vocab_size, num_kv_heads, source
+                          d_ffn, vocab_size, num_kv_heads, source, reference
                    FROM model_catalog
                    WHERE model_name ILIKE %s OR name_key = %s
                    ORDER BY (model_name ILIKE %s) DESC
@@ -337,6 +337,7 @@ def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
         "vocab_size": row[6],
         "num_key_value_heads": row[7],
         "_source": row[8] or "pg",
+        "reference": row[9],
     }
 
 
@@ -359,21 +360,22 @@ def upsert_model_catalog(
             cur.execute(
                 """INSERT INTO model_catalog
                    (model_name, name_key, model_type, num_layers, d_model, num_heads,
-                    d_ffn, vocab_size, num_kv_heads, source, description)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    d_ffn, vocab_size, num_kv_heads, source, reference, description)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (model_name) DO UPDATE SET
                    name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
                    num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
                    num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
                    vocab_size=EXCLUDED.vocab_size, num_kv_heads=EXCLUDED.num_kv_heads,
                    source=EXCLUDED.source,
+                   reference=EXCLUDED.reference,
                    description=COALESCE(EXCLUDED.description, model_catalog.description),
                    updated_at=NOW()""",
                 (
                     model_name, nk, cfg.get("model_type", "dense"),
                     cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
                     cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"),
-                    cfg.get("_source"), description,
+                    cfg.get("_source"), cfg.get("reference"), description,
                 ),
             )
 
@@ -384,15 +386,15 @@ def list_model_catalog() -> list[dict[str, Any]]:
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT model_name, model_type, num_layers, d_model, num_heads,
-                          d_ffn, vocab_size, num_kv_heads, source, description, updated_at
+                          d_ffn, vocab_size, num_kv_heads, source, reference, description, updated_at
                    FROM model_catalog ORDER BY model_name"""
             )
             rows = cur.fetchall()
     return [{
         "model_name": r[0], "model_type": r[1], "num_layers": r[2], "d_model": r[3],
         "num_heads": r[4], "d_ffn": r[5], "vocab_size": r[6], "num_key_value_heads": r[7],
-        "source": r[8], "description": r[9],
-        "updated_at": r[10].isoformat() if r[10] else None,
+        "source": r[8], "reference": r[9], "description": r[10],
+        "updated_at": r[11].isoformat() if r[11] else None,
     } for r in rows]
 
 
@@ -409,14 +411,16 @@ def delete_model_catalog_entry(model_name: str) -> bool:
 
 
 def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
-    """Bulk-upsert builtin model entries (source='builtin'). Returns count."""
+    """Bulk-upsert model catalog entries. Source comes from each entry's _source field
+    (e.g. 'megatron', 'mindspeed'); falls back to 'builtin' for backward compat."""
     if not entries:
         return 0
     rows = [
         (
             name, _name_key(name), cfg.get("model_type", "dense"),
             cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
-            cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"), "builtin",
+            cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"),
+            cfg.get("_source") or "builtin", cfg.get("reference"),
         )
         for name, cfg in entries.items()
     ]
@@ -425,14 +429,14 @@ def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
             cur.executemany(
                 """INSERT INTO model_catalog
                    (model_name, name_key, model_type, num_layers, d_model, num_heads,
-                    d_ffn, vocab_size, num_kv_heads, source)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    d_ffn, vocab_size, num_kv_heads, source, reference)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (model_name) DO UPDATE SET
                    name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
                    num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
                    num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
                    vocab_size=EXCLUDED.vocab_size, num_kv_heads=EXCLUDED.num_kv_heads,
-                   source=EXCLUDED.source, updated_at=NOW()""",
+                   source=EXCLUDED.source, reference=EXCLUDED.reference, updated_at=NOW()""",
                 rows,
             )
     return len(rows)
