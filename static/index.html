@@ -4350,17 +4350,26 @@
             function updateModelNameSelect(modelName) {
                 var select = document.getElementById("wf-orig-model-name");
                 if (!select || !modelName) return;
-                for (var i = 0; i < select.options.length; i++) {
-                    if (select.options[i].value === modelName) {
-                        select.value = modelName;
-                        return;
+                // Try exact match first, then bare name (strip org prefix like Qwen/)
+                var candidates = [modelName];
+                if (modelName.indexOf("/") !== -1) {
+                    candidates.push(modelName.split("/").pop());
+                }
+                for (var c = 0; c < candidates.length; c++) {
+                    for (var i = 0; i < select.options.length; i++) {
+                        if (select.options[i].value === candidates[c]) {
+                            select.value = candidates[c];
+                            return;
+                        }
                     }
                 }
+                // Not found — append the bare name as a new option
+                var displayName = candidates[candidates.length - 1];
                 var opt = document.createElement("option");
-                opt.value = modelName;
-                opt.textContent = modelName;
+                opt.value = displayName;
+                opt.textContent = displayName;
                 select.appendChild(opt);
-                select.value = modelName;
+                select.value = displayName;
             }
 
             // ── Model catalog dropdown: dynamic population + auto-fill on select ──
