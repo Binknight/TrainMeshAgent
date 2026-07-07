@@ -37,36 +37,48 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 3072, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_0point6b_4K_ptd.sh",
+        "tp": 1, "pp": 1, "dp": 8, "seq_len": 4096,
+        "global_batch_size": 32, "micro_batch_size": 1, "device_type": "A2",
     },
     "Qwen3-1.7B": {
         "num_layers": 28, "d_model": 2048, "num_heads": 16,
         "d_ffn": 6144, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_1point7b_4K_ptd.sh",
+        "tp": 1, "pp": 1, "dp": 8, "seq_len": 4096,
+        "global_batch_size": 32, "micro_batch_size": 1, "device_type": "A2",
     },
     "Qwen3-4B": {
         "num_layers": 36, "d_model": 2560, "num_heads": 32,
         "d_ffn": 9728, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_4b_4K_ptd.sh",
+        "tp": 1, "pp": 1, "dp": 8, "seq_len": 4096,
+        "global_batch_size": 64, "micro_batch_size": 1, "device_type": "A2",
     },
     "Qwen3-8B": {
         "num_layers": 36, "d_model": 4096, "num_heads": 32,
         "d_ffn": 12288, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_8b_4K_ptd.sh",
+        "tp": 1, "pp": 2, "dp": 4, "seq_len": 4096,
+        "global_batch_size": 64, "micro_batch_size": 1, "device_type": "A2",
     },
     "Qwen3-14B": {
         "num_layers": 40, "d_model": 5120, "num_heads": 40,
         "d_ffn": 17408, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_14b_4K_ptd.sh",
+        "tp": 8, "pp": 1, "dp": 1, "seq_len": 4096,
+        "global_batch_size": 128, "micro_batch_size": 4, "device_type": "A2",
     },
     "Qwen3-32B": {
         "num_layers": 64, "d_model": 5120, "num_heads": 64,
         "d_ffn": 25600, "vocab_size": 151936, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3/pretrain_qwen3_32b_4K_ptd.sh",
+        "tp": 8, "pp": 2, "dp": 2, "seq_len": 4096,
+        "global_batch_size": 256, "micro_batch_size": 2, "device_type": "A3",
     },
     # ── Qwen2.5 (MCore) ──
     "Qwen2.5-72B": {
@@ -74,6 +86,8 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 29568, "vocab_size": 152064, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen25/pretrain_qwen25_72b_4k_pack.sh",
+        "tp": 8, "pp": 4, "dp": 1, "seq_len": 4096,
+        "global_batch_size": 128, "micro_batch_size": 2, "device_type": "A3",
     },
     # ── Gemma2 (MCore) ──
     "Gemma2-9B": {
@@ -81,12 +95,16 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 14336, "vocab_size": 256000, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/gemma2/pretrain_gemma2_9b_ptd.sh",
+        "tp": 8, "pp": 1, "dp": 1, "seq_len": 8192,
+        "global_batch_size": 64, "micro_batch_size": 1, "device_type": "A2",
     },
     "Gemma2-27B": {
         "num_layers": 46, "d_model": 4608, "num_heads": 32,
         "d_ffn": 36864, "vocab_size": 256000, "num_key_value_heads": 16,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/gemma2/pretrain_gemma2_27b_ptd.sh",
+        "tp": 8, "pp": 2, "dp": 2, "seq_len": 8192,
+        "global_batch_size": 64, "micro_batch_size": 1, "device_type": "A3",
     },
     # ── Llama-2 (MCore) ──
     "Llama-2-13B": {
@@ -94,6 +112,8 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 13824, "vocab_size": 32000, "num_key_value_heads": None,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/llama2/pretrain_llama2_13b_ptd.sh",
+        "tp": 8, "pp": 1, "dp": 1, "seq_len": 4096,
+        "global_batch_size": 512, "micro_batch_size": 4, "device_type": "A2",
     },
     # ── Phi3.5 (MCore) ──
     "Phi3.5-Mini": {
@@ -101,6 +121,8 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 8192, "vocab_size": 32064, "num_key_value_heads": None,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/phi35/pretrain_phi35_mini_A3_ptd.sh",
+        "tp": 1, "pp": 8, "dp": 2, "seq_len": 4096,
+        "global_batch_size": 128, "micro_batch_size": 2, "device_type": "A3",
     },
     # ── PLM (MCore) ──
     "PLM-1.8B": {
@@ -108,6 +130,8 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 8192, "vocab_size": 151936, "num_key_value_heads": 16,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/plm/pretrain_plm_1point8b_ptd.sh",
+        "tp": 1, "pp": 1, "dp": 8, "seq_len": 4096,
+        "global_batch_size": 16, "micro_batch_size": 2, "device_type": "A2",
     },
     # ── Seed-OSS (MCore) ──
     "Seed-OSS-36B": {
@@ -115,6 +139,8 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 27648, "vocab_size": 155136, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/seed_oss/pretrain_seed_oss_36b_ptd_2k_A3.sh",
+        "tp": 4, "pp": 4, "dp": 1, "seq_len": 2048,
+        "global_batch_size": 32, "micro_batch_size": 1, "device_type": "A3",
     },
     # ── Magistral (MCore) ──
     "Magistral-Small-24B": {
@@ -122,6 +148,8 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 32768, "vocab_size": 131072, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "mindspeed",
         "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/magistral/pretrain_magistral_small_24b_A3_ptd.sh",
+        "tp": 8, "pp": 1, "dp": 2, "seq_len": 4096,
+        "global_batch_size": 32, "micro_batch_size": 1, "device_type": "A3",
     },
 }
 
@@ -136,6 +164,7 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/gpt3/train_gpt3_175b_distributed.sh",
         "description": "Megatron-LM gpt3/train_gpt3_175b_distributed.sh; ffn=4×H default",
+        "tp": 8, "pp": 16, "seq_len": 2048, "global_batch_size": 1536, "micro_batch_size": 1,
     },
     # ── BERT (pretrain) ──
     "BERT-340M": {
@@ -144,6 +173,7 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/bert/train_bert_340m_distributed.sh",
         "description": "Megatron-LM bert/train_bert_340m_distributed.sh; encoder-only, GeLU, LayerNorm",
+        "tp": 8, "pp": 16, "seq_len": 512, "global_batch_size": 32, "micro_batch_size": 4,
     },
     # ── T5 (pretrain) ──
     "T5-220M": {
@@ -152,6 +182,7 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/t5/train_t5_220m_distributed.sh",
         "description": "Megatron-LM t5/train_t5_220m_distributed.sh; encoder-decoder (12E+12D), ReLU",
+        "tp": 1, "pp": 1, "dp": 8, "seq_len": 512, "global_batch_size": 512, "micro_batch_size": 64,
     },
     # ── Llama3 (pretrain) ──
     "Llama3-8B": {
@@ -159,6 +190,7 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 14336, "vocab_size": 128256, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/llama/train_llama3_8b_h100_fp8.sh",
+        "tp": 1, "pp": 1, "dp": 8, "seq_len": 8192, "global_batch_size": 128, "micro_batch_size": 1,
     },
     # ── Llama3.1 (RL) ──
     "Llama3.1-8B": {
@@ -167,6 +199,7 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/rl/model_configs/llama3p1_8b_instruct.sh",
         "description": "Megatron-LM rl/model_configs/llama3p1_8b_instruct.sh; rope-base=500K",
+        "tp": 8, "pp": 1, "seq_len": 4096, "global_batch_size": 512, "micro_batch_size": 1,
     },
     # ── Llama3.2 (modelopt) ──
     "Llama3.2-1B": {
@@ -174,6 +207,7 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 8192, "vocab_size": 128256, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/post_training/modelopt/conf/meta-llama/Llama-3.2-1B-Instruct.sh",
+        "seq_len": 4096, "micro_batch_size": 1,
     },
     # ── Qwen2.5 (modelopt + RL) ──
     "Qwen2.5-0.5B": {
@@ -181,24 +215,28 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "d_ffn": 4864, "vocab_size": 151936, "num_key_value_heads": 2,
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/post_training/modelopt/conf/Qwen/Qwen2.5-0.5B-Instruct.sh",
+        "seq_len": 4096, "micro_batch_size": 1,
     },
     "Qwen2.5-3B": {
         "num_layers": 36, "d_model": 2048, "num_heads": 16,
         "d_ffn": 11008, "vocab_size": 151936, "num_key_value_heads": 2,
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/rl/model_configs/qwen_2p5_3b.sh",
+        "tp": 2, "pp": 1, "seq_len": 8192, "global_batch_size": 512, "micro_batch_size": 1,
     },
     "Qwen2.5-7B": {
         "num_layers": 28, "d_model": 3584, "num_heads": 28,
         "d_ffn": 18944, "vocab_size": 152064, "num_key_value_heads": 4,
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/post_training/modelopt/conf/Qwen/Qwen2.5-7B-Instruct.sh",
+        "seq_len": 4096, "micro_batch_size": 1,
     },
     "Qwen2.5-32B": {
         "num_layers": 64, "d_model": 5120, "num_heads": 40,
         "d_ffn": 27648, "vocab_size": 152064, "num_key_value_heads": 8,
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/rl/model_configs/qwen_2p5_32b.sh",
+        "tp": 8, "pp": 1, "seq_len": 12000, "global_batch_size": 512, "micro_batch_size": 1,
     },
     # ── Qwen2.5-Math (RL) ──
     "Qwen2.5-Math-7B": {
@@ -207,6 +245,7 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/rl/model_configs/qwen_2p5_math_7b.sh",
         "description": "Megatron-LM rl/model_configs/qwen_2p5_math_7b.sh; rope-base=10K",
+        "tp": 1, "pp": 1, "seq_len": 4096, "global_batch_size": 512, "micro_batch_size": 2,
     },
     # ── DeepSeek-R1-Distill-Qwen (RL) ──
     "DeepSeek-R1-Distill-Qwen-7B": {
@@ -215,6 +254,7 @@ MEGATRON_DENSE_MODELS: dict[str, dict] = {
         "model_type": "dense", "_source": "megatron",
         "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/rl/model_configs/qwen_2p5_distill_7b.sh",
         "description": "Megatron-LM rl/model_configs/qwen_2p5_distill_7b.sh; rope-base=10K",
+        "tp": 2, "pp": 1, "seq_len": 8192, "global_batch_size": 1024, "micro_batch_size": 1,
     },
 }
 

@@ -2840,10 +2840,6 @@
                                     <input id="wf-orig-model-a" type="number" value="32" min="1" max="256" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>b</label>
-                                    <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" />
-                                </div>
-                                <div class="workflow-param-row">
                                     <label>dff</label>
                                     <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" />
                                 </div>
@@ -2858,6 +2854,10 @@
                                 <div class="workflow-param-row">
                                     <label>B</label>
                                     <input id="wf-orig-model-b" type="number" value="32" min="1" max="1048576" />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>b</label>
+                                    <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" />
                                 </div>
                                 <div class="workflow-param-section" style="margin-top: 16px">默认等效策略</div>
                                 <div class="workflow-param-row">
@@ -5336,6 +5336,7 @@
                         setStatus("responding");
                         const fillData = data.data || data;
                         if (fillData.found && fillData.model_type === "dense") {
+                            // Model architecture fields
                             document.getElementById("wf-orig-model-l").value =
                                 fillData.L;
                             document.getElementById("wf-orig-model-h").value =
@@ -5346,13 +5347,47 @@
                                 fillData.dff;
                             document.getElementById("wf-orig-model-vocab").value =
                                 fillData.V;
+                            // Topology & runtime fields (from training script defaults)
+                            if (fillData.device_type) {
+                                document.getElementById("wf-orig-device").value = fillData.device_type;
+                            }
+                            if (fillData.dp != null) {
+                                document.getElementById("wf-orig-dp").value = fillData.dp;
+                            }
+                            if (fillData.seq_len != null) {
+                                document.getElementById("wf-orig-model-s").value = fillData.seq_len;
+                            }
+                            if (fillData.global_batch_size != null) {
+                                document.getElementById("wf-orig-model-b").value = fillData.global_batch_size;
+                            }
+                            if (fillData.micro_batch_size != null) {
+                                document.getElementById("wf-orig-model-b-micro").value = fillData.micro_batch_size;
+                            }
                             updateModelNameSelect(fillData.model_name);
                             updateEquivalentModelL();
                             // Show reference as clickable link (script name only)
                             _showModelRef(fillData.reference);
+                            // Auto-open Step1 params form (syncs TP options from device)
+                            openWorkflowParams();
+                            // Set TP/PP after openWorkflowParams has populated TP options
+                            if (fillData.tp != null) {
+                                document.getElementById("wf-orig-tp").value = fillData.tp;
+                            }
+                            if (fillData.pp != null) {
+                                document.getElementById("wf-orig-pp").value = fillData.pp;
+                            }
                             var refNote = fillData.reference
                                 ? "\n📁 参考脚本: " + fillData.reference
                                 : "";
+                            var topoParts = [];
+                            if (fillData.device_type) topoParts.push("设备=" + fillData.device_type);
+                            if (fillData.tp != null) topoParts.push("TP=" + fillData.tp);
+                            if (fillData.pp != null) topoParts.push("PP=" + fillData.pp);
+                            if (fillData.dp != null) topoParts.push("DP=" + fillData.dp);
+                            if (fillData.seq_len != null) topoParts.push("S=" + fillData.seq_len);
+                            if (fillData.global_batch_size != null) topoParts.push("B=" + fillData.global_batch_size);
+                            if (fillData.micro_batch_size != null) topoParts.push("b=" + fillData.micro_batch_size);
+                            var topoNote = topoParts.length > 0 ? "\n⚙️ 组网/运行参数: " + topoParts.join(", ") : "";
                             addMessage(
                                 "system",
                                 "✅ 已自动填充模型 " +
@@ -5368,7 +5403,8 @@
                                     ", V=" +
                                     fillData.V +
                                     ")" +
-                                    refNote,
+                                    refNote +
+                                    topoNote,
                             );
                         } else if (fillData.model_type === "sparse") {
                             addMessage(
