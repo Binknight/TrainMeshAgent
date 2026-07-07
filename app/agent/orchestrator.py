@@ -343,6 +343,13 @@ def _execute_utility_tool(
             "V": cfg["vocab_size"],
             "source": cfg.get("_source", "unknown"),
             "reference": cfg.get("reference"),
+            "tp": cfg.get("tp"),
+            "pp": cfg.get("pp"),
+            "dp": cfg.get("dp"),
+            "seq_len": cfg.get("seq_len"),
+            "global_batch_size": cfg.get("global_batch_size"),
+            "micro_batch_size": cfg.get("micro_batch_size"),
+            "device_type": cfg.get("device_type"),
         }
 
     return {"error": f"Unknown utility tool: {tool_name}"}

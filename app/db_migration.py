@@ -119,6 +119,14 @@ ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS micro_batch_size INT;
 
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS reference TEXT;
 
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS tp INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS pp INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS dp INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS seq_len INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS global_batch_size INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS micro_batch_size INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS device_type VARCHAR(10);
+
 CREATE INDEX IF NOT EXISTS idx_topology_params_session ON topology_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_params_session ON simulation_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_results_session ON simulation_results(session_id, role);
