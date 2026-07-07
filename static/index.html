@@ -3320,7 +3320,43 @@
                 _formulaLineY = 0;
                 _formulaCardG = null;
                 _formulaCardRect = null;
+                // Close any open parameter overlays and reset form fields to defaults
+                closeWorkflowParams();
+                closeSimParams();
+                resetWorkflowFormFields();
                 renderWorkflow();
+            }
+
+            function resetWorkflowFormFields() {
+                var el = document.getElementById("wf-orig-model-name");
+                if (el) el.value = "";
+                el = document.getElementById("wf-orig-device");
+                if (el) el.value = "A3";
+                el = document.getElementById("wf-orig-dp");
+                if (el) el.value = "8";
+                el = document.getElementById("wf-orig-tp");
+                if (el) el.value = "16";
+                el = document.getElementById("wf-orig-pp");
+                if (el) el.value = "8";
+                el = document.getElementById("wf-orig-model-l");
+                if (el) el.value = "64";
+                el = document.getElementById("wf-orig-model-h");
+                if (el) el.value = "4096";
+                el = document.getElementById("wf-orig-model-a");
+                if (el) el.value = "32";
+                el = document.getElementById("wf-orig-model-dff");
+                if (el) el.value = "14336";
+                el = document.getElementById("wf-orig-model-vocab");
+                if (el) el.value = "32000";
+                el = document.getElementById("wf-orig-model-s");
+                if (el) el.value = "2048";
+                el = document.getElementById("wf-orig-model-b");
+                if (el) el.value = "32";
+                el = document.getElementById("wf-orig-model-b-micro");
+                if (el) el.value = "4";
+                el = document.getElementById("wf-equiv-strategy");
+                if (el) el.value = "min_equiv";
+                _showModelRef(null);
             }
 
             function toggleWorkflowMode() {
@@ -4852,6 +4888,9 @@
             }
 
             async function restoreSession(id) {
+                // Close any open parameter overlays from the previous session
+                closeWorkflowParams();
+                closeSimParams();
                 try {
                     const resp = await fetch(`${API}/session/${id}/topology`);
                     if (!resp.ok) {
@@ -5033,6 +5072,9 @@
             }
 
             async function newSession() {
+                // Close any open parameter overlays from the previous session
+                closeWorkflowParams();
+                closeSimParams();
                 sessionId = "";
                 _pendingMeshList = [];
                 _pendingModelList = [];
