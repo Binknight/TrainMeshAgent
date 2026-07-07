@@ -4498,7 +4498,8 @@
                 if (overlay) overlay.style.display = "none";
             }
 
-            function submitWorkflowParams() {
+            async function submitWorkflowParams() {
+                await ensureSession();
                 var origDevice =
                     document.getElementById("wf-orig-device").value;
                 var origDp = document.getElementById("wf-orig-dp").value;
