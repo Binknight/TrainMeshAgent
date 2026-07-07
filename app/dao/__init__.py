@@ -307,22 +307,35 @@ def _name_key(name: str) -> str:
 def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
     """Look up a model by exact (case-insensitive) name or normalized name_key.
 
-    Returns the internal-shape config dict (num_layers/d_model/num_heads/d_ffn/
-    vocab_size/model_type/num_key_value_heads/_source/model_name) or None.
+    When model_name contains '/' (e.g. Qwen/Qwen2.5-72B), we also try the
+    bare name (Qwen2.5-72B) so LLM-auto-expanded repo-ids still hit the
+    builtin catalog entries that are stored under bare names.
     """
     if not model_name:
         return None
-    nk = _name_key(model_name)
+    # Build candidate name_keys: full name + bare name (strip org prefix)
+    nk_candidates = {_name_key(model_name)}
+    if "/" in model_name:
+        bare = model_name.rsplit("/", 1)[-1]
+        nk_candidates.add(_name_key(bare))
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT model_name, model_type, num_layers, d_model, num_heads,
                           d_ffn, vocab_size, num_kv_heads, source, reference
                    FROM model_catalog
-                   WHERE model_name ILIKE %s OR name_key = %s
-                   ORDER BY (model_name ILIKE %s) DESC
+                   WHERE model_name ILIKE %s OR name_key = ANY(%s)
+                   ORDER BY
+                     CASE source
+                       WHEN 'mindspeed' THEN 1
+                       WHEN 'megatron' THEN 2
+                       WHEN 'huggingface' THEN 3
+                       WHEN 'modelscope' THEN 4
+                       ELSE 5
+                     END,
+                     (model_name ILIKE %s) DESC
                    LIMIT 1""",
-                (model_name, nk, model_name),
+                (model_name, list(nk_candidates), model_name),
             )
             row = cur.fetchone()
     if not row:
