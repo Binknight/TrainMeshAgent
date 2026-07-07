@@ -4972,9 +4972,10 @@
                                     0) +
                                 " 层 已恢复",
                         );
+                    // Always clear chat before restoring session content
+                    document.getElementById("chat-messages").innerHTML = "";
                     // Restore conversation messages from server (user + agent only)
                     if (data.messages && data.messages.length > 0) {
-                        document.getElementById("chat-messages").innerHTML = "";
                         for (const msg of data.messages) {
                             const role = msg.role || "";
                             if (role === "tool") continue;
@@ -4983,7 +4984,8 @@
                                 role === "assistant" ? "agent" : role;
                             addMessage(displayRole, content);
                         }
-                    } else if (parts.length > 0) {
+                    }
+                    if (parts.length > 0) {
                         addMessage(
                             "system",
                             "🔄 会话 " + id + " 已恢复\n" + parts.join("\n"),
