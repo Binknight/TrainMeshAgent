@@ -18,6 +18,7 @@ class Config:
     FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
     FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
     FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    FLASK_USE_RELOADER = os.getenv("FLASK_USE_RELOADER", "false").lower() == "true"
 
     # Simulation polling interval (seconds)
     SIM_POLL_INTERVAL = float(os.getenv("SIM_POLL_INTERVAL", "1.0"))
