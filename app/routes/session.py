@@ -247,7 +247,7 @@ def estimate_metrics():
     })
 
 
-def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, micro_batch_size=None, vocab_size=None) -> tuple[str | None, SimulationResult | None]:
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None, vocab_size=None) -> tuple[str | None, SimulationResult | None]:
     """Submit MCP task for a single topology. Returns (task_id, SimulationResult or None if not ready)."""
     if not topo:
         return task_id_in, None
@@ -255,7 +255,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     # Submit MCP task (fire-and-forget)
     task_id = task_id_in
     if not task_id:
-        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, micro_batch_size=micro_batch_size, vocab_size=vocab_size) or topo.model_dump()
+        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, d_ffn=d_ffn, micro_batch_size=micro_batch_size, vocab_size=vocab_size) or topo.model_dump()
         task_id = mcp_client.execute_task(topo_payload, params=sim_params)
         if not task_id:
             raise RuntimeError(f"MCP execute_task returned empty task_id for {label}")
