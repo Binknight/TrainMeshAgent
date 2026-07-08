@@ -112,6 +112,4 @@ def fetch_remote():
     resolved = resolve_model_config(model_name)
     if not resolved:
         return {"error": f"未找到模型 {model_name} 的配置"}, 404
-    if resolved.get("model_type") == "sparse":
-        return {"error": f"模型 {model_name} 是稀疏(MoE)模型，当前仅支持稠密模型"}, 422
     return jsonify(get_model_catalog_entry(model_name)), 201

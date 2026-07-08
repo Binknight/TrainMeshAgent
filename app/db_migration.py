@@ -127,6 +127,16 @@ ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS global_batch_size INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS micro_batch_size INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS device_type VARCHAR(10);
 
+-- MoE (Mixture of Experts) columns — NULL for dense models
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS num_experts INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS moe_ffn_hidden_size INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS moe_router_topk INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS moe_layer_freq TEXT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS num_moe_layers INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS has_shared_expert BOOLEAN;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS shared_expert_intermediate_size INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS expert_tensor_parallel_size INT;
+
 CREATE INDEX IF NOT EXISTS idx_topology_params_session ON topology_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_params_session ON simulation_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_results_session ON simulation_results(session_id, role);
@@ -153,10 +163,15 @@ def init_db():
     # Seed model catalog entries (idempotent upsert)
     try:
         from app.dao import seed_model_catalog_builtin
-        from app.models.model_catalog import MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS
+        from app.models.model_catalog import (
+            MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS,
+            MINDSPEED_MOE_MODELS, MEGATRON_MOE_MODELS,
+        )
         count1 = seed_model_catalog_builtin(MINDSPEED_DENSE_MODELS)
         count2 = seed_model_catalog_builtin(MEGATRON_DENSE_MODELS)
-        print(f"[migration] model_catalog seeded {count1} mindspeed + {count2} megatron models.")
+        count3 = seed_model_catalog_builtin(MINDSPEED_MOE_MODELS)
+        count4 = seed_model_catalog_builtin(MEGATRON_MOE_MODELS)
+        print(f"[migration] model_catalog seeded {count1} mindspeed dense + {count2} megatron dense + {count3} mindspeed moe + {count4} megatron moe models.")
     except Exception as e:
         print(f"[migration] model_catalog seed skipped: {e}")
 
