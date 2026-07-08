@@ -21,6 +21,7 @@ from openai import OpenAI
 from app.agent.guardrails import validate_input_params
 from app.config import config
 from app.mcp.client import mcp_client
+from app.models.model_catalog import resolve_model_config
 from app.models.schemas import (
     AgentEvent,
     CardMetrics,
@@ -48,11 +49,10 @@ SYSTEM_PROMPT = """你是 TrainMesh Agent，一个专为 AI 训练组网仿真�
 6. 对比原始组网和等效组网的仿真结果，判断等效性
 
 分阶段工作流程：
-- Step 1 (等效参数输入): 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
-- Step 2 (等效计算): 用户确认 → 逐条推送等效策略/指标/公式 → 完成等效计算
-- Step 3 (等效组网及模型渲染): 生成等效组网 → 生成等效模型结构 → 前端渲染
-- Step 4 (仿真验证): 用户确认 → 下发仿真 → 切换到仿真验证tab
-- Step 5 (结果分析): 自动对比 → 输出等效性结论
+- Step 1 (等效参数设定): 用户在交互区提及大模型名称时，先调用 auto_fill_model_params 获取该模型的架构参数(L/H/A/dff/V)并推送前端自动填充表单(仅支持稠密模型；稀疏/MoE模型会返回不支持提示) → 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
+- Step 2 (等效计算推导): 用户确认 → 逐条推送等效策略/指标/公式 → 生成等效组网 → 生成等效模型结构 → 前端渲染
+- Step 3 (等效仿真验证): 用户确认 → 下发仿真 → 切换到仿真验证tab
+- Step 4 (等效方案输出): 自动对比 → 输出等效性结论
 
 护栏校验在后端静默执行，不在工作流节点中展示。校验通过则继续，失败则返回错误提示用户修正参数。
 请用中文与用户交互。每次只执行当前阶段的任务，等待用户确认后再进入下一阶段。"""
@@ -171,6 +171,30 @@ _UTILITY_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "auto_fill_model_params",
+            "description": (
+                "当用户在交互区输入或提及大模型名称时调用：从 HuggingFace/ModelScope 官方 config.json 获取该稠密模型的架构参数"
+                "(层数L、隐藏维度H、注意力头数A、FFN维度dff、词表V)，推送到前端自动填充 Step1 表单。"
+                "传入完整仓库 ID 效果最佳(如 Qwen/Qwen2.5-7B、meta-llama/Llama-2-7b-hf)；"
+                "也支持裸名(如 Qwen3-32B、DeepSeek-V4-Pro)，会自动搜索 HuggingFace 匹配官方仓库。"
+                "当前仅支持稠密模型，稀疏/MoE 模型会返回不支持提示。"
+                "注意：该工具只填充模型架构参数；设备类型、DP/TP/PP、序列长度S、批次B 等组网与运行参数仍由用户设定。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "model_name": {
+                        "type": "string",
+                        "description": "大模型名称或仓库 ID，如 Qwen/Qwen2.5-7B、Qwen3-32B、meta-llama/Llama-2-7b-hf",
+                    },
+                },
+                "required": ["model_name"],
+            },
+        },
+    },
 ]
 
 
@@ -268,8 +292,15 @@ def _execute_utility_tool(
             return {
                 "error": "缺少等效组网仿真结果，请先运行 training-mesh-profiler-skill 获取等效组网仿真数据"
             }
+        orig_topo = session.original_topology
+        eq_topo = session.equivalent_topology
+        orig_tp = orig_topo.tp_size if orig_topo else 1
+        orig_pp = orig_topo.pp_size if orig_topo else 1
+        eq_tp = eq_topo.tp_size if eq_topo else orig_tp
+        eq_pp = eq_topo.pp_size if eq_topo else orig_pp
         report = _build_comparison_report(
-            session.original_simulation, session.equivalent_simulation
+            session.original_simulation, session.equivalent_simulation,
+            orig_tp, orig_pp, eq_tp, eq_pp,
         )
         session.comparison_report = report
         session.step = "completed"
@@ -284,6 +315,48 @@ def _execute_utility_tool(
             "section": section,
             "line": line,
             "section_done": section_done,
+        }
+
+    elif tool_name == "auto_fill_model_params":
+        model_name = (arguments.get("model_name") or "").strip()
+        cfg = resolve_model_config(model_name)
+        if not cfg:
+            return {
+                "_event_type": "model_params_fill",
+                "found": False,
+                "model_name": model_name,
+                "message": (
+                    f"未找到模型 {model_name} 的配置，请确认模型名称"
+                    "(建议使用完整仓库 ID 如 Qwen/Qwen2.5-7B)或联系管理员添加"
+                ),
+            }
+        if cfg.get("model_type") == "sparse":
+            return {
+                "_event_type": "model_params_fill",
+                "found": False,
+                "model_name": model_name,
+                "model_type": "sparse",
+                "message": f"模型 {model_name} 是稀疏(MoE)模型，当前仅支持稠密模型",
+            }
+        return {
+            "_event_type": "model_params_fill",
+            "found": True,
+            "model_name": cfg.get("model_name", model_name),
+            "model_type": "dense",
+            "L": cfg["num_layers"],
+            "H": cfg["d_model"],
+            "A": cfg["num_heads"],
+            "dff": cfg["d_ffn"],
+            "V": cfg["vocab_size"],
+            "source": cfg.get("_source", "unknown"),
+            "reference": cfg.get("reference"),
+            "tp": cfg.get("tp"),
+            "pp": cfg.get("pp"),
+            "dp": cfg.get("dp"),
+            "seq_len": cfg.get("seq_len"),
+            "global_batch_size": cfg.get("global_batch_size"),
+            "micro_batch_size": cfg.get("micro_batch_size"),
+            "device_type": cfg.get("device_type"),
         }
 
     return {"error": f"Unknown utility tool: {tool_name}"}
@@ -376,8 +449,34 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
     return data.model_dump() if hasattr(data, "model_dump") else data
 
 
+def _pp_stage_avg(cards: list[CardMetrics], tp: int, pp: int) -> dict:
+    """Compute average pp_comm_mb_per_micro for first, middle, last PP stages.
+
+    Rank layout (from training-mesh-gen-skill):
+      pp_rank = (global_rank % (tp * pp)) // tp
+
+    Returns {"first", "middle", "last"} — values are float averages, or 0.0 if
+    the stage doesn't exist (e.g. no middle stage when pp <= 2).
+    """
+    groups: dict[str, list[float]] = {"first": [], "middle": [], "last": []}
+    stride = tp * pp
+    for c in cards:
+        pp_rank = (c.global_rank % stride) // tp
+        if pp_rank == 0:
+            groups["first"].append(c.pp_comm_mb_per_micro)
+        if pp > 1 and pp_rank == pp - 1:
+            groups["last"].append(c.pp_comm_mb_per_micro)
+        if 0 < pp_rank < pp - 1:
+            groups["middle"].append(c.pp_comm_mb_per_micro)
+    return {
+        stage: (sum(vals) / len(vals)) if vals else 0.0
+        for stage, vals in groups.items()
+    }
+
+
 def _build_comparison_report(
-    original: SimulationResult, equivalent: SimulationResult
+    original: SimulationResult, equivalent: SimulationResult,
+    orig_tp: int, orig_pp: int, eq_tp: int, eq_pp: int,
 ) -> ComparisonReport:
     eps = 1e-9
 
@@ -393,25 +492,56 @@ def _build_comparison_report(
     eh = _per_card(equivalent.cards, "hbm_gb")
     otp = _per_card(original.cards, "tp_comm_gb_per_micro")
     etp = _per_card(equivalent.cards, "tp_comm_gb_per_micro")
-    opp = _per_card(original.cards, "pp_comm_mb_per_micro")
-    epp = _per_card(equivalent.cards, "pp_comm_mb_per_micro")
     odp = _per_card(original.cards, "dp_comm_gb_per_step")
     edp = _per_card(equivalent.cards, "dp_comm_gb_per_step")
 
     flops_diff = _diff_pct(of, ef)
     hbm_diff = _diff_pct(oh, eh)
     tp_comm_diff = _diff_pct(otp, etp)
-    pp_comm_diff = _diff_pct(opp, epp)
     dp_comm_diff = _diff_pct(odp, edp)
 
+    # ── Per-stage PP communication comparison ──
+    orig_pp_stage = _pp_stage_avg(original.cards, orig_tp, orig_pp)
+    eq_pp_stage = _pp_stage_avg(equivalent.cards, eq_tp, eq_pp)
+
+    # Determine which stages exist in BOTH topologies
+    stages_compared: list[str] = []
+    for stage in ("first", "middle", "last"):
+        # A stage "exists" if it has at least one card in the group.
+        # Use original topology's pp to determine existence.
+        if stage == "middle" and orig_pp <= 2:
+            continue
+        if stage == "last" and orig_pp <= 1:
+            continue
+        stages_compared.append(stage)
+
     tolerance = 5.0
+    pp_stage_diffs: dict[str, float] = {}
+    pp_stage_pass: dict[str, bool] = {}
+    for stage in stages_compared:
+        d = _diff_pct(orig_pp_stage[stage], eq_pp_stage[stage])
+        pp_stage_diffs[stage] = d
+        pp_stage_pass[stage] = d <= tolerance
+
+    pp_comm_diff = max(pp_stage_diffs.values()) if pp_stage_diffs else 0.0
+    pp_all_pass = all(pp_stage_pass.values()) if pp_stage_pass else True
+
+    # DP 是等效建模的缩减维度 (DP_eq = max(DP/4,1))，其通信量天然不等效，不纳入判定
     is_equivalent = (
         flops_diff <= tolerance
         and hbm_diff <= tolerance
         and tp_comm_diff <= tolerance
-        and pp_comm_diff <= tolerance
-        and dp_comm_diff <= tolerance
+        and pp_all_pass
     )
+
+    # Build conclusion message with per-stage breakdown on failure
+    if pp_all_pass:
+        conclusion = "✅ 等效验证通过" if is_equivalent else "❌ 等效验证不通过"
+    else:
+        failed_stages = [s for s, ok in pp_stage_pass.items() if not ok]
+        stage_names = {"first": "首PP", "middle": "中间PP", "last": "尾PP"}
+        names = [stage_names[s] for s in failed_stages]
+        conclusion = f"❌ 等效验证不通过 — PP通信不等效 ({'/'.join(names)})"
 
     return ComparisonReport(
         original=original,
@@ -424,10 +554,16 @@ def _build_comparison_report(
         is_equivalent=is_equivalent,
         error_tolerance_pct=tolerance,
         details={
-            "conclusion": "✅ 等效验证通过" if is_equivalent else "❌ 等效验证不通过",
+            "conclusion": conclusion,
             "max_diff_pct": round(
-                max(flops_diff, hbm_diff, tp_comm_diff, pp_comm_diff, dp_comm_diff), 2
+                max(flops_diff, hbm_diff, tp_comm_diff, pp_comm_diff), 2
             ),
+            "pp_breakdown": {
+                "original": orig_pp_stage,
+                "equivalent": eq_pp_stage,
+                "diff_pct": pp_stage_diffs,
+                "stages_compared": stages_compared,
+            },
         },
     )
 
@@ -473,7 +609,7 @@ async def agent_stream(
     user_message: str,
 ) -> AsyncGenerator[AgentEvent, None]:
     """Main agent streaming loop. Skills dispatched via registry, utilities handled directly."""
-    http_client = httpx.Client(verify=config.OPENAI_SSL_VERIFY)
+    http_client = httpx.Client(verify=config.OPENAI_SSL_VERIFY, proxy=config.EXTERNAL_PROXY or None)
     client = OpenAI(
         api_key=config.OPENAI_API_KEY,
         base_url=config.OPENAI_BASE_URL,
@@ -483,8 +619,34 @@ async def agent_stream(
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
     ]
+    # Collect all tool_call_ids that have a matching tool response in history
+    responded_ids = {
+        h.get("tool_call_id")
+        for h in session.history[-20:]
+        if h.get("role") == "tool" and h.get("tool_call_id")
+    }
     for h in session.history[-20:]:
-        messages.append(h)
+        if h.get("role") == "system":
+            # System messages in history are human-readable summaries
+            # (guardrail results, errors). They must never appear between
+            # assistant(tool_calls) and tool responses — skip them here.
+            continue
+        if h.get("role") == "assistant" and h.get("tool_calls"):
+            # Strip tool_calls that lack a tool response (orphaned from a crashed round)
+            valid_calls = [
+                tc for tc in h["tool_calls"]
+                if tc.get("id") in responded_ids
+            ]
+            if valid_calls:
+                h_copy = dict(h)
+                h_copy["tool_calls"] = valid_calls
+                messages.append(h_copy)
+            elif h.get("content"):
+                # No valid tool_calls left — keep as plain assistant message
+                messages.append({"role": "assistant", "content": h.get("content", "")})
+            # else: entirely orphaned — drop the message
+        else:
+            messages.append(h)
     messages.append({"role": "user", "content": user_message})
     session.history.append({"role": "user", "content": user_message})
 
@@ -573,6 +735,16 @@ async def agent_stream(
             except Exception as e:
                 logger.exception(f"[agent_stream] tool execution error: {tool_name}")
                 yield AgentEvent(event_type="error", message=f"工具执行异常: {e}")
+                # Append error tool response so the assistant's tool_calls
+                # message isn't left orphaned in session history, which would
+                # cause a 400 error on the next request.
+                err_content = json.dumps({"error": str(e)}, ensure_ascii=False)
+                messages.append(
+                    {"role": "tool", "tool_call_id": tool_call.id, "content": err_content}
+                )
+                session.history.append(
+                    {"role": "tool", "tool_call_id": tool_call.id, "content": err_content}
+                )
                 break
 
             logger.info(
@@ -588,16 +760,8 @@ async def agent_stream(
             if "error" in result:
                 event_type = "error"
                 result_msg = f"执行失败: {result.get('error')}"
-                session.history.append(
-                    {"role": "system", "content": "❌ " + result_msg}
-                )
             elif tool_name == "validate_mesh_params":
                 result_msg = "护栏校验" + ("通过" if result.get("passed") else "失败")
-                session.history.append(
-                    {"role": "system", "content": "✅ " + result_msg}
-                    if result.get("passed")
-                    else {"role": "system", "content": "❌ " + result_msg}
-                )
             elif tool_name == "training-mesh-gen-skill":
                 result_msg = f"组网 '{result.get('name', '')}' 生成成功"
             elif tool_name == "training-model-gen-skill":
@@ -610,6 +774,14 @@ async def agent_stream(
                 result_msg = (
                     f"对比分析完成: {result.get('details', {}).get('conclusion', '')}"
                 )
+            elif tool_name == "auto_fill_model_params":
+                if result.get("found") and result.get("model_type") == "dense":
+                    result_msg = (
+                        f"已获取模型 {result.get('model_name')} 架构参数"
+                        f"(L={result.get('L')}, H={result.get('H')}, A={result.get('A')})并填充表单"
+                    )
+                else:
+                    result_msg = result.get("message", "模型参数获取失败")
             else:
                 result_msg = f"工具 {tool_name} 执行完成"
 
@@ -634,6 +806,21 @@ async def agent_stream(
                     "content": tool_content,
                 }
             )
+
+            # Append system summary message AFTER tool response, so the
+            # history ordering is: assistant(tool_calls) → tool → system.
+            # Placing system before tool breaks OpenAI's requirement that
+            # tool responses directly follow tool_calls messages.
+            if event_type == "error":
+                session.history.append(
+                    {"role": "system", "content": "❌ " + result_msg}
+                )
+            elif tool_name == "validate_mesh_params":
+                session.history.append(
+                    {"role": "system", "content": "✅ " + result_msg}
+                    if result.get("passed")
+                    else {"role": "system", "content": "❌ " + result_msg}
+                )
 
     # Auto-profiling: if topologies have task_ids but no simulation data, run profiler now
     for label, topo, task_id in [

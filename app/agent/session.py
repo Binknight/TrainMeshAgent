@@ -216,6 +216,8 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                 for g in range(total_nodes):
                     dp_rank = g // ranks_per_dp
                     remainder = g % ranks_per_dp
+                    # 与前端 meshBuildData 一致：TP 最低位、PP 居中
+                    # global_rank = dp*(tp*pp) + pp*tp + tp
                     pp_rank = remainder // tp_size
                     tp_rank = remainder % tp_size
                     nodes.append(MeshNode(
