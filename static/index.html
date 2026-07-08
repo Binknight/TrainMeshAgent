@@ -6863,6 +6863,35 @@
                 html += '</div>';
                 html += '</div>';
 
+                // PP stage breakdown (first/middle/last) if available
+                var ppBreakdown = cr.details && cr.details.pp_breakdown;
+                if (ppBreakdown && ppBreakdown.stages_compared && ppBreakdown.stages_compared.length > 0) {
+                    var stageLabels = { first: '首PP', middle: '中间PP', last: '尾PP' };
+                    html += '<div class="result-diff-section" style="margin-top:12px">';
+                    html += '<div class="result-diff-title">PP通信分阶段对比 (首/中/尾)</div>';
+                    ppBreakdown.stages_compared.forEach(function (s) {
+                        var d = ppBreakdown.diff_pct[s] || 0;
+                        var pass = d <= tol;
+                        var pctW = Math.min(100, (d / barMaxPct) * 100);
+                        var tolLinePct = (tol / barMaxPct) * 100;
+                        var origVal = (ppBreakdown.original[s] != null) ? ppBreakdown.original[s].toFixed(2) : '-';
+                        var eqVal = (ppBreakdown.equivalent[s] != null) ? ppBreakdown.equivalent[s].toFixed(2) : '-';
+                        html += '<div class="result-diff-row">';
+                        html += '<div class="result-diff-label">' + (stageLabels[s] || s) + '</div>';
+                        html += '<div class="result-diff-bar-bg">';
+                        html += '<div class="result-diff-bar-fill ' + (pass ? 'pass' : 'fail') + '" style="width:' + pctW.toFixed(1) + '%"></div>';
+                        html += '<div class="result-diff-tolerance-line" style="left:' + tolLinePct.toFixed(1) + '%"></div>';
+                        html += '</div>';
+                        html += '<div class="result-diff-pct ' + (pass ? 'pass' : 'fail') + '">' + d.toFixed(2) + '%</div>';
+                        html += '<div class="result-diff-badge">' + (pass ? '✓' : '✗') + '</div>';
+                        html += '</div>';
+                        html += '<div class="result-diff-values" style="padding-left:80px;font-size:9px;color:var(--text-muted);margin-top:-4px;margin-bottom:4px">';
+                        html += '原始: ' + origVal + ' MB/micro ｜ 等效: ' + eqVal + ' MB/micro';
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+
                 // 1c. DP exclusion note — DP 是缩减维度，通信量天然不等效，不纳入判定
                 html += '<div style="margin-top:12px;padding:10px 14px;border-left:3px solid #3b82f6;background:rgba(59,130,246,0.10);border-radius:4px;font-size:12px;line-height:1.6;color:var(--text-muted)">';
                 html += '<div style="font-weight:700;color:var(--text-muted);margin-bottom:4px">DP 通信（不纳入判定）</div>';

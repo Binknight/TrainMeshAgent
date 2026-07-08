@@ -292,8 +292,15 @@ def _execute_utility_tool(
             return {
                 "error": "缺少等效组网仿真结果，请先运行 training-mesh-profiler-skill 获取等效组网仿真数据"
             }
+        orig_topo = session.original_topology
+        eq_topo = session.equivalent_topology
+        orig_tp = orig_topo.tp_size if orig_topo else 1
+        orig_pp = orig_topo.pp_size if orig_topo else 1
+        eq_tp = eq_topo.tp_size if eq_topo else orig_tp
+        eq_pp = eq_topo.pp_size if eq_topo else orig_pp
         report = _build_comparison_report(
-            session.original_simulation, session.equivalent_simulation
+            session.original_simulation, session.equivalent_simulation,
+            orig_tp, orig_pp, eq_tp, eq_pp,
         )
         session.comparison_report = report
         session.step = "completed"
@@ -442,8 +449,34 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
     return data.model_dump() if hasattr(data, "model_dump") else data
 
 
+def _pp_stage_avg(cards: list[CardMetrics], tp: int, pp: int) -> dict:
+    """Compute average pp_comm_mb_per_micro for first, middle, last PP stages.
+
+    Rank layout (from training-mesh-gen-skill):
+      pp_rank = (global_rank % (tp * pp)) // tp
+
+    Returns {"first", "middle", "last"} — values are float averages, or 0.0 if
+    the stage doesn't exist (e.g. no middle stage when pp <= 2).
+    """
+    groups: dict[str, list[float]] = {"first": [], "middle": [], "last": []}
+    stride = tp * pp
+    for c in cards:
+        pp_rank = (c.global_rank % stride) // tp
+        if pp_rank == 0:
+            groups["first"].append(c.pp_comm_mb_per_micro)
+        if pp > 1 and pp_rank == pp - 1:
+            groups["last"].append(c.pp_comm_mb_per_micro)
+        if 0 < pp_rank < pp - 1:
+            groups["middle"].append(c.pp_comm_mb_per_micro)
+    return {
+        stage: (sum(vals) / len(vals)) if vals else 0.0
+        for stage, vals in groups.items()
+    }
+
+
 def _build_comparison_report(
-    original: SimulationResult, equivalent: SimulationResult
+    original: SimulationResult, equivalent: SimulationResult,
+    orig_tp: int, orig_pp: int, eq_tp: int, eq_pp: int,
 ) -> ComparisonReport:
     eps = 1e-9
 
@@ -459,25 +492,56 @@ def _build_comparison_report(
     eh = _per_card(equivalent.cards, "hbm_gb")
     otp = _per_card(original.cards, "tp_comm_gb_per_micro")
     etp = _per_card(equivalent.cards, "tp_comm_gb_per_micro")
-    opp = _per_card(original.cards, "pp_comm_mb_per_micro")
-    epp = _per_card(equivalent.cards, "pp_comm_mb_per_micro")
     odp = _per_card(original.cards, "dp_comm_gb_per_step")
     edp = _per_card(equivalent.cards, "dp_comm_gb_per_step")
 
     flops_diff = _diff_pct(of, ef)
     hbm_diff = _diff_pct(oh, eh)
     tp_comm_diff = _diff_pct(otp, etp)
-    pp_comm_diff = _diff_pct(opp, epp)
     dp_comm_diff = _diff_pct(odp, edp)
 
+    # ── Per-stage PP communication comparison ──
+    orig_pp_stage = _pp_stage_avg(original.cards, orig_tp, orig_pp)
+    eq_pp_stage = _pp_stage_avg(equivalent.cards, eq_tp, eq_pp)
+
+    # Determine which stages exist in BOTH topologies
+    stages_compared: list[str] = []
+    for stage in ("first", "middle", "last"):
+        # A stage "exists" if it has at least one card in the group.
+        # Use original topology's pp to determine existence.
+        if stage == "middle" and orig_pp <= 2:
+            continue
+        if stage == "last" and orig_pp <= 1:
+            continue
+        stages_compared.append(stage)
+
     tolerance = 5.0
+    pp_stage_diffs: dict[str, float] = {}
+    pp_stage_pass: dict[str, bool] = {}
+    for stage in stages_compared:
+        d = _diff_pct(orig_pp_stage[stage], eq_pp_stage[stage])
+        pp_stage_diffs[stage] = d
+        pp_stage_pass[stage] = d <= tolerance
+
+    pp_comm_diff = max(pp_stage_diffs.values()) if pp_stage_diffs else 0.0
+    pp_all_pass = all(pp_stage_pass.values()) if pp_stage_pass else True
+
     # DP 是等效建模的缩减维度 (DP_eq = max(DP/4,1))，其通信量天然不等效，不纳入判定
     is_equivalent = (
         flops_diff <= tolerance
         and hbm_diff <= tolerance
         and tp_comm_diff <= tolerance
-        and pp_comm_diff <= tolerance
+        and pp_all_pass
     )
+
+    # Build conclusion message with per-stage breakdown on failure
+    if pp_all_pass:
+        conclusion = "✅ 等效验证通过" if is_equivalent else "❌ 等效验证不通过"
+    else:
+        failed_stages = [s for s, ok in pp_stage_pass.items() if not ok]
+        stage_names = {"first": "首PP", "middle": "中间PP", "last": "尾PP"}
+        names = [stage_names[s] for s in failed_stages]
+        conclusion = f"❌ 等效验证不通过 — PP通信不等效 ({'/'.join(names)})"
 
     return ComparisonReport(
         original=original,
@@ -490,10 +554,16 @@ def _build_comparison_report(
         is_equivalent=is_equivalent,
         error_tolerance_pct=tolerance,
         details={
-            "conclusion": "✅ 等效验证通过" if is_equivalent else "❌ 等效验证不通过",
+            "conclusion": conclusion,
             "max_diff_pct": round(
                 max(flops_diff, hbm_diff, tp_comm_diff, pp_comm_diff), 2
             ),
+            "pp_breakdown": {
+                "original": orig_pp_stage,
+                "equivalent": eq_pp_stage,
+                "diff_pct": pp_stage_diffs,
+                "stages_compared": stages_compared,
+            },
         },
     )
 

@@ -330,7 +330,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     return task_id, None
 
 
-def _build_comparison(original: SimulationResult, equivalent: SimulationResult) -> ComparisonReport:
+def _build_comparison(original: SimulationResult, equivalent: SimulationResult, orig_tp: int, orig_pp: int, eq_tp: int, eq_pp: int) -> ComparisonReport:
     eps = 1e-9
 
     def _diff_pct(ov, ev):
@@ -343,15 +343,61 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
             vals = [v if v is not None else getattr(c, "hbm_gb") for v, c in zip(vals, cards)]
         return sum(vals) / max(len(vals), 1)
 
+    def _pp_stage_avg_local(cards: list[CardMetrics], tp: int, pp: int) -> dict:
+        """Compute average pp_comm_mb_per_micro for first, middle, last PP stages."""
+        groups: dict[str, list[float]] = {"first": [], "middle": [], "last": []}
+        stride = tp * pp
+        for c in cards:
+            pp_rank = (c.global_rank % stride) // tp
+            if pp_rank == 0:
+                groups["first"].append(c.pp_comm_mb_per_micro)
+            if pp > 1 and pp_rank == pp - 1:
+                groups["last"].append(c.pp_comm_mb_per_micro)
+            if 0 < pp_rank < pp - 1:
+                groups["middle"].append(c.pp_comm_mb_per_micro)
+        return {
+            stage: (sum(vals) / len(vals)) if vals else 0.0
+            for stage, vals in groups.items()
+        }
+
     flops_diff = _diff_pct(_per_card(original.cards, "flops_per_card"), _per_card(equivalent.cards, "flops_per_card"))
     hbm_diff = _diff_pct(_per_card(original.cards, "hbm_model_gb"), _per_card(equivalent.cards, "hbm_model_gb"))
     tp_diff = _diff_pct(_per_card(original.cards, "tp_comm_gb_per_micro"), _per_card(equivalent.cards, "tp_comm_gb_per_micro"))
-    pp_diff = _diff_pct(_per_card(original.cards, "pp_comm_mb_per_micro"), _per_card(equivalent.cards, "pp_comm_mb_per_micro"))
     dp_diff = _diff_pct(_per_card(original.cards, "dp_comm_gb_per_step"), _per_card(equivalent.cards, "dp_comm_gb_per_step"))
 
+    # ── Per-stage PP communication comparison ──
+    orig_pp_stage = _pp_stage_avg_local(original.cards, orig_tp, orig_pp)
+    eq_pp_stage = _pp_stage_avg_local(equivalent.cards, eq_tp, eq_pp)
+
+    stages_compared: list[str] = []
+    for stage in ("first", "middle", "last"):
+        if stage == "middle" and orig_pp <= 2:
+            continue
+        if stage == "last" and orig_pp <= 1:
+            continue
+        stages_compared.append(stage)
+
     tolerance = 5.0
+    pp_stage_diffs: dict[str, float] = {}
+    pp_stage_pass: dict[str, bool] = {}
+    for stage in stages_compared:
+        d = _diff_pct(orig_pp_stage[stage], eq_pp_stage[stage])
+        pp_stage_diffs[stage] = d
+        pp_stage_pass[stage] = d <= tolerance
+
+    pp_diff = max(pp_stage_diffs.values()) if pp_stage_diffs else 0.0
+    pp_all_pass = all(pp_stage_pass.values()) if pp_stage_pass else True
+
     # DP 是等效建模的缩减维度 (DP_eq = max(DP/4,1))，其通信量天然不等效，不纳入判定
-    is_eq = all(d <= tolerance for d in [flops_diff, hbm_diff, tp_diff, pp_diff])
+    is_eq = all(d <= tolerance for d in [flops_diff, hbm_diff, tp_diff]) and pp_all_pass
+
+    if pp_all_pass:
+        conclusion = "✅ 等效验证通过" if is_eq else "❌ 等效验证不通过"
+    else:
+        failed_stages = [s for s, ok in pp_stage_pass.items() if not ok]
+        stage_names = {"first": "首PP", "middle": "中间PP", "last": "尾PP"}
+        names = [stage_names[s] for s in failed_stages]
+        conclusion = f"❌ 等效验证不通过 — PP通信不等效 ({'/'.join(names)})"
 
     return ComparisonReport(
         original=original,
@@ -364,8 +410,14 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
         is_equivalent=is_eq,
         error_tolerance_pct=tolerance,
         details={
-            "conclusion": "✅ 等效验证通过" if is_eq else "❌ 等效验证不通过",
+            "conclusion": conclusion,
             "max_diff_pct": round(max(flops_diff, hbm_diff, tp_diff, pp_diff), 2),
+            "pp_breakdown": {
+                "original": orig_pp_stage,
+                "equivalent": eq_pp_stage,
+                "diff_pct": pp_stage_diffs,
+                "stages_compared": stages_compared,
+            },
         }
     )
 
@@ -431,7 +483,13 @@ def run_simulation(session_id: str):
         # ── Comparison ──
         report = None
         if session.original_simulation and session.equivalent_simulation:
-            report = _build_comparison(session.original_simulation, session.equivalent_simulation)
+            orig_topo = session.original_topology
+            eq_topo = session.equivalent_topology
+            orig_tp = orig_topo.tp_size if orig_topo else 1
+            orig_pp = orig_topo.pp_size if orig_topo else 1
+            eq_tp = eq_topo.tp_size if eq_topo else orig_tp
+            eq_pp = eq_topo.pp_size if eq_topo else orig_pp
+            report = _build_comparison(session.original_simulation, session.equivalent_simulation, orig_tp, orig_pp, eq_tp, eq_pp)
             session.comparison_report = report
             session.step = "completed"
             results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
