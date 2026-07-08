@@ -2691,6 +2691,26 @@
                 border-bottom: 2px solid var(--border);
             }
 
+            .result-master-card {
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 18px 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .result-master-card-header {
+                font-family: var(--font-sans);
+                font-size: 14px;
+                font-weight: 700;
+                color: var(--text-primary);
+                padding-bottom: 10px;
+                border-bottom: 2px solid var(--border);
+                margin-bottom: 2px;
+            }
+
             .result-config-section-3col {
                 grid-template-columns: repeat(3, 1fr);
             }
@@ -6818,9 +6838,10 @@
                 var html = '';
 
                 // ═══════════════════════════════════════════
-                // SECTION 1: 等效验证结论
+                // MASTER CARD 1: 等效验证结论
                 // ═══════════════════════════════════════════
-                html += '<div class="result-section-header">等效验证结论</div>';
+                html += '<div class="result-master-card">';
+                html += '<div class="result-master-card-header">等效验证结论</div>';
 
                 // 1a. Verdict Card
                 html += '<div class="result-verdict-card">';
@@ -6898,10 +6919,13 @@
                 html += '等效组网通过缩减 DP 维度压缩集群规模（DP_eq = max(DP_orig/4, 1)），DP all-reduce 通信量天然随 DP 组规模变化，属预期不等效，不计入等效判定。当前差异 <strong style="color:var(--text-muted)">' + (cr.dp_comm_diff_pct || 0).toFixed(2) + '%</strong>（仅供参考）。判定仅依据 FLOPs / HBM / TP 通信 / PP 通信 四维。';
                 html += '</div>';
 
+                html += '</div>'; // end master card 1
+
                 // ═══════════════════════════════════════════
-                // SECTION 2: 等效输出结果
+                // MASTER CARD 2: 等效输出结果
                 // ═══════════════════════════════════════════
-                html += '<div class="result-section-header" style="margin-top:24px;">等效输出结果</div>';
+                html += '<div class="result-master-card" style="margin-top:16px">';
+                html += '<div class="result-master-card-header">等效输出结果</div>';
 
                 // Prepare data
                 var origMesh = meshOriginal || {};
@@ -6991,6 +7015,8 @@
                 html += '<span>输出等效组网训练脚本</span></button>';
                 html += '</div>';
                 html += '</div>';
+
+                html += '</div>'; // end master card 2
 
                 wrap.innerHTML = html;
                 _fillTrainingParams();
