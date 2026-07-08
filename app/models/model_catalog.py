@@ -17,7 +17,19 @@ import logging
 
 import requests
 
+from app.config import config
+
 logger = logging.getLogger(__name__)
+
+_proxies: dict | None = None
+
+
+def _get_proxies() -> dict | None:
+    """Return proxy dict for requests library if EXTERNAL_PROXY is configured."""
+    global _proxies
+    if _proxies is None:
+        _proxies = {"http": config.EXTERNAL_PROXY, "https": config.EXTERNAL_PROXY} if config.EXTERNAL_PROXY else {}
+    return _proxies or None
 
 # ── Builtin dense model fallback table (offline) ──
 # Values match public config.json. Used when network fetch fails or for bare
@@ -345,7 +357,7 @@ def _fetch_hf_config(model_id: str) -> dict | None:
     """Fetch raw config.json from HuggingFace Hub (public models, no auth)."""
     url = f"https://huggingface.co/{model_id}/raw/main/config.json"
     try:
-        resp = requests.get(url, timeout=_HTTP_TIMEOUT)
+        resp = requests.get(url, timeout=_HTTP_TIMEOUT, proxies=_get_proxies())
         if resp.status_code == 200:
             return resp.json()
         logger.info(f"[model_catalog] HF {model_id} status={resp.status_code}")
@@ -361,7 +373,7 @@ def _fetch_modelscope_config(model_id: str) -> dict | None:
         f"{model_id}/repo?Revision=master&FilePath=config.json"
     )
     try:
-        resp = requests.get(url, timeout=_HTTP_TIMEOUT)
+        resp = requests.get(url, timeout=_HTTP_TIMEOUT, proxies=_get_proxies())
         if resp.status_code == 200:
             data = resp.json()
             # File endpoint returns raw config; validate it's a real model config
@@ -428,6 +440,7 @@ def _search_hf_model(bare_name: str) -> str | None:
             "https://huggingface.co/api/models",
             params={"search": bare_name, "limit": 20},
             timeout=_HTTP_TIMEOUT,
+            proxies=_get_proxies(),
         )
         if resp.status_code != 200:
             return None
