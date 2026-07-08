@@ -4,8 +4,8 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>TrainMesh Agent</title>
-        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <script src="/static/marked.min.js"></script>
+        <script src="/static/d3.v7.min.js"></script>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
@@ -191,9 +191,7 @@
                 transition: background var(--transition);
                 margin-bottom: 3px;
                 border: 1px solid transparent;
-                display: flex;
-                align-items: flex-start;
-                gap: 6px;
+                position: relative;
             }
             .history-item:hover {
                 background: var(--bg-hover);
@@ -217,21 +215,25 @@
                 text-overflow: ellipsis;
             }
             .history-delete {
-                flex-shrink: 0;
-                width: 20px;
-                height: 20px;
+                position: absolute;
+                right: 8px;
+                bottom: 6px;
+                width: 18px;
+                height: 18px;
                 border: none;
                 background: transparent;
                 color: var(--text-muted);
-                font-size: 15px;
-                line-height: 1;
                 cursor: pointer;
                 border-radius: 3px;
                 padding: 0;
                 opacity: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
                 transition:
                     opacity var(--transition),
-                    color var(--transition);
+                    color var(--transition),
+                    background var(--transition);
             }
             .history-item:hover .history-delete {
                 opacity: 1;
@@ -239,6 +241,11 @@
             .history-delete:hover {
                 color: var(--red);
                 background: rgba(242, 109, 120, 0.1);
+            }
+            .history-delete svg {
+                width: 14px;
+                height: 14px;
+                fill: currentColor;
             }
             .history-empty {
                 padding: 32px 16px;
@@ -499,58 +506,144 @@
                 top: 50%;
                 transform: translateY(-50%);
                 z-index: 15;
-                width: 22px;
-                height: 64px;
-                border: 1px solid var(--border);
-                background: var(--bg-panel);
+                width: 28px;
+                height: 72px;
+                background: linear-gradient(
+                    180deg,
+                    rgba(22, 28, 36, 0.96) 0%,
+                    rgba(17, 22, 29, 0.98) 100%
+                );
+                border: 1.5px solid var(--border);
                 cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                border-radius: 5px;
-                transition: all 0.2s ease;
-                color: var(--text-muted);
+                border-radius: 7px;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                color: var(--text-secondary);
                 padding: 0;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025),
+                    0 2px 8px rgba(0, 0, 0, 0.3);
+                backdrop-filter: blur(6px);
+                -webkit-backdrop-filter: blur(6px);
+            }
+            /* Three grip dots (vertical ellipsis pattern) */
+            .panel-collapse-handle::before {
+                content: "";
+                position: absolute;
+                width: 3px;
+                height: 3px;
+                background: var(--text-muted);
+                border-radius: 50%;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: 0 9px 0 var(--text-muted),
+                    0 -9px 0 var(--text-muted);
+            }
+            /* Outer glow ring (invisible until hover) */
+            .panel-collapse-handle::after {
+                content: "";
+                position: absolute;
+                inset: -3px;
+                border-radius: 10px;
+                border: 1.5px solid transparent;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                pointer-events: none;
+                opacity: 0;
             }
             .panel-collapse-handle:hover {
-                background: var(--bg-hover);
-                border-color: var(--cyan-dim);
+                background: linear-gradient(
+                    180deg,
+                    rgba(28, 36, 48, 0.98) 0%,
+                    rgba(22, 28, 36, 0.98) 100%
+                );
+                border-color: var(--cyan);
                 color: var(--cyan);
-                box-shadow: 0 0 8px rgba(57, 186, 230, 0.2);
+                box-shadow: inset 0 1px 0 rgba(57, 186, 230, 0.08),
+                    0 0 24px rgba(57, 186, 230, 0.18),
+                    0 0 6px rgba(57, 186, 230, 0.1);
+                transform: translateY(-50%) scale(1.06);
+            }
+            .panel-collapse-handle:hover::before {
+                background: var(--cyan);
+                box-shadow: 0 9px 0 var(--cyan),
+                    0 -9px 0 var(--cyan);
+                filter: drop-shadow(0 0 3px rgba(57, 186, 230, 0.5));
+            }
+            .panel-collapse-handle:hover::after {
+                border-color: rgba(57, 186, 230, 0.22);
+                opacity: 1;
+                box-shadow: 0 0 14px rgba(57, 186, 230, 0.06);
+            }
+            .panel-collapse-handle:active {
+                transform: translateY(-50%) scale(0.97) !important;
+                transition: all 0.08s ease;
             }
             .panel-collapse-handle svg {
-                width: 14px;
-                height: 14px;
-                transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+                width: 15px;
+                height: 15px;
+                transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                    filter 0.3s ease;
                 flex-shrink: 0;
             }
-            /* Left panel handle: attached to right edge, protrudes inward */
+            .panel-collapse-handle:hover svg {
+                filter: drop-shadow(0 0 4px rgba(57, 186, 230, 0.35));
+            }
+
+            /* ── Left panel handle (attached to right edge) ── */
             .panel-left .panel-collapse-handle {
-                right: -11px;
+                right: -14px;
                 border-left: none;
-                border-radius: 0 5px 5px 0;
+                border-radius: 0 7px 7px 0;
             }
-            /* Right panel handle: attached to left edge, protrudes inward */
+            .panel-left .panel-collapse-handle::before {
+                left: 6px;
+            }
+
+            /* ── Right panel handle (attached to left edge) ── */
             .panel-right .panel-collapse-handle {
-                left: -11px;
+                left: -14px;
                 border-right: none;
-                border-radius: 5px 0 0 5px;
+                border-radius: 7px 0 0 7px;
             }
-            /* Collapsed state: handle centered in thin strip */
+            .panel-right .panel-collapse-handle::before {
+                right: 6px;
+            }
+
+            /* ── Collapsed state: handle centered in thin strip ── */
             .panel-left.collapsed .panel-collapse-handle {
                 right: auto;
                 left: 50%;
                 transform: translate(-50%, -50%);
-                border: 1px solid var(--border);
-                border-radius: 5px;
+                border: 1.5px solid var(--border);
+                border-radius: 7px;
             }
+            .panel-left.collapsed .panel-collapse-handle:hover {
+                border-color: var(--cyan);
+                box-shadow: 0 0 24px rgba(57, 186, 230, 0.18),
+                    0 0 6px rgba(57, 186, 230, 0.1);
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+            .panel-left.collapsed .panel-collapse-handle:active {
+                transform: translate(-50%, -50%) scale(0.96) !important;
+            }
+
             .panel-right.collapsed .panel-collapse-handle {
                 left: auto;
                 right: 50%;
                 transform: translate(50%, -50%);
-                border: 1px solid var(--border);
-                border-radius: 5px;
+                border: 1.5px solid var(--border);
+                border-radius: 7px;
             }
+            .panel-right.collapsed .panel-collapse-handle:hover {
+                border-color: var(--cyan);
+                box-shadow: 0 0 24px rgba(57, 186, 230, 0.18),
+                    0 0 6px rgba(57, 186, 230, 0.1);
+                transform: translate(50%, -50%) scale(1.1);
+            }
+            .panel-right.collapsed .panel-collapse-handle:active {
+                transform: translate(50%, -50%) scale(0.96) !important;
+            }
+
             /* Chevron rotation when collapsed */
             .panel-left.collapsed .panel-collapse-handle svg {
                 transform: rotate(180deg);
@@ -643,27 +736,67 @@
                 height: 100%;
             }
             .sim-resize-handle {
-                flex: 0 0 6px;
-                background: var(--border);
+                flex: 0 0 8px;
+                background: transparent;
                 cursor: row-resize;
-                transition: background 0.15s;
+                transition: background 0.2s ease;
                 position: relative;
                 z-index: 10;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
-            .sim-resize-handle:hover,
-            .sim-resize-handle.active {
-                background: var(--cyan);
+            /* Central grip bar */
+            .sim-resize-handle::before {
+                content: "";
+                width: 40px;
+                height: 3px;
+                background: var(--border-active);
+                border-radius: 2px;
+                transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             }
+            /* Three grip dots */
             .sim-resize-handle::after {
                 content: "";
                 position: absolute;
                 left: 50%;
                 top: 50%;
                 transform: translate(-50%, -50%);
-                width: 30px;
-                height: 2px;
+                width: 4px;
+                height: 4px;
                 background: var(--text-muted);
-                border-radius: 1px;
+                border-radius: 50%;
+                box-shadow: 8px 0 0 var(--text-muted),
+                    -8px 0 0 var(--text-muted);
+                transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .sim-resize-handle:hover {
+                background: rgba(57, 186, 230, 0.04);
+            }
+            .sim-resize-handle:hover::before {
+                background: var(--cyan);
+                box-shadow: 0 0 10px rgba(57, 186, 230, 0.3);
+                width: 52px;
+            }
+            .sim-resize-handle:hover::after {
+                background: var(--cyan);
+                box-shadow: 8px 0 0 var(--cyan),
+                    -8px 0 0 var(--cyan);
+                filter: drop-shadow(0 0 3px rgba(57, 186, 230, 0.4));
+            }
+            .sim-resize-handle.active {
+                background: rgba(57, 186, 230, 0.07);
+            }
+            .sim-resize-handle.active::before {
+                background: var(--cyan);
+                box-shadow: 0 0 14px rgba(57, 186, 230, 0.4);
+                width: 60px;
+            }
+            .sim-resize-handle.active::after {
+                background: var(--cyan);
+                box-shadow: 8px 0 0 var(--cyan),
+                    -8px 0 0 var(--cyan);
+                filter: drop-shadow(0 0 4px rgba(57, 186, 230, 0.5));
             }
             .sim-topo-placeholder {
                 display: flex;
@@ -1090,6 +1223,11 @@
                 user-select: none;
                 flex-shrink: 0;
             }
+            /* In panel header: sit to the right of the title */
+            .panel-header .ai-toggle {
+                margin-left: auto;
+                margin-right: 10px;
+            }
             .ai-toggle input[type="checkbox"] {
                 display: none;
             }
@@ -1207,13 +1345,13 @@
                 min-width: 0;
             }
             .workflow-param-card {
-                width: 340px;
+                width: 680px;
                 max-height: 90vh;
                 overflow-y: auto;
                 background: var(--bg-panel);
                 border: 1px solid var(--border-active);
                 border-radius: var(--radius);
-                padding: 16px 20px;
+                padding: 20px 28px;
                 box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
             }
             .workflow-param-title {
@@ -1250,12 +1388,12 @@
                 font-family: var(--font-mono);
                 font-size: 11px;
                 color: var(--text-secondary);
-                min-width: 28px;
+                min-width: 70px;
                 flex-shrink: 0;
             }
             #wf-orig-model-name {
-                flex: 0 0 auto;
-                width: 200px;
+                flex: 1;
+                min-width: 0;
             }
             .workflow-param-row select,
             .workflow-param-row input {
@@ -1684,6 +1822,47 @@
             .btn-send:disabled {
                 opacity: 0.3;
                 cursor: not-allowed;
+            }
+
+            /* ── System Log Mode (AI off) ── */
+            .chat-panel.log-mode .chat-input-area {
+                display: none;
+            }
+            .chat-panel.log-mode #quick-actions {
+                display: none;
+            }
+            .chat-panel.log-mode .chat-messages {
+                font-family: var(--font-mono);
+                font-size: 12px;
+                gap: 6px;
+                padding: 12px 14px;
+            }
+            .chat-panel.log-mode .msg-bubble {
+                font-size: 11px;
+                padding: 6px 10px;
+                line-height: 1.45;
+                border-radius: var(--radius-sm);
+            }
+            .chat-panel.log-mode .msg-label {
+                font-size: 8px;
+            }
+            .system-log-status {
+                padding: 6px 14px;
+                border-top: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-family: var(--font-mono);
+                font-size: 10px;
+                color: var(--text-muted);
+                flex-shrink: 0;
+            }
+            .system-log-status .system-log-indicator {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--green);
+                animation: pulse-status 2s ease-in-out infinite;
             }
 
             /* ── Quick actions ── */
@@ -2502,55 +2681,98 @@
                 color: var(--text-primary);
             }
 
-            .result-metric-section {
+            .result-section-header {
+                font-family: var(--font-sans);
+                font-size: 14px;
+                font-weight: 700;
+                color: var(--text-primary);
+                margin-bottom: 14px;
+                padding-bottom: 8px;
+                border-bottom: 2px solid var(--border);
+            }
+
+            .result-master-card {
                 background: var(--bg-surface);
                 border: 1px solid var(--border);
                 border-radius: var(--radius);
-                padding: 14px 18px;
+                padding: 18px 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
             }
-            .result-metric-title {
+
+            .result-master-card-header {
+                font-family: var(--font-sans);
+                font-size: 14px;
+                font-weight: 700;
+                color: var(--text-primary);
+                padding-bottom: 10px;
+                border-bottom: 2px solid var(--border);
+                margin-bottom: 2px;
+            }
+
+            .result-config-section-3col {
+                grid-template-columns: repeat(3, 1fr);
+            }
+
+            .result-script-section {
+                margin-top: 16px;
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 16px 18px;
+            }
+            .result-script-title {
                 font-family: var(--font-sans);
                 font-size: 12px;
                 font-weight: 600;
                 color: var(--text-primary);
                 margin-bottom: 12px;
             }
-            .result-metric-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-                gap: 10px;
-            }
-            .result-metric-item {
-                padding: 10px 12px;
-                background: var(--bg-panel);
-                border-radius: var(--radius-sm);
-                border: 1px solid var(--border);
-            }
-            .result-metric-item-label {
-                font-family: var(--font-mono);
-                font-size: 10px;
-                color: var(--text-muted);
-                margin-bottom: 6px;
-            }
-            .result-metric-item-row {
+            .result-script-buttons {
                 display: flex;
-                justify-content: space-between;
+                gap: 12px;
+            }
+            .btn-script {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 20px;
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
                 font-family: var(--font-mono);
-                font-size: 11px;
-                margin-bottom: 2px;
-            }
-            .result-metric-item-row .tag-orig {
-                color: #58a6ff;
-                font-weight: 500;
-            }
-            .result-metric-item-row .tag-eq {
-                color: var(--teal);
-                font-weight: 500;
-            }
-            .result-metric-item-row .val {
-                color: var(--text-primary);
+                font-size: 12px;
                 font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
             }
+            .btn-script:hover {
+                filter: brightness(1.2);
+                transform: translateY(-1px);
+            }
+            .btn-script:active {
+                transform: translateY(0);
+            }
+            .btn-script-orig {
+                background: rgba(88, 166, 255, 0.12);
+                color: #58a6ff;
+                border-color: rgba(88, 166, 255, 0.3);
+            }
+            .btn-script-orig:hover {
+                background: rgba(88, 166, 255, 0.2);
+                border-color: #58a6ff;
+            }
+            .btn-script-eq {
+                background: rgba(57, 211, 175, 0.12);
+                color: var(--teal);
+                border-color: rgba(57, 211, 175, 0.3);
+            }
+            .btn-script-eq:hover {
+                background: rgba(57, 211, 175, 0.2);
+                border-color: var(--teal);
+            }
+
+
         </style>
     </head>
     <body>
@@ -2613,11 +2835,6 @@
                                 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
                             </svg>
                         </button>
-                        <label class="ai-toggle" title="切换 Agent 对话驱动模式">
-                            <span class="ai-toggle-label">AI</span>
-                            <input type="checkbox" id="ai-mode-toggle-flow" onchange="toggleWorkflowMode()" />
-                            <span class="ai-toggle-slider"></span>
-                        </label>
                     </span>
                 </div>
                 <!-- Parameter Input Overlay -->
@@ -2628,13 +2845,17 @@
                 >
                     <div class="workflow-param-card">
                         <div class="workflow-param-title">
-                            Step 1 — 参数输入
+                            Step 1 — 等效参数设定
                         </div>
                         <div class="workflow-param-row">
                             <label>模型名称</label>
-                            <select id="wf-orig-model-name">
-                                <option value="Qwen3-32B">Qwen3-32B</option>
+                            <select id="wf-orig-model-name" onchange="onModelNameChange()">
+                                <option value="">— 请选择或输入模型名 —</option>
                             </select>
+                        </div>
+                        <div class="workflow-param-row" id="wf-model-ref-row" style="display:none">
+                            <label>参考脚本</label>
+                            <a id="wf-orig-model-ref" href="#" target="_blank" style="font-family:var(--font-mono);font-size:11px;color:var(--cyan);text-decoration:none;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></a>
                         </div>
                         <div class="wf-param-columns">
                             <div class="wf-param-col">
@@ -2653,51 +2874,49 @@
                                     </select>
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>DP</label>
-                                    <input id="wf-orig-dp" type="number" value="8" min="1" max="1024" disabled />
+                                    <label>DP (数据并行)</label>
+                                    <input id="wf-orig-dp" type="number" value="8" min="1" max="1024" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>TP</label>
-                                    <select id="wf-orig-tp" disabled>
-                                        <option value="16">16</option>
-                                    </select>
+                                    <label>TP (张量并行)</label>
+                                    <input id="wf-orig-tp" type="number" value="16" min="1" max="64" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>PP</label>
-                                    <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()" disabled />
+                                    <label>PP (流水线并行)</label>
+                                    <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-section">原始模型参数</div>
                                 <div class="workflow-param-row">
-                                    <label>L</label>
-                                    <input id="wf-orig-model-l" type="number" value="64" min="1" max="512" onchange="updateEquivalentModelL()" disabled />
+                                    <label>L (层数)</label>
+                                    <input id="wf-orig-model-l" type="number" value="64" min="1" max="512" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>H</label>
-                                    <input id="wf-orig-model-h" type="number" value="4096" min="128" max="32768" step="64" onchange="updateEquivalentModelL()" disabled />
+                                    <label>H (隐藏维度)</label>
+                                    <input id="wf-orig-model-h" type="number" value="4096" min="128" max="32768" step="64" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>A</label>
-                                    <input id="wf-orig-model-a" type="number" value="32" min="1" max="256" onchange="updateEquivalentModelL()" disabled />
+                                    <label>A (注意力头数)</label>
+                                    <input id="wf-orig-model-a" type="number" value="32" min="1" max="256" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>b</label>
-                                    <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" disabled />
+                                    <label>dff (前馈维度)</label>
+                                    <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>dff</label>
-                                    <input id="wf-orig-model-dff" type="number" value="14336" min="1" max="131072" step="64" disabled />
-                                </div>
-                                <div class="workflow-param-row">
-                                    <label>V (词表)</label>
+                                    <label>V (词表大小)</label>
                                     <input id="wf-orig-model-vocab" type="number" value="32000" min="1" max="1048576" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>S</label>
+                                    <label>S (序列长度)</label>
                                     <input id="wf-orig-model-s" type="number" value="2048" min="1" max="131072" />
                                 </div>
                                 <div class="workflow-param-row">
-                                    <label>B</label>
+                                    <label>B (全局批次)</label>
                                     <input id="wf-orig-model-b" type="number" value="32" min="1" max="1048576" />
+                                </div>
+                                <div class="workflow-param-row">
+                                    <label>b (微批次)</label>
+                                    <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" />
                                 </div>
                                 <div class="workflow-param-section" style="margin-top: 16px">默认等效策略</div>
                                 <div class="workflow-param-row">
@@ -2724,10 +2943,10 @@
                         </div>
                     </div>
                 </div>
-                <!-- Step 4 仿真参数 Overlay -->
+                <!-- Step 3 仿真参数 Overlay -->
                 <div class="workflow-param-overlay" id="sim-param-overlay" style="display: none">
                     <div class="workflow-param-card sim-param-card">
-                        <div class="workflow-param-title">Step 4 — 仿真参数</div>
+                        <div class="workflow-param-title">Step 3 — 仿真参数</div>
                         <div class="workflow-param-row">
                             <label>Epoch Num</label>
                             <input id="sim-epoch-num" type="number" value="1" min="1" max="1000" />
@@ -2818,7 +3037,7 @@
                         disabled
                         onclick="switchCanvasTab('result')"
                     >
-                        等效结果
+                        等效结果判定
                     </button>
                 </div>
                 <!-- Tab: 等效建模分析 -->
@@ -2935,7 +3154,7 @@
                         </div>
                     </div>
                 </div>
-                <!-- Tab: 等效结果 -->
+                <!-- Tab: 等效结果判定 -->
                 <div class="canvas-tab-panel" id="tab-panel-result">
                     <div class="result-panel-wrap" id="result-panel-wrap">
                         <!-- populated dynamically by _renderResultPanel() -->
@@ -2948,7 +3167,12 @@
                 <!-- ── Chat Panel ── -->
                 <div class="chat-panel">
                     <div class="panel-header">
-                        <span>💬 Agent 交互</span>
+                        <span id="panel-header-title">💬 Agent 交互</span>
+                        <label class="ai-toggle" id="ai-toggle-chat" title="AI 对话模式：开启可与 Agent 交互，关闭后仅展示系统消息">
+                            <span class="ai-toggle-label">AI</span>
+                            <input type="checkbox" id="ai-mode-toggle-flow" onchange="toggleWorkflowMode()" checked />
+                            <span class="ai-toggle-slider"></span>
+                        </label>
                         <span class="session-id" id="session-id-display"
                             >—</span
                         >
@@ -2957,28 +3181,18 @@
                     <div class="chat-messages" id="chat-messages">
                         <div class="msg-group fade-in">
                             <span class="msg-label agent">TrainMesh Agent</span>
-                            <div class="msg-bubble agent">
-                                欢迎使用 TrainMesh
-                                Agent。输入组网参数开始仿真测试。
-                            </div>
+                            <div class="msg-bubble agent">欢迎使用 TrainMesh Agent。输入模型名称，开始等效建模。</div>
                         </div>
 
                         <div class="msg-group fade-in">
                             <span class="msg-label system">建议</span>
-                            <div class="msg-bubble system">
-                                试试下方的快捷操作，或直接输入组网参数（设备类型
-                                + DP/TP/PP）
-                            </div>
+                            <div class="msg-bubble system">试试下方的快捷操作</div>
                         </div>
                         <div class="quick-actions" id="quick-actions">
                             <span
                                 class="quick-chip"
-                                onclick="
-                                    sendQuick(
-                                        '请帮我生成原始组网: 设备类型A3, DP=8, TP=16, PP=8 | 等效组网: 设备类型A3, DP=2, TP=16, PP=3',
-                                    )
-                                "
-                                >A3 DP8/TP16/PP8 → A3 DP2/TP16/PP3</span
+                                onclick="sendQuick('请用Qwen2.5-72B开始等效建模')"
+                                >Qwen2.5-72B 等效建模</span
                             >
                         </div>
                     </div>
@@ -3011,6 +3225,10 @@
                                 />
                             </svg>
                         </button>
+                    </div>
+                    <div class="system-log-status" id="system-log-status" style="display:none">
+                        <span class="system-log-indicator"></span>
+                        <span id="system-log-status-text">系统日志</span>
                     </div>
                 </div>
                 <button class="panel-collapse-handle" onclick="toggleRightPanel()" title="折叠/展开右侧栏">
@@ -3057,14 +3275,14 @@
             const WORKFLOW_STEPS = [
                 {
                     id: "params",
-                    label: "等效参数输入",
+                    label: "等效参数设定",
                     icon: "\u{1F4DD}",
                     requiresInput: true,
                     requiresConfirm: false,
                 },
                 {
                     id: "equiv_calc",
-                    label: "等效计算",
+                    label: "等效计算推导",
                     icon: "\u{1F4D0}",
                     requiresInput: false,
                     requiresConfirm: true,
@@ -3103,17 +3321,19 @@
                     icon: "\u{1F9E0}",
                     requiresInput: false,
                     requiresConfirm: false,
+                    parentId: "equiv_calc",
+                    isChild: true,
                 },
                 {
                     id: "simulation",
-                    label: "仿真验证",
+                    label: "等效仿真验证",
                     icon: "\u{1F52C}",
                     requiresInput: false,
                     requiresConfirm: true,
                 },
                 {
                     id: "comparison",
-                    label: "结果分析",
+                    label: "等效方案输出",
                     icon: "\u{1F4CA}",
                     requiresInput: false,
                     requiresConfirm: false,
@@ -3128,7 +3348,7 @@
                 },
             ];
 
-            var workflowMode = "api"; // "api" (default) | "agent" (AI toggle on)
+            var workflowMode = "agent"; // "agent" (default, AI on) | "api" (AI off)
             var workflowNodeStates = {}; // { stepId: 'pending' | 'active' | 'completed' | 'failed' | 'waiting_input' | 'disabled' }
             var workflowHighestCompleted = -1; // index of the furthest completed step
             var _pendingWorkflowState = null; // deferred workflow_state SSE data, applied after staged rendering
@@ -3144,9 +3364,16 @@
             });
 
             function initWorkflow() {
-                // restore persisted mode
-                workflowMode = localStorage.getItem("workflowMode") || "api";
-                updateModeSwitchUI();
+                // Full init: reset state + apply mode UI (page load, newSession)
+                resetWorkflowState();
+                workflowMode = localStorage.getItem("wfAiMode") || "agent";
+                updateModeSwitchUI(); // calls applyWorkflowModeUI() internally
+            }
+
+            function resetWorkflowState() {
+                // Reset workflow node states only — does NOT touch chat panel UI.
+                // Used by syncWorkflowFromSession to restore node progress without
+                // wiping the conversation.
                 workflowNodeStates = {};
                 workflowHighestCompleted = -1;
                 WORKFLOW_STEPS.forEach(function (step, i) {
@@ -3158,24 +3385,112 @@
                         workflowNodeStates[step.id] = "pending";
                     }
                 });
-                // Reset formula card state for new session
+                // Reset formula card state
                 _formulaCardReady = false;
                 _pendingFormulaLines = [];
                 if (typeof window._resetFormulaQueue === "function") window._resetFormulaQueue();
                 _formulaLineY = 0;
                 _formulaCardG = null;
                 _formulaCardRect = null;
+                // Close any open parameter overlays and reset form fields to defaults
+                closeWorkflowParams();
+                closeSimParams();
+                resetWorkflowFormFields();
                 renderWorkflow();
+            }
+
+            function resetWorkflowFormFields() {
+                var el = document.getElementById("wf-orig-model-name");
+                if (el) el.value = "";
+                el = document.getElementById("wf-orig-device");
+                if (el) el.value = "A3";
+                el = document.getElementById("wf-orig-dp");
+                if (el) el.value = "8";
+                el = document.getElementById("wf-orig-tp");
+                if (el) el.value = "16";
+                el = document.getElementById("wf-orig-pp");
+                if (el) el.value = "8";
+                el = document.getElementById("wf-orig-model-l");
+                if (el) el.value = "64";
+                el = document.getElementById("wf-orig-model-h");
+                if (el) el.value = "4096";
+                el = document.getElementById("wf-orig-model-a");
+                if (el) el.value = "32";
+                el = document.getElementById("wf-orig-model-dff");
+                if (el) el.value = "14336";
+                el = document.getElementById("wf-orig-model-vocab");
+                if (el) el.value = "32000";
+                el = document.getElementById("wf-orig-model-s");
+                if (el) el.value = "2048";
+                el = document.getElementById("wf-orig-model-b");
+                if (el) el.value = "32";
+                el = document.getElementById("wf-orig-model-b-micro");
+                if (el) el.value = "4";
+                el = document.getElementById("wf-equiv-strategy");
+                if (el) el.value = "min_equiv";
+                _showModelRef(null);
             }
 
             function toggleWorkflowMode() {
                 var toggle = document.getElementById("ai-mode-toggle-flow");
                 workflowMode = toggle && toggle.checked ? "agent" : "api";
-                localStorage.setItem("workflowMode", workflowMode);
+                localStorage.setItem("wfAiMode", workflowMode);
+                applyWorkflowModeUI();
             }
             function updateModeSwitchUI() {
                 var toggle = document.getElementById("ai-mode-toggle-flow");
                 if (toggle) toggle.checked = workflowMode === "agent";
+                applyWorkflowModeUI();
+            }
+            function applyWorkflowModeUI() {
+                var chatPanel = document.querySelector(".chat-panel");
+                var headerTitle = document.getElementById("panel-header-title");
+                var input = document.getElementById("chat-input");
+                var btn = document.getElementById("btn-send");
+                var logStatus = document.getElementById("system-log-status");
+                var messages = document.getElementById("chat-messages");
+
+                if (workflowMode === "api") {
+                    // System log mode — hide input, show log status
+                    if (chatPanel) chatPanel.classList.add("log-mode");
+                    if (headerTitle) headerTitle.textContent = "📋 系统日志";
+                    if (logStatus) logStatus.style.display = "flex";
+                    // Clear messages and init log view
+                    if (messages) {
+                        messages.innerHTML =
+                            '<div class="msg-group fade-in">' +
+                            '<span class="msg-label system">系统</span>' +
+                            '<div class="msg-bubble system">系统日志模式 — 实时监控系统状态</div>' +
+                            '</div>';
+                    }
+                    // Disable input (hidden by CSS, but ensure disabled for safety)
+                    if (input) { input.disabled = true; }
+                    if (btn) { btn.disabled = true; }
+                } else {
+                    // Agent mode — show input, hide log status
+                    if (chatPanel) chatPanel.classList.remove("log-mode");
+                    if (headerTitle) headerTitle.textContent = "💬 Agent 交互";
+                    if (logStatus) logStatus.style.display = "none";
+                    // Clear messages and show welcome
+                    if (messages) {
+                        messages.innerHTML =
+                            '<div class="msg-group fade-in">' +
+                            '<span class="msg-label agent">TrainMesh Agent</span>' +
+                            '<div class="msg-bubble agent">欢迎使用 TrainMesh Agent。输入模型名称，开始等效建模。</div>' +
+                            '</div>' +
+                            '<div class="msg-group fade-in">' +
+                            '<span class="msg-label system">建议</span>' +
+                            '<div class="msg-bubble system">试试下方的快捷操作</div>' +
+                            '</div>' +
+                            '<div class="quick-actions" id="quick-actions">' +
+                            '<span class="quick-chip" onclick="sendQuick(\'请用Qwen2.5-72B开始等效建模\')">Qwen2.5-72B 等效建模</span>' +
+                            '</div>';
+                    }
+                    if (input) { input.disabled = false; input.placeholder = "输入消息..."; }
+                    if (btn) { btn.disabled = false; }
+                    // Focus input for immediate typing
+                    if (input) setTimeout(function () { input.focus(); }, 100);
+                }
             }
 
             // ── API mode submit stubs (called when workflowMode === "api") ──
@@ -3264,9 +3579,9 @@
                             if (event.type === "done") {
                                 step2Done = true;
                                 eventSource.close();
-                                // Auto-trigger Step 3 after Step 2 SSE stream ends (with visible pause)
+                                // Step2 now includes equivalent mesh+model generation (formerly step3)
                                 setTimeout(function () {
-                                    submitStep3();
+                                    _submitStep2GenerateMesh();
                                 }, 1500);
                             }
                             if (event.type === "error") {
@@ -3282,7 +3597,6 @@
                             setStatus("error");
                             addMessage("error", "等效计算 SSE 连接中断");
                         }
-                        // If step2Done is true, submitStep3 already called in onmessage
                     };
                 } catch (e) {
                     setStatus("error");
@@ -3291,8 +3605,8 @@
                 }
             }
 
-            async function submitStep3() {
-                console.log("[DEBUG] submitStep3 called");
+            async function _submitStep2GenerateMesh() {
+                console.log("[DEBUG] _submitStep2GenerateMesh called");
                 setStatus("等效建模中");
                 addMessage("system", "📡 [API] 生成等效组网与模型结构...");
                 updateWorkflowNode("equiv_gen", "active");
@@ -3303,7 +3617,7 @@
                             method: "POST",
                         },
                     );
-                    console.log("[DEBUG] step3 response status:", resp.status);
+                    console.log("[DEBUG] step2 mesh-gen response status:", resp.status);
                     if (!resp.ok) {
                         var err = await resp.json().catch(function () {
                             return {};
@@ -3311,12 +3625,12 @@
                         throw new Error(
                             err.message ||
                                 err.error ||
-                                "Step3 请求失败 (" + resp.status + ")",
+                                "Step2 等效生成失败 (" + resp.status + ")",
                         );
                     }
                     var data = await resp.json();
                     console.log(
-                        "[DEBUG] step3 data:",
+                        "[DEBUG] step2 mesh-gen data:",
                         Object.keys(data),
                         "has eq_mesh:",
                         !!data.equivalent_mesh,
@@ -3324,11 +3638,9 @@
                         !!data.equivalent_model,
                     );
 
-                    // Staged rendering: mesh first, pause, then model, pause, then done
+                    // Staged rendering: mesh first, pause, then model, pause, then done (all under step2)
                     if (data.equivalent_mesh) {
-                        console.log(
-                            "[DEBUG] dispatching mesh_json for equivalent",
-                        );
+                        console.log("[DEBUG] dispatching mesh_json for equivalent");
                         handleWorkflowEvent({
                             type: "mesh_json",
                             data: data.equivalent_mesh,
@@ -3339,9 +3651,7 @@
                         await renderThenSleep(800);
                     }
                     if (data.equivalent_model) {
-                        console.log(
-                            "[DEBUG] dispatching model_json for equivalent",
-                        );
+                        console.log("[DEBUG] dispatching model_json for equivalent");
                         handleWorkflowEvent({
                             type: "model_json",
                             data: data.equivalent_model,
@@ -3351,15 +3661,15 @@
                             canvasRecenter();
                         await renderThenSleep(800);
                     }
-                    console.log("[DEBUG] dispatching done stage=step3");
+                    console.log("[DEBUG] dispatching done stage=step2");
                     handleWorkflowEvent({
                         type: "done",
-                        data: { stage: "step3" },
+                        data: { stage: "step2" },
                     });
                 } catch (e) {
-                    console.error("[DEBUG] step3 error:", e);
+                    console.error("[DEBUG] step2 mesh-gen error:", e);
                     setStatus("error");
-                    addMessage("error", "Step 3 失败: " + e.message);
+                    addMessage("error", "Step 2 等效生成失败: " + e.message);
                     updateWorkflowNode("equiv_gen", "failed");
                 }
             }
@@ -3491,9 +3801,9 @@
                     _pendingMeshList = [];
                 }
 
-                // ── Stage "step2": 等效计算完成 → only when all sub-steps are done ──
+                // ── Stage "step2": 等效计算推导 (等效计算 + 组网模型渲染) ──
                 else if (stage === "step2" || stage === "auto") {
-                    // Wait for all 3 sub-steps to complete (formula card fully loaded)
+                    // Part A: Wait for all 3 sub-steps to complete (formula card fully loaded)
                     var _subWaitStart = Date.now();
                     while (
                         workflowNodeStates["equiv_calc_sub3"] !== "completed" &&
@@ -3514,12 +3824,10 @@
                             updateWorkflowNode("equiv_calc", "completed");
                         }
                     }
-                }
 
-                // ── Stage "step3": 等效组网 + 模型结构 → compare mode, centered ──
-                if (stage === "step3" || (stage === "auto" && eqMesh)) {
+                    // Part B: Load equivalent mesh + model (merged from old step3)
                     console.log(
-                        "[DEBUG] handleDone stage=step3, eqMesh:",
+                        "[DEBUG] handleDone stage=step2, eqMesh:",
                         !!eqMesh,
                         "window.meshOriginal:",
                         !!window.meshOriginal,
@@ -3556,9 +3864,9 @@
                     updateWorkflowNode("simulation", "active");
                 }
 
-                // ── Stage "step4": 仿真验证完成 → switch to simulation tab ──
+                // ── Stage "step3": 等效仿真验证 → switch to simulation tab ──
                 if (
-                    stage === "step4" ||
+                    stage === "step3" ||
                     (_pendingSimData && stage === "auto")
                 ) {
                     if (_pendingSimData) {
@@ -3574,7 +3882,7 @@
                     }
                 }
 
-                // ── Stage "step5": 结果分析 ──
+                // ── Stage "step4": 等效方案输出 ──
                 if (
                     _pendingWorkflowState &&
                     _pendingWorkflowState.comparison_report
@@ -3861,7 +4169,7 @@
                     return;
                 }
 
-                // Step 4: simulation → open params form instead of auto-confirm
+                // Step 3: simulation → open params form instead of auto-confirm
                 if (
                     step.id === "simulation" &&
                     step.requiresConfirm &&
@@ -3880,32 +4188,11 @@
             function confirmWorkflowStep(step) {
                 switch (step.id) {
                     case "equiv_calc":
-                        if (workflowMode === "api") {
-                            submitStep2();
-                        } else {
-                            sendMessage("确认开始等效计算");
-                        }
+                        // Both modes use direct API — agent only handles auto-fill, not workflow execution
+                        submitStep2();
                         break;
                     case "simulation":
-                        if (workflowMode === "api") {
-                            openSimParams();
-                        } else {
-                            var parts = [];
-                            if (
-                                typeof meshOriginal !== "undefined" &&
-                                meshOriginal
-                            )
-                                parts.push("原始组网");
-                            if (
-                                typeof meshEquivalent !== "undefined" &&
-                                meshEquivalent
-                            )
-                                parts.push("等效组网");
-                            var msg =
-                                (parts.length ? parts.join("和") : "组网") +
-                                " 数据已就绪，请开始仿真";
-                            sendMessage(msg);
-                        }
+                        openSimParams();
                         break;
                     default:
                         sendMessage("确认执行下一步");
@@ -4049,11 +4336,12 @@
                     updateWorkflowNode("equiv_calc_sub1", "completed");
                     updateWorkflowNode("equiv_calc_sub2", "completed");
                     updateWorkflowNode("equiv_calc_sub3", "completed");
+                    updateWorkflowNode("equiv_gen", "completed");
                 }
             }
 
             function syncWorkflowFromSession(sessionData) {
-                initWorkflow(); // reset all nodes first, then apply session-specific state
+                resetWorkflowState(); // reset nodes only, don't touch chat UI
                 var hasTopology = !!(
                     sessionData.original_topology ||
                     sessionData.equivalent_topology
@@ -4175,28 +4463,9 @@
 
             // ── Workflow Parameter Panel ──
 
-            // TP options per device type
-            var TP_OPTIONS = { A2: [8], A3: [16], A5: [16] };
-
-            function syncTP(deviceSelectId, tpSelectId) {
-                var device = document.getElementById(deviceSelectId).value;
-                var tpSelect = document.getElementById(tpSelectId);
-                var options = TP_OPTIONS[device] || [8];
-                tpSelect.innerHTML = "";
-                options.forEach(function (v) {
-                    var opt = document.createElement("option");
-                    opt.value = v;
-                    opt.textContent = v;
-                    tpSelect.appendChild(opt);
-                });
-            }
-
             function onOrigDeviceChange() {
                 var v = document.getElementById("wf-orig-device").value;
                 document.getElementById("wf-equiv-device").value = v;
-                syncTP("wf-orig-device", "wf-orig-tp");
-                var options = TP_OPTIONS[v] || [16];
-                document.getElementById("wf-equiv-tp").value = options[0];
             }
 
             function onEquivDeviceChange() {
@@ -4222,13 +4491,136 @@
                     document.getElementById("wf-orig-model-a").value;
             }
 
+            function updateModelNameSelect(modelName) {
+                var select = document.getElementById("wf-orig-model-name");
+                if (!select || !modelName) return;
+                // Try exact match first, then bare name (strip org prefix like Qwen/)
+                var candidates = [modelName];
+                if (modelName.indexOf("/") !== -1) {
+                    candidates.push(modelName.split("/").pop());
+                }
+                for (var c = 0; c < candidates.length; c++) {
+                    for (var i = 0; i < select.options.length; i++) {
+                        if (select.options[i].value === candidates[c]) {
+                            select.value = candidates[c];
+                            return;
+                        }
+                    }
+                }
+                // Not found — append the bare name as a new option
+                var displayName = candidates[candidates.length - 1];
+                var opt = document.createElement("option");
+                opt.value = displayName;
+                opt.textContent = displayName;
+                select.appendChild(opt);
+                select.value = displayName;
+            }
+
+            // ── Model catalog dropdown: dynamic population + auto-fill on select ──
+
+            async function loadModelCatalogDropdown() {
+                var select = document.getElementById("wf-orig-model-name");
+                if (!select) return;
+                try {
+                    var resp = await fetch(API + "/model-catalog");
+                    if (!resp.ok) return;
+                    var models = await resp.json();
+                    if (!Array.isArray(models) || models.length === 0) return;
+                    // Keep the placeholder, append catalog models
+                    models.forEach(function (m) {
+                        // Skip non-dense or entries already in the list
+                        if (m.model_type !== "dense") return;
+                        var existing = select.querySelector('option[value="' + m.model_name + '"]');
+                        if (existing) return;
+                        var opt = document.createElement("option");
+                        opt.value = m.model_name;
+                        opt.textContent = m.model_name + " (" + (m.source || "") + ")";
+                        select.appendChild(opt);
+                    });
+                } catch (e) {
+                    console.warn("[modelCatalog] dropdown load failed:", e);
+                }
+            }
+
+            function _showModelRef(referenceUrl) {
+                var refRow = document.getElementById("wf-model-ref-row");
+                var refLink = document.getElementById("wf-orig-model-ref");
+                if (!refRow || !refLink) return;
+                if (!referenceUrl) {
+                    refRow.style.display = "none";
+                    return;
+                }
+                // Extract script filename from URL path
+                var parts = referenceUrl.split("/");
+                var filename = parts[parts.length - 1] || referenceUrl;
+                refLink.textContent = "📄 " + filename;
+                refLink.href = referenceUrl;
+                refRow.style.display = "flex";
+            }
+
+            async function onModelNameChange() {
+                var modelName = document.getElementById("wf-orig-model-name").value;
+                if (!modelName) {
+                    // Clear reference display
+                    var refRow = document.getElementById("wf-model-ref-row");
+                    if (refRow) refRow.style.display = "none";
+                    return;
+                }
+                // Reset topology/runtime fields to defaults before applying catalog entry,
+                // so fields absent from the entry (e.g. device_type, dp) don't retain
+                // stale values from a previously-selected model.
+                document.getElementById("wf-orig-device").value = "A3";
+                document.getElementById("wf-orig-dp").value = "8";
+                document.getElementById("wf-orig-tp").value = "16";
+                document.getElementById("wf-orig-pp").value = "8";
+                document.getElementById("wf-orig-model-s").value = "2048";
+                document.getElementById("wf-orig-model-b").value = "32";
+                document.getElementById("wf-orig-model-b-micro").value = "4";
+                try {
+                    var resp = await fetch(API + "/model-catalog?name=" + encodeURIComponent(modelName));
+                    if (!resp.ok) throw new Error("model not found");
+                    var entry = await resp.json();
+                    if (!entry || entry.model_type !== "dense") return;
+                    // Fill architecture fields
+                    document.getElementById("wf-orig-model-l").value = entry.num_layers;
+                    document.getElementById("wf-orig-model-h").value = entry.d_model;
+                    document.getElementById("wf-orig-model-a").value = entry.num_heads;
+                    document.getElementById("wf-orig-model-dff").value = entry.d_ffn;
+                    document.getElementById("wf-orig-model-vocab").value = entry.vocab_size;
+                    // Fill topology & runtime fields (overrides defaults when present)
+                    if (entry.device_type) {
+                        document.getElementById("wf-orig-device").value = entry.device_type;
+                    }
+                    if (entry.dp != null) {
+                        document.getElementById("wf-orig-dp").value = entry.dp;
+                    }
+                    if (entry.tp != null) {
+                        document.getElementById("wf-orig-tp").value = entry.tp;
+                    }
+                    if (entry.pp != null) {
+                        document.getElementById("wf-orig-pp").value = entry.pp;
+                    }
+                    if (entry.seq_len != null) {
+                        document.getElementById("wf-orig-model-s").value = entry.seq_len;
+                    }
+                    if (entry.global_batch_size != null) {
+                        document.getElementById("wf-orig-model-b").value = entry.global_batch_size;
+                    }
+                    if (entry.micro_batch_size != null) {
+                        document.getElementById("wf-orig-model-b-micro").value = entry.micro_batch_size;
+                    }
+                    updateEquivalentModelL();
+                    // Show reference as clickable link (script name only)
+                    _showModelRef(entry.reference);
+                } catch (e) {
+                    console.warn("[modelCatalog] auto-fill failed for", modelName, ":", e);
+                }
+            }
+
             function openWorkflowParams() {
                 var overlay = document.getElementById("workflow-param-overlay");
                 if (overlay) overlay.style.display = "flex";
-                syncTP("wf-orig-device", "wf-orig-tp");
-                var device = document.getElementById("wf-orig-device").value;
-                var options = TP_OPTIONS[device] || [16];
-                document.getElementById("wf-equiv-tp").value = options[0];
+                document.getElementById("wf-equiv-tp").value = document.getElementById("wf-orig-tp").value;
                 updateEquivalentModelL();
             }
 
@@ -4237,14 +4629,20 @@
                 if (overlay) overlay.style.display = "none";
             }
 
-            function submitWorkflowParams() {
+            async function submitWorkflowParams() {
+                await ensureSession();
+                var origModelName =
+                    document.getElementById("wf-orig-model-name").value;
+                // Require model name — guardrail does not validate it
+                if (!origModelName.trim()) {
+                    alert("请先在参数表中选择或输入模型名称");
+                    return;
+                }
                 var origDevice =
                     document.getElementById("wf-orig-device").value;
                 var origDp = document.getElementById("wf-orig-dp").value;
                 var origTp = document.getElementById("wf-orig-tp").value;
                 var origPp = document.getElementById("wf-orig-pp").value;
-                var origModelName =
-                    document.getElementById("wf-orig-model-name").value;
                 var origL = document.getElementById("wf-orig-model-l").value;
                 var origH = document.getElementById("wf-orig-model-h").value;
                 var origA = document.getElementById("wf-orig-model-a").value;
@@ -4259,63 +4657,27 @@
                 updateWorkflowNode("params", "completed");
                 updateWorkflowNode("equiv_calc", "active");
 
-                if (workflowMode === "api") {
-                    submitStep1({
-                        device_type: origDevice,
-                        dp: parseInt(origDp),
-                        tp: parseInt(origTp),
-                        pp: parseInt(origPp),
-                        model_name: origModelName,
-                        L: parseInt(origL),
-                        H: parseInt(origH),
-                        A: parseInt(origA),
-                        S: parseInt(origS),
-                        B: parseInt(origB),
-                        b_micro: parseInt(origB_micro),
-                        dff: parseInt(origDff),
-                        vocab_size: parseInt(origVocab),
-                        strategy: strategy,
-                    });
-                } else {
-                    var msg =
-                        "原始组网: 设备类型" +
-                        origDevice +
-                        ", DP=" +
-                        origDp +
-                        ", TP=" +
-                        origTp +
-                        ", PP=" +
-                        origPp +
-                        ", 模型名称=" +
-                        origModelName +
-                        ", L=" +
-                        origL +
-                        ", H=" +
-                        origH +
-                        ", A=" +
-                        origA +
-                        ", V=" +
-                        origVocab +
-                        ", S=" +
-                        origS +
-                        ", B=" +
-                        origB +
-                        ", dff=" +
-                        origDff +
-                        " | 等效策略: " +
-                        strategy;
-                    sendMessage(msg, {
-                        original_model_name: origModelName,
-                        original_seq_len: parseInt(origS) || 2048,
-                        original_batch_size: parseInt(origB) || 32,
-                        original_dff: parseInt(origDff) || 14336,
-                        original_vocab_size: parseInt(origVocab) || 32000,
-                        strategy: strategy,
-                    });
-                }
+                // Both agent and API modes use the same direct API call.
+                // Agent's role is auto-filling params; workflow execution is deterministic.
+                submitStep1({
+                    device_type: origDevice,
+                    dp: parseInt(origDp),
+                    tp: parseInt(origTp),
+                    pp: parseInt(origPp),
+                    model_name: origModelName,
+                    L: parseInt(origL),
+                    H: parseInt(origH),
+                    A: parseInt(origA),
+                    S: parseInt(origS),
+                    B: parseInt(origB),
+                    b_micro: parseInt(origB_micro),
+                    dff: parseInt(origDff),
+                    vocab_size: parseInt(origVocab),
+                    strategy: strategy,
+                });
             }
 
-            // ── Step 4 Simulation Params ──
+            // ── Step 3 Simulation Params ──
 
             function getDefaultSimParams() {
                 var modelName =
@@ -4544,7 +4906,7 @@
                             "</div></div>" +
                             '<button class="history-delete" onclick="deleteHistory(event, \'' +
                             h.session_id +
-                            '\')" title="删除">×</button>' +
+                            '\')" title="删除"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>' +
                             "</div>"
                         );
                     })
@@ -4560,7 +4922,6 @@
 
             async function deleteHistory(e, id) {
                 e.stopPropagation();
-                if (!confirm("确定要删除此任务？此操作不可撤销。")) return;
                 try {
                     await fetch(API + "/session/" + id, { method: "DELETE" });
                 } catch (err) {}
@@ -4591,6 +4952,9 @@
             }
 
             async function restoreSession(id) {
+                // Close any open parameter overlays from the previous session
+                closeWorkflowParams();
+                closeSimParams();
                 try {
                     const resp = await fetch(`${API}/session/${id}/topology`);
                     if (!resp.ok) {
@@ -4688,8 +5052,19 @@
                         requestAnimationFrame(function () {
                             _renderResultPanel();
                         });
+                    } else if (meshOriginal || meshEquivalent) {
+                        canvasRebuild();
                     } else {
-                        if (meshOriginal || meshEquivalent) canvasRebuild();
+                        // Restored an empty session — clear canvas & chat to avoid
+                        // showing stale content from the previously viewed session.
+                        d3.select("#canvas-section").selectAll("svg").remove();
+                        document.getElementById("canvas-section").style.display = "none";
+                        var mct = document.getElementById("mesh-config-toolbar");
+                        if (mct) mct.classList.remove("visible");
+                        document.getElementById("canvas-placeholder").classList.remove("hidden");
+                        document.getElementById("canvas-label").textContent = "等待组网数据...";
+                        document.getElementById("chat-messages").innerHTML =
+                            '<div class="msg-group fade-in"><span class="msg-label agent">TrainMesh Agent</span><div class="msg-bubble agent">新任务已创建。输入组网参数开始。</div></div>';
                     }
 
                     // Restore chat message for topology summaries
@@ -4724,9 +5099,10 @@
                                     0) +
                                 " 层 已恢复",
                         );
+                    // Always clear chat before restoring session content
+                    document.getElementById("chat-messages").innerHTML = "";
                     // Restore conversation messages from server (user + agent only)
                     if (data.messages && data.messages.length > 0) {
-                        document.getElementById("chat-messages").innerHTML = "";
                         for (const msg of data.messages) {
                             const role = msg.role || "";
                             if (role === "tool") continue;
@@ -4735,7 +5111,8 @@
                                 role === "assistant" ? "agent" : role;
                             addMessage(displayRole, content);
                         }
-                    } else if (parts.length > 0) {
+                    }
+                    if (parts.length > 0) {
                         addMessage(
                             "system",
                             "🔄 会话 " + id + " 已恢复\n" + parts.join("\n"),
@@ -4759,16 +5136,15 @@
             }
 
             async function newSession() {
+                // Close any open parameter overlays from the previous session
+                closeWorkflowParams();
+                closeSimParams();
                 sessionId = "";
                 _pendingMeshList = [];
                 _pendingModelList = [];
                 localStorage.removeItem("mesh_session");
                 document.getElementById("session-id-display").textContent = "—";
-                document.getElementById("chat-messages").innerHTML = `
-    <div class="msg-group fade-in">
-      <span class="msg-label agent">TrainMesh Agent</span>
-      <div class="msg-bubble agent">新任务已创建。输入组网参数开始。</div>
-    </div>`;
+                // Chat messages are set by initWorkflow() → applyWorkflowModeUI() below
                 // Clear topology state
                 meshOriginal = null;
                 meshEquivalent = null;
@@ -4812,7 +5188,6 @@
                 _pendingSimData = false;
                 checkSimReady();
                 initWorkflow();
-                await ensureSession();
                 renderHistory();
             }
 
@@ -4895,6 +5270,8 @@
 
             // ── SSE Streaming ──
             async function sendMessage(text, extraParams) {
+                // Block user-initiated messages when AI is off (system-driven calls still pass)
+                if (workflowMode === "api" && !text) return;
                 const input =
                     text || document.getElementById("chat-input").value.trim();
                 if (!input || isStreaming) return;
@@ -5100,6 +5477,98 @@
                             };
                             var subId = subMap[data.section];
                             if (subId) updateWorkflowNode(subId, "completed");
+                        }
+                        break;
+                    case "model_params_fill":
+                        setStatus("responding");
+                        const fillData = data.data || data;
+                        if (fillData.found && fillData.model_type === "dense") {
+                            // Model architecture fields
+                            document.getElementById("wf-orig-model-l").value =
+                                fillData.L;
+                            document.getElementById("wf-orig-model-h").value =
+                                fillData.H;
+                            document.getElementById("wf-orig-model-a").value =
+                                fillData.A;
+                            document.getElementById("wf-orig-model-dff").value =
+                                fillData.dff;
+                            document.getElementById("wf-orig-model-vocab").value =
+                                fillData.V;
+                            // Topology & runtime fields (from training script defaults)
+                            if (fillData.device_type) {
+                                document.getElementById("wf-orig-device").value = fillData.device_type;
+                            }
+                            if (fillData.dp != null) {
+                                document.getElementById("wf-orig-dp").value = fillData.dp;
+                            }
+                            if (fillData.seq_len != null) {
+                                document.getElementById("wf-orig-model-s").value = fillData.seq_len;
+                            }
+                            if (fillData.global_batch_size != null) {
+                                document.getElementById("wf-orig-model-b").value = fillData.global_batch_size;
+                            }
+                            if (fillData.micro_batch_size != null) {
+                                document.getElementById("wf-orig-model-b-micro").value = fillData.micro_batch_size;
+                            }
+                            updateModelNameSelect(fillData.model_name);
+                            updateEquivalentModelL();
+                            // Show reference as clickable link (script name only)
+                            _showModelRef(fillData.reference);
+                            // Auto-open Step1 params form (syncs TP options from device)
+                            openWorkflowParams();
+                            // Set TP/PP after openWorkflowParams
+                            if (fillData.tp != null) {
+                                document.getElementById("wf-orig-tp").value = fillData.tp;
+                            }
+                            if (fillData.pp != null) {
+                                document.getElementById("wf-orig-pp").value = fillData.pp;
+                            }
+                            var refNote = fillData.reference
+                                ? "\n📁 参考脚本: " + fillData.reference
+                                : "";
+                            var topoParts = [];
+                            if (fillData.device_type) topoParts.push("设备=" + fillData.device_type);
+                            if (fillData.tp != null) topoParts.push("TP=" + fillData.tp);
+                            if (fillData.pp != null) topoParts.push("PP=" + fillData.pp);
+                            if (fillData.dp != null) topoParts.push("DP=" + fillData.dp);
+                            if (fillData.seq_len != null) topoParts.push("S=" + fillData.seq_len);
+                            if (fillData.global_batch_size != null) topoParts.push("B=" + fillData.global_batch_size);
+                            if (fillData.micro_batch_size != null) topoParts.push("b=" + fillData.micro_batch_size);
+                            var topoNote = topoParts.length > 0 ? "\n⚙️ 组网/运行参数: " + topoParts.join(", ") : "";
+                            addMessage(
+                                "system",
+                                "✅ 已自动填充模型 " +
+                                    fillData.model_name +
+                                    " 的架构参数 (L=" +
+                                    fillData.L +
+                                    ", H=" +
+                                    fillData.H +
+                                    ", A=" +
+                                    fillData.A +
+                                    ", dff=" +
+                                    fillData.dff +
+                                    ", V=" +
+                                    fillData.V +
+                                    ")" +
+                                    refNote +
+                                    topoNote,
+                            );
+                        } else if (fillData.model_type === "sparse") {
+                            addMessage(
+                                "error",
+                                fillData.message ||
+                                    "模型 " +
+                                        fillData.model_name +
+                                        " 是稀疏(MoE)模型，当前仅支持稠密模型",
+                            );
+                        } else {
+                            addMessage(
+                                "error",
+                                fillData.message ||
+                                    "未找到模型 " +
+                                        fillData.model_name +
+                                        " 的配置",
+                            );
                         }
                         break;
                     case "message":
@@ -6364,11 +6833,17 @@
                 var cr = _comparisonReport;
                 var tol = cr.error_tolerance_pct || 5.0;
                 var isEq = cr.is_equivalent !== false;
-                var maxDiff = (cr.details && cr.details.max_diff_pct != null) ? cr.details.max_diff_pct : Math.max(cr.flops_diff_pct, cr.hbm_diff_pct, cr.tp_comm_diff_pct, cr.pp_comm_diff_pct, cr.dp_comm_diff_pct);
+                var maxDiff = (cr.details && cr.details.max_diff_pct != null) ? cr.details.max_diff_pct : Math.max(cr.flops_diff_pct, cr.hbm_diff_pct, cr.tp_comm_diff_pct, cr.pp_comm_diff_pct);
 
                 var html = '';
 
-                // ═══ 1. Verdict Card ═══
+                // ═══════════════════════════════════════════
+                // MASTER CARD 1: 等效验证结论
+                // ═══════════════════════════════════════════
+                html += '<div class="result-master-card">';
+                html += '<div class="result-master-card-header">等效验证结论</div>';
+
+                // 1a. Verdict Card
                 html += '<div class="result-verdict-card">';
                 html += '<div class="result-verdict-icon ' + (isEq ? 'pass' : 'fail') + '">' + (isEq ? '✅' : '❌') + '</div>';
                 html += '<div class="result-verdict-text">';
@@ -6379,18 +6854,17 @@
                 html += '<span>结论: <strong>' + (cr.details && cr.details.conclusion || (isEq ? '通过' : '不通过')) + '</strong></span>';
                 html += '</div></div></div>';
 
-                // ═══ 2. Five-dimension diff bars ═══
+                // 1b. Four-dimension diff bars — 原始组网 vs 等效组网 的仿真验证值对比 (DP 不纳入判定)
                 var diffs = [
                     { label: 'FLOPs', val: cr.flops_diff_pct },
                     { label: 'HBM', val: cr.hbm_diff_pct },
                     { label: 'TP通信', val: cr.tp_comm_diff_pct },
-                    { label: 'PP通信', val: cr.pp_comm_diff_pct },
-                    { label: 'DP通信', val: cr.dp_comm_diff_pct }
+                    { label: 'PP通信', val: cr.pp_comm_diff_pct }
                 ];
-                var barMaxPct = Math.max(10, maxDiff * 1.5); // scale so max diff is ~66% of bar width
+                var barMaxPct = Math.max(10, maxDiff * 1.5);
 
                 html += '<div class="result-diff-section">';
-                html += '<div class="result-diff-title">五维差异对比</div>';
+                html += '<div class="result-diff-title">四维差异对比 (原始组网 vs 等效组网 · 仿真验证值)</div>';
                 diffs.forEach(function (d) {
                     var pass = d.val <= tol;
                     var pctW = Math.min(100, (d.val / barMaxPct) * 100);
@@ -6410,7 +6884,50 @@
                 html += '</div>';
                 html += '</div>';
 
-                // ═══ 3. Config comparison tables ═══
+                // PP stage breakdown (first/middle/last) if available
+                var ppBreakdown = cr.details && cr.details.pp_breakdown;
+                if (ppBreakdown && ppBreakdown.stages_compared && ppBreakdown.stages_compared.length > 0) {
+                    var stageLabels = { first: '首PP', middle: '中间PP', last: '尾PP' };
+                    html += '<div class="result-diff-section" style="margin-top:12px">';
+                    html += '<div class="result-diff-title">PP通信分阶段对比 (首/中/尾)</div>';
+                    ppBreakdown.stages_compared.forEach(function (s) {
+                        var d = ppBreakdown.diff_pct[s] || 0;
+                        var pass = d <= tol;
+                        var pctW = Math.min(100, (d / barMaxPct) * 100);
+                        var tolLinePct = (tol / barMaxPct) * 100;
+                        var origVal = (ppBreakdown.original[s] != null) ? ppBreakdown.original[s].toFixed(2) : '-';
+                        var eqVal = (ppBreakdown.equivalent[s] != null) ? ppBreakdown.equivalent[s].toFixed(2) : '-';
+                        html += '<div class="result-diff-row">';
+                        html += '<div class="result-diff-label">' + (stageLabels[s] || s) + '</div>';
+                        html += '<div class="result-diff-bar-bg">';
+                        html += '<div class="result-diff-bar-fill ' + (pass ? 'pass' : 'fail') + '" style="width:' + pctW.toFixed(1) + '%"></div>';
+                        html += '<div class="result-diff-tolerance-line" style="left:' + tolLinePct.toFixed(1) + '%"></div>';
+                        html += '</div>';
+                        html += '<div class="result-diff-pct ' + (pass ? 'pass' : 'fail') + '">' + d.toFixed(2) + '%</div>';
+                        html += '<div class="result-diff-badge">' + (pass ? '✓' : '✗') + '</div>';
+                        html += '</div>';
+                        html += '<div class="result-diff-values" style="padding-left:80px;font-size:9px;color:var(--text-muted);margin-top:-4px;margin-bottom:4px">';
+                        html += '原始: ' + origVal + ' MB/micro ｜ 等效: ' + eqVal + ' MB/micro';
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+
+                // 1c. DP exclusion note — DP 是缩减维度，通信量天然不等效，不纳入判定
+                html += '<div style="margin-top:12px;padding:10px 14px;border-left:3px solid #3b82f6;background:rgba(59,130,246,0.10);border-radius:4px;font-size:12px;line-height:1.6;color:var(--text-muted)">';
+                html += '<div style="font-weight:700;color:var(--text-muted);margin-bottom:4px">DP 通信（不纳入判定）</div>';
+                html += '等效组网通过缩减 DP 维度压缩集群规模（DP_eq = max(DP_orig/4, 1)），DP all-reduce 通信量天然随 DP 组规模变化，属预期不等效，不计入等效判定。当前差异 <strong style="color:var(--text-muted)">' + (cr.dp_comm_diff_pct || 0).toFixed(2) + '%</strong>（仅供参考）。判定仅依据 FLOPs / HBM / TP 通信 / PP 通信 四维。';
+                html += '</div>';
+
+                html += '</div>'; // end master card 1
+
+                // ═══════════════════════════════════════════
+                // MASTER CARD 2: 等效输出结果
+                // ═══════════════════════════════════════════
+                html += '<div class="result-master-card" style="margin-top:16px">';
+                html += '<div class="result-master-card-header">等效输出结果</div>';
+
+                // Prepare data
                 var origMesh = meshOriginal || {};
                 var eqMesh = meshEquivalent || {};
                 var origModel = modelOriginal || {};
@@ -6424,18 +6941,19 @@
                 var eqNpu = (eqMesh.dp || 0) * (eqMesh.tp || 0) * (eqMesh.pp || 0);
                 var compRatio = eqNpu > 0 ? (origNpu / eqNpu).toFixed(1) : '—';
 
-                html += '<div class="result-config-section">';
+                // ── 2a. Parameters comparison (3 cards) ──
+                html += '<div class="result-config-section result-config-section-3col">';
 
-                // Topology config card
+                // Card 1: 组网参数
                 html += '<div class="result-config-card">';
-                html += '<div class="result-config-card-header">组网配置对比</div>';
+                html += '<div class="result-config-card-header">组网参数对比</div>';
                 html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
                 var topoRows = [
                     ['设备', origMesh.device_type || '—', eqMesh.device_type || '—'],
-                    ['DP', origMesh.dp, eqMesh.dp],
-                    ['TP', origMesh.tp, eqMesh.tp],
-                    ['PP', origMesh.pp, eqMesh.pp],
-                    ['NPU总数', origNpu, eqNpu, true],
+                    ['DP', origMesh.dp || '—', eqMesh.dp || '—'],
+                    ['TP', origMesh.tp || '—', eqMesh.tp || '—'],
+                    ['PP', origMesh.pp || '—', eqMesh.pp || '—'],
+                    ['NPU总数', origNpu || '—', eqNpu || '—', true],
                     ['压缩比', '—', compRatio + ':1', true]
                 ];
                 topoRows.forEach(function (r) {
@@ -6444,9 +6962,9 @@
                 });
                 html += '</tbody></table></div>';
 
-                // Model config card
+                // Card 2: 模型结构参数
                 html += '<div class="result-config-card">';
-                html += '<div class="result-config-card-header">模型配置对比</div>';
+                html += '<div class="result-config-card-header">模型结构参数对比</div>';
                 html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
                 var modelRows = [
                     ['L (层数)', origCfg.num_layers || '—', eqCfg.num_layers || '—', true],
@@ -6462,72 +6980,93 @@
                 });
                 html += '</tbody></table></div>';
 
+                // Card 3: 模型训练参数 (fetched from MCP training script — see _fillTrainingParams)
+                html += '<div class="result-config-card">';
+                html += '<div class="result-config-card-header">模型训练参数对比</div>';
+                html += '<table class="result-config-table"><thead><tr><th>参数</th><th>原始</th><th>等效</th></tr></thead><tbody>';
+                var trainRows = [
+                    ['global_batch_size', 'global_batch_size'],
+                    ['micro_batch_size', 'micro_batch_size'],
+                    ['seq_length', 'seq_length'],
+                    ['learning_rate', 'learning_rate'],
+                    ['optimizer', 'optimizer'],
+                    ['grad_accum_steps', 'grad_accum_steps', true]
+                ];
+                trainRows.forEach(function (r) {
+                    var hl = r[2] ? ' val-highlight' : '';
+                    var key = r[1];
+                    html += '<tr><td>' + r[0] + '</td>'
+                        + '<td class="val-orig' + hl + '" id="train-orig-' + key + '">—</td>'
+                        + '<td class="val-eq' + hl + '" id="train-eq-' + key + '">—</td></tr>';
+                });
+                html += '</tbody></table></div>';
+
                 html += '</div>'; // end result-config-section
 
-                // ═══ 4. Per-card metric summary ═══
-                html += '<div class="result-metric-section">';
-                html += '<div class="result-metric-title">每卡仿真指标摘要 (avg / min / max)</div>';
+                // ── 2b. Script output buttons ──
+                html += '<div class="result-script-section">';
+                html += '<div class="result-script-title">输出训练脚本</div>';
+                html += '<div class="result-script-buttons">';
+                html += '<button class="btn-script btn-script-orig" onclick="_outputTrainingScript(\'orig\', this)">';
+                html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+                html += '<span>输出原始组网训练脚本</span></button>';
+                html += '<button class="btn-script btn-script-eq" onclick="_outputTrainingScript(\'eq\', this)">';
+                html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+                html += '<span>输出等效组网训练脚本</span></button>';
+                html += '</div>';
+                html += '</div>';
 
-                function _aggMetrics(cardsMap) {
-                    if (!cardsMap) return null;
-                    var cards = Object.values(cardsMap);
-                    if (!cards.length) return null;
-                    function _stat(key) {
-                        var vals = cards.map(function (c) { return c[key] || 0; }).filter(function (v) { return v != null; });
-                        if (!vals.length) return { avg: 0, min: 0, max: 0 };
-                        var sum = vals.reduce(function (a, b) { return a + b; }, 0);
-                        return { avg: sum / vals.length, min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) };
-                    }
-                    return {
-                        flops: _stat('flops_per_card'),
-                        hbm: _stat('hbm_gb'),
-                        tp: _stat('tp_comm_gb_per_micro'),
-                        pp: _stat('pp_comm_mb_per_micro'),
-                        dp: _stat('dp_comm_gb_per_step')
-                    };
-                }
-
-                var origStats = _aggMetrics(meshActualOrig);
-                var eqStats = _aggMetrics(meshActualEq);
-
-                function _fmt(v, unit) {
-                    if (unit === 'FLOPs') return v >= 1e12 ? (v / 1e12).toFixed(2) + ' T' : (v / 1e9).toFixed(2) + ' G';
-                    if (unit === 'MB') return v.toFixed(3) + ' MB';
-                    return v.toFixed(4) + ' GB';
-                }
-
-                var metricItems = [
-                    { label: 'FLOPs / 卡', key: 'flops', unit: 'FLOPs' },
-                    { label: 'HBM 占用', key: 'hbm', unit: 'GB' },
-                    { label: 'TP 通信 / micro', key: 'tp', unit: 'GB' },
-                    { label: 'PP 通信 / micro', key: 'pp', unit: 'MB' },
-                    { label: 'DP 通信 / step', key: 'dp', unit: 'GB' }
-                ];
-
-                html += '<div class="result-metric-grid">';
-                metricItems.forEach(function (mi) {
-                    html += '<div class="result-metric-item">';
-                    html += '<div class="result-metric-item-label">' + mi.label + '</div>';
-                    if (origStats && origStats[mi.key]) {
-                        var os = origStats[mi.key];
-                        html += '<div class="result-metric-item-row"><span class="tag-orig">原始 avg</span><span class="val">' + _fmt(os.avg, mi.unit) + '</span></div>';
-                        html += '<div class="result-metric-item-row"><span class="tag-orig"> min / max</span><span class="val">' + _fmt(os.min, mi.unit) + ' / ' + _fmt(os.max, mi.unit) + '</span></div>';
-                    } else {
-                        html += '<div class="result-metric-item-row"><span class="tag-orig">原始</span><span class="val">—</span></div>';
-                    }
-                    if (eqStats && eqStats[mi.key]) {
-                        var es = eqStats[mi.key];
-                        html += '<div class="result-metric-item-row"><span class="tag-eq">等效 avg</span><span class="val">' + _fmt(es.avg, mi.unit) + '</span></div>';
-                        html += '<div class="result-metric-item-row"><span class="tag-eq"> min / max</span><span class="val">' + _fmt(es.min, mi.unit) + ' / ' + _fmt(es.max, mi.unit) + '</span></div>';
-                    } else {
-                        html += '<div class="result-metric-item-row"><span class="tag-eq">等效</span><span class="val">—</span></div>';
-                    }
-                    html += '</div>';
-                });
-                html += '</div>'; // end result-metric-grid
-                html += '</div>'; // end result-metric-section
+                html += '</div>'; // end master card 2
 
                 wrap.innerHTML = html;
+                _fillTrainingParams();
+            }
+
+            // ── Output training script (MCP get_training_script) ──
+            async function _outputTrainingScript(side, btn) {
+                var restSide = side === 'orig' ? 'original' : 'equivalent';
+                var label = side === 'orig' ? '原始组网' : '等效组网';
+                if (btn) btn.disabled = true;
+                try {
+                    var resp = await fetch(API + "/session/" + sessionId + "/training-script/" + restSide);
+                    if (!resp.ok) {
+                        var err = await resp.json().catch(function () { return {}; });
+                        throw new Error(err.error || ("HTTP " + resp.status));
+                    }
+                    var data = await resp.json();
+                    var content = data.script_content || "";
+                    if (!content) throw new Error("脚本内容为空");
+                    var filename = data.script_filename || ("pretrain_" + side + ".sh");
+                    var blob = new Blob([content], { type: "text/x-shellscript" });
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement("a");
+                    a.href = url; a.download = filename;
+                    document.body.appendChild(a); a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } catch (e) {
+                    alert(label + " 训练脚本下载失败: " + e.message);
+                } finally {
+                    if (btn) btn.disabled = false;
+                }
+            }
+
+            // ── Fill Card 3 training params from MCP training script ──
+            async function _fillTrainingParams() {
+                var fields = ["global_batch_size", "micro_batch_size", "seq_length", "learning_rate", "optimizer", "grad_accum_steps"];
+                await Promise.all(["original", "equivalent"].map(async function (side) {
+                    var pre = side === "original" ? "train-orig-" : "train-eq-";
+                    try {
+                        var resp = await fetch(API + "/session/" + sessionId + "/training-script/" + side);
+                        if (!resp.ok) return;
+                        var data = await resp.json();
+                        var tp = (data.params && data.params.training) || {};
+                        fields.forEach(function (f) {
+                            var el = document.getElementById(pre + f);
+                            if (el && tp[f] != null) el.textContent = tp[f];
+                        });
+                    } catch (e) {}
+                }));
             }
 
             function _renderSimResults() {
@@ -7057,8 +7596,8 @@
                         p.classList.toggle("active", p.id === "tab-panel-modeling");
                     });
                 }
-                await ensureSession();
                 initWorkflow();
+                loadModelCatalogDropdown();
                 document.getElementById("chat-input").focus();
             })();
         </script>

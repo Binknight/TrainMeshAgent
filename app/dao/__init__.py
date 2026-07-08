@@ -295,3 +295,196 @@ def delete_messages(session_id: str) -> None:
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM conversation_messages WHERE session_id=%s", (session_id,))
+
+
+# ── model_catalog ──
+
+def _name_key(name: str) -> str:
+    """Normalize a model name for fuzzy matching: lowercase, strip - _ / space."""
+    return (name or "").lower().replace("-", "").replace("_", "").replace("/", "").replace(" ", "")
+
+
+def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
+    """Look up a model by exact (case-insensitive) name or normalized name_key.
+
+    When model_name contains '/' (e.g. Qwen/Qwen2.5-72B), we also try the
+    bare name (Qwen2.5-72B) so LLM-auto-expanded repo-ids still hit the
+    builtin catalog entries that are stored under bare names.
+    """
+    if not model_name:
+        return None
+    # Build candidate name_keys: full name + bare name (strip org prefix)
+    nk_candidates = {_name_key(model_name)}
+    if "/" in model_name:
+        bare = model_name.rsplit("/", 1)[-1]
+        nk_candidates.add(_name_key(bare))
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT model_name, model_type, num_layers, d_model, num_heads,
+                          d_ffn, vocab_size, num_kv_heads, source, reference,
+                          tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type
+                   FROM model_catalog
+                   WHERE model_name ILIKE %s OR name_key = ANY(%s)
+                   ORDER BY
+                     CASE source
+                       WHEN 'mindspeed' THEN 1
+                       WHEN 'megatron' THEN 2
+                       WHEN 'huggingface' THEN 3
+                       WHEN 'modelscope' THEN 4
+                       ELSE 5
+                     END,
+                     (model_name ILIKE %s) DESC
+                   LIMIT 1""",
+                (model_name, list(nk_candidates), model_name),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+    source = row[8] or "pg"
+    reference = row[9]
+    # Auto-generate reference URL for remote-sourced models that were cached
+    # before the reference column was added (backfill on read)
+    if not reference and source == "huggingface":
+        reference = f"https://huggingface.co/{row[0]}"
+    elif not reference and source == "modelscope":
+        reference = f"https://modelscope.cn/models/{row[0]}"
+    return {
+        "model_name": row[0],
+        "model_type": row[1],
+        "num_layers": row[2],
+        "d_model": row[3],
+        "num_heads": row[4],
+        "d_ffn": row[5],
+        "vocab_size": row[6],
+        "num_key_value_heads": row[7],
+        "_source": source,
+        "reference": reference,
+        "tp": row[10],
+        "pp": row[11],
+        "dp": row[12],
+        "seq_len": row[13],
+        "global_batch_size": row[14],
+        "micro_batch_size": row[15],
+        "device_type": row[16],
+    }
+
+
+def upsert_model_catalog(
+    model_name: str, cfg: dict[str, Any], description: str | None = None
+) -> None:
+    """Insert or update a single model catalog entry.
+
+    cfg is the internal-shape dict produced by the resolver (num_layers,
+    d_model, num_heads, d_ffn, vocab_size, model_type, optional
+    num_key_value_heads, _source). description is an optional admin note;
+    on update a NULL description preserves the existing value (so resolver
+    upserts never wipe a manually-set description).
+    """
+    if not model_name or not cfg:
+        return
+    nk = _name_key(model_name)
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO model_catalog
+                   (model_name, name_key, model_type, num_layers, d_model, num_heads,
+                    d_ffn, vocab_size, num_kv_heads, source, reference, description,
+                    tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (model_name) DO UPDATE SET
+                   name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
+                   num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
+                   num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
+                   vocab_size=EXCLUDED.vocab_size, num_kv_heads=EXCLUDED.num_kv_heads,
+                   source=EXCLUDED.source,
+                   reference=EXCLUDED.reference,
+                   description=COALESCE(EXCLUDED.description, model_catalog.description),
+                   tp=EXCLUDED.tp, pp=EXCLUDED.pp, dp=EXCLUDED.dp,
+                   seq_len=EXCLUDED.seq_len, global_batch_size=EXCLUDED.global_batch_size,
+                   micro_batch_size=EXCLUDED.micro_batch_size, device_type=EXCLUDED.device_type,
+                   updated_at=NOW()""",
+                (
+                    model_name, nk, cfg.get("model_type", "dense"),
+                    cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
+                    cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"),
+                    cfg.get("_source"), cfg.get("reference"), description,
+                    cfg.get("tp"), cfg.get("pp"), cfg.get("dp"),
+                    cfg.get("seq_len"), cfg.get("global_batch_size"),
+                    cfg.get("micro_batch_size"), cfg.get("device_type"),
+                ),
+            )
+
+
+def list_model_catalog() -> list[dict[str, Any]]:
+    """Return all model catalog entries (for admin/management views)."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT model_name, model_type, num_layers, d_model, num_heads,
+                          d_ffn, vocab_size, num_kv_heads, source, reference, description, updated_at,
+                          tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type
+                   FROM model_catalog ORDER BY model_name"""
+            )
+            rows = cur.fetchall()
+    return [{
+        "model_name": r[0], "model_type": r[1], "num_layers": r[2], "d_model": r[3],
+        "num_heads": r[4], "d_ffn": r[5], "vocab_size": r[6], "num_key_value_heads": r[7],
+        "source": r[8], "reference": r[9], "description": r[10],
+        "updated_at": r[11].isoformat() if r[11] else None,
+        "tp": r[12], "pp": r[13], "dp": r[14],
+        "seq_len": r[15], "global_batch_size": r[16], "micro_batch_size": r[17],
+        "device_type": r[18],
+    } for r in rows]
+
+
+def delete_model_catalog_entry(model_name: str) -> bool:
+    """Delete a model catalog entry by exact name. Returns True if a row was deleted."""
+    if not model_name:
+        return False
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM model_catalog WHERE model_name ILIKE %s", (model_name,)
+            )
+            return cur.rowcount > 0
+
+
+def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
+    """Bulk-upsert model catalog entries. Source comes from each entry's _source field
+    (e.g. 'megatron', 'mindspeed'); falls back to 'builtin' for backward compat."""
+    if not entries:
+        return 0
+    rows = [
+        (
+            name, _name_key(name), cfg.get("model_type", "dense"),
+            cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
+            cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"),
+            cfg.get("_source") or "builtin", cfg.get("reference"),
+            cfg.get("tp"), cfg.get("pp"), cfg.get("dp"),
+            cfg.get("seq_len"), cfg.get("global_batch_size"),
+            cfg.get("micro_batch_size"), cfg.get("device_type"),
+        )
+        for name, cfg in entries.items()
+    ]
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO model_catalog
+                   (model_name, name_key, model_type, num_layers, d_model, num_heads,
+                    d_ffn, vocab_size, num_kv_heads, source, reference,
+                    tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (model_name) DO UPDATE SET
+                   name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
+                   num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
+                   num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
+                   vocab_size=EXCLUDED.vocab_size, num_kv_heads=EXCLUDED.num_kv_heads,
+                   source=EXCLUDED.source, reference=EXCLUDED.reference,
+                   tp=EXCLUDED.tp, pp=EXCLUDED.pp, dp=EXCLUDED.dp,
+                   seq_len=EXCLUDED.seq_len, global_batch_size=EXCLUDED.global_batch_size,
+                   micro_batch_size=EXCLUDED.micro_batch_size, device_type=EXCLUDED.device_type,
+                   updated_at=NOW()""",
+                rows,
+            )
+    return len(rows)

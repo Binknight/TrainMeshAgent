@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import random
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, request, jsonify, Response
@@ -220,7 +221,8 @@ def estimate_metrics():
 
     cards = []
     for rank in range(total_nodes):
-        pp_rank = rank % pp
+        # 与前端 meshBuildData 一致：pp_idx = (rank // tp) % pp（TP 最低位）
+        pp_rank = (rank // tp) % pp
         is_edge = pp > 1 and (pp_rank == 0 or pp_rank == pp - 1)
         flops = flops_edge if is_edge else flops_mid
         hbm = hbm_edge if is_edge else hbm_mid
@@ -245,7 +247,7 @@ def estimate_metrics():
     })
 
 
-def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, micro_batch_size=None, vocab_size=None) -> tuple[str | None, SimulationResult | None]:
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None, vocab_size=None) -> tuple[str | None, SimulationResult | None]:
     """Submit MCP task for a single topology. Returns (task_id, SimulationResult or None if not ready)."""
     if not topo:
         return task_id_in, None
@@ -253,7 +255,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     # Submit MCP task (fire-and-forget)
     task_id = task_id_in
     if not task_id:
-        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, micro_batch_size=micro_batch_size, vocab_size=vocab_size) or topo.model_dump()
+        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, d_ffn=d_ffn, micro_batch_size=micro_batch_size, vocab_size=vocab_size) or topo.model_dump()
         task_id = mcp_client.execute_task(topo_payload, params=sim_params)
         if not task_id:
             raise RuntimeError(f"MCP execute_task returned empty task_id for {label}")
@@ -328,7 +330,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     return task_id, None
 
 
-def _build_comparison(original: SimulationResult, equivalent: SimulationResult) -> ComparisonReport:
+def _build_comparison(original: SimulationResult, equivalent: SimulationResult, orig_tp: int, orig_pp: int, eq_tp: int, eq_pp: int) -> ComparisonReport:
     eps = 1e-9
 
     def _diff_pct(ov, ev):
@@ -341,14 +343,61 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
             vals = [v if v is not None else getattr(c, "hbm_gb") for v, c in zip(vals, cards)]
         return sum(vals) / max(len(vals), 1)
 
+    def _pp_stage_avg_local(cards: list[CardMetrics], tp: int, pp: int) -> dict:
+        """Compute average pp_comm_mb_per_micro for first, middle, last PP stages."""
+        groups: dict[str, list[float]] = {"first": [], "middle": [], "last": []}
+        stride = tp * pp
+        for c in cards:
+            pp_rank = (c.global_rank % stride) // tp
+            if pp_rank == 0:
+                groups["first"].append(c.pp_comm_mb_per_micro)
+            if pp > 1 and pp_rank == pp - 1:
+                groups["last"].append(c.pp_comm_mb_per_micro)
+            if 0 < pp_rank < pp - 1:
+                groups["middle"].append(c.pp_comm_mb_per_micro)
+        return {
+            stage: (sum(vals) / len(vals)) if vals else 0.0
+            for stage, vals in groups.items()
+        }
+
     flops_diff = _diff_pct(_per_card(original.cards, "flops_per_card"), _per_card(equivalent.cards, "flops_per_card"))
     hbm_diff = _diff_pct(_per_card(original.cards, "hbm_model_gb"), _per_card(equivalent.cards, "hbm_model_gb"))
     tp_diff = _diff_pct(_per_card(original.cards, "tp_comm_gb_per_micro"), _per_card(equivalent.cards, "tp_comm_gb_per_micro"))
-    pp_diff = _diff_pct(_per_card(original.cards, "pp_comm_mb_per_micro"), _per_card(equivalent.cards, "pp_comm_mb_per_micro"))
     dp_diff = _diff_pct(_per_card(original.cards, "dp_comm_gb_per_step"), _per_card(equivalent.cards, "dp_comm_gb_per_step"))
 
+    # ── Per-stage PP communication comparison ──
+    orig_pp_stage = _pp_stage_avg_local(original.cards, orig_tp, orig_pp)
+    eq_pp_stage = _pp_stage_avg_local(equivalent.cards, eq_tp, eq_pp)
+
+    stages_compared: list[str] = []
+    for stage in ("first", "middle", "last"):
+        if stage == "middle" and orig_pp <= 2:
+            continue
+        if stage == "last" and orig_pp <= 1:
+            continue
+        stages_compared.append(stage)
+
     tolerance = 5.0
-    is_eq = all(d <= tolerance for d in [flops_diff, hbm_diff, tp_diff, pp_diff, dp_diff])
+    pp_stage_diffs: dict[str, float] = {}
+    pp_stage_pass: dict[str, bool] = {}
+    for stage in stages_compared:
+        d = _diff_pct(orig_pp_stage[stage], eq_pp_stage[stage])
+        pp_stage_diffs[stage] = d
+        pp_stage_pass[stage] = d <= tolerance
+
+    pp_diff = max(pp_stage_diffs.values()) if pp_stage_diffs else 0.0
+    pp_all_pass = all(pp_stage_pass.values()) if pp_stage_pass else True
+
+    # DP 是等效建模的缩减维度 (DP_eq = max(DP/4,1))，其通信量天然不等效，不纳入判定
+    is_eq = all(d <= tolerance for d in [flops_diff, hbm_diff, tp_diff]) and pp_all_pass
+
+    if pp_all_pass:
+        conclusion = "✅ 等效验证通过" if is_eq else "❌ 等效验证不通过"
+    else:
+        failed_stages = [s for s, ok in pp_stage_pass.items() if not ok]
+        stage_names = {"first": "首PP", "middle": "中间PP", "last": "尾PP"}
+        names = [stage_names[s] for s in failed_stages]
+        conclusion = f"❌ 等效验证不通过 — PP通信不等效 ({'/'.join(names)})"
 
     return ComparisonReport(
         original=original,
@@ -361,8 +410,14 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult) 
         is_equivalent=is_eq,
         error_tolerance_pct=tolerance,
         details={
-            "conclusion": "✅ 等效验证通过" if is_eq else "❌ 等效验证不通过",
-            "max_diff_pct": round(max(flops_diff, hbm_diff, tp_diff, pp_diff, dp_diff), 2),
+            "conclusion": conclusion,
+            "max_diff_pct": round(max(flops_diff, hbm_diff, tp_diff, pp_diff), 2),
+            "pp_breakdown": {
+                "original": orig_pp_stage,
+                "equivalent": eq_pp_stage,
+                "diff_pct": pp_stage_diffs,
+                "stages_compared": stages_compared,
+            },
         }
     )
 
@@ -400,6 +455,7 @@ def run_simulation(session_id: str):
             seq_len=session.original_seq_len,
             batch_size=session.original_batch_size,
             model_name=session.original_model_name,
+            d_ffn=session.original_dff,
             micro_batch_size=session.original_micro_batch,
             vocab_size=session.original_vocab_size,
         )
@@ -415,6 +471,7 @@ def run_simulation(session_id: str):
             seq_len=session.equivalent_seq_len,
             batch_size=session.equivalent_batch_size,
             model_name=session.original_model_name,
+            d_ffn=session.equivalent_dff,
             micro_batch_size=session.equivalent_micro_batch,
             vocab_size=session.original_vocab_size,
         )
@@ -426,7 +483,13 @@ def run_simulation(session_id: str):
         # ── Comparison ──
         report = None
         if session.original_simulation and session.equivalent_simulation:
-            report = _build_comparison(session.original_simulation, session.equivalent_simulation)
+            orig_topo = session.original_topology
+            eq_topo = session.equivalent_topology
+            orig_tp = orig_topo.tp_size if orig_topo else 1
+            orig_pp = orig_topo.pp_size if orig_topo else 1
+            eq_tp = eq_topo.tp_size if eq_topo else orig_tp
+            eq_pp = eq_topo.pp_size if eq_topo else orig_pp
+            report = _build_comparison(session.original_simulation, session.equivalent_simulation, orig_tp, orig_pp, eq_tp, eq_pp)
             session.comparison_report = report
             session.step = "completed"
             results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
@@ -534,7 +597,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
         return op
 
     # Embedding (first PP stage only)
-    if pp == 1 or global_rank % pp == 0:
+    if pp == 1 or (global_rank // tp) % pp == 0:
         emb_op = _FWD_OPS[0]
         dur = 800 * dur_scale
         flops = 1.5e12 * dur_scale
@@ -572,7 +635,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
                 comm_time_us += dur
 
         # PP Send (if not last PP stage)
-        if pp > 1 and global_rank % pp != pp - 1:
+        if pp > 1 and (global_rank // tp) % pp != pp - 1:
             dur = rng.uniform(50, 150) * dur_scale
             msg_bytes = rng.uniform(20e6, 60e6)
             extra_send = {"data_shape": "[B,S,d_model]", "data_type": "bf16", "comm_group": "pp_group", "additional": f"{msg_bytes/1e6:.1f}MB"}
@@ -601,7 +664,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
                 comm_time_us += dur
 
         # PP Recv (if not first PP stage)
-        if pp > 1 and global_rank % pp != 0:
+        if pp > 1 and (global_rank // tp) % pp != 0:
             dur = rng.uniform(50, 150) * dur_scale
             msg_bytes = rng.uniform(20e6, 60e6)
             extra_recv = {"data_shape": "[B,S,d_model]", "data_type": "bf16", "comm_group": "pp_group", "additional": f"{msg_bytes/1e6:.1f}MB"}
@@ -806,6 +869,100 @@ def get_dp_comm_detail(session_id: str, side: str, global_rank: int):
     task_id = session.original_task_id if side == "original" else session.equivalent_task_id
     mcp_result = mcp_client.get_comm_detail(task_id, global_rank, "dp")
     return jsonify(CommDetail(**mcp_result).model_dump())
+
+
+# ── Training script download (MCP get_training_script) ──
+
+_SCRIPT_FIELD_ALIASES = {
+    "topology": {
+        "device_type": ["device_type", "DEVICE", "device"],
+        "dp": ["dp", "DP"],
+        "tp": ["tp", "TP"],
+        "pp": ["pp", "PP"],
+    },
+    "model": {
+        "num_layers": ["num_layers", "NUM_LAYERS", "num-layers", "n_layer", "n-layer"],
+        "d_model": ["d_model", "D_MODEL", "d-model", "hidden_dim", "HIDDEN_DIM", "hidden_size", "hidden-size"],
+        "num_heads": ["num_heads", "NUM_HEADS", "num-heads", "n_head", "n-head"],
+        "d_ffn": ["d_ffn", "D_FFN", "d-ffn", "ffn_dim", "intermediate_size"],
+        "vocab_size": ["vocab_size", "VOCAB_SIZE", "vocab-size"],
+    },
+    "training": {
+        "global_batch_size": ["global_batch_size", "GLOBAL_BATCH_SIZE", "global-batch-size", "batch_size", "BATCH_SIZE", "batch-size"],
+        "micro_batch_size": ["micro_batch_size", "MICRO_BATCH_SIZE", "micro-batch-size", "per_device_batch_size"],
+        "seq_length": ["seq_length", "SEQ_LENGTH", "seq-length", "seq_len", "SEQ_LEN", "max_seq_length"],
+        "learning_rate": ["learning_rate", "LEARNING_RATE", "learning-rate", "lr", "LR"],
+        "optimizer": ["optimizer", "OPTIMIZER"],
+        "grad_accum_steps": ["grad_accum_steps", "GRAD_ACCUM_STEPS", "grad-accum-steps", "grad_accum", "gradient_accumulation_steps"],
+    },
+}
+
+
+def _parse_script_params(script_content: str) -> dict[str, dict[str, str]]:
+    """Best-effort parse of topology/model/training params from a pretrain.sh script.
+
+    Tolerant of bash variable assignments (``KEY=value`` / ``export KEY=value``) and
+    CLI flags (``--key value`` / ``--key=value``). Full-line comments are skipped so
+    example values in comments do not shadow real ones. Missing keys are omitted; the
+    frontend renders '—' for absent fields. See docs/mcp-server-spec.md §11.
+    """
+    out: dict[str, dict[str, str]] = {"topology": {}, "model": {}, "training": {}}
+    if not script_content:
+        return out
+    text = "\n".join(ln for ln in script_content.splitlines() if not ln.lstrip().startswith("#"))
+
+    def _find(aliases: list[str]) -> str | None:
+        for key in aliases:
+            k = re.escape(key)
+            # bash assignment: KEY=value / KEY="value" / export KEY=value  (line-anchored)
+            m = re.search(r'(?:^|\n)\s*(?:export\s+)?' + k + r'\s*=\s*"?([^\s"#]+)', text)
+            if m:
+                return m.group(1).strip().strip('"').strip("'")
+            # CLI flag: --key value / --key=value
+            m = re.search(r'\b--' + k + r'(?:=|\s+)\s*"?([^\s"#]+)', text)
+            if m:
+                return m.group(1).strip().strip('"').strip("'")
+        return None
+
+    for group, fields in _SCRIPT_FIELD_ALIASES.items():
+        for field, aliases in fields.items():
+            val = _find(aliases)
+            if val is not None:
+                out[group][field] = val
+    return out
+
+
+@session_bp.route("/<session_id>/training-script/<side>", methods=["GET"])
+def get_training_script(session_id: str, side: str):
+    """Return the MCP server-generated pretrain.sh for a side + parsed params for the result cards."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    if side not in ("original", "equivalent"):
+        return {"error": "side must be 'original' or 'equivalent'"}, 400
+
+    task_id = session.original_task_id if side == "original" else session.equivalent_task_id
+    if not task_id:
+        return {"error": f"no simulation task for {side} (run simulation first)"}, 400
+
+    mcp_result = mcp_client.get_training_script(task_id)
+    if mcp_result.get("status") == "unavailable":
+        return {"error": mcp_result.get("error", "mcp server unavailable")}, 502
+
+    script_content = mcp_result.get("script_content") or ""
+    if not script_content:
+        return {"error": "training script not available for this task"}, 404
+
+    topology_name = mcp_result.get("topology_name") or ("原始组网" if side == "original" else "等效组网")
+    script_filename = mcp_result.get("script_filename") or ("pretrain_" + ("orig" if side == "original" else "equiv") + ".sh")
+    return jsonify({
+        "task_id": task_id,
+        "topology_name": topology_name,
+        "script_path": mcp_result.get("script_path", ""),
+        "script_filename": script_filename,
+        "script_content": script_content,
+        "params": _parse_script_params(script_content),
+    })
 
 
 # ══════════════════════════════════════════════════════════════════════════════

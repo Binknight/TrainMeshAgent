@@ -6,3 +6,7 @@ __pycache__/
 *.log
 UI/
 .claude/
+.tmp/
+
+# model_catalog resolver cache (fetched config.json)
+app/models/.model_cache/

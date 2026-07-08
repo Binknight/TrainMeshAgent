@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class MCPClient:
     """
     MCP Client that communicates with the simulation system's MCP Server.
-    Supports: task_execute, status_report, sync_logs, get_result, card_detail.
+    Supports: task_execute, status_report, sync_logs, get_result, card_detail, get_training_script.
     """
 
     def __init__(self, server_url: str | None = None):
@@ -95,6 +95,10 @@ class MCPClient:
             "global_rank": global_rank,
             "comm_type": comm_type,
         })
+
+    def get_training_script(self, task_id: str) -> dict[str, Any]:
+        """Get the server-generated pretrain.sh training script for a task."""
+        return self._call_tool("get_training_script", {"task_id": task_id})
 
     def check_health(self) -> bool:
         """Check if MCP server is reachable."""

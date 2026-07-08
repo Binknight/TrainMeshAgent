@@ -255,7 +255,9 @@ class MeshProfilerSkill(BaseSkill):
             tp_comm = _estimate_tp_comm_gb(L, H, S, b_micro, pp)
             pp_comm = _estimate_pp_comm_mb(H, S, b_micro)
             for rank in range(total_nodes):
-                pp_rank = rank % pp
+                # 与前端 meshBuildData 一致：global_rank = dp*(tp*pp)+pp*tp+tp
+                # 故 pp_idx = (rank // tp) % pp（TP 最低位）；旧用 rank%pp 会与前端 PP 分组错位
+                pp_rank = (rank // tp) % pp
                 is_edge = pp > 1 and (pp_rank == 0 or pp_rank == pp - 1)
                 flops = flops_edge if is_edge else flops_mid
                 hbm = hbm_edge if is_edge else hbm_mid

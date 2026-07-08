@@ -10,7 +10,7 @@
 本文档定义 TrainMeshAgent 对接"仿真系统 MCP Server"的完整需求规格，覆盖：
 
 - 接口协议与传输约定
-- 8 个 MCP tools 完整定义（核心 5 + 详情 3，含完整入参/出参）
+- 9 个 MCP tools 完整定义（核心 5 + 详情 3 + 脚本下载 1，含完整入参/出参）
 - 当前所有 mock 点列举及接入方式分类
 - 各接口类型归属（纯 REST / 纯 MCP / 两者均需）
 - 任务状态机与错误处理约定
@@ -435,7 +435,85 @@
 
 ---
 
-## 11. 任务状态机
+## 11. get_training_script — 获取训练脚本
+
+**调用场景**：`execute_task` 下发后，MCP Server 已在服务端生成对应的 pretrain.sh 训练脚本。前端「等效结果」页的「输出训练脚本」按钮，以及组网参数 / 模型结构参数 / 模型训练参数三张对比卡片，均通过本接口获取脚本文本并解析。
+
+> 脚本由 MCP Server 依据 `execute_task` 传入的 `topology` + `simulation_params` 生成，是组网参数、模型结构参数、训练运行时参数的权威载体。TrainMeshAgent 不再 mock 这些参数，统一从本接口返回的 `script_content` 解析。
+
+### 入参
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `task_id` | string | ✅ | `execute_task` 返回的任务 ID（原始组网用 `original_task_id`，等效组网用 `equivalent_task_id`） |
+
+### 出参
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `task_id` | string | ✅ | 回显任务 ID |
+| `topology_name` | string | ✅ | 组网名称，`原始组网` / `等效组网`，用于前端标签 |
+| `script_path` | string | ⬜ | 服务端脚本路径，如 `/opt/ascend/script/pretrain_xxxx.sh` |
+| `script_filename` | string | ⬜ | 建议下载文件名，如 `pretrain_orig.sh` / `pretrain_equiv.sh` |
+| `script_content` | string | ✅ | pretrain.sh 完整脚本文本（UTF-8）；TrainMeshAgent 原样作为文件下载，并从中解析下列参数 |
+
+### 脚本须包含的可解析字段（解析契约）
+
+TrainMeshAgent 从 `script_content` 解析以下三组参数，分别填充「等效结果」页的三张对比卡片。脚本可以 bash 变量赋值（`KEY=value`）或启动参数（`--key value`）形式暴露，但下述键名须稳定可识别：
+
+#### 组网参数（对应「组网参数对比」卡）
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `device_type` / `DEVICE` | 设备类型 | `A3` |
+| `dp` / `DP` | 数据并行度 | `8` |
+| `tp` / `TP` | 张量并行度 | `16` |
+| `pp` / `PP` | 流水线并行度 | `8` |
+
+> `total_nodes` = `dp × tp × pp`，由 TrainMeshAgent 推导，无需脚本暴露。
+
+#### 模型结构参数（对应「模型结构参数对比」卡）
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `num_layers` / `NUM_LAYERS` | Transformer 层数 L | `64` |
+| `d_model` / `D_MODEL` | 隐藏维度 H | `4096` |
+| `num_heads` / `NUM_HEADS` | 注意力头数 A | `32` |
+| `d_ffn` / `D_FFN` | FFN 维度 | `14336` |
+| `vocab_size` / `VOCAB_SIZE` | 词表大小 | `18277` |
+
+> `d_head` = `d_model / num_heads`、`total_params` 由 TrainMeshAgent 推导。
+
+#### 训练运行时参数（对应「模型训练参数对比」卡，当前全为 mock）
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `global_batch_size` / `GLOBAL_BATCH_SIZE` | 全局批次大小 | `2048` |
+| `micro_batch_size` / `MICRO_BATCH_SIZE` | 微批次大小 | `1` |
+| `seq_length` / `SEQ_LENGTH` | 序列长度 | `4096` |
+| `learning_rate` / `LEARNING_RATE` | 学习率 | `1.5e-4` |
+| `optimizer` / `OPTIMIZER` | 优化器 | `AdamW` |
+| `grad_accum_steps` / `GRAD_ACCUM_STEPS` | 梯度累积步数 | `1` |
+
+> 若脚本未暴露某字段，TrainMeshAgent 在对应卡片显示 `—`，不阻塞下载。
+
+### 调用时序
+
+```
+execute_task(topology, simulation_params) → task_id
+                                          ↓
+                  MCP Server 生成 pretrain.sh（与任务绑定）
+                                          ↓
+get_training_script(task_id) → script_content + 解析三组参数
+                                          ↓
+       TrainMeshAgent REST 转发 → 前端文件下载 + 填充三张对比卡
+```
+
+`execute_task` 返回 `task_id` 后即可调用，无需等待仿真 `completed`。
+
+---
+
+## 12. 任务状态机
 
 ```
 submitted  →  running  →  completed
@@ -452,9 +530,9 @@ submitted  →  running  →  completed
 
 ---
 
-## 12. 当前所有 Mock 点及接口归属分析
+## 13. 当前所有 Mock 点及接口归属分析
 
-### 12.1 Mock 点全览
+### 13.1 Mock 点全览
 
 | 编号 | 文件 | Mock 内容 | 对应 REST 接口 |
 |------|------|-----------|---------------|
@@ -465,8 +543,10 @@ submitted  →  running  →  completed
 | M5 | 同上 | DP 通信详情 | `GET /api/session/<id>/simulation/<side>/<rank>/dp-comm-detail` |
 | M6 | `app/routes/session.py:638` | `task_id = "mock_task_id"`（无真实任务时占位）| 兜底值，不需单独接口 |
 | M7 | `app/skills/training-mesh-profiler-skill/__init__.py` + `app/routes/session.py:_run_simulation_for_topology` | 无 task_id 时使用本地估算公式代替仿真结果（两处独立副本） | 估算模式，不需接口 |
+| M8 | `static/index.html:_renderResultPanel` Card3「模型训练参数」 | `global_batch_size / micro_batch_size / seq_length / learning_rate / optimizer / grad_accum_steps` 全部前端写死（`index.html:6697`） | `GET /api/session/<id>/training-script/<side>`（解析自 MCP 脚本） |
+| M9 | `static/index.html:_outputTrainingScript` | 训练脚本前端 mock（torchrun 模板 + alert 弹窗，无真实下载，与 Ascend/Mindspeed 语义不符） | `GET /api/session/<id>/training-script/<side>` |
 
-### 12.2 接口类型归属
+### 13.2 接口类型归属
 
 #### 类型一：纯 REST API（TrainMeshAgent 内部，无需 MCP）
 
@@ -481,7 +561,7 @@ submitted  →  running  →  completed
 | `POST /api/session/estimate` | 用本地估算公式计算指标（无需外部系统）|
 | `POST /api/chat/stream` (SSE) | Agent 对话流（本地 orchestrator 驱动）|
 
-#### 类型二：纯 MCP Tool（调用外部仿真系统，8 个）
+#### 类型二：纯 MCP Tool（调用外部仿真系统，9 个）
 
 | MCP Tool | 章节 | 触发路径 |
 |----------|------|---------|
@@ -493,6 +573,7 @@ submitted  →  running  →  completed
 | `get_device_detail` | §8 | REST 路由 → `mcp_client.get_device_detail()` |
 | `get_hbm_detail` | §9 | REST 路由 → `mcp_client.get_hbm_detail()` |
 | `get_comm_detail` | §10 | REST 路由 → `mcp_client.get_comm_detail()` |
+| `get_training_script` | §11 | REST 路由 → `mcp_client.get_training_script()` |
 
 #### 类型三：需同时满足（REST 入口 + MCP 数据源）
 
@@ -507,12 +588,13 @@ submitted  →  running  →  completed
 | `GET /api/session/<id>/simulation/<side>/<rank>/dp-comm-detail` | DP 通信详情 | `task_id` + `global_rank` |
 | `POST /api/session/<id>/run-simulation`（直接仿真） | `card_detail`（整卡指标） | `task_id`（fire-and-forget）|
 | WebSocket `/ws/simulation/<id>` | `report_status` + `sync_logs` + `get_result` | `task_id` 列表 |
+| `GET /api/session/<id>/training-script/<side>` | 训练脚本文本 + 组网/模型/训练参数（解析自脚本） | `task_id`（按 side 取 original/equivalent） |
 
 > 以下三个 tool 已正式纳入规格，完整定义见 §8 `get_device_detail`、§9 `get_hbm_detail`、§10 `get_comm_detail`。若仿真系统不方便新增独立 Tool，也可将 §8~§10 的数据扩展到 `card_detail` 的每个 card 对象中，TrainMeshAgent 侧按需取用。
 
 ---
 
-## 13. 错误处理与兼容性
+## 14. 错误处理与兼容性
 
 - 参数错误：返回可识别错误信息（字段缺失/类型错误）
 - `task_id` 不存在：明确返回 `task_id not found`
@@ -524,16 +606,16 @@ submitted  →  running  →  completed
 
 ---
 
-## 14. 性能与可靠性建议
+## 15. 性能与可靠性建议
 
 - `report_status`、`sync_logs` 响应建议 < 1s
-- `get_device_detail`（§8）、`get_hbm_detail`（§9）、`get_comm_detail`（§10）等详情接口响应建议 < 3s
+- `get_device_detail`（§8）、`get_hbm_detail`（§9）、`get_comm_detail`（§10）、`get_training_script`（§11）等详情接口响应建议 < 3s
 - 支持同时查询多个 `task_id`
 - 服务重启后建议能恢复最近任务状态
 
 ---
 
-## 15. 联调验收清单
+## 16. 联调验收清单
 
 **基础连通**
 
@@ -555,6 +637,11 @@ submitted  →  running  →  completed
 - [ ] `get_hbm_detail`（§9）返回 HBM 四项分解
 - [ ] `get_comm_detail`（§10）支持 `comm_type: tp/pp/dp` 三种查询
 
+**脚本下载（M8/M9 解 mock）**
+
+- [ ] `get_training_script`（§11）返回 `script_content`，TrainMeshAgent 可作文件下载
+- [ ] 从脚本解析出的组网/模型/训练参数可填充三张对比卡，值与 `execute_task` 入参一致
+
 **容错**
 
 - [ ] 非法 `task_id` 返回稳定错误，不 500
@@ -563,7 +650,7 @@ submitted  →  running  →  completed
 
 ---
 
-## 16. 非目标（当前阶段不要求）
+## 17. 非目标（当前阶段不要求）
 
 - 不强制 MCP Server 主动推送（调用方为轮询模型）
 - 不强制限定 `get_result` 完整 schema（由仿真侧自行扩展）
