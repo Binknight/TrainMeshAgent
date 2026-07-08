@@ -157,6 +157,156 @@ MINDSPEED_DENSE_MODELS: dict[str, dict] = {
     },
 }
 
+# ── Megatron-LM official MOE model catalog (source: megatron) ──
+# Parameters extracted from official Megatron-LM examples/post_training/modelopt/
+# and examples/rl/model_configs/ scripts. num_moe_layers parsed via moe_layer_parser.
+MEGATRON_MOE_MODELS: dict[str, dict] = {
+    "Qwen3-30B-A3B": {
+        "num_layers": 48, "d_model": 2048, "num_heads": 32,
+        "d_ffn": 6144, "vocab_size": 151936, "num_key_value_heads": 4,
+        "model_type": "sparse", "_source": "megatron",
+        "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/rl/model_configs/qwen3_30b_a3b_moe.sh",
+        "num_experts": 128, "moe_ffn_hidden_size": 768, "moe_router_topk": 8,
+        "moe_layer_freq": "1", "num_moe_layers": 48,
+        "has_shared_expert": False,
+        "tp": 4, "pp": 1, "dp": 1, "seq_len": 8192,
+        "global_batch_size": 256, "micro_batch_size": 1,
+    },
+    "Mixtral-8x7B": {
+        "num_layers": 32, "d_model": 4096, "num_heads": 32,
+        "d_ffn": 14336, "vocab_size": 32000, "num_key_value_heads": 8,
+        "model_type": "sparse", "_source": "megatron",
+        "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/moe/README.md",
+        "num_experts": 8, "moe_ffn_hidden_size": 14336, "moe_router_topk": 2,
+        "moe_layer_freq": "1", "num_moe_layers": 32,
+        "has_shared_expert": False,
+        "tp": 1, "pp": 4, "dp": 1, "seq_len": 4096,
+        "global_batch_size": 128, "micro_batch_size": 1,
+    },
+    "DeepSeek-R1": {
+        "num_layers": 61, "d_model": 7168, "num_heads": 128,
+        "d_ffn": 18432, "vocab_size": 129280, "num_key_value_heads": None,
+        "model_type": "sparse", "_source": "megatron",
+        "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/post_training/modelopt/conf/deepseek-ai/DeepSeek-R1.sh",
+        "description": "MLA, 3 dense + 58 MoE, grouped top-k router (8 groups, top 4)",
+        "num_experts": 256, "moe_ffn_hidden_size": 2048, "moe_router_topk": 8,
+        "moe_layer_freq": "[0]*3+[1]*58", "num_moe_layers": 58,
+        "has_shared_expert": True, "shared_expert_intermediate_size": 2048,
+        "expert_tensor_parallel_size": 1,
+        "seq_len": 4096, "micro_batch_size": 1,
+    },
+    "DeepSeek-V3": {
+        "num_layers": 61, "d_model": 7168, "num_heads": 128,
+        "d_ffn": 18432, "vocab_size": 129280, "num_key_value_heads": None,
+        "model_type": "sparse", "_source": "megatron",
+        "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/megatron_fsdp/sbatch_mfsdp_deepseek_v3.sh",
+        "description": "MLA, MTP=1, 3 dense + 58 MoE, flex dispatcher w/ hybridep",
+        "num_experts": 256, "moe_ffn_hidden_size": 2048, "moe_router_topk": 8,
+        "moe_layer_freq": "[0]*3+[1]*58", "num_moe_layers": 58,
+        "has_shared_expert": True, "shared_expert_intermediate_size": 2048,
+        "expert_tensor_parallel_size": 1,
+        "tp": 1, "ep": 8, "seq_len": 4096,
+        "global_batch_size": 2048, "micro_batch_size": 4,
+    },
+    "DeepSeek-V2-Lite": {
+        "num_layers": 27, "d_model": 2048, "num_heads": 16,
+        "d_ffn": 10944, "vocab_size": 102400, "num_key_value_heads": None,
+        "model_type": "sparse", "_source": "megatron",
+        "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/post_training/modelopt/conf/deepseek-ai/DeepSeek-V2-Lite.sh",
+        "description": "MLA, 1 dense + 26 MoE, topk=6",
+        "num_experts": 64, "moe_ffn_hidden_size": 1408, "moe_router_topk": 6,
+        "moe_layer_freq": "([0]+[1]*26)", "num_moe_layers": 26,
+        "has_shared_expert": True, "shared_expert_intermediate_size": 2816,
+        "seq_len": 1024, "micro_batch_size": 1,
+    },
+    "Kimi-K2": {
+        "num_layers": 61, "d_model": 7168, "num_heads": 64,
+        "d_ffn": 18432, "vocab_size": 163840, "num_key_value_heads": None,
+        "model_type": "sparse", "_source": "megatron",
+        "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/post_training/modelopt/conf/moonshotai/Kimi-K2-Instruct.sh",
+        "description": "MLA, 1 dense + 60 MoE, 384 experts, sigmoid router",
+        "num_experts": 384, "moe_ffn_hidden_size": 2048, "moe_router_topk": 8,
+        "moe_layer_freq": "[0]*1+[1]*60", "num_moe_layers": 60,
+        "has_shared_expert": True, "shared_expert_intermediate_size": 2048,
+        "seq_len": 4096, "micro_batch_size": 1,
+    },
+    "Llama-4-Maverick-17B-128E": {
+        "num_layers": 48, "d_model": 5120, "num_heads": 40,
+        "d_ffn": 16384, "vocab_size": 202048, "num_key_value_heads": 8,
+        "model_type": "sparse", "_source": "megatron",
+        "reference": "https://github.com/NVIDIA/Megatron-LM/blob/main/examples/post_training/modelopt/conf/meta-llama/Llama-4-Maverick-17B-128E-Instruct.sh",
+        "description": "GQA, Dense/MoE alternating (24+24), topk=1, interleaved RoPE",
+        "num_experts": 128, "moe_ffn_hidden_size": 8192, "moe_router_topk": 1,
+        "moe_layer_freq": "([0,1]*24)", "num_moe_layers": 24,
+        "has_shared_expert": True, "shared_expert_intermediate_size": 8192,
+        "seq_len": 2048, "micro_batch_size": 1,
+    },
+}
+
+# ── MindSpeed-LLM official MOE model catalog (source: mindspeed) ──
+# Parameters extracted from official MindSpeed-LLM examples/mcore + examples/mindspore
+# pretraining scripts. Entries that duplicate Megatron-LM models (same name) are omitted;
+# Megatron-LM takes precedence in the seed order.
+MINDSPEED_MOE_MODELS: dict[str, dict] = {
+    "Qwen3-235B-A22B": {
+        "num_layers": 96, "d_model": 4096, "num_heads": 64,
+        "d_ffn": 12288, "vocab_size": 151936, "num_key_value_heads": 4,
+        "model_type": "sparse", "_source": "mindspeed",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3_moe/pretrain_qwen3_235b_a22b_4k_A3_ptd.sh",
+        "num_experts": 128, "moe_ffn_hidden_size": 1536, "moe_router_topk": 8,
+        "moe_layer_freq": "-1", "num_moe_layers": 96,
+        "has_shared_expert": False,
+        "tp": 1, "pp": 4, "ep": 32, "seq_len": 4096,
+        "global_batch_size": 1024, "micro_batch_size": 1, "device_type": "A3",
+    },
+    "Qwen3-480B": {
+        "num_layers": 64, "d_model": 6144, "num_heads": 96,
+        "d_ffn": 8192, "vocab_size": 151936, "num_key_value_heads": 8,
+        "model_type": "sparse", "_source": "mindspeed",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/qwen3_moe/pretrain_qwen3_480b_4k_A3_ptd.sh",
+        "num_experts": 160, "moe_ffn_hidden_size": 2560, "moe_router_topk": 8,
+        "moe_layer_freq": "-1", "num_moe_layers": 64,
+        "has_shared_expert": False,
+        "tp": 4, "pp": 4, "ep": 32, "seq_len": 4096,
+        "global_batch_size": 64, "micro_batch_size": 1, "device_type": "A3",
+    },
+    "Phi3.5-MoE": {
+        "num_layers": 32, "d_model": 4096, "num_heads": 32,
+        "d_ffn": 6400, "vocab_size": 32064, "num_key_value_heads": 8,
+        "model_type": "sparse", "_source": "mindspeed",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/phi35/pretrain_phi35_moe_ptd.sh",
+        "num_experts": 16, "moe_ffn_hidden_size": 6400, "moe_router_topk": 2,
+        "moe_layer_freq": "-1", "num_moe_layers": 32,
+        "has_shared_expert": False,
+        "tp": 4, "pp": 4, "ep": 1, "seq_len": 4096,
+        "global_batch_size": 64, "micro_batch_size": 1, "device_type": "A2",
+    },
+    "GLM45-MoE-106B": {
+        "num_layers": 48, "d_model": 4096, "num_heads": 96,
+        "d_ffn": 10944, "vocab_size": 151552, "num_key_value_heads": 8,
+        "model_type": "sparse", "_source": "mindspeed",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mindspore/glm45-moe/pretrain_glm45_moe_106b_4k_A3_ms.sh",
+        "description": "MTP=1, first layer dense + 47 MoE, 1 shared expert, sigmoid router",
+        "num_experts": 128, "moe_ffn_hidden_size": 1408, "moe_router_topk": 8,
+        "moe_layer_freq": "1", "num_moe_layers": 47,
+        "has_shared_expert": True, "shared_expert_intermediate_size": 1408,
+        "tp": 1, "pp": 4, "ep": 16, "seq_len": 4096,
+        "global_batch_size": 64, "micro_batch_size": 1, "device_type": "A3",
+    },
+    "DeepSeek-V3-MS": {
+        "num_layers": 64, "d_model": 7168, "num_heads": 128,
+        "d_ffn": 18432, "vocab_size": 129280, "num_key_value_heads": None,
+        "model_type": "sparse", "_source": "mindspeed",
+        "reference": "https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mindspore/deepseek3/pretrain_deepseek3_671b_4k_A3_ms.sh",
+        "description": "MindSpeed DeepSeek-V3: MLA, MTP=1, 3 dense + 61 MoE (3 noop), shared expert, dualpipe",
+        "num_experts": 256, "moe_ffn_hidden_size": 18432, "moe_router_topk": 8,
+        "moe_layer_freq": "1", "num_moe_layers": 61,
+        "has_shared_expert": True, "shared_expert_intermediate_size": 18432,
+        "tp": 2, "pp": 8, "ep": 16, "seq_len": 4096,
+        "global_batch_size": 3840, "micro_batch_size": 1, "device_type": "A3",
+    },
+}
+
 # ── Megatron-LM official dense model catalog (source: megatron) ──
 # Parameters extracted from official Megatron-LM examples/ pretrain + RL +
 # modelopt scripts. Excludes models already covered by MINDSPEED_DENSE_MODELS.

@@ -4528,8 +4528,6 @@
                     if (!Array.isArray(models) || models.length === 0) return;
                     // Keep the placeholder, append catalog models
                     models.forEach(function (m) {
-                        // Skip non-dense or entries already in the list
-                        if (m.model_type !== "dense") return;
                         var existing = select.querySelector('option[value="' + m.model_name + '"]');
                         if (existing) return;
                         var opt = document.createElement("option");
@@ -4580,7 +4578,7 @@
                     var resp = await fetch(API + "/model-catalog?name=" + encodeURIComponent(modelName));
                     if (!resp.ok) throw new Error("model not found");
                     var entry = await resp.json();
-                    if (!entry || entry.model_type !== "dense") return;
+                    if (!entry) return;
                     // Fill architecture fields
                     document.getElementById("wf-orig-model-l").value = entry.num_layers;
                     document.getElementById("wf-orig-model-h").value = entry.d_model;
