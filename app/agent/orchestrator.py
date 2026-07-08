@@ -539,7 +539,7 @@ async def agent_stream(
     user_message: str,
 ) -> AsyncGenerator[AgentEvent, None]:
     """Main agent streaming loop. Skills dispatched via registry, utilities handled directly."""
-    http_client = httpx.Client(verify=config.OPENAI_SSL_VERIFY)
+    http_client = httpx.Client(verify=config.OPENAI_SSL_VERIFY, proxy=config.LLM_PROXY or None)
     client = OpenAI(
         api_key=config.OPENAI_API_KEY,
         base_url=config.OPENAI_BASE_URL,
