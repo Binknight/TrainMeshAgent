@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoE 模型等效推导参数表 — Step 1</title>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --card-bg: #fff;
+    --border: #e2e5ec;
+    --text: #2c3e50;
+    --text-secondary: #7f8c9b;
+    --accent: #3b6df0;
+    --accent-light: #e8effe;
+    --yes: #16a34a;
+    --yes-bg: #f0fdf5;
+    --no: #94a3b8;
+    --no-bg: #f8fafc;
+    --input-bg: #fafbfd;
+    --input-focus: #fff;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 24px;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+
+  .header {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 24px 32px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .header h1 .badge {
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--accent-light);
+    color: var(--accent);
+    padding: 3px 10px;
+    border-radius: 20px;
+    letter-spacing: 0;
+  }
+  .header-controls { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    padding: 8px 18px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text);
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #f0f2f7; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #2b5cd9; }
+
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .summary-card {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    box-shadow: var(--shadow);
+  }
+  .summary-card .label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .summary-card .value { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+  .summary-card .sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+  .section-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 28px 0 12px 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::before {
+    content: '';
+    width: 4px;
+    height: 18px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+
+  .table-wrapper {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    min-width: 1100px;
+  }
+  thead th {
+    background: #f8f9fc;
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-secondary);
+    padding: 13px 16px;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  tbody td {
+    padding: 11px 16px;
+    border-bottom: 1px solid #f0f1f5;
+    vertical-align: middle;
+  }
+  tbody tr:hover { background: #fafbfe; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .param-name {
+    font-weight: 650;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .param-cn {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: 6px;
+    font-weight: 400;
+  }
+
+  /* ---- Toggle switch for column 2 ---- */
+  .toggle-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle-track {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    background: #cbd5e1;
+    transition: background .2s;
+    flex-shrink: 0;
+  }
+  .toggle-track.on { background: var(--yes); }
+  .toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,.15);
+    transition: transform .2s;
+  }
+  .toggle-track.on .toggle-knob { transform: translateX(16px); }
+  .toggle-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--no);
+    min-width: 14px;
+  }
+  .toggle-track.on ~ .toggle-label { color: var(--yes); }
+
+  /* ---- Editable input ---- */
+  .editable {
+    width: 90px;
+    padding: 7px 10px;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", monospace;
+    background: var(--input-bg);
+    color: var(--text);
+    transition: all .15s;
+    text-align: center;
+  }
+  .editable:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--input-focus);
+    box-shadow: 0 0 0 3px rgba(59,109,240,.1);
+  }
+  .editable-wide { width: 130px; }
+
+  /* ---- Equivalent value ---- */
+  .eq-value {
+    font-weight: 650;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .eq-value.same { color: var(--text); }
+
+  /* ---- Formula (editable) ---- */
+  .formula-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", monospace;
+    font-size: 11.5px;
+    background: var(--input-bg);
+    color: #555;
+    transition: all .15s;
+    box-sizing: border-box;
+  }
+  .formula-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--input-focus);
+    box-shadow: 0 0 0 3px rgba(59,109,240,.1);
+  }
+  .formula-input.error {
+    border-color: #e74c3c;
+    background: #fff5f5;
+    color: #c0392b;
+  }
+
+  /* ---- Editable equivalent value ---- */
+  .editable-eq {
+    width: 90px;
+    padding: 7px 10px;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", monospace;
+    background: var(--input-bg);
+    color: var(--accent);
+    transition: all .15s;
+    text-align: center;
+    font-weight: 650;
+  }
+  .editable-eq:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--input-focus);
+    box-shadow: 0 0 0 3px rgba(59,109,240,.1);
+  }
+  .editable-eq.manual { color: #e67e22; }
+
+  /* ---- Editable description ---- */
+  .desc-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    background: var(--input-bg);
+    color: var(--text-secondary);
+    transition: all .15s;
+    box-sizing: border-box;
+  }
+  .desc-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--input-focus);
+    box-shadow: 0 0 0 3px rgba(59,109,240,.1);
+  }
+
+  .desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    max-width: 260px;
+    line-height: 1.5;
+  }
+
+  .legend {
+    margin-top: 20px;
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 18px 28px;
+    box-shadow: var(--shadow);
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  .toast {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    background: #1e293b;
+    color: #fff;
+    padding: 10px 22px;
+    border-radius: 8px;
+    font-size: 13px;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all .25s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  @media (max-width: 768px) {
+    body { padding: 12px; }
+    .header { padding: 16px 20px; }
+    .header h1 { font-size: 18px; }
+    .summary-row { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>
+      MoE 模型等效推导参数表
+      <span class="badge">Step 1</span>
+    </h1>
+    <div class="header-controls">
+      <button class="btn" onclick="resetDefaults()">↺ 默认值</button>
+      <button class="btn" onclick="exportCSV()">⬇ 导出 CSV</button>
+      <button class="btn btn-primary" onclick="recalcAll()">⟳ 刷新等效值</button>
+    </div>
+  </div>
+
+  <div class="summary-row">
+    <div class="summary-card">
+      <div class="label">原始 NPU</div>
+      <div class="value" id="npuOrig">512</div>
+      <div class="sub">DP × TP × PP</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">等效 NPU</div>
+      <div class="value" id="npuEq">48</div>
+      <div class="sub">DP_eq × TP_eq × PP_eq</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">压缩比</div>
+      <div class="value" id="compRatio">10.7:1</div>
+      <div class="sub" id="npuSave">节省 90.6% NPU</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">缩减维度</div>
+      <div class="value" id="reducedCount">4</div>
+      <div class="sub" id="reducedDetail">PP · DP · L · B · EP</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">保持维度</div>
+      <div class="value" id="keptCount">13</div>
+      <div class="sub" id="keptDetail">TP · H · A · dff · V · S · b · MoE参数</div>
+    </div>
+  </div>
+
+  <div class="section-title">并行策略维度</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th style="width:12%">参数</th><th style="width:10%">是否等效缩减</th><th style="width:10%">原始值</th><th style="width:10%">等效值</th><th style="width:25%">等效公式</th><th style="width:33%">公式参数说明</th></tr>
+      </thead>
+      <tbody id="parallelRows"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">模型架构参数</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th style="width:12%">参数</th><th style="width:10%">是否等效缩减</th><th style="width:10%">原始值</th><th style="width:10%">等效值</th><th style="width:25%">等效公式</th><th style="width:33%">公式参数说明</th></tr>
+      </thead>
+      <tbody id="modelRows"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">运行时参数</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th style="width:12%">参数</th><th style="width:10%">是否等效缩减</th><th style="width:10%">原始值</th><th style="width:10%">等效值</th><th style="width:25%">等效公式</th><th style="width:33%">公式参数说明</th></tr>
+      </thead>
+      <tbody id="runtimeRows"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">MoE 专用参数</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th style="width:12%">参数</th><th style="width:10%">是否等效缩减</th><th style="width:10%">原始值</th><th style="width:10%">等效值</th><th style="width:25%">等效公式</th><th style="width:33%">公式参数说明</th></tr>
+      </thead>
+      <tbody id="moeRows"></tbody>
+    </table>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-dot" style="background:var(--yes)"></div>
+      <span><strong>是</strong> = 等效变换中该参数被缩减或调整</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#cbd5e1"></div>
+      <span><strong>否</strong> = 等效变换中该参数保持原始值不变</span>
+    </div>
+    <div class="legend-item" style="margin-left:auto">
+      <span>💡 编辑 <em style="color:var(--accent)">原始值</em> 或点击 <em style="color:var(--accent)">是/否开关</em> 后等效值自动重算</span>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ====================================================================
+// Parameter definitions
+// ====================================================================
+const PARAMS = {
+  TP: {
+    name: 'TP', cn: '张量并行度', group: 'parallel',
+    isReduced: false,
+    defaultOrig: 8,
+    formulaText: 'TP_eq = TP',
+    desc: 'TP 对单层内权重矩阵做列/行切分，改变 TP 会改变计算图。等效推导中保持不变，确保每层内部计算和通信拓扑一致。'
+  },
+  PP: {
+    name: 'PP', cn: '流水线并行度', group: 'parallel',
+    isReduced: true,
+    defaultOrig: 8,
+    formulaText: 'PP_eq = min(PP-1, 3)',
+    desc: 'PP 将不同层分布到不同设备。等效组网只需保留首/中/尾三种 PP stage 的代表性样本。PP-1 保证至少保留首尾边界语义，上限 3 覆盖 embedding+中间+lm_head。'
+  },
+  DP: {
+    name: 'DP', cn: '数据并行度', group: 'parallel',
+    isReduced: true,
+    defaultOrig: 8,
+    formulaText: 'DP_eq = max(DP/4, 1)',
+    desc: 'DP 是纯数据切分维度。缩减至 1/4 是压缩比与代表性的平衡点——保留 ≥2 个 rank 维持 All-Reduce 通信模式。B_eq 补偿单卡数据量膨胀。'
+  },
+  EP: {
+    name: 'EP', cn: '专家并行度 (MoE)', group: 'parallel',
+    isReduced: true,
+    defaultOrig: 8,
+    formulaText: 'EP_eq = max(EP/4, 1)',
+    desc: 'EP 与 DP 同为"数据分布"维度——DP 按 batch 切分，EP 按 token-to-expert 路由切分。两者在 MoE FLOPs 和 HBM 的分母位置，采用相同的 /4 因子保持缩减一致性。'
+  },
+
+  L: {
+    name: 'L', cn: '模型总层数', group: 'model',
+    isReduced: true,
+    defaultOrig: 24,
+    formulaText: 'L_eq = (L/PP) × PP_eq',
+    desc: '核心不变量：每 PP stage 的层数 L/PP 保持不变。原始 L/PP=24/8=3 层/stage，等效 9/3=3 层/stage。保证 HBM(∝L/PP) 和 TP 通信(∝L/PP) 在等效前后精确相等。'
+  },
+  H: {
+    name: 'H', cn: '隐藏维度 (d_model)', group: 'model',
+    isReduced: false,
+    defaultOrig: 4096,
+    formulaText: 'H_eq = H',
+    desc: '隐藏维度决定 Attention/QKV/FFN 的矩阵形状。改变 H 会彻底改变模型架构，等效推导中必须保持。'
+  },
+  A: {
+    name: 'A', cn: '注意力头数', group: 'model',
+    isReduced: false,
+    defaultOrig: 32,
+    formulaText: 'A_eq = A',
+    desc: '注意力头数与 H 配对（d_head = H/A），改变 A 会影响 Attention 计算图。等效推导中保持。'
+  },
+  dff: {
+    name: 'd_ffn', cn: 'FFN 隐藏维度', group: 'model',
+    isReduced: false,
+    defaultOrig: 14336,
+    formulaText: 'dff_eq = dff',
+    desc: 'FFN 中间维度决定前馈网络的计算量和参数量。等效推导中保持，避免改变单层计算特征。'
+  },
+  V: {
+    name: 'V', cn: '词表大小', group: 'model',
+    isReduced: false,
+    defaultOrig: 32000,
+    formulaText: 'V_eq = V',
+    desc: '词表大小决定 Embedding/LM-Head 层的参数量和首尾 PP 的额外 HBM。等效推导中保持，确保首尾 PP 的额外负载不变。'
+  },
+
+  S: {
+    name: 'S', cn: '序列长度', group: 'runtime',
+    isReduced: false,
+    defaultOrig: 2048,
+    formulaText: 'S_eq = S',
+    desc: '序列长度决定 Attention 计算量 (∝S²) 和激活值大小。等效推导中保持，避免改变 Attention 部分的计算模式。'
+  },
+  B: {
+    name: 'B', cn: '全局批次大小', group: 'runtime',
+    isReduced: true,
+    defaultOrig: 32,
+    formulaText: 'B_eq = B × DP_eq/DP',
+    desc: '补偿 DP 缩减：DP 从 8→2（缩小 4×），每卡数据量变大 4×。B_eq 同步缩小使 FLOPs 中 B/DP 项保持 32/8=8/2=4，单卡计算量数学等价。B_eq 只影响 FLOPs 公式。'
+  },
+  b: {
+    name: 'b', cn: '微批次大小', group: 'runtime',
+    isReduced: false,
+    defaultOrig: 4,
+    formulaText: 'b_eq = b',
+    desc: '微批次大小决定 TP/PP 通信量（∝b）。等效推导中保持，确保 TP/PP 通信在公式形式层面等效。'
+  },
+
+  num_experts: {
+    name: 'E', cn: '每层专家数', group: 'moe',
+    isReduced: false,
+    defaultOrig: 8,
+    formulaText: 'E_eq = E',
+    desc: 'MoE 层中每层的专家总数。决定 MoE HBM 中的 E·H·F_expert 项。等效推导中保持，避免改变单卡 MoE 显存模型。'
+  },
+  moe_router_topk: {
+    name: 'K', cn: 'Top-K 激活专家数', group: 'moe',
+    isReduced: false,
+    defaultOrig: 2,
+    formulaText: 'K_eq = K',
+    desc: '每个 token 激活的专家数。决定 MoE FLOPs(∝K) 和 EP 通信流量(∝K)。等效推导中保持，确保单 token 计算路径不变。'
+  },
+  num_moe_layers: {
+    name: 'L_moe', cn: 'MoE 层数', group: 'moe',
+    isReduced: false,
+    defaultOrig: 16,
+    formulaText: 'L_moe_eq = L_moe',
+    desc: '模型中使用 MoE 的层数（其余为 Dense FFN 层）。决定 MoE 在总层数中的占比。等效推导中保持，确保 MoE/Dense 混合比例不变。'
+  },
+  moe_ffn_hidden_size: {
+    name: 'F_expert', cn: '专家 FFN 隐藏维度', group: 'moe',
+    isReduced: false,
+    defaultOrig: 2048,
+    formulaText: 'F_expert_eq = F_expert',
+    desc: '单个 MoE 专家 FFN 的中间维度。决定专家计算量(∝F_expert)和参数量。等效推导中保持，不改变单专家特征。'
+  },
+  has_shared_expert: {
+    name: 'shared', cn: '共享专家开关', group: 'moe',
+    isReduced: false,
+    defaultOrig: false,
+    formulaText: 'shared_eq = shared',
+    desc: '是否启用共享专家（如 DeepSeek-V3）。共享专家的 FLOPs 和 HBM 计算与普通专家类似，等效推导中保持配置不变。'
+  },
+  expert_tensor_parallel_size: {
+    name: 'TP_e', cn: '专家内部 TP', group: 'moe',
+    isReduced: false,
+    defaultOrig: 1,
+    formulaText: 'TP_e_eq = TP_e',
+    desc: '单个专家内部的张量并行度。出现在 MoE HBM 分母 (EP·TP_e) 中。等效推导中保持，避免改变专家权重切分方式。'
+  },
+};
+
+// ====================================================================
+// Formula evaluator: safe expression → number
+// Supported: + - * / // % **  |  min() max() floor() ceil() abs()
+// Variable names (e.g. PP, DP, L) are replaced with current origVal
+// ====================================================================
+function evalFormulaExpr(expr, selfKey) {
+  // Build scope: all param names → current origVal
+  const scope = {};
+  for (const [k, s] of Object.entries(state)) {
+    scope[k] = s.origVal;
+  }
+  // Also expose eq_* and *_eq variables for cross-reference
+  for (const k of Object.keys(state)) {
+    const eqv = computeEqValRaw(k);
+    scope['eq_' + k] = eqv;
+    scope[k + '_eq'] = eqv;  // alias: PP_eq = eq_PP
+  }
+  // Normalize Unicode math operators to ASCII
+  let replaced = expr
+    .replace(/×/g, '*')
+    .replace(/÷/g, '/')
+    .replace(/−/g, '-')
+    .replace(/∗/g, '*');
+  // Replace variable names with values (longest first to avoid partial matches)
+  const sorted = Object.keys(scope).sort((a, b) => b.length - a.length);
+  for (const name of sorted) {
+    const re = new RegExp('\\b' + name.replace(/_/g, '\\_') + '\\b', 'g');
+    replaced = replaced.replace(re, String(scope[name]));
+  }
+  // Replace // with integer division helper
+  // (handle separately since // is not a JS operator)
+  // Instead, we'll just use the standard operators and add integer ops
+  try {
+    // Allow safe math: Math.min, Math.max, Math.floor, Math.ceil, Math.abs
+    const sandbox = { Math: Math, min: Math.min, max: Math.max, floor: Math.floor, ceil: Math.ceil, abs: Math.abs };
+    const keys = Object.keys(sandbox);
+    const vals = Object.values(sandbox);
+    const fn = new Function(...keys, '"use strict"; return (' + replaced + ');');
+    const result = fn(...vals);
+    if (typeof result === 'number' && !isNaN(result) && isFinite(result)) {
+      return Math.max(1, Math.floor(result)); // clamp to >= 1 integer
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Evaluate equivalent value for a key WITHOUT considering isReduced
+function computeEqValRaw(key) {
+  const v = state[key].origVal;
+  switch (key) {
+    case 'PP':
+      return v > 3 ? Math.max(1, Math.min(v - 1, 3)) : v;
+    case 'DP':
+      return v > 1 ? Math.max(1, Math.floor(v / 4)) : 1;
+    case 'EP':
+      return v > 1 ? Math.max(1, Math.floor(v / 4)) : 1;
+    case 'L': {
+      const pp = state.PP.origVal;
+      if (pp <= 3) return v;
+      const eq_pp = computeEqValRaw('PP');
+      return Math.floor(v / pp) * eq_pp;
+    }
+    case 'B': {
+      const dp = state.DP.origVal;
+      if (dp <= 1) return v;
+      const eq_dp = computeEqValRaw('DP');
+      return Math.max(1, Math.floor(v * eq_dp / dp));
+    }
+    default:
+      return v;
+  }
+}
+
+// ====================================================================
+// State: { paramKey: { origVal, isReduced, formulaText } }
+// ====================================================================
+const state = {};
+for (const [key, def] of Object.entries(PARAMS)) {
+  state[key] = {
+    origVal: def.defaultOrig,
+    isReduced: def.isReduced,
+    formulaText: def.formulaText,
+    manualEqVal: null,   // null = use computed; number = manual override
+    descText: def.desc,
+  };
+}
+
+// ====================================================================
+// Compute equivalent value: uses custom formula if valid, else fallback
+// ====================================================================
+function computeEqVal(key) {
+  // Manual override takes priority
+  if (state[key].manualEqVal !== null) return state[key].manualEqVal;
+  if (!state[key].isReduced) return state[key].origVal;
+
+  // Try to evaluate the custom formula expression
+  const formula = state[key].formulaText;
+  const eqIdx = formula.indexOf('=');
+  if (eqIdx >= 0) {
+    const expr = formula.substring(eqIdx + 1).trim();
+    if (expr) {
+      const result = evalFormulaExpr(expr, key);
+      if (result !== null) return result;
+    }
+  }
+  // Fallback to hardcoded logic
+  return computeEqValRaw(key);
+}
+
+// ====================================================================
+// Render a single row
+// ====================================================================
+function renderRow(key) {
+  const p = PARAMS[key];
+  const s = state[key];
+  const eqVal = computeEqVal(key);
+  const differs = (typeof s.origVal === 'boolean')
+    ? (s.origVal !== eqVal)
+    : (s.origVal !== eqVal);
+  const eqClass = differs ? 'eq-value' : 'eq-value same';
+
+  const displayOrig = typeof s.origVal === 'boolean' ? (s.origVal ? 'true' : 'false') : s.origVal;
+  const displayEq   = typeof eqVal === 'boolean' ? (eqVal ? 'true' : 'false') : eqVal;
+  const isManual    = s.manualEqVal !== null;
+  const formulaText = s.formulaText;
+
+  // Validate the formula: try evaluating it
+  const formulaValid = (() => {
+    if (!s.isReduced) return true;
+    const eqIdx = formulaText.indexOf('=');
+    if (eqIdx < 0) return false;
+    const expr = formulaText.substring(eqIdx + 1).trim();
+    if (!expr) return false;
+    return evalFormulaExpr(expr, key) !== null;
+  })();
+
+  return `
+    <tr>
+      <td>
+        <span class="param-name">${p.name}</span>
+        <span class="param-cn">${p.cn}</span>
+      </td>
+      <td>
+        <div class="toggle-wrap" onclick="toggleReduced('${key}')" title="点击切换是/否">
+          <div class="toggle-track${s.isReduced ? ' on' : ''}" id="track-${key}">
+            <div class="toggle-knob"></div>
+          </div>
+          <span class="toggle-label" id="tlabel-${key}">${s.isReduced ? '是' : '否'}</span>
+        </div>
+      </td>
+      <td>
+        <input class="editable editable-wide"
+               data-param="${key}"
+               type="${typeof s.origVal === 'boolean' ? 'checkbox' : 'number'}"
+               ${typeof s.origVal === 'boolean'
+                 ? (s.origVal ? 'checked' : '')
+                 : `value="${s.origVal}"`}
+               ${typeof s.origVal === 'boolean'
+                 ? `onchange="onBoolChange('${key}', this.checked)"`
+                 : `oninput="onOrigChange('${key}', this.value)"`}
+               min="${typeof s.origVal === 'number' ? 1 : ''}"
+               step="1">
+      </td>
+      <td>
+        <input class="editable-eq${isManual ? ' manual' : ''}"
+               data-eq="${key}"
+               type="${typeof eqVal === 'boolean' ? 'checkbox' : 'number'}"
+               ${typeof eqVal === 'boolean'
+                 ? (eqVal ? 'checked' : '')
+                 : `value="${eqVal}"`}
+               ${typeof eqVal === 'boolean'
+                 ? `onchange="onEqBoolChange('${key}', this.checked)"`
+                 : `oninput="onEqChange('${key}', this.value)"`}
+               ${typeof eqVal === 'number' ? 'step="1"' : ''}
+               title="${isManual ? '手动覆盖值（点击刷新等效值恢复自动计算）' : '自动计算值（可直接编辑覆盖）'}">
+      </td>
+      <td>
+        <input class="formula-input${formulaValid ? '' : ' error'}"
+               data-formula="${key}"
+               type="text"
+               value="${formulaText.replace(/"/g, '&quot;')}"
+               oninput="onFormulaChange('${key}', this.value)"
+               title="${formulaValid ? '公式有效' : '公式解析失败，使用内置逻辑计算'}">
+      </td>
+      <td>
+        <input class="desc-input"
+               data-desc="${key}"
+               type="text"
+               value="${s.descText.replace(/"/g, '&quot;')}"
+               oninput="onDescChange('${key}', this.value)"
+               title="可直接编辑参数说明">
+      </td>
+    </tr>`;
+}
+
+// ====================================================================
+// Render all rows + update summary
+// ====================================================================
+function renderAll() {
+  const groups = { parallel: [], model: [], runtime: [], moe: [] };
+  for (const key of Object.keys(PARAMS)) {
+    groups[PARAMS[key].group].push(key);
+  }
+  document.getElementById('parallelRows').innerHTML = groups.parallel.map(renderRow).join('');
+  document.getElementById('modelRows').innerHTML    = groups.model.map(renderRow).join('');
+  document.getElementById('runtimeRows').innerHTML  = groups.runtime.map(renderRow).join('');
+  document.getElementById('moeRows').innerHTML      = groups.moe.map(renderRow).join('');
+  updateSummary();
+}
+
+function updateAllEq() {
+  for (const key of Object.keys(PARAMS)) {
+    const s = state[key];
+    const eqVal = computeEqVal(key);
+    // Update equivalent value input (only if not manually overridden)
+    const eqInput = document.querySelector(`input[data-eq="${key}"]`);
+    if (eqInput) {
+      if (s.manualEqVal === null) {
+        if (eqInput.type === 'checkbox') eqInput.checked = eqVal;
+        else eqInput.value = eqVal;
+        eqInput.classList.remove('manual');
+        eqInput.title = '自动计算值（可直接编辑覆盖）';
+      }
+    }
+    // Update formula input validity styling
+    const formulaInput = document.querySelector(`input[data-formula="${key}"]`);
+    if (formulaInput && s.isReduced) {
+      const ft = s.formulaText;
+      const eqIdx = ft.indexOf('=');
+      if (eqIdx >= 0) {
+        const expr = ft.substring(eqIdx + 1).trim();
+        const ok = expr && evalFormulaExpr(expr, key) !== null;
+        formulaInput.classList.toggle('error', !ok);
+        formulaInput.title = ok ? '公式有效' : '公式解析失败，使用内置逻辑计算';
+      }
+    } else if (formulaInput) {
+      formulaInput.classList.remove('error');
+      formulaInput.title = '';
+    }
+  }
+  updateSummary();
+}
+
+function updateSummary() {
+  const tp = state.TP.origVal, pp = state.PP.origVal, dp = state.DP.origVal;
+  const eq_pp = computeEqVal('PP');
+  const eq_dp = computeEqVal('DP');
+  const eq_tp = computeEqVal('TP');
+  const npuOrig = dp * tp * pp;
+  const npuEq = eq_dp * eq_tp * eq_pp;
+  const ratio = npuEq > 0 ? (npuOrig / npuEq).toFixed(1) : '∞';
+  const savePct = npuOrig > 0 ? ((1 - npuEq / npuOrig) * 100).toFixed(1) : 0;
+
+  document.getElementById('npuOrig').textContent = npuOrig;
+  document.getElementById('npuEq').textContent = npuEq;
+  document.getElementById('compRatio').textContent = ratio + ':1';
+  document.getElementById('npuSave').textContent = '节省 ' + savePct + '% NPU';
+
+  let reducedCount = 0, keptCount = 0;
+  const reducedNames = [], keptNames = [];
+  for (const [key, p] of Object.entries(PARAMS)) {
+    if (state[key].isReduced) { reducedCount++; reducedNames.push(p.name); }
+    else { keptCount++; keptNames.push(p.name); }
+  }
+  document.getElementById('reducedCount').textContent = reducedCount;
+  document.getElementById('keptCount').textContent = keptCount;
+  document.getElementById('reducedDetail').textContent = reducedNames.join(' · ');
+  document.getElementById('keptDetail').textContent = keptNames.join(' · ');
+}
+
+// ====================================================================
+// Event handlers
+// ====================================================================
+
+/** Toggle "是否等效缩减" for a parameter */
+function toggleReduced(key) {
+  state[key].isReduced = !state[key].isReduced;
+  state[key].manualEqVal = null; // clear manual override on toggle
+  const track = document.getElementById('track-' + key);
+  const label = document.getElementById('tlabel-' + key);
+  if (state[key].isReduced) {
+    track.classList.add('on'); label.textContent = '是';
+    const p = PARAMS[key];
+    const ft = state[key].formulaText;
+    const eqIdx = ft.indexOf('=');
+    if (eqIdx >= 0) {
+      const rhs = ft.substring(eqIdx + 1).trim();
+      if (rhs === p.name) {
+        state[key].formulaText = p.formulaText;
+      }
+    }
+  } else {
+    track.classList.remove('on'); label.textContent = '否';
+  }
+  const formulaInput = document.querySelector(`input[data-formula="${key}"]`);
+  if (formulaInput) {
+    formulaInput.value = state[key].formulaText;
+    formulaInput.classList.toggle('error', false);
+    formulaInput.title = '';
+  }
+  const eqInput = document.querySelector(`input[data-eq="${key}"]`);
+  if (eqInput) { eqInput.classList.remove('manual'); eqInput.title = '自动计算值（可直接编辑覆盖）'; }
+  updateAllEq();
+}
+
+function onOrigChange(key, rawValue) {
+  const num = parseInt(rawValue, 10);
+  if (isNaN(num) || num < 1) return;
+  state[key].origVal = num;
+  updateAllEq();
+}
+
+function onBoolChange(key, checked) {
+  state[key].origVal = checked;
+  updateAllEq();
+}
+
+function onFormulaChange(key, rawFormula) {
+  state[key].formulaText = rawFormula;
+  // Changing formula clears manual eq override
+  state[key].manualEqVal = null;
+  updateAllEq();
+}
+
+function onEqChange(key, rawValue) {
+  const num = parseInt(rawValue, 10);
+  if (isNaN(num) || num < 1) { state[key].manualEqVal = null; return; }
+  state[key].manualEqVal = num;
+  const eqInput = document.querySelector(`input[data-eq="${key}"]`);
+  if (eqInput) { eqInput.classList.add('manual'); eqInput.title = '手动覆盖值（点击刷新等效值恢复自动计算）'; }
+  updateSummary();
+}
+
+function onEqBoolChange(key, checked) {
+  state[key].manualEqVal = checked;
+  const eqInput = document.querySelector(`input[data-eq="${key}"]`);
+  if (eqInput) { eqInput.classList.add('manual'); eqInput.title = '手动覆盖值（点击刷新等效值恢复自动计算）'; }
+  updateSummary();
+}
+
+function onDescChange(key, rawText) {
+  state[key].descText = rawText;
+}
+
+function recalcAll() {
+  // Clear all manual eq overrides and recalculate
+  for (const key of Object.keys(PARAMS)) {
+    const p = PARAMS[key];
+    if (typeof p.defaultOrig === 'boolean') continue;
+    const input = document.querySelector(`input[data-param="${key}"]`);
+    if (input && input.type === 'number') {
+      const num = parseInt(input.value, 10);
+      if (!isNaN(num) && num >= 1) state[key].origVal = num;
+    }
+    // Sync formula inputs
+    const fi = document.querySelector(`input[data-formula="${key}"]`);
+    if (fi) state[key].formulaText = fi.value;
+    // Clear manual eq overrides
+    state[key].manualEqVal = null;
+    // Sync desc inputs
+    const di = document.querySelector(`input[data-desc="${key}"]`);
+    if (di) state[key].descText = di.value;
+  }
+  updateAllEq();
+  showToast('等效值已刷新（手动覆盖已清除）');
+}
+
+function resetDefaults() {
+  for (const [key, p] of Object.entries(PARAMS)) {
+    state[key] = {
+      origVal: p.defaultOrig,
+      isReduced: p.isReduced,
+      formulaText: p.formulaText,
+      manualEqVal: null,
+      descText: p.desc,
+    };
+    const input = document.querySelector(`input[data-param="${key}"]`);
+    if (input) {
+      if (input.type === 'checkbox') input.checked = p.defaultOrig;
+      else if (input.type === 'number') input.value = p.defaultOrig;
+    }
+    const fi = document.querySelector(`input[data-formula="${key}"]`);
+    if (fi) { fi.value = p.formulaText; fi.classList.remove('error'); fi.title = ''; }
+    const ei = document.querySelector(`input[data-eq="${key}"]`);
+    if (ei) { ei.classList.remove('manual'); ei.title = '自动计算值（可直接编辑覆盖）'; }
+    const di = document.querySelector(`input[data-desc="${key}"]`);
+    if (di) di.value = p.desc;
+    const track = document.getElementById('track-' + key);
+    const label = document.getElementById('tlabel-' + key);
+    if (track && label) {
+      if (p.isReduced) { track.classList.add('on'); label.textContent = '是'; }
+      else { track.classList.remove('on'); label.textContent = '否'; }
+    }
+  }
+  updateAllEq();
+  showToast('已恢复默认值');
+}
+
+function exportCSV() {
+  const rows = [['参数', '中文名', '是否等效缩减', '原始值', '等效值', '等效公式', '公式参数说明']];
+  for (const [key, p] of Object.entries(PARAMS)) {
+    const eqVal = computeEqVal(key);
+    rows.push([
+      p.name, p.cn,
+      state[key].isReduced ? '是' : '否',
+      String(state[key].origVal),
+      String(typeof eqVal === 'boolean' ? (eqVal ? 'true' : 'false') : eqVal),
+      state[key].formulaText.replace(/,/g, '，'),
+      state[key].descText.replace(/,/g, '，'),
+    ]);
+  }
+  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'moe-equivalent-params.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV 已导出');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timeout);
+  t._timeout = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ====================================================================
+// Init
+// ====================================================================
+renderAll();
+</script>
+</body>
+</html>
