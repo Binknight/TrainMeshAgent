@@ -116,8 +116,12 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
             d.setdefault("vocab_size", training_model.config.vocab_size)
     if seq_len is not None:
         d["seq_len"] = seq_len
+    elif "seq_len" in d:
+        pass  # already set (e.g. from mesh generation)
     if batch_size is not None:
         d["batch_size"] = batch_size
+    elif "batch_size" in d:
+        pass  # already set
     if model_name is not None:
         d["model_name"] = model_name
     if d_ffn is not None:
@@ -126,6 +130,8 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
         d["d_ffn"] = training_model.config.d_ffn
     if micro_batch_size is not None:
         d["micro_batch_size"] = micro_batch_size
+    elif "micro_batch_size" in d:
+        pass  # already set
     if vocab_size is not None:
         d["vocab_size"] = vocab_size
     return d
@@ -1151,6 +1157,9 @@ def workflow_step1(session_id: str):
     session.original_batch_size = B
     session.original_micro_batch = b_micro
     session.original_vocab_size = vocab_size
+    session.original_seq_len = S
+    session.equivalent_seq_len = S
+    session.original_model_name = model_name
     session.equivalent_batch_size = eq_B
     session.equivalent_dff = dff  # dff unchanged between original and equivalent
     session.equivalent_micro_batch = b_micro  # b unchanged between original and equivalent
@@ -1172,6 +1181,8 @@ def workflow_step1(session_id: str):
     orig_model_dict = orig_model.model_dump() if hasattr(orig_model, "model_dump") else orig_model
     orig_model_dict["seq_len"] = S
     orig_model_dict["batch_size"] = B
+    orig_model_dict["micro_batch_size"] = b_micro
+    orig_model_dict["vocab_size"] = vocab_size
     return jsonify({
         "original_mesh": _topo_with_model(
             orig_mesh, orig_model,
