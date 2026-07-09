@@ -1394,6 +1394,36 @@ def workflow_step2_stream(session_id: str):
                 f"  = 4 × {b_micro_val} × {S_val} × {H_val} / 1e6",
                 f"  ≈ {pp_comm:.2f} MB/micro-step  (per PP boundary)",
             ]
+
+            # ── Equivalent topology metrics (same formulas, reduced params) ──
+            eq_flops_mid = _estimator._estimate_flops(eq_L, H_val, S_val, B_val, dff_val, eq_dp, tp, eq_pp)
+            eq_flops_edge = _estimator._estimate_flops_first_last(eq_L, H_val, S_val, B_val, dff_val, eq_dp, tp, eq_pp, vocab_val)
+            eq_flops_str = f"{eq_flops_mid / 1e15:.2f} × 10¹⁵" if eq_flops_mid >= 1e15 else f"{eq_flops_mid / 1e12:.2f} × 10¹²"
+            eq_flops_edge_str = f"{eq_flops_edge / 1e15:.2f} × 10¹⁵" if eq_flops_edge >= 1e15 else f"{eq_flops_edge / 1e12:.2f} × 10¹²"
+
+            eq_hbm_gb = _estimator._estimate_hbm_gb(eq_L, H_val, dff_val, tp, eq_pp)
+            eq_hbm_edge_gb = _estimator._estimate_hbm_gb_first_last(eq_L, H_val, dff_val, tp, eq_pp, vocab_val)
+            eq_tp_comm = _estimator._estimate_tp_comm_gb(eq_L, H_val, S_val, b_micro_val, eq_pp)
+            eq_dp_comm = _estimator._estimate_dp_comm_gb(eq_L, H_val, dff_val, eq_dp, tp, eq_pp)
+            eq_pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
+
+            lines_metrics += [
+                f"",
+                f"▸ 等效组网 · 单卡计算量 (FLOPs) — 中间 PP",
+                f"  FLOPs = (6×{B_val}×{S_val}×{eq_L}×{H_val}/({eq_dp}×{eq_pp}×{tp})) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
+                f"  ≈ {eq_flops_str} FLOPs",
+                f"▸ 等效组网 · 单卡计算量 (FLOPs) — 首/末 PP",
+                f"  ≈ {eq_flops_edge_str} FLOPs",
+                f"▸ 等效组网 · 显存占用 (HBM) — 中间 PP",
+                f"  HBM = {eq_L}/{eq_pp} × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val}) / 1e9",
+                f"  ≈ {eq_hbm_gb:.4f} GB",
+                f"▸ 等效组网 · 通信流量",
+                f"  TP 通信 = {eq_L}/{eq_pp} × 15 × {b_micro_val} × {S_val} × {H_val} / 1e9",
+                f"  ≈ {eq_tp_comm:.2f} GB/micro-step",
+                f"  DP 通信 = 2×({eq_dp}-1)/{eq_dp} × 4 × {eq_L}/{eq_pp} × (4×{H_val}²/{tp} + 3×{H_val}×{dff_val}/{tp}) / 1e9",
+                f"  ≈ {eq_dp_comm:.2f} GB/step",
+                f"  PP 通信 ≈ {eq_pp_comm:.2f} MB/micro-step",
+            ]
         for line in lines_metrics:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'line': line})}\n\n"
             import time; time.sleep(0.4)
