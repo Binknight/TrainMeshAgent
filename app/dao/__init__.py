@@ -86,7 +86,14 @@ def get_session_summary(session_id: str) -> dict[str, Any] | None:
             row = cur.fetchone()
     if not row:
         return None
-    return {"session_id": row[0], "step": row[1], "original_task_id": row[2], "equivalent_task_id": row[3], "formula_lines": row[4], "created_at": row[5].isoformat() if row[5] else None, "updated_at": row[6].isoformat() if row[6] else None}
+    # psycopg2 returns JSONB columns as strings by default; parse to Python object
+    formula_lines = row[4]
+    if isinstance(formula_lines, str):
+        try:
+            formula_lines = json.loads(formula_lines)
+        except (json.JSONDecodeError, TypeError):
+            pass  # keep as-is if already parsed or malformed
+    return {"session_id": row[0], "step": row[1], "original_task_id": row[2], "equivalent_task_id": row[3], "formula_lines": formula_lines, "created_at": row[5].isoformat() if row[5] else None, "updated_at": row[6].isoformat() if row[6] else None}
 
 
 def save_formula_lines(session_id: str, formula_lines: list[dict[str, Any]]) -> None:
@@ -510,6 +517,7 @@ def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
             cfg.get("num_moe_layers"), cfg.get("has_shared_expert"),
             cfg.get("shared_expert_intermediate_size"),
             cfg.get("expert_tensor_parallel_size"),
+            cfg.get("description"),
         )
         for name, cfg in entries.items()
     ]
@@ -522,8 +530,9 @@ def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
                     tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type,
                     num_experts, moe_ffn_hidden_size, moe_router_topk,
                     moe_layer_freq, num_moe_layers, has_shared_expert,
-                    shared_expert_intermediate_size, expert_tensor_parallel_size)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    shared_expert_intermediate_size, expert_tensor_parallel_size,
+                    description)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (model_name) DO UPDATE SET
                    name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
                    num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
@@ -538,6 +547,7 @@ def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
                    num_moe_layers=EXCLUDED.num_moe_layers, has_shared_expert=EXCLUDED.has_shared_expert,
                    shared_expert_intermediate_size=EXCLUDED.shared_expert_intermediate_size,
                    expert_tensor_parallel_size=EXCLUDED.expert_tensor_parallel_size,
+                   description=COALESCE(EXCLUDED.description, model_catalog.description),
                    updated_at=NOW()""",
                 rows,
             )
