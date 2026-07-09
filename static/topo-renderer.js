@@ -1216,7 +1216,6 @@ function _meshBuildView(
               }
               if (typeof window._onSimRankPinned === "function") window._onSimRankPinned();
             } else {
-              _centerPanelState.formulasCollapsed = true;
               canvasRebuild("#canvas-section");
               _updateCenterBarChart(globalRank, side);
             }
@@ -2018,27 +2017,18 @@ function _updateFormulaCollapse() {
   var st = _centerPanelState;
   if (!st.formulaG) return;
 
-  var pad = 14;
-  var totalBottom = st.cardY + st._totalAvailableH;
-  var effFormulaH, newBarCardY, newBarH;
+  // Floating bar card from _drawPinnedLink lives at the link midpoint with its
+  // own coordinate system — formula collapse must not touch it.
+  var isFloatingBarCard = st.barCardG && st.barCardG === _linkBarCardG;
 
   if (st.formulasCollapsed) {
-    // Collapse: hide formulas, shrink formula card, show bar card
+    // Collapse: hide formulas, shrink formula card
     st.formulaG.attr("display", "none");
     st.toggleChev.text("▶");
     st.formulaCardRect.attr("height", st.headerH);
-    if (st.barCardVisible && st.rankData) {
-      st.barCardG.attr("display", null);
-    }
-
-    effFormulaH = st.headerH;
-    newBarCardY = st.cardY + effFormulaH + st.cardGap;
   } else {
-    // Expand: show formulas, restore formula card, hide bar card
-    if (st.barCardG) st.barCardG.attr("display", "none");
+    // Expand: show formulas, restore formula card
     st.formulaCardRect.attr("height", st.formulaCardFullH);
-    effFormulaH = st.formulaCardFullH;
-    newBarCardY = st.cardY + effFormulaH + st.cardGap;
 
     // Pre-set opacity 0 to avoid flash before animation
     if (st._formulaTexts && st._formulaTexts.length > 0) {
@@ -2050,6 +2040,23 @@ function _updateFormulaCollapse() {
     if (st._formulaTexts && st._formulaTexts.length > 0) {
       st._formulaTexts.forEach(function (t) { t.interrupt().attr("opacity", 1); });
     }
+  }
+
+  // ── Bar card manipulation (only valid for center-panel bar card, not floating) ──
+  if (isFloatingBarCard) return;
+
+  var pad = 14;
+  var totalBottom = st.cardY + st._totalAvailableH;
+  var effFormulaH = st.formulasCollapsed ? st.headerH : st.formulaCardFullH;
+  var newBarCardY = st.cardY + effFormulaH + st.cardGap;
+  var newBarH;
+
+  if (st.formulasCollapsed) {
+    if (st.barCardVisible && st.rankData) {
+      st.barCardG.attr("display", null);
+    }
+  } else {
+    if (st.barCardG) st.barCardG.attr("display", "none");
   }
 
   // Determine bar card height
