@@ -152,6 +152,9 @@ def init_db():
     from app.db import get_db
 
     with get_db() as conn:
+        # Enable autocommit so each DDL statement runs in its own
+        # transaction — a failure in one won't abort the rest.
+        conn.autocommit = True
         with conn.cursor() as cur:
             # psycopg2 execute() only handles one statement per call.
             # Split on semicolons and execute each individually.
@@ -162,18 +165,28 @@ def init_db():
                         cur.execute(stmt)
                     except Exception as e:
                         print(f"[migration] SKIP: {e}")
+        conn.autocommit = False
 
-    # Seed model catalog entries (idempotent upsert)
+    # Seed model catalog entries (idempotent upsert).
+    # Each category runs independently so one failure doesn't skip the rest.
     try:
         from app.dao import seed_model_catalog_builtin
         from app.models.model_catalog import (
             MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS,
             MINDSPEED_MOE_MODELS, MEGATRON_MOE_MODELS,
         )
-        count1 = seed_model_catalog_builtin(MINDSPEED_DENSE_MODELS)
-        count2 = seed_model_catalog_builtin(MEGATRON_DENSE_MODELS)
-        count3 = seed_model_catalog_builtin(MINDSPEED_MOE_MODELS)
-        count4 = seed_model_catalog_builtin(MEGATRON_MOE_MODELS)
+
+        def _safe_seed(label, models):
+            try:
+                return seed_model_catalog_builtin(models)
+            except Exception as e:
+                print(f"[migration] {label} seed skipped: {e}")
+                return 0
+
+        count1 = _safe_seed("mindspeed dense", MINDSPEED_DENSE_MODELS)
+        count2 = _safe_seed("megatron dense", MEGATRON_DENSE_MODELS)
+        count3 = _safe_seed("mindspeed moe", MINDSPEED_MOE_MODELS)
+        count4 = _safe_seed("megatron moe", MEGATRON_MOE_MODELS)
         print(f"[migration] model_catalog seeded {count1} mindspeed dense + {count2} megatron dense + {count3} mindspeed moe + {count4} megatron moe models.")
     except Exception as e:
         print(f"[migration] model_catalog seed skipped: {e}")
