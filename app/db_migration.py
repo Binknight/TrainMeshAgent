@@ -116,6 +116,7 @@ ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_dp_comm;
 
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS d_ffn INT;
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS micro_batch_size INT;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS vocab_size INT;
 
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS reference TEXT;
 

@@ -147,11 +147,14 @@ def _persist_session(session: SessionState) -> None:
             step1_batch_size = getattr(session, f"{role}_batch_size", None)
             step1_dff = getattr(session, f"{role}_dff", None)
             step1_vocab_size = getattr(session, f"{role}_vocab_size", None)
+            step1_micro_batch = getattr(session, f"{role}_micro_batch", None)
             params.setdefault("seq_len", step1_seq_len or _profiler._SEQ_LEN)
             params.setdefault("batch_size", step1_batch_size or _profiler._TOTAL_BATCH)
             params.setdefault("d_ffn", step1_dff or 14336)
             if step1_vocab_size is not None:
                 params.setdefault("vocab_size", step1_vocab_size)
+            if step1_micro_batch is not None:
+                params.setdefault("micro_batch_size", step1_micro_batch)
             if role == "equivalent":
                 orig_model = getattr(session, "original_training_model", None)
                 base_name = (
@@ -280,6 +283,23 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                         computed=computed,
                         layers=layers,
                     ))
+
+        # Restore session-level runtime fields from topology_params (survive server restart)
+        orig_tp = get_topology_params(session_id, "original")
+        if orig_tp:
+            state.original_seq_len = orig_tp.get("seq_len")
+            state.original_batch_size = orig_tp.get("batch_size")
+            state.original_micro_batch = orig_tp.get("micro_batch_size")
+            state.original_dff = orig_tp.get("d_ffn")
+            state.original_vocab_size = orig_tp.get("vocab_size")
+            state.original_model_name = orig_tp.get("model_name")
+
+        eq_tp = get_topology_params(session_id, "equivalent")
+        if eq_tp:
+            state.equivalent_seq_len = eq_tp.get("seq_len")
+            state.equivalent_batch_size = eq_tp.get("batch_size")
+            state.equivalent_micro_batch = eq_tp.get("micro_batch_size")
+            state.equivalent_dff = eq_tp.get("d_ffn")
 
         for role in ("original", "equivalent"):
             sr = get_simulation_result(session_id, role)

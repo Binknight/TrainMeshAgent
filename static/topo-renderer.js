@@ -4075,6 +4075,8 @@ async function loadMeshData(topoData) {
         d_ffn: topoData.d_ffn,
         seq_len: topoData.seq_len,
         batch_size: topoData.batch_size,
+        micro_batch_size: topoData.micro_batch_size,
+        vocab_size: topoData.vocab_size,
       };
     } else {
       meshModelEq = {
@@ -4083,6 +4085,8 @@ async function loadMeshData(topoData) {
         d_ffn: topoData.d_ffn,
         seq_len: topoData.seq_len,
         batch_size: topoData.batch_size,
+        micro_batch_size: topoData.micro_batch_size,
+        vocab_size: topoData.vocab_size,
       };
     }
   }
@@ -5134,6 +5138,7 @@ function loadModelData(modelData, role) {
         seq_len: modelData.seq_len,
         batch_size: modelData.batch_size,
         micro_batch_size: modelData.micro_batch_size,
+        vocab_size: modelData.config.vocab_size,
       };
     }
     // If mesh already loaded, re-fetch estimates with correct model params
@@ -5159,6 +5164,9 @@ async function _refetchMeshEstimate(side) {
   var mesh = side === "orig" ? meshOriginal : meshEquivalent;
   var model = side === "orig" ? meshModelOrig : meshModelEq;
   if (!mesh || !model || model.num_layers == null) return;
+  // If an estimate fetch is already in flight for this side (e.g. from loadMeshData
+  // which has richer params from topoData), let it complete — don't abort it.
+  if (_estimateInFlight[side]) return;
   try {
     var estimates = await fetchEstimates(
       mesh.device_type,
