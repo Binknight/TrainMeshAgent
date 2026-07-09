@@ -74,6 +74,14 @@ async function fetchEstimates(
   batchSize,
   microBatch,
   vocabSize,
+  modelType,
+  ep,
+  numExperts,
+  moeRouterTopk,
+  numMoeLayers,
+  moeFfnHiddenSize,
+  hasSharedExpert,
+  expertTpSize,
 ) {
   // ── Cancel any previous in-flight request for the same side ──
   var oldCtrl = _estimateFetchAbort[side];
@@ -104,6 +112,14 @@ async function fetchEstimates(
     if (batchSize != null) body.total_batch = batchSize;
     if (microBatch != null) body.micro_batch = microBatch;
     if (vocabSize != null) body.vocab_size = vocabSize;
+    if (modelType != null) body.model_type = modelType;
+    if (ep != null) body.ep = ep;
+    if (numExperts != null) body.num_experts = numExperts;
+    if (moeRouterTopk != null) body.moe_router_topk = moeRouterTopk;
+    if (numMoeLayers != null) body.num_moe_layers = numMoeLayers;
+    if (moeFfnHiddenSize != null) body.moe_ffn_hidden_size = moeFfnHiddenSize;
+    if (hasSharedExpert != null) body.has_shared_expert = hasSharedExpert;
+    if (expertTpSize != null) body.expert_tensor_parallel_size = expertTpSize;
 
     var resp = await fetch(API + "/session/estimate", {
       method: "POST",
@@ -4077,6 +4093,14 @@ async function loadMeshData(topoData) {
         batch_size: topoData.batch_size,
         micro_batch_size: topoData.micro_batch_size,
         vocab_size: topoData.vocab_size,
+        model_type: topoData.model_type,
+        ep: topoData.ep,
+        num_experts: topoData.num_experts,
+        moe_router_topk: topoData.moe_router_topk,
+        num_moe_layers: topoData.num_moe_layers,
+        moe_ffn_hidden_size: topoData.moe_ffn_hidden_size,
+        has_shared_expert: topoData.has_shared_expert,
+        expert_tensor_parallel_size: topoData.expert_tensor_parallel_size,
       };
     } else {
       meshModelEq = {
@@ -4087,6 +4111,14 @@ async function loadMeshData(topoData) {
         batch_size: topoData.batch_size,
         micro_batch_size: topoData.micro_batch_size,
         vocab_size: topoData.vocab_size,
+        model_type: topoData.model_type,
+        ep: topoData.ep,
+        num_experts: topoData.num_experts,
+        moe_router_topk: topoData.moe_router_topk,
+        num_moe_layers: topoData.num_moe_layers,
+        moe_ffn_hidden_size: topoData.moe_ffn_hidden_size,
+        has_shared_expert: topoData.has_shared_expert,
+        expert_tensor_parallel_size: topoData.expert_tensor_parallel_size,
       };
     }
   }
@@ -4138,6 +4170,43 @@ async function loadMeshData(topoData) {
     topoData.vocab_size != null
       ? topoData.vocab_size
       : (modelSide && modelSide.config ? modelSide.config.vocab_size : null);
+  // ── MoE params ──
+  var modelType =
+    topoData.model_type != null
+      ? topoData.model_type
+      : (meshModel && meshModel.model_type) ||
+        (modelSide && modelSide.config ? modelSide.config.model_type : null);
+  var ep = topoData.ep || (meshModel && meshModel.ep) || null;
+  var numExperts =
+    topoData.num_experts != null
+      ? topoData.num_experts
+      : (meshModel && meshModel.num_experts) ||
+        (modelSide && modelSide.config ? modelSide.config.num_experts : null);
+  var moeRouterTopk =
+    topoData.moe_router_topk != null
+      ? topoData.moe_router_topk
+      : (meshModel && meshModel.moe_router_topk) ||
+        (modelSide && modelSide.config ? modelSide.config.moe_router_topk : null);
+  var numMoeLayers =
+    topoData.num_moe_layers != null
+      ? topoData.num_moe_layers
+      : (meshModel && meshModel.num_moe_layers) ||
+        (modelSide && modelSide.config ? modelSide.config.num_moe_layers : null);
+  var moeFfnHiddenSize =
+    topoData.moe_ffn_hidden_size != null
+      ? topoData.moe_ffn_hidden_size
+      : (meshModel && meshModel.moe_ffn_hidden_size) ||
+        (modelSide && modelSide.config ? modelSide.config.moe_ffn_hidden_size : null);
+  var hasSharedExpert =
+    topoData.has_shared_expert != null
+      ? topoData.has_shared_expert
+      : (meshModel && meshModel.has_shared_expert) ||
+        (modelSide && modelSide.config ? modelSide.config.has_shared_expert : null);
+  var expertTpSize =
+    topoData.expert_tensor_parallel_size != null
+      ? topoData.expert_tensor_parallel_size
+      : (meshModel && meshModel.expert_tensor_parallel_size) ||
+        (modelSide && modelSide.config ? modelSide.config.expert_tensor_parallel_size : null);
 
   var hasModelParams = numLayers != null;
   var alreadyInFlight = _estimateInFlight[side];
@@ -4158,6 +4227,14 @@ async function loadMeshData(topoData) {
         batchSize,
         microBatch,
         vocabSize,
+        modelType,
+        ep,
+        numExperts,
+        moeRouterTopk,
+        numMoeLayers,
+        moeFfnHiddenSize,
+        hasSharedExpert,
+        expertTpSize,
       );
       if (isOrig) {
         meshEstimateOrig = estimates;
@@ -5139,6 +5216,13 @@ function loadModelData(modelData, role) {
         batch_size: modelData.batch_size,
         micro_batch_size: modelData.micro_batch_size,
         vocab_size: modelData.config.vocab_size,
+        model_type: modelData.config.model_type,
+        num_experts: modelData.config.num_experts,
+        moe_router_topk: modelData.config.moe_router_topk,
+        num_moe_layers: modelData.config.num_moe_layers,
+        moe_ffn_hidden_size: modelData.config.moe_ffn_hidden_size,
+        has_shared_expert: modelData.config.has_shared_expert,
+        expert_tensor_parallel_size: modelData.config.expert_tensor_parallel_size,
       };
     }
     // If mesh already loaded, re-fetch estimates with correct model params
@@ -5153,6 +5237,13 @@ function loadModelData(modelData, role) {
         seq_len: modelData.seq_len,
         batch_size: modelData.batch_size,
         micro_batch_size: modelData.micro_batch_size,
+        model_type: modelData.config.model_type,
+        num_experts: modelData.config.num_experts,
+        moe_router_topk: modelData.config.moe_router_topk,
+        num_moe_layers: modelData.config.num_moe_layers,
+        moe_ffn_hidden_size: modelData.config.moe_ffn_hidden_size,
+        has_shared_expert: modelData.config.has_shared_expert,
+        expert_tensor_parallel_size: modelData.config.expert_tensor_parallel_size,
       };
     }
     if (meshEquivalent) _refetchMeshEstimate("eq");
@@ -5182,6 +5273,14 @@ async function _refetchMeshEstimate(side) {
       model.batch_size,
       model.micro_batch_size,
       model.vocab_size,
+      model.model_type,
+      model.ep,
+      model.num_experts,
+      model.moe_router_topk,
+      model.num_moe_layers,
+      model.moe_ffn_hidden_size,
+      model.has_shared_expert,
+      model.expert_tensor_parallel_size,
     );
     if (side === "orig") {
       meshEstimateOrig = estimates;
