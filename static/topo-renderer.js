@@ -1783,6 +1783,62 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .attr("font-family", "var(--font-sans)")
     .text("\u{1F4D0} 等效计算推导");
 
+  // Copy button
+  var copyBtnSize = 16;
+  var copyCX = viewX + viewW - pad - toggleSize - 6 - copyBtnSize / 2;
+  var copyCY = viewY + pad + titleFont / 2;
+
+  var copyBtnG = formulaCardG
+    .append("g")
+    .attr("class", "formula-copy-btn")
+    .attr("transform", "translate(" + copyCX + "," + copyCY + ")")
+    .style("cursor", "pointer")
+    .on("click", function () {
+      var lines = window._pendingFormulaLines || [];
+      var text = lines.map(function (l) { return l.line; }).join("\n");
+      if (!text) return;
+
+      // Use Clipboard API with fallback
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          _flashCopyFeedback(copyBtnG);
+        }).catch(function () {
+          _fallbackCopy(text, copyBtnG);
+        });
+      } else {
+        _fallbackCopy(text, copyBtnG);
+      }
+    });
+
+  copyBtnG
+    .append("rect")
+    .attr("x", -copyBtnSize / 2)
+    .attr("y", -copyBtnSize / 2)
+    .attr("width", copyBtnSize)
+    .attr("height", copyBtnSize)
+    .attr("rx", 3)
+    .attr("fill", "rgba(255,255,255,0.06)")
+    .attr("stroke", "var(--border)")
+    .attr("stroke-width", 1);
+
+  // Copy icon: two overlapping rounded rects
+  copyBtnG
+    .append("rect")
+    .attr("x", -3.5).attr("y", -5)
+    .attr("width", 6).attr("height", 8)
+    .attr("rx", 1).attr("ry", 1)
+    .attr("fill", "none")
+    .attr("stroke", "var(--text-secondary)")
+    .attr("stroke-width", 1.2);
+  copyBtnG
+    .append("rect")
+    .attr("x", -1).attr("y", -3)
+    .attr("width", 6).attr("height", 8)
+    .attr("rx", 1).attr("ry", 1)
+    .attr("fill", "rgba(255,255,255,0.08)")
+    .attr("stroke", "var(--text-secondary)")
+    .attr("stroke-width", 1.2);
+
   // Toggle
   var toggleCX = viewX + viewW - pad - toggleSize / 2;
   var toggleCY = viewY + pad + titleFont / 2;
@@ -2102,6 +2158,54 @@ function _updateFormulaCollapse() {
   if (st.barCardVisible && st.rankData && st.formulasCollapsed) {
     _drawRankBars(st.rankData);
   }
+}
+
+// ── Formula card copy-to-clipboard helpers ──
+
+function _flashCopyFeedback(copyBtnG) {
+  // Show a brief "已复制" tooltip near the copy button
+  var rectEl = copyBtnG.select("rect").node();
+  if (!rectEl) return;
+  var bbox = rectEl.getBoundingClientRect();
+  var svgEl = rectEl.closest("svg");
+  if (!svgEl) return;
+  var svgRect = svgEl.getBoundingClientRect();
+  var tip = d3.select(svgEl.parentNode).append("div")
+    .style("position", "absolute")
+    .style("left", (bbox.right - svgRect.left + 6) + "px")
+    .style("top", (bbox.top - svgRect.top + bbox.height / 2 - 10) + "px")
+    .style("background", "rgba(0,0,0,0.85)")
+    .style("color", "#3fb950")
+    .style("padding", "3px 8px")
+    .style("border-radius", "4px")
+    .style("font-size", "11px")
+    .style("font-family", "var(--font-sans), sans-serif")
+    .style("pointer-events", "none")
+    .style("z-index", "99999")
+    .style("white-space", "nowrap")
+    .style("opacity", 0)
+    .text("已复制 ✓");
+  tip.transition().duration(200).style("opacity", 1);
+  setTimeout(function () {
+    tip.transition().duration(400).style("opacity", 0).remove();
+  }, 1200);
+}
+
+function _fallbackCopy(text, copyBtnG) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand("copy");
+    _flashCopyFeedback(copyBtnG);
+  } catch (e) {
+    console.warn("Copy failed:", e);
+  }
+  document.body.removeChild(ta);
 }
 
 function _centerPanelBarRecalc() {
