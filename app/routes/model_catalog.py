@@ -16,7 +16,11 @@ from app.dao import (
     seed_model_catalog_builtin,
     upsert_model_catalog,
 )
-from app.models.model_catalog import MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS, resolve_model_config
+from app.models.model_catalog import (
+    MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS,
+    MINDSPEED_MOE_MODELS, MEGATRON_MOE_MODELS,
+    resolve_model_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +97,14 @@ def reseed():
     """Re-seed the model catalog (idempotent upsert)."""
     count1 = seed_model_catalog_builtin(MINDSPEED_DENSE_MODELS)
     count2 = seed_model_catalog_builtin(MEGATRON_DENSE_MODELS)
-    logger.info(f"[model_catalog_api] re-seeded {count1} mindspeed + {count2} megatron models")
-    return jsonify({"mindspeed": count1, "megatron": count2, "total": count1 + count2})
+    count3 = seed_model_catalog_builtin(MINDSPEED_MOE_MODELS)
+    count4 = seed_model_catalog_builtin(MEGATRON_MOE_MODELS)
+    logger.info(f"[model_catalog_api] re-seeded {count1} mindspeed dense + {count2} megatron dense + {count3} mindspeed moe + {count4} megatron moe models")
+    return jsonify({
+        "mindspeed_dense": count1, "megatron_dense": count2,
+        "mindspeed_moe": count3, "megatron_moe": count4,
+        "total": count1 + count2 + count3 + count4,
+    })
 
 
 @model_catalog_bp.route("/fetch", methods=["POST"])
