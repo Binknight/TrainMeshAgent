@@ -469,15 +469,15 @@ const PARAMS = {
     name: 'DP', cn: '数据并行度', group: 'parallel',
     isReduced: true,
     defaultOrig: 8,
-    formulaText: 'DP_eq = max(DP/4, 1)',
-    desc: 'DP 是纯数据切分维度。缩减至 1/4 是压缩比与代表性的平衡点——保留 ≥2 个 rank 维持 All-Reduce 通信模式。B_eq 补偿单卡数据量膨胀。'
+    formulaText: 'DP_eq = 2 (if DP >= 2) else 1',
+    desc: 'DP大于等于2时，等效DP直接取2，否则取1'
   },
   EP: {
     name: 'EP', cn: '专家并行度 (MoE)', group: 'parallel',
-    isReduced: true,
+    isReduced: false,
     defaultOrig: 8,
-    formulaText: 'EP_eq = max(EP/4, 1)',
-    desc: 'EP 与 DP 同为"数据分布"维度——DP 按 batch 切分，EP 按 token-to-expert 路由切分。两者在 MoE FLOPs 和 HBM 的分母位置，采用相同的 /4 因子保持缩减一致性。'
+    formulaText: 'EP_eq = EP',
+    desc: 'EP 按 token-to-expert 路由切分，决定每个 token 被分发到哪些专家。EP 改变会直接影响 token-expert 映射和通信拓扑。等效推导中保持 EP 不变，确保路由行为和专家分布与原始模型一致。'
   },
 
   L: {
@@ -554,10 +554,10 @@ const PARAMS = {
   },
   num_moe_layers: {
     name: 'L_moe', cn: 'MoE 层数', group: 'moe',
-    isReduced: false,
+    isReduced: true,
     defaultOrig: 16,
-    formulaText: 'L_moe_eq = L_moe',
-    desc: '模型中使用 MoE 的层数（其余为 Dense FFN 层）。决定 MoE 在总层数中的占比。等效推导中保持，确保 MoE/Dense 混合比例不变。'
+    formulaText: 'L_moe_eq = L_eq - (L - num_moe_layers)',
+    desc: '等效后的moe层数等于等效后的模型层数减去原始模型层数与原始的moe层之差'
   },
   moe_ffn_hidden_size: {
     name: 'F_expert', cn: '专家 FFN 隐藏维度', group: 'moe',
@@ -637,9 +637,9 @@ function computeEqValRaw(key) {
     case 'PP':
       return v > 3 ? Math.max(1, Math.min(v - 1, 3)) : v;
     case 'DP':
-      return v > 1 ? Math.max(1, Math.floor(v / 4)) : 1;
+      return v >= 2 ? 2 : 1;
     case 'EP':
-      return v > 1 ? Math.max(1, Math.floor(v / 4)) : 1;
+      return v;  // EP unchanged
     case 'L': {
       const pp = state.PP.origVal;
       if (pp <= 3) return v;
@@ -651,6 +651,11 @@ function computeEqValRaw(key) {
       if (dp <= 1) return v;
       const eq_dp = computeEqValRaw('DP');
       return Math.max(1, Math.floor(v * eq_dp / dp));
+    }
+    case 'num_moe_layers': {
+      const L = state.L.origVal;
+      const eq_L = computeEqValRaw('L');
+      return Math.max(1, eq_L - (L - v));
     }
     default:
       return v;

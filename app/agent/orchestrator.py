@@ -876,6 +876,21 @@ async def agent_stream(
                 if training_model:
                     profiler_args["num_layers"] = training_model.config.num_layers
                     profiler_args["hidden_dim"] = training_model.config.d_model
+                    # ── Pass MoE params from training model config ──
+                    if training_model.config.model_type == "sparse":
+                        profiler_args["model_type"] = "sparse"
+                        if training_model.config.num_moe_layers is not None:
+                            profiler_args["num_moe_layers"] = training_model.config.num_moe_layers
+                        if training_model.config.num_experts is not None:
+                            profiler_args["num_experts"] = training_model.config.num_experts
+                        if training_model.config.moe_router_topk is not None:
+                            profiler_args["moe_router_topk"] = training_model.config.moe_router_topk
+                        if training_model.config.moe_ffn_hidden_size is not None:
+                            profiler_args["moe_ffn_hidden_size"] = training_model.config.moe_ffn_hidden_size
+                        if training_model.config.has_shared_expert:
+                            profiler_args["has_shared_expert"] = True
+                        if training_model.config.expert_tensor_parallel_size is not None:
+                            profiler_args["expert_tensor_parallel_size"] = training_model.config.expert_tensor_parallel_size
                 # Pass vocab_size from session step1 metadata for edge PP HBM/FLOPs calculation
                 vocab_size = getattr(session, "original_vocab_size", None)
                 if vocab_size is not None:

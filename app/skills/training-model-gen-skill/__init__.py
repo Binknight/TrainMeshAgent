@@ -251,6 +251,10 @@ class TrainingModelGenSkill(BaseSkill):
         has_shared_expert = bool(arguments.get("has_shared_expert", False))
         expert_tensor_parallel_size = arguments.get("expert_tensor_parallel_size", 1)
 
+        # ── MoE: L_moe equivalent conversion (keep non-MoE layer count invariant) ──
+        if model_type == "sparse" and num_moe_layers and is_equivalent and pp > 3:
+            num_moe_layers = max(1, num_layers - (num_layers_input - num_moe_layers))
+
         d_head = d_model // num_heads
         total_params = _estimate_total_params(
             num_layers, d_model, d_ffn, vocab_size,
