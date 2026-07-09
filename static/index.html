@@ -2857,6 +2857,10 @@
                             <label>参考脚本</label>
                             <a id="wf-orig-model-ref" href="#" target="_blank" style="font-family:var(--font-mono);font-size:11px;color:var(--cyan);text-decoration:none;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></a>
                         </div>
+                        <div class="workflow-param-row" id="wf-moe-type-row" style="display:none">
+                            <label>模型类型</label>
+                            <span id="wf-moe-type-badge" style="font-family:var(--font-mono);font-size:12px;color:var(--cyan);padding:2px 8px;border:1px solid var(--cyan);border-radius:4px"></span>
+                        </div>
                         <div class="wf-param-columns">
                             <div class="wf-param-col">
                                 <div class="workflow-param-section">
@@ -2884,6 +2888,10 @@
                                 <div class="workflow-param-row">
                                     <label>PP (流水线并行)</label>
                                     <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()" />
+                                </div>
+                                <div class="workflow-param-row moe-param" id="wf-orig-ep-row" style="display:none">
+                                    <label>EP (专家并行)</label>
+                                    <input id="wf-orig-ep" type="number" value="8" min="1" max="256" />
                                 </div>
                                 <div class="workflow-param-section">原始模型参数</div>
                                 <div class="workflow-param-row">
@@ -2918,6 +2926,32 @@
                                     <label>b (微批次)</label>
                                     <input id="wf-orig-model-b-micro" type="number" value="4" min="1" max="1024" />
                                 </div>
+                                <div class="workflow-param-section moe-param" id="wf-moe-arch-section" style="display:none; margin-top:12px">MoE 架构参数</div>
+                                <div class="workflow-param-row moe-param" style="display:none">
+                                    <label>总专家数</label>
+                                    <input id="wf-orig-moe-experts" type="number" value="8" min="1" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                </div>
+                                <div class="workflow-param-row moe-param" style="display:none">
+                                    <label>激活 Top-K</label>
+                                    <input id="wf-orig-moe-topk" type="number" value="2" min="1" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                </div>
+                                <div class="workflow-param-row moe-param" style="display:none">
+                                    <label>MoE 层数</label>
+                                    <input id="wf-orig-moe-layers" type="number" value="1" min="0" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                </div>
+                                <div class="workflow-param-row moe-param" style="display:none">
+                                    <label>专家 FFN 维度</label>
+                                    <input id="wf-orig-moe-ffn-dim" type="number" value="14336" min="1" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                </div>
+                                <div class="workflow-param-row moe-param" style="display:none">
+                                    <label>共享专家</label>
+                                    <span id="wf-orig-moe-shared" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary, #999);padding-top:6px">否</span>
+                                </div>
+                                <div class="workflow-param-row moe-param" id="wf-orig-moe-expert-tp-row" style="display:none">
+                                    <label>专家 TP</label>
+                                    <input id="wf-orig-moe-expert-tp" type="number" value="1" min="1" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                </div>
+                                <input type="hidden" id="wf-orig-model-type" value="dense" />
                                 <div class="workflow-param-section" style="margin-top: 16px">默认等效策略</div>
                                 <div class="workflow-param-row">
                                     <label>策略</label>
@@ -4532,7 +4566,9 @@
                         if (existing) return;
                         var opt = document.createElement("option");
                         opt.value = m.model_name;
-                        opt.textContent = m.model_name + " (" + (m.source || "") + ")";
+                        var label = m.model_name + " (" + (m.source || "") + ")";
+                        if (m.model_type === "sparse") label += " [MoE]";
+                        opt.textContent = label;
                         select.appendChild(opt);
                     });
                 } catch (e) {
@@ -4556,6 +4592,21 @@
                 refRow.style.display = "flex";
             }
 
+            function _setMoeFieldsVisible(visible) {
+                var display = visible ? "flex" : "none";
+                var typeRow = document.getElementById("wf-moe-type-row");
+                var epRow = document.getElementById("wf-orig-ep-row");
+                var archSection = document.getElementById("wf-moe-arch-section");
+                if (typeRow) typeRow.style.display = display;
+                if (epRow) epRow.style.display = display;
+                if (archSection) archSection.style.display = display;
+                var moeParams = document.querySelectorAll(".moe-param");
+                moeParams.forEach(function(el) { el.style.display = display; });
+                // Expert TP row is special: hide it unless explicitly shown later
+                var expertTpRow = document.getElementById("wf-orig-moe-expert-tp-row");
+                if (expertTpRow) expertTpRow.style.display = "none";
+            }
+
             async function onModelNameChange() {
                 var modelName = document.getElementById("wf-orig-model-name").value;
                 if (!modelName) {
@@ -4574,11 +4625,13 @@
                 document.getElementById("wf-orig-model-s").value = "2048";
                 document.getElementById("wf-orig-model-b").value = "32";
                 document.getElementById("wf-orig-model-b-micro").value = "4";
+                // Hide MoE fields by default, show only for sparse models
+                _setMoeFieldsVisible(false);
                 try {
                     var resp = await fetch(API + "/model-catalog?name=" + encodeURIComponent(modelName));
                     if (!resp.ok) throw new Error("model not found");
                     var entry = await resp.json();
-                    if (!entry) return;
+                    if (!entry) { _setMoeFieldsVisible(false); return; }
                     // Fill architecture fields
                     document.getElementById("wf-orig-model-l").value = entry.num_layers;
                     document.getElementById("wf-orig-model-h").value = entry.d_model;
@@ -4606,6 +4659,35 @@
                     }
                     if (entry.micro_batch_size != null) {
                         document.getElementById("wf-orig-model-b-micro").value = entry.micro_batch_size;
+                    }
+                    // Store model type
+                    var modelType = entry.model_type || "dense";
+                    document.getElementById("wf-orig-model-type").value = modelType;
+                    // ── MoE/sparse model: show and fill extra fields ──
+                    if (modelType === "sparse") {
+                        _setMoeFieldsVisible(true);
+                        var badge = document.getElementById("wf-moe-type-badge");
+                        if (badge) {
+                            badge.textContent = "🔵 MoE (稀疏)  " + (entry.num_experts || "?") + " Experts × Top-" + (entry.moe_router_topk || "?");
+                        }
+                        document.getElementById("wf-orig-ep").value = entry.ep || entry.dp || "8";
+                        document.getElementById("wf-orig-moe-experts").value = entry.num_experts || "";
+                        document.getElementById("wf-orig-moe-topk").value = entry.moe_router_topk || "";
+                        document.getElementById("wf-orig-moe-layers").value = entry.num_moe_layers || "";
+                        document.getElementById("wf-orig-moe-ffn-dim").value = entry.moe_ffn_hidden_size || "";
+                        var sharedEl = document.getElementById("wf-orig-moe-shared");
+                        if (sharedEl) {
+                            if (entry.has_shared_expert) {
+                                sharedEl.textContent = "是 (" + (entry.shared_expert_intermediate_size || "?") + ")";
+                            } else {
+                                sharedEl.textContent = "否";
+                            }
+                        }
+                        if (entry.expert_tensor_parallel_size > 1) {
+                            document.getElementById("wf-orig-moe-expert-tp").value = entry.expert_tensor_parallel_size;
+                            var etpRow = document.getElementById("wf-orig-moe-expert-tp-row");
+                            if (etpRow) etpRow.style.display = "flex";
+                        }
                     }
                     updateEquivalentModelL();
                     // Show reference as clickable link (script name only)
@@ -4657,12 +4739,14 @@
 
                 // Both agent and API modes use the same direct API call.
                 // Agent's role is auto-filling params; workflow execution is deterministic.
-                submitStep1({
+                var modelType = document.getElementById("wf-orig-model-type").value || "dense";
+                var params = {
                     device_type: origDevice,
                     dp: parseInt(origDp),
                     tp: parseInt(origTp),
                     pp: parseInt(origPp),
                     model_name: origModelName,
+                    model_type: modelType,
                     L: parseInt(origL),
                     H: parseInt(origH),
                     A: parseInt(origA),
@@ -4672,7 +4756,19 @@
                     dff: parseInt(origDff),
                     vocab_size: parseInt(origVocab),
                     strategy: strategy,
-                });
+                };
+                // ── MoE-specific params ──
+                if (modelType === "sparse") {
+                    params.ep = parseInt(document.getElementById("wf-orig-ep").value) || 8;
+                    params.num_experts = parseInt(document.getElementById("wf-orig-moe-experts").value) || 0;
+                    params.moe_router_topk = parseInt(document.getElementById("wf-orig-moe-topk").value) || 0;
+                    params.num_moe_layers = parseInt(document.getElementById("wf-orig-moe-layers").value) || 0;
+                    params.moe_ffn_hidden_size = parseInt(document.getElementById("wf-orig-moe-ffn-dim").value) || 0;
+                    var sharedText = document.getElementById("wf-orig-moe-shared").textContent;
+                    params.has_shared_expert = sharedText.startsWith("是");
+                    params.expert_tensor_parallel_size = parseInt(document.getElementById("wf-orig-moe-expert-tp").value) || 1;
+                }
+                submitStep1(params);
             }
 
             // ── Step 3 Simulation Params ──
@@ -5480,8 +5576,10 @@
                     case "model_params_fill":
                         setStatus("responding");
                         const fillData = data.data || data;
-                        if (fillData.found && fillData.model_type === "dense") {
-                            // Model architecture fields
+                        if (fillData.found) {
+                            // Hide MoE fields by default, show for sparse
+                            _setMoeFieldsVisible(false);
+                            // Model architecture fields (dense + sparse common)
                             document.getElementById("wf-orig-model-l").value =
                                 fillData.L;
                             document.getElementById("wf-orig-model-h").value =
@@ -5492,6 +5590,38 @@
                                 fillData.dff;
                             document.getElementById("wf-orig-model-vocab").value =
                                 fillData.V;
+                            // Store model type
+                            var mType = fillData.model_type || "dense";
+                            document.getElementById("wf-orig-model-type").value = mType;
+                            // ── MoE/sparse extra fields ──
+                            var moeFieldsMsg = "";
+                            if (mType === "sparse") {
+                                _setMoeFieldsVisible(true);
+                                var badge = document.getElementById("wf-moe-type-badge");
+                                if (badge) {
+                                    badge.textContent = "🔵 MoE (稀疏)  " + (fillData.num_experts || "?") + " Experts × Top-" + (fillData.moe_router_topk || "?");
+                                }
+                                document.getElementById("wf-orig-ep").value = fillData.ep || fillData.dp || "8";
+                                document.getElementById("wf-orig-moe-experts").value = fillData.num_experts || "";
+                                document.getElementById("wf-orig-moe-topk").value = fillData.moe_router_topk || "";
+                                document.getElementById("wf-orig-moe-layers").value = fillData.num_moe_layers || "";
+                                document.getElementById("wf-orig-moe-ffn-dim").value = fillData.moe_ffn_hidden_size || "";
+                                var sharedEl = document.getElementById("wf-orig-moe-shared");
+                                if (sharedEl) {
+                                    sharedEl.textContent = fillData.has_shared_expert
+                                        ? "是 (" + (fillData.shared_expert_intermediate_size || "?") + ")"
+                                        : "否";
+                                }
+                                if (fillData.expert_tensor_parallel_size > 1) {
+                                    document.getElementById("wf-orig-moe-expert-tp").value = fillData.expert_tensor_parallel_size;
+                                    var etpRow = document.getElementById("wf-orig-moe-expert-tp-row");
+                                    if (etpRow) etpRow.style.display = "flex";
+                                }
+                                moeFieldsMsg = ", Experts=" + (fillData.num_experts || "?")
+                                    + ", Top-K=" + (fillData.moe_router_topk || "?")
+                                    + ", MoE层=" + (fillData.num_moe_layers || "?")
+                                    + ", EP=" + (fillData.ep || fillData.dp || "?");
+                            }
                             // Topology & runtime fields (from training script defaults)
                             if (fillData.device_type) {
                                 document.getElementById("wf-orig-device").value = fillData.device_type;
@@ -5529,13 +5659,15 @@
                             if (fillData.tp != null) topoParts.push("TP=" + fillData.tp);
                             if (fillData.pp != null) topoParts.push("PP=" + fillData.pp);
                             if (fillData.dp != null) topoParts.push("DP=" + fillData.dp);
+                            if (mType === "sparse" && fillData.ep != null) topoParts.push("EP=" + fillData.ep);
                             if (fillData.seq_len != null) topoParts.push("S=" + fillData.seq_len);
                             if (fillData.global_batch_size != null) topoParts.push("B=" + fillData.global_batch_size);
                             if (fillData.micro_batch_size != null) topoParts.push("b=" + fillData.micro_batch_size);
                             var topoNote = topoParts.length > 0 ? "\n⚙️ 组网/运行参数: " + topoParts.join(", ") : "";
+                            var modelTypeLabel = mType === "sparse" ? "MoE(稀疏)模型 " : "";
                             addMessage(
                                 "system",
-                                "✅ 已自动填充模型 " +
+                                "✅ 已自动填充" + modelTypeLabel +
                                     fillData.model_name +
                                     " 的架构参数 (L=" +
                                     fillData.L +
@@ -5547,17 +5679,10 @@
                                     fillData.dff +
                                     ", V=" +
                                     fillData.V +
+                                    moeFieldsMsg +
                                     ")" +
                                     refNote +
                                     topoNote,
-                            );
-                        } else if (fillData.model_type === "sparse") {
-                            addMessage(
-                                "error",
-                                fillData.message ||
-                                    "模型 " +
-                                        fillData.model_name +
-                                        " 是稀疏(MoE)模型，当前仅支持稠密模型",
                             );
                         } else {
                             addMessage(

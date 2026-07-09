@@ -49,7 +49,7 @@ SYSTEM_PROMPT = """你是 TrainMesh Agent，一个专为 AI 训练组网仿真�
 6. 对比原始组网和等效组网的仿真结果，判断等效性
 
 分阶段工作流程：
-- Step 1 (等效参数设定): 用户在交互区提及大模型名称时，先调用 auto_fill_model_params 获取该模型的架构参数(L/H/A/dff/V)并推送前端自动填充表单(仅支持稠密模型；稀疏/MoE模型会返回不支持提示) → 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
+- Step 1 (等效参数设定): 用户在交互区提及大模型名称时，先调用 auto_fill_model_params 获取该模型的架构参数(L/H/A/dff/V)并推送前端自动填充表单(同时支持稠密模型和稀疏/MoE模型；MoE模型会额外填充专家数、Top-K、MoE层数、EP等专用参数) → 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
 - Step 2 (等效计算推导): 用户确认 → 逐条推送等效策略/指标/公式 → 生成等效组网 → 生成等效模型结构 → 前端渲染
 - Step 3 (等效仿真验证): 用户确认 → 下发仿真 → 切换到仿真验证tab
 - Step 4 (等效方案输出): 自动对比 → 输出等效性结论
@@ -330,19 +330,12 @@ def _execute_utility_tool(
                     "(建议使用完整仓库 ID 如 Qwen/Qwen2.5-7B)或联系管理员添加"
                 ),
             }
-        if cfg.get("model_type") == "sparse":
-            return {
-                "_event_type": "model_params_fill",
-                "found": False,
-                "model_name": model_name,
-                "model_type": "sparse",
-                "message": f"模型 {model_name} 是稀疏(MoE)模型，当前仅支持稠密模型",
-            }
-        return {
+        # ── Unified response for both dense and sparse/MoE models ──
+        result = {
             "_event_type": "model_params_fill",
             "found": True,
             "model_name": cfg.get("model_name", model_name),
-            "model_type": "dense",
+            "model_type": cfg.get("model_type", "dense"),
             "L": cfg["num_layers"],
             "H": cfg["d_model"],
             "A": cfg["num_heads"],
@@ -357,7 +350,18 @@ def _execute_utility_tool(
             "global_batch_size": cfg.get("global_batch_size"),
             "micro_batch_size": cfg.get("micro_batch_size"),
             "device_type": cfg.get("device_type"),
+            # ── MoE-specific fields (None for dense models) ──
+            "num_experts": cfg.get("num_experts"),
+            "moe_router_topk": cfg.get("moe_router_topk"),
+            "num_moe_layers": cfg.get("num_moe_layers"),
+            "moe_ffn_hidden_size": cfg.get("moe_ffn_hidden_size"),
+            "moe_layer_freq": cfg.get("moe_layer_freq"),
+            "has_shared_expert": cfg.get("has_shared_expert"),
+            "shared_expert_intermediate_size": cfg.get("shared_expert_intermediate_size"),
+            "expert_tensor_parallel_size": cfg.get("expert_tensor_parallel_size"),
+            "ep": cfg.get("ep"),
         }
+        return result
 
     return {"error": f"Unknown utility tool: {tool_name}"}
 
@@ -775,10 +779,19 @@ async def agent_stream(
                     f"对比分析完成: {result.get('details', {}).get('conclusion', '')}"
                 )
             elif tool_name == "auto_fill_model_params":
-                if result.get("found") and result.get("model_type") == "dense":
+                if result.get("found"):
+                    model_type_label = "MoE(稀疏)" if result.get("model_type") == "sparse" else "稠密"
+                    moe_extra = ""
+                    if result.get("model_type") == "sparse":
+                        moe_extra = (
+                            f", Experts={result.get('num_experts')}"
+                            f", Top-K={result.get('moe_router_topk')}"
+                            f", MoE层={result.get('num_moe_layers')}"
+                        )
                     result_msg = (
-                        f"已获取模型 {result.get('model_name')} 架构参数"
-                        f"(L={result.get('L')}, H={result.get('H')}, A={result.get('A')})并填充表单"
+                        f"已获取{model_type_label}模型 {result.get('model_name')} 架构参数"
+                        f"(L={result.get('L')}, H={result.get('H')}, A={result.get('A')}"
+                        f"{moe_extra})并填充表单"
                     )
                 else:
                     result_msg = result.get("message", "模型参数获取失败")
