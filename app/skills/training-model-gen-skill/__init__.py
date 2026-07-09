@@ -252,7 +252,7 @@ class TrainingModelGenSkill(BaseSkill):
         expert_tensor_parallel_size = arguments.get("expert_tensor_parallel_size", 1)
 
         # ── MoE: L_moe equivalent conversion (keep non-MoE layer count invariant) ──
-        if model_type == "sparse" and num_moe_layers and is_equivalent and pp > 3:
+        if model_type == "sparse" and num_moe_layers and is_equivalent and num_layers != num_layers_input:
             num_moe_layers = max(1, num_layers - (num_layers_input - num_moe_layers))
 
         d_head = d_model // num_heads

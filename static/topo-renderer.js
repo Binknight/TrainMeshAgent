@@ -4176,7 +4176,12 @@ async function loadMeshData(topoData) {
       ? topoData.model_type
       : (meshModel && meshModel.model_type) ||
         (modelSide && modelSide.config ? modelSide.config.model_type : null);
-  var ep = topoData.ep || (meshModel && meshModel.ep) || null;
+  var ep =
+    topoData.ep != null
+      ? topoData.ep
+      : (meshModel && meshModel.ep) != null
+        ? meshModel.ep
+        : (modelSide && modelSide.config ? modelSide.config.ep : null);
   var numExperts =
     topoData.num_experts != null
       ? topoData.num_experts
@@ -5217,6 +5222,7 @@ function loadModelData(modelData, role) {
         micro_batch_size: modelData.micro_batch_size,
         vocab_size: modelData.config.vocab_size,
         model_type: modelData.config.model_type,
+        ep: modelData.ep,  // topology-level param injected by backend
         num_experts: modelData.config.num_experts,
         moe_router_topk: modelData.config.moe_router_topk,
         num_moe_layers: modelData.config.num_moe_layers,
@@ -5238,6 +5244,7 @@ function loadModelData(modelData, role) {
         batch_size: modelData.batch_size,
         micro_batch_size: modelData.micro_batch_size,
         model_type: modelData.config.model_type,
+        ep: modelData.ep,  // topology-level param injected by backend
         num_experts: modelData.config.num_experts,
         moe_router_topk: modelData.config.moe_router_topk,
         num_moe_layers: modelData.config.num_moe_layers,

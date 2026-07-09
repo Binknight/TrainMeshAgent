@@ -32,45 +32,46 @@ def compute_moe_flops(
     expert_ffn_hidden_size: int,    # F_expert: 单个专家 FFN 的隐藏层维度
     expert_parallel: int,           # EP: 专家并行度 (Expert Parallelism size)
     topk: int,                      # K_top: Top-k 激活专家数
-    num_shared_expert_layers: int = None  # L_shared: 包含共享专家的层数
+    num_shared_expert_layers: int = None,  # L_shared: 包含共享专家的层数
+    pipeline_parallel: int = 1,     # PP: 流水线并行度 (每卡仅处理 L/PP 层)
 ) -> float:
     """计算 MoE 大模型单卡理论 FLOPS (前向/反向传播)。
 
-    公式由四项组成：
+    公式由四项组成，每项除以 PP 得到单卡（单 PP stage）的计算量：
 
-    * **Attention**（所有层）：``(6·b·s·L·H / TP) · (4H + 2s)``
-    * **Dense FFN**（非 MoE 层）：``6·b·s·(L-M)·3H·F_expert / TP``
-    * **MoE Expert**（Top-K 激活专家）：``6·b·s·K·3H·F_expert·M / EP``
-    * **Shared Expert**（若存在）：``6·b·s·3H·F_expert·L_shared / EP``
+    * **Attention**（所有层）：``(6·b·s·L·H / (TP·PP)) · (4H + 2s)``
+    * **Dense FFN**（非 MoE 层）：``6·b·s·(L-M)·3H·F_dense / (TP·PP)``
+    * **MoE Expert**（Top-K 激活专家）：``6·b·s·K·3H·F_expert·M / (EP·PP)``
+    * **Shared Expert**（若存在）：``6·b·s·3H·F_expert·L_shared / (EP·PP)``
     """
     if num_shared_expert_layers is None:
         num_shared_expert_layers = num_moe_layers
 
     num_dense_layers = num_layers - num_moe_layers
 
-    # Attention — 所有层
+    # Attention — 所有层，除以 TP 和 PP
     flops_attention = (
-        (6 * micro_batch_size * seq_len * num_layers * hidden_size / tensor_parallel)
+        (6 * micro_batch_size * seq_len * num_layers * hidden_size / (tensor_parallel * pipeline_parallel))
         * (4 * hidden_size + 2 * seq_len)
     )
 
-    # Dense FFN — 非 MoE 层
+    # Dense FFN — 非 MoE 层，除以 TP 和 PP
     flops_dense_ffn = (
         6 * micro_batch_size * seq_len * num_dense_layers
         * 3 * hidden_size * expert_ffn_hidden_size
-    ) / tensor_parallel
+    ) / (tensor_parallel * pipeline_parallel)
 
-    # MoE 专家 FFN — Top-K 激活
+    # MoE 专家 FFN — Top-K 激活，除以 EP 和 PP
     flops_moe = (
         6 * micro_batch_size * seq_len * topk * 3
         * hidden_size * expert_ffn_hidden_size * num_moe_layers
-    ) / expert_parallel
+    ) / (expert_parallel * pipeline_parallel)
 
-    # 共享专家
+    # 共享专家，除以 EP 和 PP
     flops_shared = (
         6 * micro_batch_size * seq_len * 3
         * hidden_size * expert_ffn_hidden_size * num_shared_expert_layers
-    ) / expert_parallel
+    ) / (expert_parallel * pipeline_parallel)
 
     return flops_attention + flops_dense_ffn + flops_moe + flops_shared
 

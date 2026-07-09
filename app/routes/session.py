@@ -103,7 +103,7 @@ def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
-def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None, vocab_size=None):
+def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None, vocab_size=None, ep=None):
     """Attach model config + runtime params onto a topology dict for MCP execute_task."""
     if topo is None:
         return None
@@ -114,6 +114,25 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
         d["num_heads"] = training_model.config.num_heads
         if training_model.config.vocab_size:
             d.setdefault("vocab_size", training_model.config.vocab_size)
+        # ── Propagate MoE config fields from training model ──
+        cfg = training_model.config
+        if cfg.model_type and cfg.model_type != "dense":
+            d["model_type"] = cfg.model_type
+        if cfg.num_experts is not None:
+            d["num_experts"] = cfg.num_experts
+        if cfg.moe_router_topk is not None:
+            d["moe_router_topk"] = cfg.moe_router_topk
+        if cfg.num_moe_layers is not None:
+            d["num_moe_layers"] = cfg.num_moe_layers
+        if cfg.moe_ffn_hidden_size is not None:
+            d["moe_ffn_hidden_size"] = cfg.moe_ffn_hidden_size
+        if cfg.has_shared_expert:
+            d["has_shared_expert"] = cfg.has_shared_expert
+        if cfg.expert_tensor_parallel_size is not None:
+            d["expert_tensor_parallel_size"] = cfg.expert_tensor_parallel_size
+    # ── MoE topology parameter (not in model config) ──
+    if ep is not None:
+        d["ep"] = ep
     if seq_len is not None:
         d["seq_len"] = seq_len
     elif "seq_len" in d:
@@ -155,6 +174,7 @@ def get_topology(session_id: str):
             d_ffn=session.original_dff,
             micro_batch_size=session.original_micro_batch,
             vocab_size=session.original_vocab_size,
+            ep=session.original_ep,
         ),
         "equivalent_topology": _topo_with_model(
             session.equivalent_topology, session.equivalent_training_model,
@@ -164,6 +184,7 @@ def get_topology(session_id: str):
             d_ffn=session.equivalent_dff,
             micro_batch_size=session.equivalent_micro_batch,
             vocab_size=session.original_vocab_size,
+            ep=session.equivalent_ep,
         ),
         "original_training_model": session.original_training_model.model_dump() if session.original_training_model else None,
         "equivalent_training_model": session.equivalent_training_model.model_dump() if session.equivalent_training_model else None,
@@ -239,7 +260,9 @@ def estimate_metrics():
         _moe = importlib.import_module("app.skills.training-mesh-profiler-skill.moe_estimator")
         compute_moe_flops = _moe.compute_moe_flops
         calculate_moe_hbm = _moe.calculate_moe_hbm
-        ep_val = int(data.get("ep", dp))
+        if "ep" not in data or data["ep"] is None:
+            return {"error": "参数缺失：MoE 模型 (model_type=sparse) 必须提供 ep (专家并行度)"}, 400
+        ep_val = int(data["ep"])
         topk_val = int(data.get("moe_router_topk", 1))
         n_moe = int(data.get("num_moe_layers", L))
         fexp_val = int(data.get("moe_ffn_hidden_size", dff_val))
@@ -254,6 +277,7 @@ def estimate_metrics():
             expert_ffn_hidden_size=fexp_val,
             expert_parallel=ep_val, topk=topk_val,
             num_shared_expert_layers=n_shared,
+            pipeline_parallel=pp,
         )
         hbm_bytes = calculate_moe_hbm(
             num_dense_layers=n_dense, num_moe_layers=n_moe,
@@ -307,7 +331,7 @@ def estimate_metrics():
     })
 
 
-def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None, vocab_size=None) -> tuple[str | None, SimulationResult | None]:
+def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, label: str, sim_params: dict | None = None, seq_len=None, batch_size=None, model_name=None, d_ffn=None, micro_batch_size=None, vocab_size=None, ep=None) -> tuple[str | None, SimulationResult | None]:
     """Submit MCP task for a single topology. Returns (task_id, SimulationResult or None if not ready)."""
     if not topo:
         return task_id_in, None
@@ -315,7 +339,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     # Submit MCP task (fire-and-forget)
     task_id = task_id_in
     if not task_id:
-        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, d_ffn=d_ffn, micro_batch_size=micro_batch_size, vocab_size=vocab_size) or topo.model_dump()
+        topo_payload = _topo_with_model(topo, training_model, seq_len=seq_len, batch_size=batch_size, model_name=model_name, d_ffn=d_ffn, micro_batch_size=micro_batch_size, vocab_size=vocab_size, ep=ep) or topo.model_dump()
         task_id = mcp_client.execute_task(topo_payload, params=sim_params)
         if not task_id:
             raise RuntimeError(f"MCP execute_task returned empty task_id for {label}")
@@ -518,6 +542,7 @@ def run_simulation(session_id: str):
             d_ffn=session.original_dff,
             micro_batch_size=session.original_micro_batch,
             vocab_size=session.original_vocab_size,
+            ep=session.original_ep,
         )
         session.original_task_id = orig_tid or session.original_task_id
         if orig_sim:
@@ -534,6 +559,7 @@ def run_simulation(session_id: str):
             d_ffn=session.equivalent_dff,
             micro_batch_size=session.equivalent_micro_batch,
             vocab_size=session.original_vocab_size,
+            ep=session.equivalent_ep,
         )
         session.equivalent_task_id = eq_tid or session.equivalent_task_id
         if eq_sim:
@@ -1187,11 +1213,13 @@ def workflow_step1(session_id: str):
     orig_model_dict["batch_size"] = B
     orig_model_dict["micro_batch_size"] = b_micro
     orig_model_dict["vocab_size"] = vocab_size
+    if model_type == "sparse" and ep:
+        orig_model_dict["ep"] = ep
     return jsonify({
         "original_mesh": _topo_with_model(
             orig_mesh, orig_model,
             seq_len=S, batch_size=B, model_name=model_name, d_ffn=dff,
-            micro_batch_size=b_micro, vocab_size=vocab_size,
+            micro_batch_size=b_micro, vocab_size=vocab_size, ep=ep,
         ),
         "original_model": orig_model_dict,
         "equivalent_params": session.equivalent_params.model_dump() if hasattr(session.equivalent_params, "model_dump") else session.equivalent_params,
@@ -1307,7 +1335,10 @@ def workflow_step2_stream(session_id: str):
             pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
             dp_comm = _estimator._estimate_dp_comm_gb(L_orig, H_val, dff_val, orig_dp, tp, pp)
 
-            ep_val = ep or orig_dp or 8
+            if not ep:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'MoE 模型缺少 EP (专家并行度) 参数'})}\n\n"
+                return
+            ep_val = ep
             topk_val = moe_router_topk or 1
             n_moe = num_moe_layers or L_orig
             fexp_val = moe_ffn_hidden_size or dff_val
@@ -1321,6 +1352,7 @@ def workflow_step2_stream(session_id: str):
                 expert_ffn_hidden_size=fexp_val,
                 expert_parallel=ep_val, topk=topk_val,
                 num_shared_expert_layers=n_shared,
+                pipeline_parallel=pp,
             )
             moe_hbm_bytes = calculate_moe_hbm(
                 num_dense_layers=n_dense, num_moe_layers=n_moe,
@@ -1390,6 +1422,7 @@ def workflow_step2_stream(session_id: str):
                     expert_ffn_hidden_size=fexp_val,
                     expert_parallel=ep_val, topk=topk_val,
                     num_shared_expert_layers=eq_n_shared,
+                    pipeline_parallel=eq_pp,
                 )
                 eq_moe_hbm_bytes = calculate_moe_hbm(
                     num_dense_layers=eq_n_dense, num_moe_layers=eq_n_moe,
@@ -1602,7 +1635,7 @@ def workflow_step3(session_id: str):
         eq_model_args.update({
             "num_experts": model_meta.get("num_experts"),
             "moe_router_topk": model_meta.get("moe_router_topk"),
-            "num_moe_layers": model_meta.get("num_moe_layers"),
+            "num_moe_layers": model_meta.get("eq_num_moe_layers") or model_meta.get("num_moe_layers"),
             "moe_ffn_hidden_size": model_meta.get("moe_ffn_hidden_size"),
             "has_shared_expert": model_meta.get("has_shared_expert", False),
             "expert_tensor_parallel_size": model_meta.get("expert_tensor_parallel_size", 1),
@@ -1620,6 +1653,9 @@ def workflow_step3(session_id: str):
     eq_model_dict = eq_model.model_dump() if hasattr(eq_model, "model_dump") else eq_model
     eq_model_dict["seq_len"] = model_meta.get("S")
     eq_model_dict["batch_size"] = model_meta.get("B")
+    eq_ep_val_meta = model_meta.get("eq_ep") or model_meta.get("ep")
+    if model_meta.get("model_type") == "sparse" and eq_ep_val_meta:
+        eq_model_dict["ep"] = eq_ep_val_meta
     return jsonify({
         "equivalent_mesh": _topo_with_model(
             eq_mesh, eq_model,
@@ -1627,6 +1663,7 @@ def workflow_step3(session_id: str):
             model_name=model_meta.get("model_name"), d_ffn=model_meta.get("dff"),
             micro_batch_size=model_meta.get("b_micro"),
             vocab_size=model_meta.get("vocab_size"),
+            ep=eq_ep_val_meta,
         ),
         "equivalent_model": eq_model_dict,
         "step": session.step,
