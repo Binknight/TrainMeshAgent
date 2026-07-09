@@ -210,11 +210,49 @@ def estimate_metrics():
     b_micro = int(data.get("micro_batch", _estimator._MICRO_BATCH))
     dff_val = int(data.get("d_ffn", 14336))
     V = int(data.get("vocab_size", _estimator._DEFAULT_VOCAB_SIZE))
+    model_type = data.get("model_type", "dense")
 
-    flops_mid = _estimator._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
-    flops_edge = _estimator._estimate_flops_first_last(L, H, S, B, dff_val, dp, tp, pp, V)
-    hbm_mid = _estimator._estimate_hbm_gb(L, H, dff_val, tp, pp)
-    hbm_edge = _estimator._estimate_hbm_gb_first_last(L, H, dff_val, tp, pp, V)
+    if model_type == "sparse":
+        # ── MoE estimation branch ──
+        _moe = importlib.import_module("app.skills.training-mesh-profiler-skill.moe_estimator")
+        compute_moe_flops = _moe.compute_moe_flops
+        calculate_moe_hbm = _moe.calculate_moe_hbm
+        ep_val = int(data.get("ep", dp))
+        topk_val = int(data.get("moe_router_topk", 1))
+        n_moe = int(data.get("num_moe_layers", L))
+        fexp_val = int(data.get("moe_ffn_hidden_size", dff_val))
+        n_dense = L - n_moe
+        n_shared = n_moe if data.get("has_shared_expert", False) else 0
+        etp = int(data.get("expert_tensor_parallel_size", 1))
+
+        flops_mid = compute_moe_flops(
+            micro_batch_size=b_micro, seq_len=S,
+            num_layers=L, hidden_size=H,
+            tensor_parallel=tp, num_moe_layers=n_moe,
+            expert_ffn_hidden_size=fexp_val,
+            expert_parallel=ep_val, topk=topk_val,
+            num_shared_expert_layers=n_shared,
+        )
+        hbm_bytes = calculate_moe_hbm(
+            num_dense_layers=n_dense, num_moe_layers=n_moe,
+            pipeline_parallel=pp, hidden_size=H,
+            ffn_hidden_size=dff_val, tensor_parallel=tp,
+            expert_ffn_hidden_size=fexp_val,
+            num_experts=int(data.get("num_experts", 1)),
+            expert_parallel=ep_val,
+            vocab_size=V, expert_tensor_parallel=etp,
+        )
+        hbm_mid = hbm_bytes / 1e9
+        # For MoE, flops_edge and hbm_edge are the same as mid (no special emb handling
+        # needed since embedding layer is included in dense+L_moe terms)
+        flops_edge = flops_mid
+        hbm_edge = hbm_mid
+    else:
+        flops_mid = _estimator._estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
+        flops_edge = _estimator._estimate_flops_first_last(L, H, S, B, dff_val, dp, tp, pp, V)
+        hbm_mid = _estimator._estimate_hbm_gb(L, H, dff_val, tp, pp)
+        hbm_edge = _estimator._estimate_hbm_gb_first_last(L, H, dff_val, tp, pp, V)
+
     dp_comm = _estimator._estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
     tp_comm = _estimator._estimate_tp_comm_gb(L, H, S, b_micro, pp)
     pp_comm = _estimator._estimate_pp_comm_mb(H, S, b_micro)
@@ -982,6 +1020,7 @@ def workflow_step1(session_id: str):
     tp = data.get("tp", 16)
     pp = data.get("pp", 8)
     model_name = data.get("model_name", "Qwen3-32B")
+    model_type = data.get("model_type", "dense")
     L = data.get("L", 64)
     H = data.get("H", 4096)
     A = data.get("A", 32)
@@ -991,6 +1030,14 @@ def workflow_step1(session_id: str):
     dff = data.get("dff", 14336)
     vocab_size = data.get("vocab_size", 32000)
     strategy = data.get("strategy", "min_equiv")
+    # ── MoE parameters (None for dense models) ──
+    ep = data.get("ep")
+    num_experts = data.get("num_experts")
+    moe_router_topk = data.get("moe_router_topk")
+    num_moe_layers = data.get("num_moe_layers")
+    moe_ffn_hidden_size = data.get("moe_ffn_hidden_size")
+    has_shared_expert = data.get("has_shared_expert", False)
+    expert_tensor_parallel_size = data.get("expert_tensor_parallel_size", 1)
 
     # 1. Guardrail validation (silent — no workflow node)
     validation = validate_input_params(
@@ -1007,8 +1054,12 @@ def workflow_step1(session_id: str):
     context = SkillContext(session=session, mcp_client=mcp_client, config=config)
 
     # 2. Generate original mesh topology
+    mesh_name = "原始组网 (" + device_type_str + " DP" + str(dp) + " TP" + str(tp) + " PP" + str(pp)
+    if model_type == "sparse" and ep:
+        mesh_name += " EP" + str(ep)
+    mesh_name += ")"
     mesh_args = {
-        "name": "原始组网 (" + device_type_str + " DP" + str(dp) + " TP" + str(tp) + " PP" + str(pp) + ")",
+        "name": mesh_name,
         "device_type": device_type_str,
         "dp": dp, "tp": tp, "pp": pp,
     }
@@ -1020,7 +1071,7 @@ def workflow_step1(session_id: str):
     session.original_topology = orig_mesh
     session.original_params = TopologyParams(
         device_type=DeviceType(device_type_str) if device_type_str in [d.value for d in DeviceType] else DeviceType.A3,
-        dp=dp, tp=tp, pp=pp,
+        dp=dp, tp=tp, pp=pp, ep=ep if model_type == "sparse" else None,
     )
 
     # 3. Generate original model structure
@@ -1032,7 +1083,17 @@ def workflow_step1(session_id: str):
         "pp": pp,
         "is_equivalent": False,
         "vocab_size": vocab_size,
+        "model_type": model_type,
     }
+    if model_type == "sparse":
+        model_args.update({
+            "num_experts": num_experts,
+            "moe_router_topk": moe_router_topk,
+            "num_moe_layers": num_moe_layers,
+            "moe_ffn_hidden_size": moe_ffn_hidden_size,
+            "has_shared_expert": has_shared_expert,
+            "expert_tensor_parallel_size": expert_tensor_parallel_size,
+        })
     model_result: SkillResult = registry.execute_tool("training-model-gen-skill", model_args, context)
     if not model_result.success:
         return {"error": "model_gen_failed", "message": model_result.error}, 500
@@ -1045,11 +1106,15 @@ def workflow_step1(session_id: str):
     eq_dp = max(1, dp // 4) if dp > 1 else 1
     eq_L = L if pp <= 3 else (L // pp) * 3
     eq_B = max(1, int(B * eq_dp / dp)) if dp > 1 else B
+    # ── MoE: EP reduction for equivalent topology ──
+    eq_ep = None
+    if model_type == "sparse" and ep:
+        eq_ep = max(1, ep // 4) if ep > 1 else 1
     session.equivalent_params = TopologyParams(
         device_type=DeviceType(device_type_str) if device_type_str in [d.value for d in DeviceType] else DeviceType.A3,
-        dp=eq_dp, tp=tp, pp=eq_pp,
+        dp=eq_dp, tp=tp, pp=eq_pp, ep=eq_ep,
     )
-    # Store model params for equivalent model
+    # Store model params for equivalent model (includes MoE fields)
     session._equiv_model_params = {
         "L": eq_L, "H": H, "A": A, "S": S, "B": eq_B, "dff": dff,
         "vocab_size": vocab_size,
@@ -1057,6 +1122,14 @@ def workflow_step1(session_id: str):
         "L_orig": L,  # original layer count for SSE formula display
         "B_orig": B,  # original batch size for SSE formula display
         "b_micro": b_micro,  # micro-batch size for TP/PP formula display
+        "model_type": model_type,
+        "ep": ep, "eq_ep": eq_ep,
+        "num_experts": num_experts,
+        "moe_router_topk": moe_router_topk,
+        "num_moe_layers": num_moe_layers,
+        "moe_ffn_hidden_size": moe_ffn_hidden_size,
+        "has_shared_expert": has_shared_expert,
+        "expert_tensor_parallel_size": expert_tensor_parallel_size,
     }
     session.original_dff = dff
     session.original_batch_size = B
@@ -1065,6 +1138,16 @@ def workflow_step1(session_id: str):
     session.equivalent_batch_size = eq_B
     session.equivalent_dff = dff  # dff unchanged between original and equivalent
     session.equivalent_micro_batch = b_micro  # b unchanged between original and equivalent
+    # ── MoE session fields ──
+    session.original_model_type = model_type
+    session.original_ep = ep
+    session.original_num_experts = num_experts
+    session.original_moe_topk = moe_router_topk
+    session.original_num_moe_layers = num_moe_layers
+    session.original_moe_ffn_hidden_size = moe_ffn_hidden_size
+    session.original_has_shared_expert = has_shared_expert
+    session.original_expert_tensor_parallel_size = expert_tensor_parallel_size
+    session.equivalent_ep = eq_ep
 
     session.step = "params_collected"
     session_manager.save_session(session)
@@ -1134,6 +1217,16 @@ def workflow_step2_stream(session_id: str):
     L_orig = model_meta.get("L_orig", eq_L)  # fallback to eq_L if not stored
     strategy = model_meta.get("strategy", "min_equiv")
     strategy_label = "最小集群等效" if strategy == "min_equiv" else ("单卡极限等效" if strategy == "single_card_extreme" else strategy)
+    # ── MoE params ──
+    model_type = model_meta.get("model_type", "dense")
+    ep = model_meta.get("ep")
+    num_experts = model_meta.get("num_experts")
+    moe_router_topk = model_meta.get("moe_router_topk")
+    num_moe_layers = model_meta.get("num_moe_layers")
+    moe_ffn_hidden_size = model_meta.get("moe_ffn_hidden_size")
+    has_shared_expert = model_meta.get("has_shared_expert", False)
+    expert_tensor_parallel_size = model_meta.get("expert_tensor_parallel_size", 1)
+    eq_ep = model_meta.get("eq_ep")
 
     # Pre-compute numeric values for richer display
     npu_orig = orig_dp * tp * pp
@@ -1142,11 +1235,20 @@ def workflow_step2_stream(session_id: str):
 
     def generate():
         # ═══ Phase 1: 策略加载 ═══
+        topo_orig_desc = f"{orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}"
+        topo_eq_desc = f"{eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}"
+        model_desc = f"L={L_orig}  H={H_val}  A={A_val}  V={vocab_val}  dff={dff_val}  S={S_val}  B={B_orig}  b={b_micro_val}  →  B_eq={B_val}"
+        if model_type == "sparse":
+            topo_orig_desc += f"  EP={ep}"
+            topo_eq_desc += f"  EP={eq_ep}" if eq_ep else ""
+            model_desc += f"\n  MoE: Experts={num_experts}  Top-K={moe_router_topk}  MoE层={num_moe_layers}  F_expert={moe_ffn_hidden_size}"
+            if has_shared_expert:
+                model_desc += "  共享专家=是"
         lines_strategy = [
             f"▸ 等效策略: {strategy_label} ({strategy})",
-            f"  原始组网  {orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}  →  {npu_orig} NPU",
-            f"  等效组网  {eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}  →  {npu_eq} NPU",
-            f"  模型配置  L={L_orig}  H={H_val}  A={A_val}  V={vocab_val}  dff={dff_val}  S={S_val}  B={B_orig}  b={b_micro_val}  →  B_eq={B_val}",
+            f"  原始组网  {topo_orig_desc}  →  {npu_orig} NPU",
+            f"  等效组网  {topo_eq_desc}  →  {npu_eq} NPU",
+            f"  模型配置  {model_desc}",
             f"  NPU 压缩比  {npu_orig} : {npu_eq}  ≈  {comp_ratio} : 1",
         ]
         for line in lines_strategy:
@@ -1155,45 +1257,127 @@ def workflow_step2_stream(session_id: str):
         yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'strategy', 'section_done': True, 'line': ''})}\n\n"
 
         # ═══ Phase 2: 指标分析 ═══
-        flops_per_card = _estimator._estimate_flops(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp)
-        flops_edge = _estimator._estimate_flops_first_last(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp, vocab_val)
-        flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
-        flops_edge_str = f"{flops_edge / 1e15:.2f} × 10¹⁵" if flops_edge >= 1e15 else f"{flops_edge / 1e12:.2f} × 10¹²"
+        if model_type == "sparse":
+            # ── MoE formula branch ──
+            _moe = importlib.import_module("app.skills.training-mesh-profiler-skill.moe_estimator")
+            compute_moe_flops = _moe.compute_moe_flops
+            calculate_moe_hbm = _moe.calculate_moe_hbm
+            calculate_moe_ep_traffic = _moe.calculate_moe_ep_traffic
+            # Also compute dense-style TP/PP/DP comms (they still apply)
+            tp_comm = _estimator._estimate_tp_comm_gb(L_orig, H_val, S_val, b_micro_val, pp)
+            pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
+            dp_comm = _estimator._estimate_dp_comm_gb(L_orig, H_val, dff_val, orig_dp, tp, pp)
 
-        hbm_gb = _estimator._estimate_hbm_gb(L_orig, H_val, dff_val, tp, pp)
-        hbm_edge_gb = _estimator._estimate_hbm_gb_first_last(L_orig, H_val, dff_val, tp, pp, vocab_val)
-        tp_comm = _estimator._estimate_tp_comm_gb(L_orig, H_val, S_val, b_micro_val, pp)
-        dp_comm = _estimator._estimate_dp_comm_gb(L_orig, H_val, dff_val, orig_dp, tp, pp)
-        pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
+            ep_val = ep or orig_dp or 8
+            topk_val = moe_router_topk or 1
+            n_moe = num_moe_layers or L_orig
+            fexp_val = moe_ffn_hidden_size or dff_val
+            n_dense = L_orig - n_moe
+            n_shared = n_moe if has_shared_expert else 0
 
-        lines_metrics = [
-            f"▸ 单卡计算量 (FLOPs) — 中间 PP",
-            f"  FLOPs = (6·B·S·L·H/(DP·PP·TP)) × (4·H + 3·dff + 2·S)",
-            f"  = (6×{B_orig}×{S_val}×{L_orig}×{H_val}/({orig_dp}×{pp}×{tp})) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
-            f"  ≈ {flops_str} FLOPs",
-            f"▸ 单卡计算量 (FLOPs) — 首/末 PP",
-            f"  FLOPs = 中间值 + (6·V·H)/TP × (B/DP) × S",
-            f"  = {flops_per_card:.4e} + (6×{vocab_val}×{H_val})/{tp} × ({B_orig}/{orig_dp}) × {S_val}",
-            f"  ≈ {flops_edge_str} FLOPs  (+{flops_edge - flops_per_card:.4e})",
-            f"▸ 显存占用 (HBM) — 中间 PP",
-            f"  HBM = L/PP × ((4·H² + 3·H·dff)/TP + 2·H) / 1e9",
-            f"  = {L_orig}/{pp} × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val}) / 1e9",
-            f"  ≈ {hbm_gb:.4f} GB",
-            f"▸ 显存占用 (HBM) — 首/末 PP",
-            f"  HBM = 中间值 + (V·H) / (TP·1e9)",
-            f"  = {hbm_gb:.4f} + ({vocab_val}×{H_val}) / ({tp}×1e9)",
-            f"  ≈ {hbm_edge_gb:.4f} GB  (+{hbm_edge_gb - hbm_gb:.4f} GB)",
-            f"▸ 通信流量 (GB / step)",
-            f"  TP 通信 = L/PP * 15 * b * S * H / 1e9",
-            f"  = {L_orig}/{pp} * 15 * {b_micro_val} * {S_val} * {H_val} / 1e9",
-            f"  ≈ {tp_comm:.2f} GB/micro-step  (TP 全规约)",
-            f"  DP 通信 = 2*(DP-1)/DP * 4 * L/PP * (4*H^2/TP + 3*H*dff/TP) / 1e9",
-            f"  = 2*({orig_dp}-1)/{orig_dp} * 4 * {L_orig}/{pp} * (4*{H_val}^2/{tp} + 3*{H_val}*{dff_val}/{tp}) / 1e9",
-            f"  ≈ {dp_comm:.2f} GB/step",
-            f"  PP 通信 = 4·b·S·H / 1e6  (激活值 send/recv)",
-            f"  = 4 × {b_micro_val} × {S_val} × {H_val} / 1e6",
-            f"  ≈ {pp_comm:.2f} MB/micro-step  (per PP boundary)",
-        ]
+            moe_flops = compute_moe_flops(
+                micro_batch_size=b_micro_val, seq_len=S_val,
+                num_layers=L_orig, hidden_size=H_val,
+                tensor_parallel=tp, num_moe_layers=n_moe,
+                expert_ffn_hidden_size=fexp_val,
+                expert_parallel=ep_val, topk=topk_val,
+                num_shared_expert_layers=n_shared,
+            )
+            moe_hbm_bytes = calculate_moe_hbm(
+                num_dense_layers=n_dense, num_moe_layers=n_moe,
+                pipeline_parallel=pp, hidden_size=H_val,
+                ffn_hidden_size=dff_val, tensor_parallel=tp,
+                expert_ffn_hidden_size=fexp_val,
+                num_experts=num_experts or 1, expert_parallel=ep_val,
+                vocab_size=vocab_val,
+                expert_tensor_parallel=expert_tensor_parallel_size or 1,
+            )
+            moe_hbm_gb = moe_hbm_bytes / 1e9
+            ep_traffic_bytes = calculate_moe_ep_traffic(
+                topk=topk_val, global_batch_size=B_orig,
+                seq_len=S_val, hidden_size=H_val,
+                num_moe_layers=n_moe, pipeline_parallel=pp,
+            )
+            ep_traffic_gb = ep_traffic_bytes / 1e9
+
+            flops_str = f"{moe_flops / 1e15:.2f} × 10¹⁵" if moe_flops >= 1e15 else f"{moe_flops / 1e12:.2f} × 10¹²"
+
+            lines_metrics = [
+                f"▸ 单卡计算量 (FLOPs) — MoE 公式",
+                f"  公式: Attention + Dense FFN + MoE Expert(Top-K) + Shared Expert",
+                f"  Attention = (6·b·S·L·H/TP) × (4·H + 2·S)",
+                f"    = (6×{b_micro_val}×{S_val}×{L_orig}×{H_val}/{tp}) × (4×{H_val} + 2×{S_val})",
+                f"  Dense FFN = 6·b·S·L_dense·3H·F_expert/TP",
+                f"    = 6×{b_micro_val}×{S_val}×{n_dense}×3×{H_val}×{fexp_val}/{tp}",
+                f"  MoE Expert (Top-{topk_val}) = 6·b·S·K·3H·F_expert·L_moe/EP",
+                f"    = 6×{b_micro_val}×{S_val}×{topk_val}×3×{H_val}×{fexp_val}×{n_moe}/{ep_val}",
+            ]
+            if has_shared_expert:
+                lines_metrics.append(
+                    f"  Shared Expert = 6·b·S·3H·F_expert·L_shared/EP"
+                )
+                lines_metrics.append(
+                    f"    = 6×{b_micro_val}×{S_val}×3×{H_val}×{fexp_val}×{n_shared}/{ep_val}"
+                )
+            lines_metrics += [
+                f"  ≈ {flops_str} FLOPs/card",
+                f"▸ 显存占用 (HBM) — MoE 公式",
+                f"  HBM = 18 × (Dense项 + MoE项 + Embedding项)",
+                f"  Dense项 = (L_dense/PP) × ((4H² + 3H·F_dense)/TP + 2H)",
+                f"    = ({n_dense}/{pp}) × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val})",
+                f"  MoE项 = (L_moe/PP) × (4H²/TP + 3E·H·F_expert/(EP·TP_e) + E·H/TP + 2H)",
+                f"    = ({n_moe}/{pp}) × (4×{H_val}²/{tp} + 3×{num_experts}×{H_val}×{fexp_val}/({ep_val}×{expert_tensor_parallel_size}) + {num_experts}×{H_val}/{tp} + 2×{H_val})",
+                f"  ≈ {moe_hbm_gb:.4f} GB",
+                f"▸ EP 通信流量",
+                f"  EP = 8·K·B·S·H·L_moe/PP",
+                f"  = 8×{topk_val}×{B_orig}×{S_val}×{H_val}×{n_moe}/{pp}",
+                f"  ≈ {ep_traffic_gb:.2f} GB/step",
+                f"▸ TP/PP/DP 通信 (与稠密模型共用)",
+                f"  TP 通信 ≈ {tp_comm:.2f} GB/micro-step",
+                f"  PP 通信 ≈ {pp_comm:.2f} MB/micro-step",
+                f"  DP 通信 ≈ {dp_comm:.2f} GB/step",
+            ]
+        else:
+            # ── Dense formula branch (unchanged) ──
+            flops_per_card = _estimator._estimate_flops(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp)
+            flops_edge = _estimator._estimate_flops_first_last(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp, vocab_val)
+            flops_str = f"{flops_per_card / 1e15:.2f} × 10¹⁵" if flops_per_card >= 1e15 else f"{flops_per_card / 1e12:.2f} × 10¹²"
+            flops_edge_str = f"{flops_edge / 1e15:.2f} × 10¹⁵" if flops_edge >= 1e15 else f"{flops_edge / 1e12:.2f} × 10¹²"
+
+            hbm_gb = _estimator._estimate_hbm_gb(L_orig, H_val, dff_val, tp, pp)
+            hbm_edge_gb = _estimator._estimate_hbm_gb_first_last(L_orig, H_val, dff_val, tp, pp, vocab_val)
+            tp_comm = _estimator._estimate_tp_comm_gb(L_orig, H_val, S_val, b_micro_val, pp)
+            dp_comm = _estimator._estimate_dp_comm_gb(L_orig, H_val, dff_val, orig_dp, tp, pp)
+            pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
+
+            lines_metrics = [
+                f"▸ 单卡计算量 (FLOPs) — 中间 PP",
+                f"  FLOPs = (6·B·S·L·H/(DP·PP·TP)) × (4·H + 3·dff + 2·S)",
+                f"  = (6×{B_orig}×{S_val}×{L_orig}×{H_val}/({orig_dp}×{pp}×{tp})) × (4×{H_val} + 3×{dff_val} + 2×{S_val})",
+                f"  ≈ {flops_str} FLOPs",
+                f"▸ 单卡计算量 (FLOPs) — 首/末 PP",
+                f"  FLOPs = 中间值 + (6·V·H)/TP × (B/DP) × S",
+                f"  = {flops_per_card:.4e} + (6×{vocab_val}×{H_val})/{tp} × ({B_orig}/{orig_dp}) × {S_val}",
+                f"  ≈ {flops_edge_str} FLOPs  (+{flops_edge - flops_per_card:.4e})",
+                f"▸ 显存占用 (HBM) — 中间 PP",
+                f"  HBM = L/PP × ((4·H² + 3·H·dff)/TP + 2·H) / 1e9",
+                f"  = {L_orig}/{pp} × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val}) / 1e9",
+                f"  ≈ {hbm_gb:.4f} GB",
+                f"▸ 显存占用 (HBM) — 首/末 PP",
+                f"  HBM = 中间值 + (V·H) / (TP·1e9)",
+                f"  = {hbm_gb:.4f} + ({vocab_val}×{H_val}) / ({tp}×1e9)",
+                f"  ≈ {hbm_edge_gb:.4f} GB  (+{hbm_edge_gb - hbm_gb:.4f} GB)",
+                f"▸ 通信流量 (GB / step)",
+                f"  TP 通信 = L/PP * 15 * b * S * H / 1e9",
+                f"  = {L_orig}/{pp} * 15 * {b_micro_val} * {S_val} * {H_val} / 1e9",
+                f"  ≈ {tp_comm:.2f} GB/micro-step  (TP 全规约)",
+                f"  DP 通信 = 2*(DP-1)/DP * 4 * L/PP * (4*H^2/TP + 3*H*dff/TP) / 1e9",
+                f"  = 2*({orig_dp}-1)/{orig_dp} * 4 * {L_orig}/{pp} * (4*{H_val}^2/{tp} + 3*{H_val}*{dff_val}/{tp}) / 1e9",
+                f"  ≈ {dp_comm:.2f} GB/step",
+                f"  PP 通信 = 4·b·S·H / 1e6  (激活值 send/recv)",
+                f"  = 4 × {b_micro_val} × {S_val} × {H_val} / 1e6",
+                f"  ≈ {pp_comm:.2f} MB/micro-step  (per PP boundary)",
+            ]
         for line in lines_metrics:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'line': line})}\n\n"
             import time; time.sleep(0.4)
@@ -1205,6 +1389,10 @@ def workflow_step2_stream(session_id: str):
             f"  TP 保持:  TP_eq = TP = {tp}",
             f"  PP 降维:  PP_eq = min(PP-1, 3) = {eq_pp}",
             f"  DP 缩减:  DP_eq = max(DP/4, 1) = {eq_dp}",
+        ]
+        if model_type == "sparse" and ep and eq_ep:
+            lines_formula.append(f"  EP 缩减:  EP_eq = max(EP/4, 1) = {eq_ep}")
+        lines_formula += [
             f"  层数调整:  L_eq = (L/PP) × PP_eq = ({L_orig}/{pp}) × {eq_pp} = {eq_L}",
             f"  批次缩减:  B_eq = B × eq_dp/dp = {B_orig}×{eq_dp}/{orig_dp} ≈ {B_val}",
             f"▸ 等效结果:  {npu_orig} NPU → {npu_eq} NPU  (压缩 {comp_ratio}:1)",
@@ -1236,8 +1424,13 @@ def workflow_step3(session_id: str):
 
     # 1. Generate equivalent mesh
     eq_dev = eq_params.device_type.value if hasattr(eq_params.device_type, "value") else str(eq_params.device_type)
+    eq_mesh_name = "等效组网 (" + eq_dev + " DP" + str(eq_params.dp) + " TP" + str(eq_params.tp) + " PP" + str(eq_params.pp)
+    eq_ep_val = eq_params.ep if hasattr(eq_params, "ep") and eq_params.ep else None
+    if model_meta.get("model_type") == "sparse" and eq_ep_val:
+        eq_mesh_name += " EP" + str(eq_ep_val)
+    eq_mesh_name += ")"
     eq_mesh_args = {
-        "name": "等效组网 (" + eq_dev + " DP" + str(eq_params.dp) + " TP" + str(eq_params.tp) + " PP" + str(eq_params.pp) + ")",
+        "name": eq_mesh_name,
         "device_type": eq_dev,
         "dp": eq_params.dp, "tp": eq_params.tp, "pp": eq_params.pp,
     }
@@ -1257,7 +1450,17 @@ def workflow_step3(session_id: str):
         "pp": eq_params.pp,
         "is_equivalent": True,
         "vocab_size": model_meta.get("vocab_size", 32000),
+        "model_type": model_meta.get("model_type", "dense"),
     }
+    if model_meta.get("model_type") == "sparse":
+        eq_model_args.update({
+            "num_experts": model_meta.get("num_experts"),
+            "moe_router_topk": model_meta.get("moe_router_topk"),
+            "num_moe_layers": model_meta.get("num_moe_layers"),
+            "moe_ffn_hidden_size": model_meta.get("moe_ffn_hidden_size"),
+            "has_shared_expert": model_meta.get("has_shared_expert", False),
+            "expert_tensor_parallel_size": model_meta.get("expert_tensor_parallel_size", 1),
+        })
     eq_model_result: SkillResult = registry.execute_tool("training-model-gen-skill", eq_model_args, context)
     if not eq_model_result.success:
         return {"error": "eq_model_gen_failed", "message": eq_model_result.error}, 500

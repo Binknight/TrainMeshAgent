@@ -19,17 +19,48 @@ def _estimate_total_params(
     d_model: int,
     d_ffn: int,
     vocab_size: int,
+    num_experts: int | None = None,
+    moe_ffn_hidden_size: int | None = None,
+    num_moe_layers: int | None = None,
+    has_shared_expert: bool = False,
 ) -> str:
     attn_params = 4 * d_model * d_model
-    ffn_params = 2 * d_model * d_ffn
     embedding_params = vocab_size * d_model
     output_params = vocab_size * d_model
-    total = num_layers * (attn_params + ffn_params) + embedding_params + output_params
+    total = embedding_params + output_params
+
+    if num_moe_layers and num_experts:
+        # MoE model: split layers into dense and MoE
+        n_dense = num_layers - num_moe_layers
+        fexp = moe_ffn_hidden_size or d_ffn
+        # Dense layers
+        dense_ffn_params = 2 * d_model * d_ffn
+        total += n_dense * (attn_params + dense_ffn_params)
+        # MoE layers: each expert has its own FFN, plus router params
+        expert_ffn_params = (2 * d_model * fexp) * num_experts
+        router_params = num_experts * d_model  # router projection
+        moe_layer_params = attn_params + expert_ffn_params + router_params
+        total += num_moe_layers * moe_layer_params
+        # Shared expert (if present)
+        if has_shared_expert:
+            shared_expert_params = 2 * d_model * fexp
+            total += num_moe_layers * shared_expert_params
+    else:
+        # Dense model: all layers identical
+        ffn_params = 2 * d_model * d_ffn
+        total += num_layers * (attn_params + ffn_params)
+
     billions = total / 1e9
     return f"~{billions:.1f}"
 
 
-def _build_layers(num_layers: int, num_heads: int, d_head: int, d_ffn: int, activation: str) -> list[TrainingModelLayer]:
+def _build_layers(
+    num_layers: int, num_heads: int, d_head: int, d_ffn: int, activation: str,
+    num_experts: int | None = None,
+    moe_ffn_hidden_size: int | None = None,
+    num_moe_layers: int | None = None,
+    has_shared_expert: bool = False,
+) -> list[TrainingModelLayer]:
     layers: list[TrainingModelLayer] = []
 
     layers.append(TrainingModelLayer(
@@ -38,23 +69,39 @@ def _build_layers(num_layers: int, num_heads: int, d_head: int, d_ffn: int, acti
     ))
 
     for i in range(num_layers):
+        sub_layers: list[ModelSubLayer] = [
+            ModelSubLayer(
+                type="multi_head_attention",
+                proj=["Q", "K", "V"],
+                heads=num_heads,
+                d_head=d_head,
+            ),
+            ModelSubLayer(type="layer_norm"),
+        ]
+        # Determine if this layer is MoE
+        if num_moe_layers and i < num_moe_layers:
+            # MoE layer: MoE FeedForward instead of standard FFN
+            moe_sl = ModelSubLayer(
+                type="moe_feed_forward_network",
+                activation=activation,
+                d_ffn=moe_ffn_hidden_size or d_ffn,
+            )
+            # Add extra fields via dict mutation (Pydantic model supports extra attrs)
+            moe_sl.num_experts = num_experts
+            moe_sl.has_shared_expert = has_shared_expert
+            sub_layers.append(moe_sl)
+        else:
+            # Dense layer: standard FFN
+            sub_layers.append(ModelSubLayer(
+                type="feed_forward_network",
+                activation=activation,
+                d_ffn=d_ffn,
+            ))
+
         layers.append(TrainingModelLayer(
             type="transformer_block",
             id=i,
-            sub_layers=[
-                ModelSubLayer(
-                    type="multi_head_attention",
-                    proj=["Q", "K", "V"],
-                    heads=num_heads,
-                    d_head=d_head,
-                ),
-                ModelSubLayer(type="layer_norm"),
-                ModelSubLayer(
-                    type="feed_forward_network",
-                    activation=activation,
-                    d_ffn=d_ffn,
-                ),
-            ],
+            sub_layers=sub_layers,
             skip_connection=True,
         ))
 
@@ -110,6 +157,34 @@ class TrainingModelGenSkill(BaseSkill):
                         "is_equivalent": {
                             "type": "boolean",
                             "description": "是否为等效模型, 默认 false",
+                        },
+                        "model_type": {
+                            "type": "string",
+                            "description": "模型类型: 'dense' (稠密) 或 'sparse' (MoE/稀疏), 默认 dense",
+                        },
+                        "num_experts": {
+                            "type": "integer",
+                            "description": "MoE: 每层专家数 (仅 model_type=sparse 时使用)",
+                        },
+                        "moe_router_topk": {
+                            "type": "integer",
+                            "description": "MoE: 每 token 激活的 Top-K 专家数",
+                        },
+                        "num_moe_layers": {
+                            "type": "integer",
+                            "description": "MoE: MoE 层数 (其余层为 Dense FFN)",
+                        },
+                        "moe_ffn_hidden_size": {
+                            "type": "integer",
+                            "description": "MoE: 单个专家的 FFN 隐藏维度",
+                        },
+                        "has_shared_expert": {
+                            "type": "boolean",
+                            "description": "MoE: 是否有共享专家",
+                        },
+                        "expert_tensor_parallel_size": {
+                            "type": "integer",
+                            "description": "MoE: 专家内部张量并行度",
                         },
                     },
                     "required": ["num_layers"],
@@ -168,9 +243,23 @@ class TrainingModelGenSkill(BaseSkill):
         d_ffn = int(arguments.get("d_ffn", 11008))
         vocab_size = int(arguments.get("vocab_size", 32000))
         activation = arguments.get("activation", "GELU")
+        model_type = arguments.get("model_type", "dense")
+        # ── MoE parameters ──
+        num_experts = arguments.get("num_experts")
+        moe_router_topk = arguments.get("moe_router_topk")
+        num_moe_layers = arguments.get("num_moe_layers")
+        moe_ffn_hidden_size = arguments.get("moe_ffn_hidden_size")
+        has_shared_expert = bool(arguments.get("has_shared_expert", False))
+        expert_tensor_parallel_size = arguments.get("expert_tensor_parallel_size", 1)
 
         d_head = d_model // num_heads
-        total_params = _estimate_total_params(num_layers, d_model, d_ffn, vocab_size)
+        total_params = _estimate_total_params(
+            num_layers, d_model, d_ffn, vocab_size,
+            num_experts=num_experts if model_type == "sparse" else None,
+            moe_ffn_hidden_size=moe_ffn_hidden_size if model_type == "sparse" else None,
+            num_moe_layers=num_moe_layers if model_type == "sparse" else None,
+            has_shared_expert=has_shared_expert if model_type == "sparse" else False,
+        )
 
         config = TrainingModelConfig(
             num_layers=num_layers,
@@ -178,6 +267,13 @@ class TrainingModelGenSkill(BaseSkill):
             num_heads=num_heads,
             d_ffn=d_ffn,
             vocab_size=vocab_size,
+            model_type=model_type,
+            num_experts=num_experts if model_type == "sparse" else None,
+            moe_router_topk=moe_router_topk if model_type == "sparse" else None,
+            num_moe_layers=num_moe_layers if model_type == "sparse" else None,
+            moe_ffn_hidden_size=moe_ffn_hidden_size if model_type == "sparse" else None,
+            has_shared_expert=has_shared_expert if model_type == "sparse" else False,
+            expert_tensor_parallel_size=expert_tensor_parallel_size if model_type == "sparse" else 1,
         )
 
         computed = TrainingModelComputed(
@@ -185,7 +281,13 @@ class TrainingModelGenSkill(BaseSkill):
             total_params_billions=total_params,
         )
 
-        layers = _build_layers(num_layers, num_heads, d_head, d_ffn, activation)
+        layers = _build_layers(
+            num_layers, num_heads, d_head, d_ffn, activation,
+            num_experts=num_experts if model_type == "sparse" else None,
+            moe_ffn_hidden_size=moe_ffn_hidden_size if model_type == "sparse" else None,
+            num_moe_layers=num_moe_layers if model_type == "sparse" else None,
+            has_shared_expert=has_shared_expert if model_type == "sparse" else False,
+        )
 
         model = TrainingModel(
             type="transformer_model",
