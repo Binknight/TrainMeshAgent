@@ -3762,7 +3762,7 @@
                                         body: JSON.stringify({ lines: window._pendingFormulaLines }),
                                     });
                                 } catch (e) {
-                                    /* ignore network errors */
+                                    console.error("[formula-lines] POST failed:", e);
                                 }
                             }
                         }
@@ -4475,16 +4475,15 @@
                 }
                 // else: nodes remain in initWorkflow() default state (waiting_input / pending)
 
-                // Restore formula lines from sessionStorage if step2 was already completed
-                // Restore formula lines from server-persisted session data
+                // Restore formula lines from server-persisted session data.
+                // Formula lines are now persisted server-side at step2 completion,
+                // so they survive even if step3 hasn't run yet.
                 if (
-                    workflowNodeStates["equiv_calc"] === "completed" ||
-                    workflowNodeStates["equiv_calc_sub3"] === "completed"
+                    sessionData.formula_lines && sessionData.formula_lines.length &&
+                    (hasOrigTopo || hasTopology)
                 ) {
-                    if (sessionData.formula_lines && sessionData.formula_lines.length) {
-                        window._pendingFormulaLines = sessionData.formula_lines;
-                        _formulaCardReady = true;
-                    }
+                    window._pendingFormulaLines = sessionData.formula_lines;
+                    _formulaCardReady = true;
                 }
             }
 
@@ -5564,6 +5563,23 @@
                             };
                             var subId = subMap[data.section];
                             if (subId) updateWorkflowNode(subId, "completed");
+                            // Persist formula lines server-side so they survive restart
+                            if (
+                                data.section === "formula" &&
+                                sessionId &&
+                                window._pendingFormulaLines &&
+                                window._pendingFormulaLines.length
+                            ) {
+                                try {
+                                    fetch(API + "/session/" + sessionId + "/formula-lines", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ lines: window._pendingFormulaLines }),
+                                    });
+                                } catch (e) {
+                                    /* ignore network errors — server-side persistence is primary */
+                                }
+                            }
                         }
                         break;
                     case "model_params_fill":

@@ -310,6 +310,11 @@ def _execute_utility_tool(
         section = arguments.get("section", "")
         line = arguments.get("line", "")
         section_done = arguments.get("section_done", False)
+        # Accumulate on session so _persist_session saves them to DB
+        if session.formula_lines is None:
+            session.formula_lines = []
+        if line:  # skip section_done events (empty line)
+            session.formula_lines.append({"section": section, "line": line})
         return {
             "_event_type": "equiv_formula_line",
             "section": section,

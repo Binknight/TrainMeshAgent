@@ -1261,6 +1261,10 @@ def workflow_step2_stream(session_id: str):
     comp_ratio = round(npu_orig / npu_eq, 1) if npu_eq else 0
 
     def generate():
+        """Generate SSE stream with formula lines. Collects and persists all formula
+        lines server-side so they survive restart regardless of frontend POST timing."""
+        all_formula_lines: list[dict[str, str]] = []
+
         # ═══ Phase 1: 策略加载 ═══
         topo_orig_desc = f"{orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}"
         topo_eq_desc = f"{eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}"
@@ -1280,6 +1284,7 @@ def workflow_step2_stream(session_id: str):
         ]
         for line in lines_strategy:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'strategy', 'line': line})}\n\n"
+            all_formula_lines.append({"section": "strategy", "line": line})
             import time; time.sleep(0.45)
         yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'strategy', 'section_done': True, 'line': ''})}\n\n"
 
@@ -1437,6 +1442,7 @@ def workflow_step2_stream(session_id: str):
             ]
         for line in lines_metrics:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'line': line})}\n\n"
+            all_formula_lines.append({"section": "metrics", "line": line})
             import time; time.sleep(0.4)
         yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'metrics', 'section_done': True, 'line': ''})}\n\n"
 
@@ -1456,8 +1462,17 @@ def workflow_step2_stream(session_id: str):
         ]
         for line in lines_formula:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'formula', 'line': line})}\n\n"
+            all_formula_lines.append({"section": "formula", "line": line})
             import time; time.sleep(0.35)
         yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'formula', 'section_done': True, 'line': ''})}\n\n"
+
+        # ── Persist formula lines server-side so they survive restart ──
+        try:
+            from app.dao import save_formula_lines as _dao_save_fl
+            session.formula_lines = all_formula_lines
+            _dao_save_fl(session_id, all_formula_lines)
+        except Exception as _e:
+            logger.warning(f"Failed to persist formula_lines for {session_id}: {_e}")
 
         # Signal done
         yield f"data: {json.dumps({'type': 'done', 'data': {'stage': 'step2'}})}\n\n"
