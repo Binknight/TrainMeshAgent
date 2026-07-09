@@ -1125,13 +1125,15 @@ def workflow_step1(session_id: str):
 
     # Store equivalent params for later steps (based on strategy)
     eq_pp = max(1, min(pp - 1, 3)) if pp > 3 else pp
-    eq_dp = max(1, dp // 4) if dp > 1 else 1
+    eq_dp = 2 if dp >= 2 else 1
     eq_L = L if pp <= 3 else (L // pp) * 3
     eq_B = max(1, int(B * eq_dp / dp)) if dp > 1 else B
-    # ── MoE: EP reduction for equivalent topology ──
-    eq_ep = None
-    if model_type == "sparse" and ep:
-        eq_ep = max(1, ep // 4) if ep > 1 else 1
+    # ── MoE: EP unchanged in equivalent topology ──
+    eq_ep = ep  # EP_eq = EP
+    # ── MoE: L_moe equivalent conversion ──
+    eq_num_moe_layers = None
+    if model_type == "sparse" and num_moe_layers:
+        eq_num_moe_layers = max(1, eq_L - (L - num_moe_layers))
     session.equivalent_params = TopologyParams(
         device_type=DeviceType(device_type_str) if device_type_str in [d.value for d in DeviceType] else DeviceType.A3,
         dp=eq_dp, tp=tp, pp=eq_pp, ep=eq_ep,
@@ -1149,6 +1151,7 @@ def workflow_step1(session_id: str):
         "num_experts": num_experts,
         "moe_router_topk": moe_router_topk,
         "num_moe_layers": num_moe_layers,
+        "eq_num_moe_layers": eq_num_moe_layers,
         "moe_ffn_hidden_size": moe_ffn_hidden_size,
         "has_shared_expert": has_shared_expert,
         "expert_tensor_parallel_size": expert_tensor_parallel_size,
@@ -1173,6 +1176,7 @@ def workflow_step1(session_id: str):
     session.original_has_shared_expert = has_shared_expert
     session.original_expert_tensor_parallel_size = expert_tensor_parallel_size
     session.equivalent_ep = eq_ep
+    session.equivalent_num_moe_layers = eq_num_moe_layers
 
     session.step = "params_collected"
     session_manager.save_session(session)
@@ -1451,15 +1455,21 @@ def workflow_step2_stream(session_id: str):
             f"▸ 等效变换推导",
             f"  TP 保持:  TP_eq = TP = {tp}",
             f"  PP 降维:  PP_eq = min(PP-1, 3) = {eq_pp}",
-            f"  DP 缩减:  DP_eq = max(DP/4, 1) = {eq_dp}",
+            f"  DP 缩减:  DP_eq = 2 (if DP>=2) else 1 = {eq_dp}",
         ]
-        if model_type == "sparse" and ep and eq_ep:
-            lines_formula.append(f"  EP 缩减:  EP_eq = max(EP/4, 1) = {eq_ep}")
+        if model_type == "sparse" and ep:
+            lines_formula.append(f"  EP 保持:  EP_eq = EP = {ep}")
         lines_formula += [
             f"  层数调整:  L_eq = (L/PP) × PP_eq = ({L_orig}/{pp}) × {eq_pp} = {eq_L}",
             f"  批次缩减:  B_eq = B × eq_dp/dp = {B_orig}×{eq_dp}/{orig_dp} ≈ {B_val}",
-            f"▸ 等效结果:  {npu_orig} NPU → {npu_eq} NPU  (压缩 {comp_ratio}:1)",
         ]
+        if model_type == "sparse" and num_moe_layers and eq_num_moe_layers:
+            lines_formula.append(
+                f"  MoE层缩减:  L_moe_eq = L_eq - (L - L_moe) = {eq_L} - ({L_orig} - {num_moe_layers}) = {eq_num_moe_layers}"
+            )
+        lines_formula.append(
+            f"▸ 等效结果:  {npu_orig} NPU → {npu_eq} NPU  (压缩 {comp_ratio}:1)",
+        )
         for line in lines_formula:
             yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'formula', 'line': line})}\n\n"
             all_formula_lines.append({"section": "formula", "line": line})

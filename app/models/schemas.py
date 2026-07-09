@@ -307,5 +307,6 @@ class SessionState(BaseModel):
     original_shared_expert_intermediate_size: int | None = None
     original_expert_tensor_parallel_size: int | None = None
     equivalent_ep: int | None = None
+    equivalent_num_moe_layers: int | None = None
     # ── Formula lines for equivalent calc derivation card ──
     formula_lines: list[dict[str, Any]] | None = None

@@ -284,14 +284,28 @@ class MeshProfilerSkill(BaseSkill):
                 or (training_model.config.model_type if training_model else None)
                 or "dense"
             )
-            # ── MoE parameters from session or arguments ──
+            # ── MoE parameters from arguments or session or training_model ──
             ep = arguments.get("ep") or (getattr(session, "original_ep", None) if session else None)
-            num_experts = arguments.get("num_experts") or (getattr(session, "original_num_experts", None) if session else None)
-            moe_topk = arguments.get("moe_router_topk") or (getattr(session, "original_moe_topk", None) if session else None)
-            n_moe_layers = arguments.get("num_moe_layers") or (getattr(session, "original_num_moe_layers", None) if session else None)
-            moe_fexp = arguments.get("moe_ffn_hidden_size") or (getattr(session, "original_moe_ffn_hidden_size", None) if session else None)
-            has_shared = arguments.get("has_shared_expert") or (getattr(session, "original_has_shared_expert", None) if session else False)
-            expert_tp = arguments.get("expert_tensor_parallel_size") or (getattr(session, "original_expert_tensor_parallel_size", None) if session else 1)
+            num_experts = arguments.get("num_experts") or (
+                getattr(session, "original_num_experts", None) if session else None
+            ) or (training_model.config.num_experts if training_model and training_model.config.model_type == "sparse" else None)
+            moe_topk = arguments.get("moe_router_topk") or (
+                getattr(session, "original_moe_topk", None) if session else None
+            ) or (training_model.config.moe_router_topk if training_model and training_model.config.model_type == "sparse" else None)
+            n_moe_layers = arguments.get("num_moe_layers") or (
+                getattr(session, "equivalent_num_moe_layers", None) if session and "等效" in arguments.get("topology_name", "") else None
+            ) or (
+                getattr(session, "original_num_moe_layers", None) if session else None
+            ) or (training_model.config.num_moe_layers if training_model and training_model.config.model_type == "sparse" else None)
+            moe_fexp = arguments.get("moe_ffn_hidden_size") or (
+                getattr(session, "original_moe_ffn_hidden_size", None) if session else None
+            ) or (training_model.config.moe_ffn_hidden_size if training_model and training_model.config.model_type == "sparse" else None)
+            has_shared = arguments.get("has_shared_expert") or (
+                getattr(session, "original_has_shared_expert", None) if session else False
+            ) or (training_model.config.has_shared_expert if training_model and training_model.config.model_type == "sparse" else False)
+            expert_tp = arguments.get("expert_tensor_parallel_size") or (
+                getattr(session, "original_expert_tensor_parallel_size", None) if session else 1
+            ) or (training_model.config.expert_tensor_parallel_size if training_model and training_model.config.model_type == "sparse" else 1)
 
             if model_type == "sparse" and num_experts and n_moe_layers:
                 # ── MoE estimation ──
