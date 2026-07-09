@@ -128,7 +128,7 @@ ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS global_batch_size INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS micro_batch_size INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS device_type VARCHAR(10);
 
--- MoE (Mixture of Experts) columns — NULL for dense models
+-- MoE (Mixture of Experts) columns — NULL for dense models;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS num_experts INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS moe_ffn_hidden_size INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS moe_router_topk INT;
