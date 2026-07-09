@@ -85,10 +85,9 @@ def _build_layers(
                 type="moe_feed_forward_network",
                 activation=activation,
                 d_ffn=moe_ffn_hidden_size or d_ffn,
+                num_experts=num_experts,
+                has_shared_expert=has_shared_expert,
             )
-            # Add extra fields via dict mutation (Pydantic model supports extra attrs)
-            moe_sl.num_experts = num_experts
-            moe_sl.has_shared_expert = has_shared_expert
             sub_layers.append(moe_sl)
         else:
             # Dense layer: standard FFN

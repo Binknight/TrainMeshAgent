@@ -3756,14 +3756,13 @@
                                 window._pendingFormulaLines.length
                             ) {
                                 try {
-                                    sessionStorage.setItem(
-                                        "formulaLines_" + sessionId,
-                                        JSON.stringify(
-                                            window._pendingFormulaLines,
-                                        ),
-                                    );
+                                    fetch(API + "/session/" + sessionId + "/formula-lines", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ lines: window._pendingFormulaLines }),
+                                    });
                                 } catch (e) {
-                                    /* ignore quota errors */
+                                    /* ignore network errors */
                                 }
                             }
                         }
@@ -4477,20 +4476,14 @@
                 // else: nodes remain in initWorkflow() default state (waiting_input / pending)
 
                 // Restore formula lines from sessionStorage if step2 was already completed
+                // Restore formula lines from server-persisted session data
                 if (
                     workflowNodeStates["equiv_calc"] === "completed" ||
                     workflowNodeStates["equiv_calc_sub3"] === "completed"
                 ) {
-                    try {
-                        var saved = sessionStorage.getItem(
-                            "formulaLines_" + sessionId,
-                        );
-                        if (saved) {
-                            window._pendingFormulaLines = JSON.parse(saved);
-                            _formulaCardReady = true;
-                        }
-                    } catch (e) {
-                        /* ignore parse errors */
+                    if (sessionData.formula_lines && sessionData.formula_lines.length) {
+                        window._pendingFormulaLines = sessionData.formula_lines;
+                        _formulaCardReady = true;
                     }
                 }
             }
