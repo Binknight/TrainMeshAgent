@@ -2929,27 +2929,30 @@
                                 <div class="workflow-param-section moe-param" id="wf-moe-arch-section" style="display:none; margin-top:12px">MoE 架构参数</div>
                                 <div class="workflow-param-row moe-param" style="display:none">
                                     <label>总专家数</label>
-                                    <input id="wf-orig-moe-experts" type="number" value="8" min="1" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                    <input id="wf-orig-moe-experts" type="number" value="8" min="1" />
                                 </div>
                                 <div class="workflow-param-row moe-param" style="display:none">
                                     <label>激活 Top-K</label>
-                                    <input id="wf-orig-moe-topk" type="number" value="2" min="1" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                    <input id="wf-orig-moe-topk" type="number" value="2" min="1" />
                                 </div>
                                 <div class="workflow-param-row moe-param" style="display:none">
                                     <label>MoE 层数</label>
-                                    <input id="wf-orig-moe-layers" type="number" value="1" min="0" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                    <input id="wf-orig-moe-layers" type="number" value="1" min="0" />
                                 </div>
                                 <div class="workflow-param-row moe-param" style="display:none">
                                     <label>专家 FFN 维度</label>
-                                    <input id="wf-orig-moe-ffn-dim" type="number" value="14336" min="1" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                    <input id="wf-orig-moe-ffn-dim" type="number" value="14336" min="1" />
                                 </div>
                                 <div class="workflow-param-row moe-param" style="display:none">
                                     <label>共享专家</label>
-                                    <span id="wf-orig-moe-shared" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary, #999);padding-top:6px">否</span>
+                                    <select id="wf-orig-moe-shared" style="font-family:var(--font-mono);font-size:12px">
+                                        <option value="0">否</option>
+                                        <option value="1">是</option>
+                                    </select>
                                 </div>
                                 <div class="workflow-param-row moe-param" id="wf-orig-moe-expert-tp-row" style="display:none">
                                     <label>专家 TP</label>
-                                    <input id="wf-orig-moe-expert-tp" type="number" value="1" min="1" readonly style="background:var(--bg-input-readonly, #1a1a2e);color:var(--text-secondary, #999)" />
+                                    <input id="wf-orig-moe-expert-tp" type="number" value="1" min="1" />
                                 </div>
                                 <input type="hidden" id="wf-orig-model-type" value="dense" />
                                 <div class="workflow-param-section" style="margin-top: 16px">默认等效策略</div>
@@ -4594,9 +4597,6 @@
                 if (archSection) archSection.style.display = display;
                 var moeParams = document.querySelectorAll(".moe-param");
                 moeParams.forEach(function(el) { el.style.display = display; });
-                // Expert TP row is special: hide it unless explicitly shown later
-                var expertTpRow = document.getElementById("wf-orig-moe-expert-tp-row");
-                if (expertTpRow) expertTpRow.style.display = "none";
             }
 
             async function onModelNameChange() {
@@ -4669,17 +4669,11 @@
                         document.getElementById("wf-orig-moe-ffn-dim").value = entry.moe_ffn_hidden_size || "";
                         var sharedEl = document.getElementById("wf-orig-moe-shared");
                         if (sharedEl) {
-                            if (entry.has_shared_expert) {
-                                sharedEl.textContent = "是 (" + (entry.shared_expert_intermediate_size || "?") + ")";
-                            } else {
-                                sharedEl.textContent = "否";
-                            }
+                            sharedEl.value = entry.has_shared_expert ? "1" : "0";
                         }
-                        if (entry.expert_tensor_parallel_size > 1) {
-                            document.getElementById("wf-orig-moe-expert-tp").value = entry.expert_tensor_parallel_size;
-                            var etpRow = document.getElementById("wf-orig-moe-expert-tp-row");
-                            if (etpRow) etpRow.style.display = "flex";
-                        }
+                        document.getElementById("wf-orig-moe-expert-tp").value = entry.expert_tensor_parallel_size || 1;
+                        var etpRow = document.getElementById("wf-orig-moe-expert-tp-row");
+                        if (etpRow) etpRow.style.display = "flex";
                     }
                     updateEquivalentModelL();
                     // Show reference as clickable link (script name only)
@@ -4756,8 +4750,7 @@
                     params.moe_router_topk = parseInt(document.getElementById("wf-orig-moe-topk").value) || 0;
                     params.num_moe_layers = parseInt(document.getElementById("wf-orig-moe-layers").value) || 0;
                     params.moe_ffn_hidden_size = parseInt(document.getElementById("wf-orig-moe-ffn-dim").value) || 0;
-                    var sharedText = document.getElementById("wf-orig-moe-shared").textContent;
-                    params.has_shared_expert = sharedText.startsWith("是");
+                    params.has_shared_expert = document.getElementById("wf-orig-moe-shared").value === "1";
                     params.expert_tensor_parallel_size = parseInt(document.getElementById("wf-orig-moe-expert-tp").value) || 1;
                 }
                 submitStep1(params);
@@ -5617,15 +5610,11 @@
                                 document.getElementById("wf-orig-moe-ffn-dim").value = fillData.moe_ffn_hidden_size || "";
                                 var sharedEl = document.getElementById("wf-orig-moe-shared");
                                 if (sharedEl) {
-                                    sharedEl.textContent = fillData.has_shared_expert
-                                        ? "是 (" + (fillData.shared_expert_intermediate_size || "?") + ")"
-                                        : "否";
+                                    sharedEl.value = fillData.has_shared_expert ? "1" : "0";
                                 }
-                                if (fillData.expert_tensor_parallel_size > 1) {
-                                    document.getElementById("wf-orig-moe-expert-tp").value = fillData.expert_tensor_parallel_size;
-                                    var etpRow = document.getElementById("wf-orig-moe-expert-tp-row");
-                                    if (etpRow) etpRow.style.display = "flex";
-                                }
+                                document.getElementById("wf-orig-moe-expert-tp").value = fillData.expert_tensor_parallel_size || 1;
+                                var etpRow = document.getElementById("wf-orig-moe-expert-tp-row");
+                                if (etpRow) etpRow.style.display = "flex";
                                 moeFieldsMsg = ", Experts=" + (fillData.num_experts || "?")
                                     + ", Top-K=" + (fillData.moe_router_topk || "?")
                                     + ", MoE层=" + (fillData.num_moe_layers || "?")
