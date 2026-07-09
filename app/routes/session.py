@@ -1280,6 +1280,8 @@ def workflow_step2_stream(session_id: str):
             model_desc += f"\n  MoE: Experts={num_experts}  Top-K={moe_router_topk}  MoE层={num_moe_layers}  F_expert={moe_ffn_hidden_size}"
             if has_shared_expert:
                 model_desc += "  共享专家=是"
+            if eq_num_moe_layers and eq_num_moe_layers != num_moe_layers:
+                model_desc += f"\n  等效 MoE层={eq_num_moe_layers}  等效 Dense层={eq_L - eq_num_moe_layers}"
         lines_strategy = [
             f"▸ 等效策略: {strategy_label} ({strategy})",
             f"  原始组网  {topo_orig_desc}  →  {npu_orig} NPU",
@@ -1374,6 +1376,67 @@ def workflow_step2_stream(session_id: str):
                 f"  PP 通信 ≈ {pp_comm:.2f} MB/micro-step",
                 f"  DP 通信 ≈ {dp_comm:.2f} GB/step",
             ]
+
+            # ── Equivalent topology metrics (MoE formulas, reduced params) ──
+            if eq_num_moe_layers:
+                eq_n_moe = eq_num_moe_layers
+                eq_n_dense = eq_L - eq_n_moe
+                eq_n_shared = eq_n_moe if has_shared_expert else 0
+
+                eq_moe_flops = compute_moe_flops(
+                    micro_batch_size=b_micro_val, seq_len=S_val,
+                    num_layers=eq_L, hidden_size=H_val,
+                    tensor_parallel=tp, num_moe_layers=eq_n_moe,
+                    expert_ffn_hidden_size=fexp_val,
+                    expert_parallel=ep_val, topk=topk_val,
+                    num_shared_expert_layers=eq_n_shared,
+                )
+                eq_moe_hbm_bytes = calculate_moe_hbm(
+                    num_dense_layers=eq_n_dense, num_moe_layers=eq_n_moe,
+                    pipeline_parallel=eq_pp, hidden_size=H_val,
+                    ffn_hidden_size=dff_val, tensor_parallel=tp,
+                    expert_ffn_hidden_size=fexp_val,
+                    num_experts=num_experts or 1, expert_parallel=ep_val,
+                    vocab_size=vocab_val,
+                    expert_tensor_parallel=expert_tensor_parallel_size or 1,
+                )
+                eq_moe_hbm_gb = eq_moe_hbm_bytes / 1e9
+                eq_ep_traffic_bytes = calculate_moe_ep_traffic(
+                    topk=topk_val, global_batch_size=B_orig,
+                    seq_len=S_val, hidden_size=H_val,
+                    num_moe_layers=eq_n_moe, pipeline_parallel=eq_pp,
+                )
+                eq_ep_traffic_gb = eq_ep_traffic_bytes / 1e9
+                eq_tp_comm = _estimator._estimate_tp_comm_gb(eq_L, H_val, S_val, b_micro_val, eq_pp)
+                eq_pp_comm = _estimator._estimate_pp_comm_mb(H_val, S_val, b_micro_val)
+                eq_dp_comm = _estimator._estimate_dp_comm_gb(eq_L, H_val, dff_val, eq_dp, tp, eq_pp)
+
+                eq_flops_str = f"{eq_moe_flops / 1e15:.2f} × 10¹⁵" if eq_moe_flops >= 1e15 else f"{eq_moe_flops / 1e12:.2f} × 10¹²"
+                lines_metrics += [
+                    f"",
+                    f"▸ 等效组网 · 单卡计算量 (FLOPs) — MoE 公式",
+                    f"  Attention = (6×{b_micro_val}×{S_val}×{eq_L}×{H_val}/{tp}) × (4×{H_val} + 2×{S_val})",
+                    f"  Dense FFN = 6×{b_micro_val}×{S_val}×{eq_n_dense}×3×{H_val}×{fexp_val}/{tp}",
+                    f"  MoE Expert (Top-{topk_val}) = 6×{b_micro_val}×{S_val}×{topk_val}×3×{H_val}×{fexp_val}×{eq_n_moe}/{ep_val}",
+                ]
+                if has_shared_expert:
+                    lines_metrics.append(
+                        f"  Shared Expert = 6×{b_micro_val}×{S_val}×3×{H_val}×{fexp_val}×{eq_n_shared}/{ep_val}"
+                    )
+                lines_metrics += [
+                    f"  ≈ {eq_flops_str} FLOPs/card",
+                    f"▸ 等效组网 · 显存占用 (HBM) — MoE 公式",
+                    f"  Dense项 = ({eq_n_dense}/{eq_pp}) × ((4×{H_val}² + 3×{H_val}×{dff_val})/{tp} + 2×{H_val})",
+                    f"  MoE项 = ({eq_n_moe}/{eq_pp}) × (4×{H_val}²/{tp} + 3×{num_experts}×{H_val}×{fexp_val}/({ep_val}×{expert_tensor_parallel_size}) + {num_experts}×{H_val}/{tp} + 2×{H_val})",
+                    f"  ≈ {eq_moe_hbm_gb:.4f} GB",
+                    f"▸ 等效组网 · EP 通信流量",
+                    f"  EP = 8×{topk_val}×{B_orig}×{S_val}×{H_val}×{eq_n_moe}/{eq_pp}",
+                    f"  ≈ {eq_ep_traffic_gb:.2f} GB/step",
+                    f"▸ 等效组网 · TP/PP/DP 通信",
+                    f"  TP 通信 ≈ {eq_tp_comm:.2f} GB/micro-step",
+                    f"  PP 通信 ≈ {eq_pp_comm:.2f} MB/micro-step",
+                    f"  DP 通信 ≈ {eq_dp_comm:.2f} GB/step",
+                ]
         else:
             # ── Dense formula branch (unchanged) ──
             flops_per_card = _estimator._estimate_flops(L_orig, H_val, S_val, B_orig, dff_val, orig_dp, tp, pp)
