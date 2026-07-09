@@ -324,6 +324,7 @@ class MeshProfilerSkill(BaseSkill):
                     expert_ffn_hidden_size=fexp,
                     expert_parallel=ep_val, topk=topk_val,
                     num_shared_expert_layers=n_shared,
+                    pipeline_parallel=pp,
                 )
                 hbm_bytes = calculate_moe_hbm(
                     num_dense_layers=n_dense, num_moe_layers=n_moe_layers,
