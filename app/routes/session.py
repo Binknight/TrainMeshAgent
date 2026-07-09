@@ -1258,6 +1258,7 @@ def workflow_step2_stream(session_id: str):
     has_shared_expert = model_meta.get("has_shared_expert", False)
     expert_tensor_parallel_size = model_meta.get("expert_tensor_parallel_size", 1)
     eq_ep = model_meta.get("eq_ep")
+    eq_num_moe_layers = model_meta.get("eq_num_moe_layers")
 
     # Pre-compute numeric values for richer display
     npu_orig = orig_dp * tp * pp
