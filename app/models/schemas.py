@@ -171,12 +171,15 @@ class AgentEvent(BaseModel):
 
 class ModelSubLayer(BaseModel):
     """A sub-layer within a transformer block."""
-    type: str = Field(description="Sub-layer type: multi_head_attention, layer_norm, feed_forward_network")
+    type: str = Field(description="Sub-layer type: multi_head_attention, layer_norm, feed_forward_network, moe_feed_forward_network")
     proj: list[str] | None = Field(default=None, description="Projection matrices, e.g. ['Q','K','V']")
     heads: int | None = Field(default=None, description="Number of attention heads")
     d_head: int | None = Field(default=None, description="Dimension per head")
     activation: str | None = Field(default=None, description="Activation function, e.g. GELU")
     d_ffn: int | None = Field(default=None, description="FFN hidden dimension")
+    # ── MoE fields (set only for moe_feed_forward_network sub-layers) ──
+    num_experts: int | None = Field(default=None, description="MoE: number of experts for this MoE layer")
+    has_shared_expert: bool = Field(default=False, description="MoE: whether a shared expert is present")
 
 
 class TransformerBlock(BaseModel):
@@ -304,3 +307,5 @@ class SessionState(BaseModel):
     original_shared_expert_intermediate_size: int | None = None
     original_expert_tensor_parallel_size: int | None = None
     equivalent_ep: int | None = None
+    # ── Formula lines for equivalent calc derivation card ──
+    formula_lines: list[dict[str, Any]] | None = None

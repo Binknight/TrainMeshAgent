@@ -137,6 +137,8 @@ ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS has_shared_expert BOOLEAN;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS shared_expert_intermediate_size INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS expert_tensor_parallel_size INT;
 
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS formula_lines JSONB;
+
 CREATE INDEX IF NOT EXISTS idx_topology_params_session ON topology_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_params_session ON simulation_params(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_simulation_results_session ON simulation_results(session_id, role);

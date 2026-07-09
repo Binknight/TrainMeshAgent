@@ -96,6 +96,7 @@ def _persist_session(session: SessionState) -> None:
     from app.dao import (
         update_session_step, save_topology_params, save_simulation_params,
         save_simulation_result, save_comparison_report, delete_messages, save_message,
+        save_formula_lines,
     )
 
     sid = session.session_id
@@ -187,6 +188,9 @@ def _persist_session(session: SessionState) -> None:
             content = json.dumps(msg, ensure_ascii=False)
             save_message(sid, i, msg.get("role", "unknown"), content)
 
+    if session.formula_lines:
+        save_formula_lines(sid, session.formula_lines)
+
 
 def _load_session(session_id: str) -> Optional[SessionState]:
     try:
@@ -201,6 +205,7 @@ def _load_session(session_id: str) -> Optional[SessionState]:
         state.step = summary.get("step", "idle")
         state.original_task_id = summary.get("original_task_id")
         state.equivalent_task_id = summary.get("equivalent_task_id")
+        state.formula_lines = summary.get("formula_lines")
 
         for role in ("original", "equivalent"):
             tp = get_topology_params(session_id, role)

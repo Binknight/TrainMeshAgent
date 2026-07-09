@@ -166,8 +166,24 @@ def get_topology(session_id: str):
         "comparison_report": session.comparison_report is not None,
         "simulation_params": session.simulation_params.model_dump() if session.simulation_params else None,
         "step": session.step,
+        "formula_lines": session.formula_lines,
         "messages": session.history,
     })
+
+
+@session_bp.route("/<session_id>/formula-lines", methods=["POST"])
+def save_formula_lines(session_id: str):
+    """Persist formula lines for equivalent calc derivation card."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "session not found"}, 404
+    data = request.get_json()
+    if not data or "lines" not in data:
+        return {"error": "missing 'lines' array"}, 400
+    from app.dao import save_formula_lines as dao_save_fl
+    session.formula_lines = data["lines"]
+    dao_save_fl(session_id, data["lines"])
+    return jsonify({"ok": True})
 
 
 @session_bp.route("/<session_id>/simulation", methods=["GET"])

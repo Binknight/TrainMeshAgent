@@ -82,11 +82,20 @@ def get_session_summaries() -> list[dict[str, Any]]:
 def get_session_summary(session_id: str) -> dict[str, Any] | None:
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, step, original_task_id, equivalent_task_id, created_at, updated_at FROM sessions WHERE id=%s", (session_id,))
+            cur.execute("SELECT id, step, original_task_id, equivalent_task_id, formula_lines, created_at, updated_at FROM sessions WHERE id=%s", (session_id,))
             row = cur.fetchone()
     if not row:
         return None
-    return {"session_id": row[0], "step": row[1], "original_task_id": row[2], "equivalent_task_id": row[3], "created_at": row[4].isoformat() if row[4] else None, "updated_at": row[5].isoformat() if row[5] else None}
+    return {"session_id": row[0], "step": row[1], "original_task_id": row[2], "equivalent_task_id": row[3], "formula_lines": row[4], "created_at": row[5].isoformat() if row[5] else None, "updated_at": row[6].isoformat() if row[6] else None}
+
+
+def save_formula_lines(session_id: str, formula_lines: list[dict[str, Any]]) -> None:
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE sessions SET formula_lines=%s, updated_at=NOW() WHERE id=%s",
+                (json.dumps(formula_lines, ensure_ascii=False), session_id),
+            )
 
 
 # ── topology_params ──
