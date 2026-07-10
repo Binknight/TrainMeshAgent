@@ -755,11 +755,11 @@
     var _tableBottomY = D.TENSOR_Y + D.TENSOR_H;
     var ROW_H = 14, HEADER_H = 15;
     if (ppCount > 0 && config.num_layers > 0) {
-      _tableBottomY = D.TENSOR_Y + D.TENSOR_H + 18 + 14 + HEADER_H + ppCount * ROW_H + 36;
+      _tableBottomY = D.TENSOR_Y + D.TENSOR_H + 12 + 10 + HEADER_H + ppCount * ROW_H + 20;
     }
     // EP→expert mapping table height
     if (epCount > 0 && config.num_experts > 0) {
-      _tableBottomY += 12 + 14 + HEADER_H + epCount * ROW_H + 36;
+      _tableBottomY += 10 + 10 + HEADER_H + epCount * ROW_H + 20;
     }
     var legendY = Math.max(_tableBottomY + 16, outputBottomY - _legendTotalH);
     return Math.ceil((legendY + 160) * scale) + 80;
@@ -1023,7 +1023,7 @@
 
       // ── PP → layer mapping table (matches dense model) ──
       if (ppCount > 0 && numLayers > 0) {
-        var _mapTitleY = D.TENSOR_Y + D.TENSOR_H + 18;
+        var _mapTitleY = D.TENSOR_Y + D.TENSOR_H + 12;
         g.append("text")
           .attr("x", sx(D.TENSOR_X + D.TENSOR_W / 2))
           .attr("y", sy(_mapTitleY))
@@ -1040,7 +1040,7 @@
         var ROW_H = 14, HEADER_H = 15;
         var tableW_d = COL_PP + COL_RANGE;
         var tableX_d = D.TENSOR_X + (D.TENSOR_W - tableW_d) / 2;
-        var tableY_d = _mapTitleY + 14;
+        var tableY_d = _mapTitleY + 10;
         var tableH_d = HEADER_H + ppCount * ROW_H;
         var hasPpHL = opts.highlightPpIdx != null && opts.highlightPpIdx >= 0;
         var sepX1 = tableX_d + COL_PP;
@@ -1145,14 +1145,14 @@
             .text(layerStart + "~" + layerEnd);
         }
 
-        _tableBottomDesignY = tableY_d + tableH_d + 36;
+        _tableBottomDesignY = tableY_d + tableH_d + 20;
       }
 
       // ── EP → expert mapping table ──
       var epCount = opts.epCount || 0;
       var numExperts = cfg.num_experts || 0;
       if (epCount > 0 && numExperts > 0) {
-        var _epTitleY = _tableBottomDesignY + 12;
+        var _epTitleY = _tableBottomDesignY + 10;
         g.append("text")
           .attr("x", sx(D.TENSOR_X + D.TENSOR_W / 2))
           .attr("y", sy(_epTitleY))
@@ -1169,7 +1169,7 @@
         var EP_ROW_H = 14, EP_HEADER_H = 15;
         var epTableW_d = EP_COL + EP_RANGE;
         var epTableX_d = D.TENSOR_X + (D.TENSOR_W - epTableW_d) / 2;
-        var epTableY_d = _epTitleY + 14;
+        var epTableY_d = _epTitleY + 10;
         var epTableH_d = EP_HEADER_H + epCount * EP_ROW_H;
         var epSepX1 = epTableX_d + EP_COL;
 
@@ -1258,7 +1258,7 @@
             .text(expertStart + "~" + expertEnd);
         }
 
-        _tableBottomDesignY = epTableY_d + epTableH_d + 36;
+        _tableBottomDesignY = epTableY_d + epTableH_d + 20;
       }
     }
 
