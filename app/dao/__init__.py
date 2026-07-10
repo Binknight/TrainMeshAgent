@@ -349,7 +349,7 @@ def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
             cur.execute(
                 """SELECT model_name, model_type, num_layers, d_model, num_heads,
                           d_ffn, vocab_size, num_kv_heads, source, reference,
-                          tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type,
+                          tp, pp, dp, ep, seq_len, global_batch_size, micro_batch_size, device_type,
                           num_experts, moe_ffn_hidden_size, moe_router_topk,
                           moe_layer_freq, num_moe_layers, has_shared_expert,
                           shared_expert_intermediate_size, expert_tensor_parallel_size
@@ -392,19 +392,20 @@ def get_model_catalog_entry(model_name: str) -> dict[str, Any] | None:
         "tp": row[10],
         "pp": row[11],
         "dp": row[12],
-        "seq_len": row[13],
-        "global_batch_size": row[14],
-        "micro_batch_size": row[15],
-        "device_type": row[16],
+        "ep": row[13],
+        "seq_len": row[14],
+        "global_batch_size": row[15],
+        "micro_batch_size": row[16],
+        "device_type": row[17],
         # MoE fields (None for dense models)
-        "num_experts": row[17],
-        "moe_ffn_hidden_size": row[18],
-        "moe_router_topk": row[19],
-        "moe_layer_freq": row[20],
-        "num_moe_layers": row[21],
-        "has_shared_expert": row[22],
-        "shared_expert_intermediate_size": row[23],
-        "expert_tensor_parallel_size": row[24],
+        "num_experts": row[18],
+        "moe_ffn_hidden_size": row[19],
+        "moe_router_topk": row[20],
+        "moe_layer_freq": row[21],
+        "num_moe_layers": row[22],
+        "has_shared_expert": row[23],
+        "shared_expert_intermediate_size": row[24],
+        "expert_tensor_parallel_size": row[25],
     }
 
 
@@ -428,11 +429,11 @@ def upsert_model_catalog(
                 """INSERT INTO model_catalog
                    (model_name, name_key, model_type, num_layers, d_model, num_heads,
                     d_ffn, vocab_size, num_kv_heads, source, reference, description,
-                    tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type,
+                    tp, pp, dp, ep, seq_len, global_batch_size, micro_batch_size, device_type,
                     num_experts, moe_ffn_hidden_size, moe_router_topk,
                     moe_layer_freq, num_moe_layers, has_shared_expert,
                     shared_expert_intermediate_size, expert_tensor_parallel_size)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (model_name) DO UPDATE SET
                    name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
                    num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
@@ -441,7 +442,7 @@ def upsert_model_catalog(
                    source=EXCLUDED.source,
                    reference=EXCLUDED.reference,
                    description=COALESCE(EXCLUDED.description, model_catalog.description),
-                   tp=EXCLUDED.tp, pp=EXCLUDED.pp, dp=EXCLUDED.dp,
+                   tp=EXCLUDED.tp, pp=EXCLUDED.pp, dp=EXCLUDED.dp, ep=EXCLUDED.ep,
                    seq_len=EXCLUDED.seq_len, global_batch_size=EXCLUDED.global_batch_size,
                    micro_batch_size=EXCLUDED.micro_batch_size, device_type=EXCLUDED.device_type,
                    num_experts=EXCLUDED.num_experts, moe_ffn_hidden_size=EXCLUDED.moe_ffn_hidden_size,
@@ -455,7 +456,7 @@ def upsert_model_catalog(
                     cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
                     cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"),
                     cfg.get("_source"), cfg.get("reference"), description,
-                    cfg.get("tp"), cfg.get("pp"), cfg.get("dp"),
+                    cfg.get("tp"), cfg.get("pp"), cfg.get("dp"), cfg.get("ep"),
                     cfg.get("seq_len"), cfg.get("global_batch_size"),
                     cfg.get("micro_batch_size"), cfg.get("device_type"),
                     cfg.get("num_experts"), cfg.get("moe_ffn_hidden_size"),
@@ -474,7 +475,7 @@ def list_model_catalog() -> list[dict[str, Any]]:
             cur.execute(
                 """SELECT model_name, model_type, num_layers, d_model, num_heads,
                           d_ffn, vocab_size, num_kv_heads, source, reference, description, updated_at,
-                          tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type,
+                          tp, pp, dp, ep, seq_len, global_batch_size, micro_batch_size, device_type,
                           num_experts, moe_ffn_hidden_size, moe_router_topk,
                           moe_layer_freq, num_moe_layers, has_shared_expert,
                           shared_expert_intermediate_size, expert_tensor_parallel_size
@@ -486,12 +487,12 @@ def list_model_catalog() -> list[dict[str, Any]]:
         "num_heads": r[4], "d_ffn": r[5], "vocab_size": r[6], "num_key_value_heads": r[7],
         "source": r[8], "reference": r[9], "description": r[10],
         "updated_at": r[11].isoformat() if r[11] else None,
-        "tp": r[12], "pp": r[13], "dp": r[14],
-        "seq_len": r[15], "global_batch_size": r[16], "micro_batch_size": r[17],
-        "device_type": r[18],
-        "num_experts": r[19], "moe_ffn_hidden_size": r[20], "moe_router_topk": r[21],
-        "moe_layer_freq": r[22], "num_moe_layers": r[23], "has_shared_expert": r[24],
-        "shared_expert_intermediate_size": r[25], "expert_tensor_parallel_size": r[26],
+        "tp": r[12], "pp": r[13], "dp": r[14], "ep": r[15],
+        "seq_len": r[16], "global_batch_size": r[17], "micro_batch_size": r[18],
+        "device_type": r[19],
+        "num_experts": r[20], "moe_ffn_hidden_size": r[21], "moe_router_topk": r[22],
+        "moe_layer_freq": r[23], "num_moe_layers": r[24], "has_shared_expert": r[25],
+        "shared_expert_intermediate_size": r[26], "expert_tensor_parallel_size": r[27],
     } for r in rows]
 
 
@@ -518,7 +519,7 @@ def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
             cfg["num_layers"], cfg["d_model"], cfg["num_heads"],
             cfg["d_ffn"], cfg["vocab_size"], cfg.get("num_key_value_heads"),
             cfg.get("_source") or "builtin", cfg.get("reference"),
-            cfg.get("tp"), cfg.get("pp"), cfg.get("dp"),
+            cfg.get("tp"), cfg.get("pp"), cfg.get("dp"), cfg.get("ep"),
             cfg.get("seq_len"), cfg.get("global_batch_size"),
             cfg.get("micro_batch_size"), cfg.get("device_type"),
             cfg.get("num_experts"), cfg.get("moe_ffn_hidden_size"),
@@ -536,19 +537,19 @@ def seed_model_catalog_builtin(entries: dict[str, dict[str, Any]]) -> int:
                 """INSERT INTO model_catalog
                    (model_name, name_key, model_type, num_layers, d_model, num_heads,
                     d_ffn, vocab_size, num_kv_heads, source, reference,
-                    tp, pp, dp, seq_len, global_batch_size, micro_batch_size, device_type,
+                    tp, pp, dp, ep, seq_len, global_batch_size, micro_batch_size, device_type,
                     num_experts, moe_ffn_hidden_size, moe_router_topk,
                     moe_layer_freq, num_moe_layers, has_shared_expert,
                     shared_expert_intermediate_size, expert_tensor_parallel_size,
                     description)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (model_name) DO UPDATE SET
                    name_key=EXCLUDED.name_key, model_type=EXCLUDED.model_type,
                    num_layers=EXCLUDED.num_layers, d_model=EXCLUDED.d_model,
                    num_heads=EXCLUDED.num_heads, d_ffn=EXCLUDED.d_ffn,
                    vocab_size=EXCLUDED.vocab_size, num_kv_heads=EXCLUDED.num_kv_heads,
                    source=EXCLUDED.source, reference=EXCLUDED.reference,
-                   tp=EXCLUDED.tp, pp=EXCLUDED.pp, dp=EXCLUDED.dp,
+                   tp=EXCLUDED.tp, pp=EXCLUDED.pp, dp=EXCLUDED.dp, ep=EXCLUDED.ep,
                    seq_len=EXCLUDED.seq_len, global_batch_size=EXCLUDED.global_batch_size,
                    micro_batch_size=EXCLUDED.micro_batch_size, device_type=EXCLUDED.device_type,
                    num_experts=EXCLUDED.num_experts, moe_ffn_hidden_size=EXCLUDED.moe_ffn_hidden_size,

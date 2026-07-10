@@ -156,6 +156,7 @@ ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS num_moe_layers INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS has_shared_expert BOOLEAN;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS shared_expert_intermediate_size INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS expert_tensor_parallel_size INT;
+ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS ep INT;
 
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS formula_lines JSONB;
 
