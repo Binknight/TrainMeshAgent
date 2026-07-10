@@ -874,7 +874,8 @@
     // ── Transformer Layer card (stacked shadows + wrapper) ──
     var _tfCardY = D.Y_HEADER;
     var _tfCardH = actualY_TFEnd - _tfCardY;
-    var _stackCount = 5;
+    // Match dense model: 10 shadows for original, 2 for equivalent
+    var _stackCount = opts.isEquivalent ? 2 : 10;
     var _stackGap = 9;
     for (var _si = 0; _si < _stackCount; _si++) {
       var _off = (_stackCount - _si) * _stackGap;
