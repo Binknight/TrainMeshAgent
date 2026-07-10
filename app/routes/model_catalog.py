@@ -71,6 +71,7 @@ def upsert():
             "num_key_value_heads": data.get("num_key_value_heads"),
             "_source": data.get("source") or "manual",
             "reference": data.get("reference"),
+            "ep": data.get("ep"),
         }
     except (TypeError, ValueError) as e:
         return {"error": f"架构字段必须为整数: {e}"}, 400
