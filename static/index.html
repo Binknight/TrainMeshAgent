@@ -3725,11 +3725,20 @@
                         type: "done",
                         data: { stage: "step2" },
                     });
-                    // Auto-reload to ensure all async estimate data is fully loaded
-                    // and the bar chart / tooltip metrics are correct.
-                    setTimeout(function () {
-                        location.reload();
-                    }, 2000);
+                    // Re-fetch estimates now that both mesh and model data are
+                    // fully loaded (avoids stale metrics from the async estimate
+                    // fetch that may have started before modelEquivalent was set).
+                    setTimeout(async function () {
+                        try {
+                            if (typeof _refetchMeshEstimate === "function") {
+                                await _refetchMeshEstimate("orig");
+                                await _refetchMeshEstimate("eq");
+                            }
+                            if (typeof canvasRebuild === "function") canvasRebuild();
+                        } catch (e) {
+                            console.warn("Estimate refresh after step3 failed:", e);
+                        }
+                    }, 1500);
                 } catch (e) {
                     console.error("[DEBUG] step2 mesh-gen error:", e);
                     setStatus("error");

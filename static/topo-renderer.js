@@ -5334,9 +5334,9 @@ async function _refetchMeshEstimate(side) {
   var mesh = side === "orig" ? meshOriginal : meshEquivalent;
   var model = side === "orig" ? meshModelOrig : meshModelEq;
   if (!mesh || !model || model.num_layers == null) return;
-  // If an estimate fetch is already in flight for this side (e.g. from loadMeshData
-  // which has richer params from topoData), let it complete — don't abort it.
-  if (_estimateInFlight[side]) return;
+  // fetchEstimates automatically aborts any stale in-flight request for
+  // this side via AbortController, so we can safely call it again without
+  // guarding on _estimateInFlight.
   try {
     var estimates = await fetchEstimates(
       mesh.device_type,
