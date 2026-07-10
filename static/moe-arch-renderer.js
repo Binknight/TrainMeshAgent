@@ -52,12 +52,124 @@
   };
 
   // ═══════════════════════════════════════════════════════════════
+  // Tooltip definitions — MoE-specific architecture concept tips
+  // ═══════════════════════════════════════════════════════════════
+
+  var _MOE_TIPS = {
+    transformer_card: {
+      t: "Transformer层（堆叠N次）",
+      te: "Transformer Layer (stacked N times)",
+      d: "整个Transformer模型由N个相同的层堆叠而成。对于MoE模型，部分层将标准FFN替换为MoE FFN（稀疏激活），其余层保持Dense FFN。图中num_moe_layers指示MoE层数。",
+      m: "Layer_i(x) = AddNorm_MoE-FFN/FFN(AddNorm_Attn(x)) for i ∈ [1, N]",
+      v: "DeepSeek-R1: 61层, MoE层58层 | Mixtral 8×7B: 32层, MoE层全交替",
+    },
+    embeddings: {
+      t: "位置编码 + 词嵌入 + Dropout",
+      te: "Positional Encoding + Word Embeddings + Dropout",
+      d: "将离散token ID映射为稠密向量（维度d_model），注入位置信息后应用Dropout正则化。现代模型使用可学习位置编码或RoPE。",
+      m: "H_0 = Dropout(WordEmbed(token_ids) + PositionEncode(positions))",
+      v: "d_model: 7168(DeepSeek-R1) / 4096(Mixtral 8×7B)",
+    },
+    layer_norm_1: {
+      t: "层归一化（注意力前）",
+      te: "Layer Normalization (pre-attention)",
+      d: "Pre-LN架构中的第一个Layer Norm。对每个token特征向量独立归一化（均值为0，方差为1），再通过可学习γ/β参数仿射变换。",
+      m: "LN(x) = γ ⊙ ((x - μ) / √(σ² + ε)) + β",
+      v: "参数量: 2 × d_model per LN",
+    },
+    multi_head_attention: {
+      t: "多头自注意力机制",
+      te: "Multi-Head Self-Attention",
+      d: "自注意力是Transformer的核心，允许每个token关注所有其他token捕获上下文依赖。多头机制将Q/K/V投影到多个子空间并行计算，最后拼接输出。",
+      m: "MultiHead(Q,K,V) = Concat(head_1,...,head_h)W_O, head_i = Attention(QW_i^Q, KW_i^K, VW_i^V)",
+      v: "head数: 128(DeepSeek-R1) / 32(Mixtral)",
+    },
+    add_1: {
+      t: "残差加法（注意力残差）",
+      te: "Residual addition (attention residual)",
+      d: "将注意力输出与输入逐元素相加。残差连接为梯度提供直通路径（identity shortcut），是深层Transformer训练的关键。",
+      m: "x = x + MHA(LN_1(x))",
+      v: "",
+    },
+    layer_norm_2: {
+      t: "层归一化（MoE/FFN前）",
+      te: "Layer Normalization (pre-MoE/FFN)",
+      d: "第二个Layer Norm，位于MoE/FFN子层之前。将残差加法后的隐表示归一化到标准分布，为后续前馈网络提供数值稳定的输入。",
+      m: "LN(x) = γ ⊙ ((x - μ) / √(σ² + ε)) + β",
+      v: "",
+    },
+    moe_ffn_block: {
+      t: "MoE前馈网络块",
+      te: "Mixture-of-Experts FFN Block",
+      d: "MoE层用稀疏激活的前馈网络替代标准Dense FFN。每个token通过路由器选择Top-K个专家进行计算，各专家独立输出后加权求和。相比Dense FFN，MoE在相同计算量下可大幅提升模型容量（参数量）。",
+      m: "MoE-FFN(x) = Σ_{i∈TopK(x)} softmax(Router(x))_i · Expert_i(x)",
+      v: "DeepSeek-R1: 256专家×Top-8, 参数量685B(激活37B) | Mixtral: 8专家×Top-2",
+    },
+    moe_router: {
+      t: "MoE路由器（Top-K + Softmax）",
+      te: "MoE Router — Top-K Selection + Softmax",
+      d: "路由器是一个轻量级线性层，输入token隐表示输出每个专家的「亲和度」分数。通过Top-K筛选激活分数最高的K个专家，再Softmax归一化为路由权重。未被选中的专家在本token计算中完全不参与（稀疏激活）。",
+      m: "Router(x) = softmax(TopK(W_r · x)), W_r ∈ R^{d_model × num_experts}",
+      v: "Top-K: 8(DeepSeek-R1) / 2(Mixtral) | 路由参数: d_model × num_experts",
+    },
+    moe_expert: {
+      t: "MoE专家（独立FFN）",
+      te: "MoE Expert (independent FFN)",
+      d: "每个专家是一个独立的标准FFN：Linear上投影→GeLU激活→Linear下投影→Dropout。各专家参数独立、互不共享。被选中的专家并行计算，输出按路由权重加权求和送至后续Add。",
+      m: "Expert_i(x) = Dropout(W_i^{down}(GeLU(W_i^{up} x)))",
+      v: "每个专家FFN维度: 2048(DeepSeek-R1) | 单个专家参数量: 3×d_model×d_ffn",
+    },
+    moe_shared_expert: {
+      t: "共享专家（始终激活）",
+      te: "Shared Expert (always active)",
+      d: "共享专家对所有token始终激活，不经过路由器选择。其输出直接与Top-K路由专家的加权输出相加。共享专家的引入可缓解某些token「无专家可选」的问题，并为所有token提供公共知识表示。",
+      m: "MoE-FFN(x) = Shared(x) + Σ_{i∈TopK(x)} w_i · Expert_i(x)",
+      v: "DeepSeek-R1: 1个共享专家 | 共享专家与路由专家结构相同",
+    },
+    add_2: {
+      t: "残差加法（MoE/FFN残差）",
+      te: "Residual addition (MoE/FFN residual)",
+      d: "将MoE/FFN输出与输入逐元素相加。本层的第二个残差连接，与注意力残差共同构成Transformer层的梯度高速通道。",
+      m: "x = x + MoE-FFN(LN_2(x))",
+      v: "",
+    },
+    final_layer_norm: {
+      t: "最终层归一化（输出前）",
+      te: "Final Layer Normalization (pre-output)",
+      d: "所有Transformer层堆叠完成后的最后一个Layer Norm，不属于任何单层内部。归一化后传递给输出层。",
+      m: "H_final = LayerNorm(H_N)",
+      v: "",
+    },
+    output_layer: {
+      t: "输出层与损失函数",
+      te: "Output Layer & Loss",
+      d: "将d_model维度的隐表示映射到vocab_size维度得到logits。训练时计算交叉熵损失。LM Head权重常与输入Embedding共享（weight tying）。",
+      m: "logits = H_final · W_embed^T, Loss = -Σ y_i log(softmax(logits_i))",
+      v: "vocab_size: 129280(DeepSeek-R1)",
+    },
+    tensor_grid: {
+      t: "张量并行网格",
+      te: "Tensor Parallelism grid",
+      d: "将TP维度可视化。TP将单层参数矩阵按列或行切分到多个NPU，各NPU独立计算分片后通过AllReduce通信聚合。橙色高亮格表示当前NPU分片。",
+      m: "",
+      v: "切分方式: 列切分/行切分 | 通信: AllReduce",
+    },
+    residual_connection: {
+      t: "残差连接（Skip Connection）",
+      te: "Residual / Skip Connection",
+      d: "图中橙色虚线标注的残差连接，从子层输入分叉直接连接到Add节点。残差连接为反向传播梯度提供恒等映射路径，使深层模型可训练。",
+      m: "output = SubLayer(x) + x",
+      v: "",
+    },
+  };
+
+  // ═══════════════════════════════════════════════════════════════
   // Helper — draw a labeled rounded rectangle
   // ═══════════════════════════════════════════════════════════════
 
-  function drawBox(g, x, y, w, h, label, fill, stroke, textColor, cls) {
+  function drawBox(g, x, y, w, h, label, fill, stroke, textColor, cls, tipId, hoverHelper) {
     var bg = g.append("g");
-    bg.append("rect")
+    var rect = bg.append("rect")
       .attr("x", x).attr("y", y)
       .attr("width", w).attr("height", h)
       .attr("rx", 4).attr("ry", 4)
@@ -65,6 +177,7 @@
       .attr("stroke", stroke)
       .attr("stroke-width", 1.2)
       .attr("class", (cls || "") + " moe-node-rect");
+    if (tipId && hoverHelper) hoverHelper(rect, 1.2, tipId);
     bg.append("text")
       .attr("x", x + w / 2)
       .attr("y", y + h / 2 + 1)
@@ -82,9 +195,9 @@
   // Helper — draw a sub-block with title and inner items
   // ═══════════════════════════════════════════════════════════════
 
-  function drawSubBlock(g, x, y, w, h, title, subItems, fill, stroke, titleColor, itemBg, itemStroke) {
+  function drawSubBlock(g, x, y, w, h, title, subItems, fill, stroke, titleColor, itemBg, itemStroke, tipId, hoverHelper) {
     var sg = g.append("g");
-    sg.append("rect")
+    var rect = sg.append("rect")
       .attr("x", x).attr("y", y)
       .attr("width", w).attr("height", h)
       .attr("rx", 4).attr("ry", 4)
@@ -92,6 +205,7 @@
       .attr("stroke", stroke)
       .attr("stroke-width", 1.2)
       .attr("class", "moe-node-rect");
+    if (tipId && hoverHelper) hoverHelper(rect, 1.2, tipId);
 
     sg.append("text")
       .attr("x", x + w / 2)
@@ -191,7 +305,7 @@
   // Render the MoE FFN block (router + expert columns)
   // ═══════════════════════════════════════════════════════════════
 
-  function renderMoEBlock(g, moeX, moeY, moeW, config, scale) {
+  function renderMoEBlock(g, moeX, moeY, moeW, config, scale, hoverHelper) {
     scale = scale || 1;
     var numExperts = config.num_experts || 8;
     var topK = config.moe_router_topk || 2;
@@ -225,7 +339,7 @@
     if (hasShared) moeInnerH += sharedExpertH + 8 * s;
 
     // ── Outer MoE block rect ──
-    g.append("rect")
+    var moeOuterRect = g.append("rect")
       .attr("x", moeX).attr("y", moeY)
       .attr("width", moeW).attr("height", moeInnerH)
       .attr("rx", 4 * s).attr("ry", 4 * s)
@@ -233,6 +347,7 @@
       .attr("stroke", "var(--red)")
       .attr("stroke-width", 1.2 * s)
       .attr("class", "moe-node-rect");
+    if (hoverHelper) hoverHelper(moeOuterRect, 1.2 * s, "moe_ffn_block");
 
     g.append("text")
       .attr("x", CX)
@@ -257,7 +372,8 @@
       .attr("rx", 3 * s).attr("ry", 3 * s)
       .attr("fill", "#1a1528")
       .attr("stroke", "var(--purple)")
-      .attr("stroke-width", 0.8 * s);
+      .attr("stroke-width", 0.8 * s)
+      .call(function (r) { if (hoverHelper) hoverHelper(r, 0.8 * s, "moe_router"); });
     g.append("text")
       .attr("x", CX).attr("y", routerY + routerItemH / 2 + 1)
       .attr("text-anchor", "middle")
@@ -275,7 +391,8 @@
       .attr("rx", 3 * s).attr("ry", 3 * s)
       .attr("fill", "#1a1528")
       .attr("stroke", "var(--purple)")
-      .attr("stroke-width", 0.8 * s);
+      .attr("stroke-width", 0.8 * s)
+      .call(function (r) { if (hoverHelper) hoverHelper(r, 0.8 * s, "moe_router"); });
     g.append("text")
       .attr("x", CX).attr("y", softmaxY + routerItemH / 2 + 1)
       .attr("text-anchor", "middle")
@@ -324,7 +441,7 @@
       var isSelected = showEllipsis ? false : (e < topK);
 
       // Expert column rect
-      g.append("rect")
+      var expertRect = g.append("rect")
         .attr("x", ex).attr("y", expertStartY)
         .attr("width", expertW).attr("height", expertH)
         .attr("rx", 4 * s).attr("ry", 4 * s)
@@ -332,6 +449,7 @@
         .attr("stroke", isSelected ? "var(--cyan)" : "var(--red)")
         .attr("stroke-width", (isSelected ? 1.5 : 0.8) * s)
         .attr("class", isSelected ? "moe-expert-selected" : "moe-expert-unselected");
+      if (hoverHelper) hoverHelper(expertRect, (isSelected ? 1.5 : 0.8) * s, "moe_expert");
 
       // Expert label
       var eLabel;
@@ -389,7 +507,7 @@
       var seY = expertStartY + expertH + 8 * s;
 
       // Shared expert box
-      g.append("rect")
+      var seRect = g.append("rect")
         .attr("x", seX).attr("y", seY)
         .attr("width", seW).attr("height", seH)
         .attr("rx", 4 * s).attr("ry", 4 * s)
@@ -397,6 +515,7 @@
         .attr("stroke", "var(--green)")
         .attr("stroke-width", 1.5 * s)
         .attr("class", "moe-node-rect");
+      if (hoverHelper) hoverHelper(seRect, 1.5 * s, "moe_shared_expert");
 
       // Label
       g.append("text")
@@ -691,6 +810,55 @@
 
     // Colors
     var lc = opts.labelColor || "var(--cyan)";
+    var _fp = opts.filterPrefix || "";
+
+    // ── Hover tooltip helpers (matching dense model pattern) ──
+    function _showMoeTip(show, tipId, event) {
+      var tipEl = document.getElementById("model-tooltip");
+      if (!tipEl) return;
+      if (!show || !tipId || !_MOE_TIPS[tipId]) {
+        tipEl.classList.remove("visible");
+        return;
+      }
+      var tip = _MOE_TIPS[tipId];
+      var html = '<div class="tip-title">' + tip.t + "</div>";
+      html += '<div class="tip-eng">' + tip.te + "</div>";
+      html += '<div class="tip-explain">' + tip.d + "</div>";
+      if (tip.m) html += '<div class="tip-math">' + tip.m + "</div>";
+      if (tip.v) html += '<div class="tip-values">' + tip.v + "</div>";
+      tipEl.innerHTML = html;
+      tipEl.classList.add("visible");
+      if (event) {
+        var x = event.clientX + 16;
+        var y = event.clientY - 10;
+        var tw = tipEl.offsetWidth || 300;
+        var th = tipEl.offsetHeight || 200;
+        if (x + tw > window.innerWidth - 20) x = event.clientX - tw - 16;
+        if (y + th > window.innerHeight - 20) y = event.clientY - th - 10;
+        if (x < 10) x = 10;
+        if (y < 10) y = 10;
+        tipEl.style.left = x + "px";
+        tipEl.style.top = y + "px";
+      }
+    }
+
+    function _addMoeHover(rect, origSw, tipId) {
+      rect
+        .classed("model-node", true)
+        .on("mouseenter", function (event) {
+          d3.select(this)
+            .attr("stroke-width", origSw * 2.2)
+            .attr("filter", "url(#" + _fp + "model-hover-glow)");
+          _showMoeTip(true, tipId, event);
+        })
+        .on("mousemove", function (event) {
+          _showMoeTip(true, tipId, event);
+        })
+        .on("mouseleave", function () {
+          d3.select(this).attr("stroke-width", origSw).attr("filter", null);
+          _showMoeTip(false);
+        });
+    }
 
     // ── Pre-compute MoE height and dynamic Y positions ──
     var _moeDesignH = calcMoeBlockDesignH(cfg);
@@ -720,7 +888,7 @@
     }
 
     // Main card rect
-    g.append("rect")
+    var _tfCardRect = g.append("rect")
       .attr("x", sx(D.CX - D.BOX_W / 2))
       .attr("y", sy(_tfCardY))
       .attr("width", sw(D.BOX_W))
@@ -730,6 +898,7 @@
       .attr("stroke", lc)
       .attr("stroke-width", 1.5 * scale)
       .attr("class", "moe-stack-card");
+    _addMoeHover(_tfCardRect, 1.5 * scale, "transformer_card");
 
     // Card header: "Transformer Layer  (×N)"
     g.append("text")
@@ -762,47 +931,55 @@
     // ── 1. Embeddings ──
     drawBox(g, sx(D.CX - D.BOX_W / 2), sy(D.Y_EMBED), sw(D.BOX_W), sw(D.H_MD),
       "Position + Word Embeddings & Dropout",
-      "#1a1a10", "var(--yellow)", "var(--yellow)", "moe-embed");
+      "#1a1a10", "var(--yellow)", "var(--yellow)", "moe-embed",
+      "embeddings", _addMoeHover);
 
     // ── 2. Layer Norm 1 ──
     drawBox(g, sx(D.CX - D.NARROW_W / 2), sy(D.Y_LN1), sw(D.NARROW_W), sw(D.H_SM),
       "Layer Norm",
-      "#111a13", "var(--green)", "var(--green)", "moe-ln");
+      "#111a13", "var(--green)", "var(--green)", "moe-ln",
+      "layer_norm_1", _addMoeHover);
 
     // ── 3. Multi-Head Self-Attention ──
     drawSubBlock(g, sx(D.CX - D.BLOCK_W / 2), sy(D.Y_ATTN), sw(D.BLOCK_W), sw(D.H_ATTN),
       "Multi-Head Self-Attention",
       ["Self Attention", "Linear (h → h)", "Dropout"],
-      "#111922", "var(--cyan)", "var(--cyan)", "#15202b", "var(--cyan)");
+      "#111922", "var(--cyan)", "var(--cyan)", "#15202b", "var(--cyan)",
+      "multi_head_attention", _addMoeHover);
 
     // ── 4. Add 1 ──
     drawBox(g, sx(D.CX - D.NARROW_W / 2), sy(D.Y_ADD1), sw(D.NARROW_W), sw(D.H_SM),
       "Add",
-      "var(--bg-surface)", "var(--text-muted)", "var(--text-secondary)", "moe-add");
+      "var(--bg-surface)", "var(--text-muted)", "var(--text-secondary)", "moe-add",
+      "add_1", _addMoeHover);
 
     // ── 5. Layer Norm 2 ──
     drawBox(g, sx(D.CX - D.NARROW_W / 2), sy(D.Y_LN2), sw(D.NARROW_W), sw(D.H_SM),
       "Layer Norm",
-      "#111a13", "var(--green)", "var(--green)", "moe-ln");
+      "#111a13", "var(--green)", "var(--green)", "moe-ln",
+      "layer_norm_2", _addMoeHover);
 
     // ── 6. MoE FFN Block ──
-    renderMoEBlock(g, sx(D.CX - D.BLOCK_W / 2), sy(D.Y_MOE), sw(D.BLOCK_W), cfg, scale);
+    renderMoEBlock(g, sx(D.CX - D.BLOCK_W / 2), sy(D.Y_MOE), sw(D.BLOCK_W), cfg, scale, _addMoeHover);
     // actualY_Add2…actualY_Output pre-computed above
 
     // ── 7. Add 2 ──
     drawBox(g, sx(D.CX - D.NARROW_W / 2), sy(actualY_Add2), sw(D.NARROW_W), sw(D.H_SM),
       "Add",
-      "var(--bg-surface)", "var(--text-muted)", "var(--text-secondary)", "moe-add");
+      "var(--bg-surface)", "var(--text-muted)", "var(--text-secondary)", "moe-add",
+      "add_2", _addMoeHover);
 
     // ── 8. Final Layer Norm ──
     drawBox(g, sx(D.CX - D.NARROW_W / 2), sy(actualY_LN3), sw(D.NARROW_W), sw(D.H_SM),
       "Final Layer Norm",
-      "#111a13", "var(--green)", "var(--green)", "moe-ln");
+      "#111a13", "var(--green)", "var(--green)", "moe-ln",
+      "final_layer_norm", _addMoeHover);
 
     // ── 9. Output Layer ──
     drawBox(g, sx(D.CX - D.BOX_W / 2), sy(actualY_Output), sw(D.BOX_W), sw(D.H_MD),
       "Output Layer & Loss",
-      "#1a140f", "var(--orange)", "var(--orange)", "moe-output");
+      "#1a140f", "var(--orange)", "var(--orange)", "moe-output",
+      "output_layer", _addMoeHover);
 
     // ── Main flow arrows ──
     var arrowColor = "var(--green)";
