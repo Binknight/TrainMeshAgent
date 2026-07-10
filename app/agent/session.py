@@ -131,18 +131,35 @@ def _persist_session(session: SessionState) -> None:
                     "total_nodes": params_obj.dp * params_obj.tp * params_obj.pp,
                 })
             if model and hasattr(model, "config"):
+                cfg = model.config
                 params.update({
-                    "num_layers": model.config.num_layers,
-                    "hidden_dim": model.config.d_model,
-                    "num_heads": model.config.num_heads,
-                    "d_ffn": model.config.d_ffn,
+                    "num_layers": cfg.num_layers,
+                    "hidden_dim": cfg.d_model,
+                    "num_heads": cfg.num_heads,
+                    "d_ffn": cfg.d_ffn,
+                    # ── MoE fields (None for dense models) ──
+                    "model_type": cfg.model_type,
+                    "num_experts": cfg.num_experts,
+                    "moe_router_topk": cfg.moe_router_topk,
+                    "num_moe_layers": cfg.num_moe_layers,
+                    "moe_ffn_hidden_size": cfg.moe_ffn_hidden_size,
+                    "has_shared_expert": cfg.has_shared_expert,
+                    "expert_tensor_parallel_size": cfg.expert_tensor_parallel_size,
                 })
                 step1_model_name = getattr(session, f"{role}_model_name", None)
                 params.setdefault("model_name", step1_model_name or model.model_name or model.type)
+                # ── EP from session state (not in TrainingModelConfig) ──
+                step1_ep = getattr(session, f"{role}_ep", None)
+                if step1_ep is not None:
+                    params.setdefault("ep", step1_ep)
             else:
                 step1_model_name = getattr(session, f"{role}_model_name", None)
                 if step1_model_name:
                     params.setdefault("model_name", step1_model_name)
+                # ── EP from session state (persists even without model) ──
+                step1_ep = getattr(session, f"{role}_ep", None)
+                if step1_ep is not None:
+                    params.setdefault("ep", step1_ep)
             step1_seq_len = getattr(session, f"{role}_seq_len", None)
             step1_batch_size = getattr(session, f"{role}_batch_size", None)
             step1_dff = getattr(session, f"{role}_dff", None)
@@ -253,17 +270,33 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                     dp=tp.get("dp_size", 1),
                     tp=tp.get("tp_size", 1),
                     pp=tp.get("pp_size", 1),
+                    ep=tp.get("ep"),
                 ))
 
                 if tp.get("num_layers"):
                     d_model = tp.get("hidden_dim", 4096)
                     num_heads = tp.get("num_heads", 32)
                     d_ffn = tp.get("d_ffn", 11008)
+                    # ── MoE fields (None for dense models) ──
+                    model_type = tp.get("model_type", "dense")
+                    num_experts = tp.get("num_experts")
+                    moe_router_topk = tp.get("moe_router_topk")
+                    num_moe_layers = tp.get("num_moe_layers")
+                    moe_ffn_hidden_size = tp.get("moe_ffn_hidden_size")
+                    has_shared_expert = tp.get("has_shared_expert", False)
+                    expert_tp = tp.get("expert_tensor_parallel_size", 1)
                     config = TrainingModelConfig(
                         num_layers=tp.get("num_layers", 32),
                         d_model=d_model,
                         num_heads=num_heads,
                         d_ffn=d_ffn,
+                        model_type=model_type,
+                        num_experts=num_experts,
+                        moe_router_topk=moe_router_topk,
+                        num_moe_layers=num_moe_layers,
+                        moe_ffn_hidden_size=moe_ffn_hidden_size,
+                        has_shared_expert=has_shared_expert,
+                        expert_tensor_parallel_size=expert_tp,
                     )
                     d_head = d_model // num_heads
                     computed = TrainingModelComputed(
@@ -274,6 +307,10 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                     _model_gen = importlib.import_module("app.skills.training-model-gen-skill")
                     layers = _model_gen._build_layers(
                         config.num_layers, num_heads, d_head, d_ffn, "GELU",
+                        num_experts=num_experts,
+                        moe_ffn_hidden_size=moe_ffn_hidden_size,
+                        num_moe_layers=num_moe_layers,
+                        has_shared_expert=has_shared_expert,
                     )
                     model_attr = f"{role}_training_model"
                     setattr(state, model_attr, TrainingModel(
@@ -293,6 +330,15 @@ def _load_session(session_id: str) -> Optional[SessionState]:
             state.original_dff = orig_tp.get("d_ffn")
             state.original_vocab_size = orig_tp.get("vocab_size")
             state.original_model_name = orig_tp.get("model_name")
+            # ── MoE session-level fields ──
+            state.original_model_type = orig_tp.get("model_type", "dense")
+            state.original_ep = orig_tp.get("ep")
+            state.original_num_experts = orig_tp.get("num_experts")
+            state.original_moe_topk = orig_tp.get("moe_router_topk")
+            state.original_num_moe_layers = orig_tp.get("num_moe_layers")
+            state.original_moe_ffn_hidden_size = orig_tp.get("moe_ffn_hidden_size")
+            state.original_has_shared_expert = orig_tp.get("has_shared_expert")
+            state.original_expert_tensor_parallel_size = orig_tp.get("expert_tensor_parallel_size")
 
         eq_tp = get_topology_params(session_id, "equivalent")
         if eq_tp:
@@ -300,6 +346,10 @@ def _load_session(session_id: str) -> Optional[SessionState]:
             state.equivalent_batch_size = eq_tp.get("batch_size")
             state.equivalent_micro_batch = eq_tp.get("micro_batch_size")
             state.equivalent_dff = eq_tp.get("d_ffn")
+            # ── MoE session-level fields ──
+            state.equivalent_ep = eq_tp.get("ep")
+            state.equivalent_num_moe_layers = eq_tp.get("num_moe_layers")
+            state.equivalent_num_experts = eq_tp.get("num_experts")
 
         for role in ("original", "equivalent"):
             sr = get_simulation_result(session_id, role)
