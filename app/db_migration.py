@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS topology_params (
     d_ffn           INT,
     seq_len         INT,
     batch_size      INT,
+    micro_batch_size INT,
+    vocab_size      INT,
+    -- MoE-specific fields
+    model_type      VARCHAR(10) DEFAULT 'dense',
+    num_experts     INT,
+    moe_router_topk INT,
+    num_moe_layers  INT,
+    moe_ffn_hidden_size INT,
+    has_shared_expert BOOLEAN DEFAULT FALSE,
+    expert_tensor_parallel_size INT DEFAULT 1,
+    ep              INT,
     UNIQUE (session_id, role)
 );
 
@@ -117,6 +128,14 @@ ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_dp_comm;
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS d_ffn INT;
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS micro_batch_size INT;
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS vocab_size INT;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS model_type VARCHAR(10) DEFAULT 'dense';  -- MoE-specific columns
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS num_experts INT;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS moe_router_topk INT;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS num_moe_layers INT;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS moe_ffn_hidden_size INT;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS has_shared_expert BOOLEAN DEFAULT FALSE;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS expert_tensor_parallel_size INT DEFAULT 1;
+ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS ep INT;
 
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS reference TEXT;
 
