@@ -3332,7 +3332,8 @@ function canvasRebuild(targetSelector) {
         (meshOriginal && meshOriginal.pp) || 0,
         (meshEquivalent && meshEquivalent.pp) || 0
       );
-      modelH = calcMoeArchHeight(_refModel.config, meshWidth, _ppForHeight);
+      var _epForHeight = meshModelOrig.ep || meshModelEq.ep || 0;
+      modelH = calcMoeArchHeight(_refModel.config, meshWidth, _ppForHeight, _epForHeight);
     } else {
       modelH = 520;
     }
@@ -3913,6 +3914,8 @@ function canvasRebuild(targetSelector) {
     var origPp = meshOriginal ? meshOriginal.pp : 0;
     var eqTp = meshEquivalent ? meshEquivalent.tp : 0;
     var eqPp = meshEquivalent ? meshEquivalent.pp : 0;
+    var origEp = meshModelOrig.ep || 0;
+    var eqEp = meshModelEq.ep || 0;
     var highlightOrigTp = null,
       highlightOrigPp = null;
     var highlightEqTp = null,
@@ -3997,7 +4000,7 @@ function canvasRebuild(targetSelector) {
           renderMoeArchitecture(zoomLayer, modelOriginal, {
             x: modelX0, y: modelTopY + 44, areaW: modelAreaW,
             scale: _moeScale, labelColor: "var(--cyan)",
-            tpCount: origTp, ppCount: origPp,
+            tpCount: origTp, ppCount: origPp, epCount: origEp,
             highlightTpIdx: highlightOrigTp, highlightPpIdx: highlightOrigPp,
             highlightInputOutput: highlightOrigInputOutput,
             filterPrefix: _currentFilterPrefix,
@@ -4011,7 +4014,7 @@ function canvasRebuild(targetSelector) {
           renderMoeArchitecture(zoomLayer, modelEquivalent, {
             x: modelX0Eq, y: modelTopY + 44, areaW: modelAreaWEq,
             scale: _moeScale, labelColor: "var(--teal)",
-            tpCount: eqTp, ppCount: eqPp,
+            tpCount: eqTp, ppCount: eqPp, epCount: eqEp,
             highlightTpIdx: highlightEqTp, highlightPpIdx: highlightEqPp,
             highlightInputOutput: highlightEqInputOutput,
             filterPrefix: _currentFilterPrefix,
@@ -4068,6 +4071,7 @@ function canvasRebuild(targetSelector) {
         meshOriginal || meshEquivalent
           ? (meshOriginal || meshEquivalent).pp
           : 0;
+      var singleEp = meshModelOrig.ep || meshModelEq.ep || 0;
       var singleHlTp = null,
         singleHlPp = null;
       if (meshPinnedTpInfo) {
@@ -4090,7 +4094,7 @@ function canvasRebuild(targetSelector) {
         renderMoeArchitecture(zoomLayer, model, {
           x: modelX0, y: modelTopY + 44, areaW: modelAreaW,
           scale: null, labelColor: "var(--cyan)",
-          tpCount: singleTp, ppCount: singlePp,
+          tpCount: singleTp, ppCount: singlePp, epCount: singleEp,
           highlightTpIdx: singleHlTp, highlightPpIdx: singleHlPp,
           highlightInputOutput: singleHlInputOutput,
           filterPrefix: _currentFilterPrefix,
