@@ -3697,7 +3697,9 @@
                         !!data.equivalent_model,
                     );
 
-                    // Staged rendering: mesh first, pause, then model, pause, then done (all under step2)
+                    // Staged rendering: mesh first, pause, then model
+                    // with estimate re-fetch via direct API call (avoids
+                    // async race with internal estimate fetch pipeline).
                     if (data.equivalent_mesh) {
                         console.log("[DEBUG] dispatching mesh_json for equivalent");
                         handleWorkflowEvent({
@@ -3720,25 +3722,19 @@
                             canvasRecenter();
                         await renderThenSleep(800);
                     }
+                    // Force-fetch estimates for BOTH sides via direct API
+                    // call, bypassing the internal async pipeline which may
+                    // have stale or incomplete data for the equivalent side.
+                    console.log("[DEBUG] force-refreshing estimates via API");
+                    await _forceRefreshEstimates();
+                    canvasRebuild();
+                    if (typeof canvasRecenter === "function") canvasRecenter();
+
                     console.log("[DEBUG] dispatching done stage=step2");
                     handleWorkflowEvent({
                         type: "done",
                         data: { stage: "step2" },
                     });
-                    // Re-fetch estimates now that both mesh and model data are
-                    // fully loaded (avoids stale metrics from the async estimate
-                    // fetch that may have started before modelEquivalent was set).
-                    setTimeout(async function () {
-                        try {
-                            if (typeof _refetchMeshEstimate === "function") {
-                                await _refetchMeshEstimate("orig");
-                                await _refetchMeshEstimate("eq");
-                            }
-                            if (typeof canvasRebuild === "function") canvasRebuild();
-                        } catch (e) {
-                            console.warn("Estimate refresh after step3 failed:", e);
-                        }
-                    }, 1500);
                 } catch (e) {
                     console.error("[DEBUG] step2 mesh-gen error:", e);
                     setStatus("error");

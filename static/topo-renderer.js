@@ -5330,6 +5330,68 @@ function loadModelData(modelData, role) {
   if (typeof checkSimReady === "function") checkSimReady();
 }
 
+// ── Force refresh estimates via direct API call ──
+// Bypasses the internal async estimate pipeline (which may have stale
+// or incomplete data due to loadMeshData / loadModelData race conditions).
+// Called after step3 equivalent modeling completes to guarantee correct
+// rank bar chart metrics without a full page reload.
+async function _forceRefreshEstimates() {
+  var sides = [];
+  if (meshOriginal && meshModelOrig && meshModelOrig.num_layers != null) {
+    sides.push({ side: "orig", mesh: meshOriginal, model: meshModelOrig });
+  }
+  if (meshEquivalent && meshModelEq && meshModelEq.num_layers != null) {
+    sides.push({ side: "eq", mesh: meshEquivalent, model: meshModelEq });
+  }
+  for (var i = 0; i < sides.length; i++) {
+    var s = sides[i];
+    try {
+      var body = {
+        device_type: s.mesh.device_type || s.mesh.deviceType,
+        total_nodes: s.mesh.total_nodes,
+        dp: s.mesh.dp || s.mesh.dp_size,
+        tp: s.mesh.tp || s.mesh.tp_size,
+        pp: s.mesh.pp || s.mesh.pp_size,
+        num_layers: s.model.num_layers,
+        hidden_dim: s.model.hidden_dim,
+        d_ffn: s.model.d_ffn,
+      };
+      if (s.model.seq_len != null) body.seq_len = s.model.seq_len;
+      if (s.model.batch_size != null) body.total_batch = s.model.batch_size;
+      if (s.model.micro_batch_size != null) body.micro_batch = s.model.micro_batch_size;
+      if (s.model.vocab_size != null) body.vocab_size = s.model.vocab_size;
+      if (s.model.model_type != null) body.model_type = s.model.model_type;
+      if (s.model.ep != null) body.ep = s.model.ep;
+      if (s.model.num_experts != null) body.num_experts = s.model.num_experts;
+      if (s.model.moe_router_topk != null) body.moe_router_topk = s.model.moe_router_topk;
+      if (s.model.num_moe_layers != null) body.num_moe_layers = s.model.num_moe_layers;
+      if (s.model.moe_ffn_hidden_size != null) body.moe_ffn_hidden_size = s.model.moe_ffn_hidden_size;
+      if (s.model.has_shared_expert != null) body.has_shared_expert = s.model.has_shared_expert;
+      if (s.model.expert_tensor_parallel_size != null) body.expert_tensor_parallel_size = s.model.expert_tensor_parallel_size;
+
+      var resp = await fetch(API + "/session/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error("Estimate API returned " + resp.status);
+      var data = await resp.json();
+      var est = {};
+      data.cards.forEach(function (c) {
+        est[c.global_rank] = c;
+      });
+      if (s.side === "orig") {
+        meshEstimateOrig = est;
+      } else {
+        meshEstimateEq = est;
+      }
+      console.log("[forceRefreshEstimates]", s.side, "→", Object.keys(est).length, "cards");
+    } catch (e) {
+      console.warn("[forceRefreshEstimates] failed for", s.side, ":", e);
+    }
+  }
+}
+
 async function _refetchMeshEstimate(side) {
   var mesh = side === "orig" ? meshOriginal : meshEquivalent;
   var model = side === "orig" ? meshModelOrig : meshModelEq;
