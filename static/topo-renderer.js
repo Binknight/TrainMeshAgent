@@ -4004,6 +4004,7 @@ function canvasRebuild(targetSelector) {
             highlightTpIdx: highlightOrigTp, highlightPpIdx: highlightOrigPp,
             highlightInputOutput: highlightOrigInputOutput,
             filterPrefix: _currentFilterPrefix,
+            isEquivalent: false,
           });
         } else {
           _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW,
@@ -4018,6 +4019,7 @@ function canvasRebuild(targetSelector) {
             highlightTpIdx: highlightEqTp, highlightPpIdx: highlightEqPp,
             highlightInputOutput: highlightEqInputOutput,
             filterPrefix: _currentFilterPrefix,
+            isEquivalent: true,
           });
         } else {
           _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq,
@@ -4098,6 +4100,7 @@ function canvasRebuild(targetSelector) {
           highlightTpIdx: singleHlTp, highlightPpIdx: singleHlPp,
           highlightInputOutput: singleHlInputOutput,
           filterPrefix: _currentFilterPrefix,
+          isEquivalent: false,
         });
       } else {
         _renderOneModel(
