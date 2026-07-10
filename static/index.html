@@ -3725,6 +3725,11 @@
                         type: "done",
                         data: { stage: "step2" },
                     });
+                    // Auto-reload to ensure all async estimate data is fully loaded
+                    // and the bar chart / tooltip metrics are correct.
+                    setTimeout(function () {
+                        location.reload();
+                    }, 2000);
                 } catch (e) {
                     console.error("[DEBUG] step2 mesh-gen error:", e);
                     setStatus("error");
