@@ -739,7 +739,7 @@
   // Public: compute diagram height for canvas layout
   // ═══════════════════════════════════════════════════════════════
 
-  function calcMoeArchHeight(config, availableWidth, ppCount) {
+  function calcMoeArchHeight(config, availableWidth, ppCount, epCount) {
     var scale = Math.min(1, (availableWidth - 16) / MOE_DESIGN.W);
     var D = MOE_DESIGN;
     var moeDesignH = calcMoeBlockDesignH(config);
@@ -753,10 +753,13 @@
     var _legendTotalH = 14 + (_numLegendItems + 1) * 16 + 8;
     // PP→layer mapping table height (only if topology data is available)
     var _tableBottomY = D.TENSOR_Y + D.TENSOR_H;
+    var ROW_H = 14, HEADER_H = 15;
     if (ppCount > 0 && config.num_layers > 0) {
-      var COL_PP = 50, COL_RANGE = 74;
-      var ROW_H = 14, HEADER_H = 15;
       _tableBottomY = D.TENSOR_Y + D.TENSOR_H + 18 + 14 + HEADER_H + ppCount * ROW_H + 36;
+    }
+    // EP→expert mapping table height
+    if (epCount > 0 && config.num_experts > 0) {
+      _tableBottomY += 12 + 14 + HEADER_H + epCount * ROW_H + 36;
     }
     var legendY = Math.max(_tableBottomY + 16, outputBottomY - _legendTotalH);
     return Math.ceil((legendY + 160) * scale) + 80;
@@ -1143,6 +1146,119 @@
         }
 
         _tableBottomDesignY = tableY_d + tableH_d + 36;
+      }
+
+      // ── EP → expert mapping table ──
+      var epCount = opts.epCount || 0;
+      var numExperts = cfg.num_experts || 0;
+      if (epCount > 0 && numExperts > 0) {
+        var _epTitleY = _tableBottomDesignY + 12;
+        g.append("text")
+          .attr("x", sx(D.TENSOR_X + D.TENSOR_W / 2))
+          .attr("y", sy(_epTitleY))
+          .attr("text-anchor", "middle")
+          .attr("font-size", Math.max(7, 9 * scale) + "px")
+          .attr("font-family", "var(--font-sans)")
+          .attr("font-weight", "500")
+          .attr("fill", lc)
+          .text("EP切分专家映射");
+
+        var expertsPerEp = Math.floor(numExperts / epCount);
+        var epRemainder = numExperts % epCount;
+        var EP_COL = 50, EP_RANGE = 74;
+        var EP_ROW_H = 14, EP_HEADER_H = 15;
+        var epTableW_d = EP_COL + EP_RANGE;
+        var epTableX_d = D.TENSOR_X + (D.TENSOR_W - epTableW_d) / 2;
+        var epTableY_d = _epTitleY + 14;
+        var epTableH_d = EP_HEADER_H + epCount * EP_ROW_H;
+        var epSepX1 = epTableX_d + EP_COL;
+
+        // Header background
+        g.append("rect")
+          .attr("x", sx(epTableX_d)).attr("y", sy(epTableY_d))
+          .attr("width", sw(epTableW_d)).attr("height", sw(EP_HEADER_H))
+          .attr("fill", "#21262d");
+
+        // Row backgrounds (striped)
+        for (var epi = 0; epi < epCount; epi++) {
+          var ery = epTableY_d + EP_HEADER_H + epi * EP_ROW_H;
+          g.append("rect")
+            .attr("x", sx(epTableX_d)).attr("y", sy(ery))
+            .attr("width", sw(epTableW_d)).attr("height", sw(EP_ROW_H))
+            .attr("fill", epi % 2 === 0 ? "var(--bg-surface)" : "#161b22")
+            .attr("class", "pp-row");
+        }
+
+        // Vertical separator
+        g.append("line")
+          .attr("x1", sx(epSepX1)).attr("y1", sy(epTableY_d))
+          .attr("x2", sx(epSepX1)).attr("y2", sy(epTableY_d + epTableH_d))
+          .attr("stroke", "var(--text-muted)")
+          .attr("stroke-width", 0.6 * scale);
+
+        // Horizontal separators + outer border
+        for (var ehi = 0; ehi <= epCount; ehi++) {
+          var ehy = epTableY_d + EP_HEADER_H + ehi * EP_ROW_H;
+          g.append("line")
+            .attr("x1", sx(epTableX_d)).attr("y1", sy(ehy))
+            .attr("x2", sx(epTableX_d + epTableW_d)).attr("y2", sy(ehy))
+            .attr("stroke", "var(--text-muted)")
+            .attr("stroke-width", 0.6 * scale);
+        }
+        g.append("rect")
+          .attr("x", sx(epTableX_d)).attr("y", sy(epTableY_d))
+          .attr("width", sw(epTableW_d)).attr("height", sw(epTableH_d))
+          .attr("fill", "none")
+          .attr("stroke", "var(--text-muted)")
+          .attr("stroke-width", 1 * scale)
+          .attr("rx", 2 * scale);
+
+        // Header text
+        var _ehdrTextY = epTableY_d + 11;
+        g.append("text")
+          .attr("x", sx(epTableX_d + EP_COL / 2))
+          .attr("y", sy(_ehdrTextY))
+          .attr("text-anchor", "middle")
+          .attr("font-size", Math.max(6, 8 * scale) + "px")
+          .attr("font-family", "var(--font-sans)")
+          .attr("font-weight", "600")
+          .attr("fill", "var(--text-secondary)")
+          .text("EP索引");
+        g.append("text")
+          .attr("x", sx(epTableX_d + EP_COL + EP_RANGE / 2))
+          .attr("y", sy(_ehdrTextY))
+          .attr("text-anchor", "middle")
+          .attr("font-size", Math.max(6, 8 * scale) + "px")
+          .attr("font-family", "var(--font-sans)")
+          .attr("font-weight", "600")
+          .attr("fill", "var(--text-secondary)")
+          .text("专家起止编号");
+
+        // Row text
+        for (var epi2 = 0; epi2 < epCount; epi2++) {
+          var erowY2 = epTableY_d + EP_HEADER_H + epi2 * EP_ROW_H;
+          var expertStart = epi2 * expertsPerEp + Math.min(epi2, epRemainder);
+          var expertEnd = expertStart + expertsPerEp + (epi2 < epRemainder ? 1 : 0) - 1;
+          var ety = erowY2 + 10;
+          g.append("text")
+            .attr("x", sx(epTableX_d + EP_COL / 2))
+            .attr("y", sy(ety))
+            .attr("text-anchor", "middle")
+            .attr("font-size", Math.max(6, 8 * scale) + "px")
+            .attr("font-family", "var(--font-mono)")
+            .attr("fill", "var(--text-primary)")
+            .text(epi2);
+          g.append("text")
+            .attr("x", sx(epTableX_d + EP_COL + EP_RANGE / 2))
+            .attr("y", sy(ety))
+            .attr("text-anchor", "middle")
+            .attr("font-size", Math.max(6, 8 * scale) + "px")
+            .attr("font-family", "var(--font-mono)")
+            .attr("fill", "var(--text-primary)")
+            .text(expertStart + "~" + expertEnd);
+        }
+
+        _tableBottomDesignY = epTableY_d + epTableH_d + 36;
       }
     }
 
