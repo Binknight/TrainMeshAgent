@@ -655,7 +655,8 @@
         .attr("fill", isHL ? "var(--cyan)" : "#161c24")
         .attr("stroke", isHL ? "#ff8f40" : "var(--text-muted)")
         .attr("stroke-width", isHL ? 2 : 0.5)
-        .attr("stroke-dasharray", isHL ? "3 2" : "none");
+        .attr("stroke-dasharray", isHL ? "3 2" : "none")
+        .attr("class", isHL ? "tensor-cell pinned" : "tensor-cell");
       g.append("text")
         .attr("x", cx + cellW / 2)
         .attr("y", cy + cellH / 2 + 1)
@@ -1054,7 +1055,8 @@
           g.append("rect")
             .attr("x", sx(tableX_d)).attr("y", sy(ry))
             .attr("width", sw(tableW_d)).attr("height", sw(ROW_H))
-            .attr("fill", pi % 2 === 0 ? "var(--bg-surface)" : "#161b22");
+            .attr("fill", pi % 2 === 0 ? "var(--bg-surface)" : "#161b22")
+            .attr("class", "pp-row");
         }
         if (hasPpHL) {
           var hlPi = opts.highlightPpIdx;
@@ -1066,7 +1068,8 @@
             .attr("fill-opacity", 0.2)
             .attr("stroke", "#ff8f40")
             .attr("stroke-width", 2 * scale)
-            .attr("stroke-dasharray", "3 2");
+            .attr("stroke-dasharray", "3 2")
+            .attr("class", "pp-row pinned");
         }
 
         // Vertical separator
