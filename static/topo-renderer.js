@@ -3323,7 +3323,20 @@ function canvasRebuild(targetSelector) {
     }
   }
 
-  var modelH = hasModel ? 520 : 0;
+  var modelH = 0;
+  if (hasModel) {
+    var _refModel = modelOriginal || modelEquivalent;
+    var _isMoE = _refModel && _refModel.config && _refModel.config.model_type === "sparse";
+    if (_isMoE && typeof calcMoeArchHeight === "function") {
+      var _ppForHeight = Math.max(
+        (meshOriginal && meshOriginal.pp) || 0,
+        (meshEquivalent && meshEquivalent.pp) || 0
+      );
+      modelH = calcMoeArchHeight(_refModel.config, meshWidth, _ppForHeight);
+    } else {
+      modelH = 520;
+    }
+  }
   var sectionGap = hasTopo && hasModel ? 6 : 0;
   var totalH = topoH + sectionGap + modelH;
   // Simulation mode: ensure viewBox is tall enough for the rank detail card
@@ -3972,42 +3985,78 @@ function canvasRebuild(targetSelector) {
         .attr("font-weight", 600)
         .text("等效模型");
 
-      var sharedScale = Math.min(
-        Math.min(1, (modelAreaW - 16) / _TM_DESIGN.W),
-        Math.min(1, (modelAreaWEq - 16) / _TM_DESIGN.W),
-      );
-      _renderOneModel(
-        zoomLayer,
-        modelOriginal,
-        modelX0,
-        modelTopY + 44,
-        modelAreaW,
-        false,
-        sharedScale,
-        null,
-        "var(--cyan)",
-        origTp,
-        origPp,
-        highlightOrigTp,
-        highlightOrigPp,
-        highlightOrigInputOutput,
-      );
-      _renderOneModel(
-        zoomLayer,
-        modelEquivalent,
-        modelX0Eq,
-        modelTopY + 44,
-        modelAreaWEq,
-        false,
-        sharedScale,
-        null,
-        "var(--teal)",
-        eqTp,
-        eqPp,
-        highlightEqTp,
-        highlightEqPp,
-        highlightEqInputOutput,
-      );
+      var _isSparseOrig = modelOriginal && modelOriginal.config && modelOriginal.config.model_type === "sparse";
+      var _isSparseEq = modelEquivalent && modelEquivalent.config && modelEquivalent.config.model_type === "sparse";
+
+      if (_isSparseOrig || _isSparseEq) {
+        var _moeScale = Math.min(
+          Math.min(1, (modelAreaW - 16) / (window.MOE_DESIGN ? window.MOE_DESIGN.W : 520)),
+          Math.min(1, (modelAreaWEq - 16) / (window.MOE_DESIGN ? window.MOE_DESIGN.W : 520)),
+        );
+        if (_isSparseOrig && typeof renderMoeArchitecture === "function") {
+          renderMoeArchitecture(zoomLayer, modelOriginal, {
+            x: modelX0, y: modelTopY + 44, areaW: modelAreaW,
+            scale: _moeScale, labelColor: "var(--cyan)",
+            tpCount: origTp, ppCount: origPp,
+            highlightTpIdx: highlightOrigTp, highlightPpIdx: highlightOrigPp,
+            highlightInputOutput: highlightOrigInputOutput,
+          });
+        } else {
+          _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW,
+            false, _moeScale, null, "var(--cyan)",
+            origTp, origPp, highlightOrigTp, highlightOrigPp, highlightOrigInputOutput);
+        }
+        if (_isSparseEq && typeof renderMoeArchitecture === "function") {
+          renderMoeArchitecture(zoomLayer, modelEquivalent, {
+            x: modelX0Eq, y: modelTopY + 44, areaW: modelAreaWEq,
+            scale: _moeScale, labelColor: "var(--teal)",
+            tpCount: eqTp, ppCount: eqPp,
+            highlightTpIdx: highlightEqTp, highlightPpIdx: highlightEqPp,
+            highlightInputOutput: highlightEqInputOutput,
+          });
+        } else {
+          _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq,
+            false, _moeScale, null, "var(--teal)",
+            eqTp, eqPp, highlightEqTp, highlightEqPp, highlightEqInputOutput);
+        }
+      } else {
+        var sharedScale = Math.min(
+          Math.min(1, (modelAreaW - 16) / _TM_DESIGN.W),
+          Math.min(1, (modelAreaWEq - 16) / _TM_DESIGN.W),
+        );
+        _renderOneModel(
+          zoomLayer,
+          modelOriginal,
+          modelX0,
+          modelTopY + 44,
+          modelAreaW,
+          false,
+          sharedScale,
+          null,
+          "var(--cyan)",
+          origTp,
+          origPp,
+          highlightOrigTp,
+          highlightOrigPp,
+          highlightOrigInputOutput,
+        );
+        _renderOneModel(
+          zoomLayer,
+          modelEquivalent,
+          modelX0Eq,
+          modelTopY + 44,
+          modelAreaWEq,
+          false,
+          sharedScale,
+          null,
+          "var(--teal)",
+          eqTp,
+          eqPp,
+          highlightEqTp,
+          highlightEqPp,
+          highlightEqInputOutput,
+        );
+      }
     } else {
       var singleTp =
         meshOriginal || meshEquivalent
@@ -4034,22 +4083,33 @@ function canvasRebuild(targetSelector) {
         .attr("font-family", "var(--font-sans)")
         .attr("font-weight", 600)
         .text("原始模型");
-      _renderOneModel(
-        zoomLayer,
-        model,
-        modelX0,
-        modelTopY + 44,
-        modelAreaW,
-        false,
-        null,
-        null,
-        "var(--cyan)",
-        singleTp,
-        singlePp,
-        singleHlTp,
-        singleHlPp,
-        singleHlInputOutput,
-      );
+      var _isSingleSparse = model && model.config && model.config.model_type === "sparse";
+      if (_isSingleSparse && typeof renderMoeArchitecture === "function") {
+        renderMoeArchitecture(zoomLayer, model, {
+          x: modelX0, y: modelTopY + 44, areaW: modelAreaW,
+          scale: null, labelColor: "var(--cyan)",
+          tpCount: singleTp, ppCount: singlePp,
+          highlightTpIdx: singleHlTp, highlightPpIdx: singleHlPp,
+          highlightInputOutput: singleHlInputOutput,
+        });
+      } else {
+        _renderOneModel(
+          zoomLayer,
+          model,
+          modelX0,
+          modelTopY + 44,
+          modelAreaW,
+          false,
+          null,
+          null,
+          "var(--cyan)",
+          singleTp,
+          singlePp,
+          singleHlTp,
+          singleHlPp,
+          singleHlInputOutput,
+        );
+      }
     }
   }
 
@@ -6021,6 +6081,7 @@ function _renderOneModel(
 
   if (ppCount && cfg.num_layers) {
     var layersPerPp = Math.floor(cfg.num_layers / ppCount);
+    var remainder = cfg.num_layers % ppCount;
     var COL_PP = 50,
       COL_RANGE = 74;
     var ROW_H = 14,
@@ -6131,8 +6192,9 @@ function _renderOneModel(
     // ── Data row text ──
     for (var pi2 = 0; pi2 < ppCount; pi2++) {
       var rowY2 = mapTableY + HEADER_H + pi2 * ROW_H;
-      var layerStart2 = pi2 * layersPerPp;
-      var layerEnd2 = layerStart2 + layersPerPp - 1;
+      // Distribute remainder layers: first `remainder` PPs get one extra layer
+      var layerStart2 = pi2 * layersPerPp + Math.min(pi2, remainder);
+      var layerEnd2 = layerStart2 + layersPerPp + (pi2 < remainder ? 1 : 0) - 1;
 
       var rowTextY = rowY2 + 10;
       sg.append("text")

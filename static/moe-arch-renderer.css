@@ -1,0 +1,119 @@
+/**
+ * MoE Architecture Renderer — CSS styles
+ * Complements the project's dark theme (variables defined in index.html).
+ * Loaded separately to avoid bloating the main HTML.
+ */
+
+/* ── MoE block nodes ── */
+.moe-node-rect {
+  transition: all 0.2s ease;
+}
+
+/* ── Expert column states ── */
+.moe-expert-selected {
+  transition: all 0.2s ease;
+}
+
+.moe-expert-unselected {
+  transition: all 0.2s ease;
+}
+
+/* ── Residual / skip connection lines ── */
+.moe-residual-line {
+  stroke-dasharray: 4 3;
+  fill: none;
+}
+
+/* ── MoE block labels (monospace for technical terms) ── */
+.moe-block-label {
+  font-family: var(--font-mono);
+}
+
+/* ── MoE Transformer Stack card ── */
+.moe-stack-card {
+  fill: #111820;
+  stroke: var(--cyan);
+  stroke-width: 1.8;
+}
+
+.moe-stack-shadow {
+  fill: #0d131a;
+  stroke: var(--cyan);
+  stroke-width: 1.2;
+}
+
+/* ── Router elements ── */
+.moe-router-rect {
+  fill: #1a1528;
+  stroke: var(--purple);
+  stroke-width: 0.8;
+}
+
+.moe-router-text {
+  font-family: var(--font-mono);
+  fill: var(--purple);
+  font-size: 9px;
+}
+
+/* ── Expert sub-item text ── */
+.moe-expert-item-text {
+  font-family: var(--font-mono);
+  fill: var(--text-secondary);
+  font-size: 7px;
+}
+
+/* ── Legend ── */
+.moe-legend-title {
+  font-family: var(--font-sans);
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.moe-legend-label {
+  font-family: var(--font-sans);
+  fill: var(--text-secondary);
+  font-size: 9px;
+}
+
+.moe-legend-swatch {
+  stroke-width: 0;
+}
+
+.moe-legend-dash {
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+
+/* ── Tensor grid ── */
+.moe-tensor-cell {
+  stroke: var(--text-muted);
+  stroke-width: 0.5;
+}
+
+.moe-tensor-label {
+  font-family: var(--font-sans);
+  fill: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.moe-tensor-subtitle {
+  font-family: var(--font-mono);
+  fill: var(--text-muted);
+  font-size: 9px;
+}
+
+/* ── Flow arrows ── */
+.moe-arrow-down {
+  opacity: 0.8;
+}
+
+/* ── Stack header label ── */
+.moe-stack-label {
+  font-family: var(--font-sans);
+  fill: var(--cyan);
+  font-size: 12px;
+  font-weight: 600;
+}
