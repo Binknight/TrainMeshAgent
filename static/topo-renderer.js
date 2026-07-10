@@ -4316,6 +4316,10 @@ async function loadMeshData(topoData) {
       } else {
         meshEstimateEq = estimates;
       }
+      // Rebuild canvas now that async estimate data has arrived.
+      // The caller's immediate canvasRebuild() fired before the await resolved,
+      // so this ensures the bar chart / tooltip picks up the correct metrics.
+      canvasRebuild();
     } catch (e) {
       // If aborted by a newer request, don't clear the estimates — the newer request will fill them
       if (e.name === "AbortError") {
@@ -4330,8 +4334,6 @@ async function loadMeshData(topoData) {
       }
     }
   }
-
-  // canvasRebuild is called by the caller after loadMeshData completes
 }
 
 // ── canvasRecenter: fit content to viewport center ──
