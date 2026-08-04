@@ -1301,20 +1301,25 @@ def workflow_step2_stream(session_id: str):
         # ═══ Phase 1: 策略加载 ═══
         topo_orig_desc = f"{orig.device_type.value if orig and orig.device_type else 'A3'}  DP={orig_dp}  TP={tp}  PP={pp}"
         topo_eq_desc = f"{eq_params.device_type.value if eq_params and eq_params.device_type else 'A3'}  DP={eq_dp}  TP={eq_tp}  PP={eq_pp}"
-        model_desc = f"L={L_orig}  H={H_val}  A={A_val}  V={vocab_val}  dff={dff_val}  S={S_val}  B={B_orig}  b={b_micro_val}  →  B_eq={B_val}"
+        model_desc_lines = [
+            f"  L={L_orig}  H={H_val}  A={A_val}  V={vocab_val}",
+            f"  dff={dff_val}  S={S_val}  B={B_orig}  b={b_micro_val}  →  B_eq={B_val}",
+        ]
         if model_type == "sparse":
             topo_orig_desc += f"  EP={ep}"
             topo_eq_desc += f"  EP={eq_ep}" if eq_ep else ""
-            model_desc += f"\n  MoE: Experts={num_experts}  Top-K={moe_router_topk}  MoE层={num_moe_layers}  F_expert={moe_ffn_hidden_size}"
+            moe_line = f"  MoE: Experts={num_experts}  Top-K={moe_router_topk}  MoE层={num_moe_layers}  F_expert={moe_ffn_hidden_size}"
             if has_shared_expert:
-                model_desc += "  共享专家=是"
+                moe_line += "  共享专家=是"
+            model_desc_lines.append(moe_line)
             if eq_num_moe_layers and eq_num_moe_layers != num_moe_layers:
-                model_desc += f"\n  等效 MoE层={eq_num_moe_layers}  等效 Dense层={eq_L - eq_num_moe_layers}"
+                model_desc_lines.append(f"  等效 MoE层={eq_num_moe_layers}  等效 Dense层={eq_L - eq_num_moe_layers}")
         lines_strategy = [
             f"▸ 等效策略: {strategy_label} ({strategy})",
             f"  原始组网  {topo_orig_desc}  →  {npu_orig} NPU",
             f"  等效组网  {topo_eq_desc}  →  {npu_eq} NPU",
-            f"  模型配置  {model_desc}",
+            f"  模型配置",
+            *model_desc_lines,
             f"  NPU 压缩比  {npu_orig} : {npu_eq}  ≈  {comp_ratio} : 1",
         ]
         for line in lines_strategy:
