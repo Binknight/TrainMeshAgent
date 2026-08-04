@@ -1,7 +1,10 @@
 # 仿真系统 MCP Server 需求规格
 
-> 更新时间：2026-05-18  
+> 更新时间：2026-08-04  
 > 依据代码：`app/mcp/client.py`、`app/routes/session.py`、`app/routes/simulation.py`、`app/skills/training-mesh-profiler-skill/__init__.py`、`app/agent/orchestrator.py`
+>
+> **2026-08-04 更新（MoE 模型适配）**：在现有接口上适配稀疏/MoE 模型，不新增 tool，仅扩展已有接口——
+> `SimulationTaskInput` 新增 EP 及 MoE 模型配置字段（§3.1）、补充 MoE 入参示例（§3.2）、`card_detail` 新增 EP 通信指标（§7）、算子 Trace 补充 MoE 算子命名约定（§8）、训练脚本解析契约新增 MoE 键名（§11）、联调验收清单新增 MoE 用例（§16）。dense 模型不传 MoE 字段，行为与旧版完全兼容。
 
 ---
 
@@ -79,16 +82,28 @@
 | | `tp_size` | integer | ✅ | 张量并行度 TP |
 | | `pp_size` | integer | ✅ | 流水线并行度 PP |
 | | `total_nodes` | integer | ✅ | 总卡数 = `dp_size × tp_size × pp_size` |
-| **模型配置** | `model_name` | string | ⬜ 可选 | 模型名称，如 `"Llama-3.1-8B"` |
+| | `ep` | integer | ⬜ 条件必填¹ | 专家并行度 EP（仅 `model_type="sparse"` 时必填） |
+| **模型配置** | `model_name` | string | ⬜ 可选 | 模型名称，如 `"Llama-3.1-8B"` / `"DeepSeek-R1"` |
 | | `num_layers` | integer | ✅ | Transformer 层数 L |
 | | `hidden_dim` | integer | ✅ | 隐藏层维度 H |
 | | `num_heads` | integer | ✅ | 注意力头数 A |
-| | `d_ffn` | integer | ✅ | FFN 隐藏层维度，默认 14336 |
+| | `d_ffn` | integer | ✅ | Dense FFN 隐藏层维度，默认 14336 |
+| | `model_type` | string | ⬜ 可选 | 模型类型：`"dense"`（默认）或 `"sparse"`（MoE）；缺省视为 dense |
+| | `num_experts` | integer | ⬜ 条件必填¹ | MoE：每层专家数 E |
+| | `moe_router_topk` | integer | ⬜ 条件必填¹ | MoE：每个 token 激活的专家数 Top-K |
+| | `num_moe_layers` | integer | ⬜ 条件必填¹ | MoE：MoE 层数 L_moe（等效组网传入该组网的等效缩减值，如 58→18） |
+| | `moe_ffn_hidden_size` | integer | ⬜ 条件必填¹ | MoE：单个专家 FFN 中间维度 F_expert |
+| | `has_shared_expert` | boolean | ⬜ 可选 | MoE：是否含共享专家（如 DeepSeek-V3/R1），默认 `false` |
+| | `expert_tensor_parallel_size` | integer | ⬜ 可选 | MoE：专家内部张量并行度 TP_e，默认 `1` |
 | **运行时参数** | `seq_len` | integer | ✅ | 序列长度 S |
 | | `batch_size` | integer | ✅ | 总批次大小 B |
 | | `micro_batch_size` | integer | ✅ | 微批次大小 b（per pipeline stage micro-batch） |
 
+> **¹ 条件必填**：`model_type="sparse"` 时 `ep`、`num_experts`、`moe_router_topk`、`num_moe_layers`、`moe_ffn_hidden_size` 必须提供；缺失按 §14 参数错误约定返回可读错误，不得静默忽略后按稠密模型执行。`model_type="dense"`（或缺省）时上述 MoE 字段缺失或为 `null`，MCP Server 按稠密模型处理。
+
 > **额外字段**：`MeshTopology.model_dump()` 还会输出 `nodes`（`MeshNode[]`）和 `communication_groups`（通信组列表）。这些是组网拓扑的内部结构，MCP Server 可忽略，但 `execute_task` 的 `topology` 参数中可能包含。后续版本考虑剥离。
+>
+> **注意**：上表中的 MoE 字段（`model_type` / `ep` / `num_experts` 等）决定仿真语义，MCP Server **不得忽略**——收到 `model_type="sparse"` 时必须以 MoE 模型语义执行仿真（专家 FFN、Top-K 路由、EP 通信等）。
 
 ---
 
@@ -175,6 +190,78 @@
   }
 }
 ```
+
+#### MoE 模型示例（DeepSeek-R1，Megatron 配置，稀疏）
+
+原始组网与等效组网均携带 MoE 字段。注意等效组网中 `num_layers`、`num_moe_layers`、`batch_size` 为等效缩减值，`ep` 与原始组网保持一致。
+
+##### 原始组网（A3，DP=8，TP=16，PP=8，EP=8，共 1024 卡）
+
+```json
+{
+  "topology": {
+    "name": "原始组网",
+    "device_type": "A3",
+    "dp_size": 8,
+    "tp_size": 16,
+    "pp_size": 8,
+    "total_nodes": 1024,
+    "ep": 8,
+    "model_name": "DeepSeek-R1",
+    "num_layers": 61,
+    "hidden_dim": 7168,
+    "num_heads": 128,
+    "d_ffn": 18432,
+    "vocab_size": 129280,
+    "model_type": "sparse",
+    "num_experts": 256,
+    "moe_router_topk": 8,
+    "num_moe_layers": 58,
+    "moe_ffn_hidden_size": 2048,
+    "has_shared_expert": true,
+    "expert_tensor_parallel_size": 1,
+    "seq_len": 4096,
+    "batch_size": 32,
+    "micro_batch_size": 1
+  },
+  "simulation_params": { }
+}
+```
+
+##### 等效组网（A3，DP=2，TP=16，PP=3，EP=8，共 96 卡）
+
+```json
+{
+  "topology": {
+    "name": "等效组网",
+    "device_type": "A3",
+    "dp_size": 2,
+    "tp_size": 16,
+    "pp_size": 3,
+    "total_nodes": 96,
+    "ep": 8,
+    "model_name": "DeepSeek-R1",
+    "num_layers": 21,
+    "hidden_dim": 7168,
+    "num_heads": 128,
+    "d_ffn": 18432,
+    "vocab_size": 129280,
+    "model_type": "sparse",
+    "num_experts": 256,
+    "moe_router_topk": 8,
+    "num_moe_layers": 18,
+    "moe_ffn_hidden_size": 2048,
+    "has_shared_expert": true,
+    "expert_tensor_parallel_size": 1,
+    "seq_len": 4096,
+    "batch_size": 8,
+    "micro_batch_size": 1
+  },
+  "simulation_params": { }
+}
+```
+
+> 等效组网推导：`L_eq = (61/8)×3 = 21`、`PP_eq = 3`、`DP_eq = 2`、`B_eq = 32×2/8 = 8`、`L_moe_eq = 21 - (61-58) = 18`、`EP_eq = EP = 8`。
 
 ---
 
@@ -278,6 +365,7 @@
 | `tp_comm_gb_per_micro` | float | TP 通信量 (GB/micro-step) |
 | `pp_comm_mb_per_micro` | float | PP 通信量 (MB/micro-step) |
 | `dp_comm_gb_per_step` | float | DP 通信量 (GB/step) |
+| `ep_comm_gb_per_step` | float | EP 通信量 (GB/step)，MoE（`model_type="sparse"`）任务建议返回；dense 任务可缺失，调用方按 0 兜底 |
 
 ---
 
@@ -384,6 +472,18 @@
 | `total_flops` | float | 总 FLOPs |
 | `total_comm_gb` | float | 总通信量 (GB) |
 
+#### MoE 算子命名约定（可选，MoE 任务适用）
+
+MoE 层（`model_type="sparse"`）的算子建议以 `moe_` 前缀区分于稠密 FFN 算子，便于前端识别与展示。仅为约定，不强制——MCP Server 也可沿用现有 CSV 直传字段结构（`comm_type` 为自由字符串）：
+
+| `operator_name` | `comm_type` | 说明 |
+|---|---|---|
+| `moe_router` | `computation` | 路由计算（`softmax(TopK(W_r·x))`），`stage` 形如 `forward/layer3` |
+| `moe_dispatch` | `all_to_all` / `send`+`recv` | token 分发到专家（EP 通信） |
+| `moe_expert_ffn` | `computation` | 专家 FFN（fc1 / activation / fc2） |
+| `moe_combine` | `all_to_all` / `send`+`recv` | token 收集合并（EP 通信） |
+| `moe_shared_expert_ffn` | `computation` | 共享专家 FFN（`has_shared_expert=true` 时） |
+
 ---
 
 ## 9. get_hbm_detail — 获取单卡 HBM 分项占用
@@ -469,6 +569,7 @@ TrainMeshAgent 从 `script_content` 解析以下三组参数，分别填充「�
 | `dp` / `DP` | 数据并行度 | `8` |
 | `tp` / `TP` | 张量并行度 | `16` |
 | `pp` / `PP` | 流水线并行度 | `8` |
+| `ep` / `EP` / `expert-parallel-size` | 专家并行度（MoE 模型） | `8` |
 
 > `total_nodes` = `dp × tp × pp`，由 TrainMeshAgent 推导，无需脚本暴露。
 
@@ -481,8 +582,17 @@ TrainMeshAgent 从 `script_content` 解析以下三组参数，分别填充「�
 | `num_heads` / `NUM_HEADS` | 注意力头数 A | `32` |
 | `d_ffn` / `D_FFN` | FFN 维度 | `14336` |
 | `vocab_size` / `VOCAB_SIZE` | 词表大小 | `18277` |
+| `num_experts` / `NUM_EXPERTS` / `num-experts` | MoE：每层专家数 E | `256` |
+| `moe_router_topk` / `MOE_ROUTER_TOPK` / `moe-router-topk` | MoE：Top-K 激活专家数 | `8` |
+| `moe_layer_freq` / `MOE_LAYER_FREQ` / `moe-layer-freq` | MoE：层分布模式（支持 `moe_layer_parser` 的 4 种格式：整数全 MoE、周期整数、`-1` 哨兵、Python 列表表达式） | `[0]*3+[1]*58` |
+| `num_moe_layers` / `NUM_MOE_LAYERS` / `num-moe-layers` | MoE：MoE 层数（与 `moe_layer_freq` 二选一暴露即可） | `58` |
+| `moe_ffn_hidden_size` / `MOE_FFN_HIDDEN_SIZE` / `moe-ffn-hidden-size` | MoE：专家 FFN 维度 F_expert | `2048` |
+| `has_shared_expert` / `HAS_SHARED_EXPERT` / `shared-expert` | MoE：是否含共享专家 | `true` |
+| `expert_tensor_parallel_size` / `EXPERT_TENSOR_PARALLEL_SIZE` / `expert-tensor-parallel-size` | MoE：专家内部 TP | `1` |
 
-> `d_head` = `d_model / num_heads`、`total_params` 由 TrainMeshAgent 推导。
+> `d_head` = `d_model / num_heads`、`total_params` 由 TrainMeshAgent 推导（MoE 模型为含专家权重的估算值）。
+>
+> MoE 模型（`model_type="sparse"`）的脚本**必须**暴露上述 MoE 键（至少 `num_experts`、`moe_router_topk`、`moe_layer_freq` 或 `num_moe_layers`、`moe_ffn_hidden_size`、`ep`）；dense 模型可省略。脚本未暴露的字段前端显示 `—`，不阻塞下载。
 
 #### 训练运行时参数（对应「模型训练参数对比」卡，当前全为 mock）
 
@@ -641,6 +751,15 @@ submitted  →  running  →  completed
 
 - [ ] `get_training_script`（§11）返回 `script_content`，TrainMeshAgent 可作文件下载
 - [ ] 从脚本解析出的组网/模型/训练参数可填充三张对比卡，值与 `execute_task` 入参一致
+
+**MoE 模型适配（§3.1 / §7 / §8 / §11）**
+
+- [ ] `execute_task` 传入 MoE 字段（`model_type="sparse"` + `ep`/`num_experts`/`moe_router_topk`/`num_moe_layers`/`moe_ffn_hidden_size`）成功返回 `task_id`，仿真按 MoE 语义执行
+- [ ] `execute_task` 对 sparse 模型缺失 `ep` 等条件必填字段时返回可读参数错误，不 500、不按稠密模型静默执行
+- [ ] `card_detail` 对 MoE 任务返回 `ep_comm_gb_per_step`（缺失时调用方按 0 兜底，不报错）
+- [ ] `get_device_detail`（§8）对 MoE 任务的算子含 `moe_router` / `moe_dispatch` / `moe_expert_ffn` / `moe_combine` 等命名（或自有命名，能被前端展示）
+- [ ] `get_training_script` 对 MoE 任务返回的脚本含 `ep` / `num_experts` / `moe_router_topk` / `moe_layer_freq`（或 `num_moe_layers`）/ `moe_ffn_hidden_size` 等键，可解析填充对比卡
+- [ ] dense 模型兼容：不传任何 MoE 字段时行为与旧版一致
 
 **容错**
 
