@@ -5308,13 +5308,15 @@ function loadModelData(modelData, role) {
   } else {
     modelEquivalent = entry;
     if (modelData.config) {
-      meshModelEq = {
+      var prevEq = meshModelEq || {};
+      var newEq = {
         num_layers: modelData.config.num_layers || modelData.layers_count,
         hidden_dim: modelData.config.d_model,
         d_ffn: modelData.config.d_ffn,
         seq_len: modelData.seq_len,
         batch_size: modelData.batch_size,
         micro_batch_size: modelData.micro_batch_size,
+        vocab_size: modelData.config.vocab_size,
         model_type: modelData.config.model_type,
         ep: modelData.ep,  // topology-level param injected by backend
         num_experts: modelData.config.num_experts,
@@ -5324,6 +5326,18 @@ function loadModelData(modelData, role) {
         has_shared_expert: modelData.config.has_shared_expert,
         expert_tensor_parallel_size: modelData.config.expert_tensor_parallel_size,
       };
+      // Preserve topology-derived params that the model payload may omit
+      // (e.g. micro_batch_size / vocab_size). _refetchMeshEstimate and
+      // _forceRefreshEstimates read meshModelEq, and a missing field makes
+      // /session/estimate silently fall back to backend defaults — which
+      // caused rank bar chart values to diverge from the equivalent-calc
+      // derivation card until a page refresh re-loaded the topology JSON.
+      for (var k in prevEq) {
+        if (prevEq.hasOwnProperty(k) && newEq[k] == null) {
+          newEq[k] = prevEq[k];
+        }
+      }
+      meshModelEq = newEq;
     }
     if (meshEquivalent) _refetchMeshEstimate("eq");
   }

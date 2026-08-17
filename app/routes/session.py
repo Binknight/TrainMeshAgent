@@ -1658,6 +1658,12 @@ def workflow_step3(session_id: str):
     eq_model_dict = eq_model.model_dump() if hasattr(eq_model, "model_dump") else eq_model
     eq_model_dict["seq_len"] = model_meta.get("S")
     eq_model_dict["batch_size"] = model_meta.get("B")
+    # Runtime params required by the frontend estimate fetch (loadModelData reads
+    # these top-level keys into meshModelEq). Omitting them makes /session/estimate
+    # silently fall back to backend defaults, so rank bar chart values diverged
+    # from the equivalent-calc derivation card.
+    eq_model_dict["micro_batch_size"] = model_meta.get("b_micro")
+    eq_model_dict["vocab_size"] = model_meta.get("vocab_size")
     eq_ep_val_meta = model_meta.get("eq_ep") or model_meta.get("ep")
     if model_meta.get("model_type") == "sparse" and eq_ep_val_meta:
         eq_model_dict["ep"] = eq_ep_val_meta
