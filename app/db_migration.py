@@ -158,6 +158,8 @@ ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS shared_expert_intermediate_si
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS expert_tensor_parallel_size INT;
 ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS ep INT;
 
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS original_task_id VARCHAR(64);
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS equivalent_task_id VARCHAR(64);
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS formula_lines JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_topology_params_session ON topology_params(session_id, role);
@@ -178,14 +180,26 @@ def init_db():
         with conn.cursor() as cur:
             # psycopg2 execute() only handles one statement per call.
             # Split on semicolons and execute each individually.
+            skipped: list[str] = []
             for stmt in SCHEMA_SQL.split(";"):
                 stmt = stmt.strip()
                 if stmt and not stmt.startswith("--"):
                     try:
                         cur.execute(stmt)
                     except Exception as e:
+                        first_line = stmt.splitlines()[0].strip()[:80]
+                        skipped.append(f"{first_line} -> {e}")
                         print(f"[migration] SKIP: {e}")
         conn.autocommit = False
+
+    if skipped:
+        print(
+            f"[migration] WARNING: {len(skipped)} DDL statement(s) SKIPPED — "
+            "DB schema may be incomplete and session data will fail to persist "
+            "(history titles may show 新建任务)."
+        )
+        for item in skipped:
+            print(f"[migration]   - {item}")
 
     # Seed model catalog entries (idempotent upsert).
     # Each category runs independently so one failure doesn't skip the rest.

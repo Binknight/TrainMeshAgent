@@ -74,14 +74,46 @@ class SessionManager:
         return state
 
     def save_session(self, session: SessionState) -> None:
-        """Persist the full session state to PostgreSQL."""
+        """Persist the full session state to PostgreSQL.
+
+        Each table persists independently — one failure (e.g. a DB schema
+        mismatch) is logged and recorded in _persist_failures instead of
+        aborting the remaining tables. Failures are surfaced to the history
+        panel via get_persist_failure(), so missing data no longer silently
+        degrades to fallback titles like "新建任务"."""
+        sid = session.session_id
         try:
-            _persist_session(session)
+            if _persist_session(session):
+                _persist_failures.pop(sid, None)
         except Exception as e:
-            logger.error(f"[session] Failed to save session {session.session_id}: {e}")
+            # Safety net — per-table errors are caught inside _persist_session.
+            _persist_failures[sid] = f"unexpected: {e}"
+            logger.error(f"[session] Failed to save session {sid}: {e}")
 
 
 session_manager = SessionManager()
+
+# session_id -> last persist error. Written by _safe_persist on failure and
+# cleared by save_session when every table persisted cleanly.
+_persist_failures: dict[str, str] = {}
+
+
+def _safe_persist(session_id: str, label: str, fn) -> bool:
+    """Run one persist step in isolation so a single table failure doesn't
+    block persisting the remaining tables. Returns True on success."""
+    try:
+        fn()
+        return True
+    except Exception as e:
+        msg = f"{label}: {e}"
+        _persist_failures[session_id] = msg
+        logger.error(f"[session] Failed to save session {session_id}: {msg}")
+        return False
+
+
+def get_persist_failure(session_id: str) -> str | None:
+    """Return the last persistence error for a session, if any."""
+    return _persist_failures.get(session_id)
 
 
 def _persist_new_session(session_id: str) -> None:
@@ -92,7 +124,13 @@ def _persist_new_session(session_id: str) -> None:
         logger.error(f"[session] Failed to create session in DB: {e}")
 
 
-def _persist_session(session: SessionState) -> None:
+def _persist_session(session: SessionState) -> bool:
+    """Persist every table independently; returns True when all succeed.
+
+    Previously any failure (e.g. topology_params missing a column on an
+    old DB schema) aborted the whole chain, so session step, simulation
+    results and comparison reports were silently lost too — and the history
+    panel fell back to "新建任务" titles with no visible error."""
     from app.dao import (
         update_session_step, save_topology_params, save_simulation_params,
         save_simulation_result, save_comparison_report, delete_messages, save_message,
@@ -100,14 +138,20 @@ def _persist_session(session: SessionState) -> None:
     )
 
     sid = session.session_id
+    ok = True
 
-    update_session_step(sid, session.step, session.original_task_id, session.equivalent_task_id)
+    ok &= _safe_persist(
+        sid, "session_step",
+        lambda: update_session_step(sid, session.step, session.original_task_id, session.equivalent_task_id),
+    )
 
     for role in ("original", "equivalent"):
-        topo = getattr(session, f"{role}_topology", None)
-        model = getattr(session, f"{role}_training_model", None)
-        params_obj = getattr(session, f"{role}_params", None)
-        if topo or model or params_obj:
+        def _persist_topology(r=role):
+            topo = getattr(session, f"{r}_topology", None)
+            model = getattr(session, f"{r}_training_model", None)
+            params_obj = getattr(session, f"{r}_params", None)
+            if not (topo or model or params_obj):
+                return
             import importlib
             _profiler = importlib.import_module("app.skills.training-mesh-profiler-skill")
             params: dict = {}
@@ -123,7 +167,7 @@ def _persist_session(session: SessionState) -> None:
             elif params_obj:
                 dev = params_obj.device_type.value if hasattr(params_obj.device_type, 'value') else str(params_obj.device_type)
                 params.update({
-                    "name": "原始组网" if role == "original" else "等效组网",
+                    "name": "原始组网" if r == "original" else "等效组网",
                     "device_type": dev,
                     "dp_size": params_obj.dp,
                     "tp_size": params_obj.tp,
@@ -146,25 +190,25 @@ def _persist_session(session: SessionState) -> None:
                     "has_shared_expert": cfg.has_shared_expert,
                     "expert_tensor_parallel_size": cfg.expert_tensor_parallel_size,
                 })
-                step1_model_name = getattr(session, f"{role}_model_name", None)
+                step1_model_name = getattr(session, f"{r}_model_name", None)
                 params.setdefault("model_name", step1_model_name or model.model_name or model.type)
                 # ── EP from session state (not in TrainingModelConfig) ──
-                step1_ep = getattr(session, f"{role}_ep", None)
+                step1_ep = getattr(session, f"{r}_ep", None)
                 if step1_ep is not None:
                     params.setdefault("ep", step1_ep)
             else:
-                step1_model_name = getattr(session, f"{role}_model_name", None)
+                step1_model_name = getattr(session, f"{r}_model_name", None)
                 if step1_model_name:
                     params.setdefault("model_name", step1_model_name)
                 # ── EP from session state (persists even without model) ──
-                step1_ep = getattr(session, f"{role}_ep", None)
+                step1_ep = getattr(session, f"{r}_ep", None)
                 if step1_ep is not None:
                     params.setdefault("ep", step1_ep)
-            step1_seq_len = getattr(session, f"{role}_seq_len", None)
-            step1_batch_size = getattr(session, f"{role}_batch_size", None)
-            step1_dff = getattr(session, f"{role}_dff", None)
-            step1_vocab_size = getattr(session, f"{role}_vocab_size", None)
-            step1_micro_batch = getattr(session, f"{role}_micro_batch", None)
+            step1_seq_len = getattr(session, f"{r}_seq_len", None)
+            step1_batch_size = getattr(session, f"{r}_batch_size", None)
+            step1_dff = getattr(session, f"{r}_dff", None)
+            step1_vocab_size = getattr(session, f"{r}_vocab_size", None)
+            step1_micro_batch = getattr(session, f"{r}_micro_batch", None)
             params.setdefault("seq_len", step1_seq_len or _profiler._SEQ_LEN)
             params.setdefault("batch_size", step1_batch_size or _profiler._TOTAL_BATCH)
             params.setdefault("d_ffn", step1_dff or 14336)
@@ -172,7 +216,7 @@ def _persist_session(session: SessionState) -> None:
                 params.setdefault("vocab_size", step1_vocab_size)
             if step1_micro_batch is not None:
                 params.setdefault("micro_batch_size", step1_micro_batch)
-            if role == "equivalent":
+            if r == "equivalent":
                 orig_model = getattr(session, "original_training_model", None)
                 base_name = (
                     getattr(session, "original_model_name", None)
@@ -182,34 +226,48 @@ def _persist_session(session: SessionState) -> None:
                 if base_name:
                     params["model_name"] = base_name + "_eq"
             if params:
-                save_topology_params(sid, role, params)
+                save_topology_params(sid, r, params)
+
+        ok &= _safe_persist(sid, f"topology_params:{role}", _persist_topology)
 
     for role in ("original", "equivalent"):
         sim = getattr(session, f"{role}_simulation", None)
         if sim:
-            save_simulation_result(sid, role, sim.model_dump())
+            ok &= _safe_persist(
+                sid, f"simulation_result:{role}",
+                lambda s=sim, r=role: save_simulation_result(sid, r, s.model_dump()),
+            )
 
     if session.simulation_params:
         d = session.simulation_params.model_dump()
-        save_simulation_params(sid, "original", d)
-        save_simulation_params(sid, "equivalent", d)
+        ok &= _safe_persist(sid, "simulation_params:original", lambda: save_simulation_params(sid, "original", d))
+        ok &= _safe_persist(sid, "simulation_params:equivalent", lambda: save_simulation_params(sid, "equivalent", d))
 
     if session.comparison_report:
-        from app.dao import get_simulation_result
-        orig_sim = get_simulation_result(sid, "original")
-        eq_sim = get_simulation_result(sid, "equivalent")
-        orig_id = orig_sim["id"] if orig_sim else None
-        eq_id = eq_sim["id"] if eq_sim else None
-        save_comparison_report(sid, orig_id, eq_id, session.comparison_report.model_dump())
+        def _persist_comparison():
+            from app.dao import get_simulation_result
+            orig_sim = get_simulation_result(sid, "original")
+            eq_sim = get_simulation_result(sid, "equivalent")
+            orig_id = orig_sim["id"] if orig_sim else None
+            eq_id = eq_sim["id"] if eq_sim else None
+            save_comparison_report(sid, orig_id, eq_id, session.comparison_report.model_dump())
+
+        ok &= _safe_persist(sid, "comparison_report", _persist_comparison)
 
     if session.history:
-        delete_messages(sid)
-        for i, msg in enumerate(session.history):
-            content = json.dumps(msg, ensure_ascii=False)
-            save_message(sid, i, msg.get("role", "unknown"), content)
+        def _persist_messages():
+            delete_messages(sid)
+            for i, msg in enumerate(session.history):
+                content = json.dumps(msg, ensure_ascii=False)
+                save_message(sid, i, msg.get("role", "unknown"), content)
+
+        ok &= _safe_persist(sid, "conversation_messages", _persist_messages)
 
     if session.formula_lines:
-        save_formula_lines(sid, session.formula_lines)
+        ok &= _safe_persist(sid, "formula_lines", lambda: save_formula_lines(sid, session.formula_lines))
+
+    # Note: &= (not `and`) so every table is still attempted after a failure.
+    return bool(ok)
 
 
 def _load_session(session_id: str) -> Optional[SessionState]:

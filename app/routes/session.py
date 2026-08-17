@@ -45,9 +45,19 @@ def create_session():
 
 @session_bp.route("/summaries", methods=["GET"])
 def list_session_summaries():
-    """List session summaries for the history panel (lightweight, with topology titles)."""
+    """List session summaries for the history panel (lightweight, with topology titles).
+
+    Includes persist_error when the last save of a session failed (e.g. DB
+    schema mismatch), so the frontend can warn instead of silently showing
+    fallback titles like "新建任务"."""
     from app.dao import get_session_summaries
-    return jsonify(get_session_summaries())
+    from app.agent.session import get_persist_failure
+    summaries = get_session_summaries()
+    for s in summaries:
+        err = get_persist_failure(s["session_id"])
+        if err:
+            s["persist_error"] = err
+    return jsonify(summaries)
 
 
 @session_bp.route("/<session_id>/simulation-params", methods=["GET"])
