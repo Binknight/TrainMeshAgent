@@ -215,6 +215,13 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
+            .history-persist-warn {
+                color: var(--red, #f85149);
+                font-size: 11px;
+                font-weight: 600;
+                margin-left: 4px;
+                cursor: help;
+            }
             .history-delete {
                 position: absolute;
                 right: 8px;
@@ -5019,6 +5026,13 @@
                             "')\">" +
                             '<div class="history-item-title">' +
                             (h.title || "新建任务") +
+                            (h.persist_error
+                                ? '<span class="history-persist-warn" title="' +
+                                  String(h.persist_error)
+                                      .replace(/"/g, "&quot;")
+                                      .replace(/</g, "&lt;") +
+                                  '">⚠ 数据保存失败</span>'
+                                : "") +
                             "</div>" +
                             '<div class="history-item-meta">' +
                             "<span>" +
