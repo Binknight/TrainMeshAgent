@@ -105,6 +105,20 @@ async function fetchEstimates(
       tp: tp,
       pp: pp,
     };
+    var _missing = [];
+    if (numLayers == null) _missing.push("num_layers");
+    if (hiddenDim == null) _missing.push("hidden_dim");
+    if (dFfn == null) _missing.push("d_ffn");
+    if (seqLen == null) _missing.push("seq_len");
+    if (batchSize == null) _missing.push("total_batch");
+    if (microBatch == null) _missing.push("micro_batch");
+    if (vocabSize == null) _missing.push("vocab_size");
+    if (_missing.length) {
+      console.warn(
+        "[estimate] " + side + ": missing " + _missing.join(", ") +
+        " → backend defaults will be used",
+      );
+    }
     if (numLayers != null) body.num_layers = numLayers;
     if (hiddenDim != null) body.hidden_dim = hiddenDim;
     if (dFfn != null) body.d_ffn = dFfn;
@@ -5302,7 +5316,8 @@ function loadModelData(modelData, role) {
   if (role === "original") {
     modelOriginal = entry;
     if (modelData.config) {
-      meshModelOrig = {
+      var prevOrig = meshModelOrig || {};
+      var newOrig = {
         num_layers: modelData.config.num_layers || modelData.layers_count,
         hidden_dim: modelData.config.d_model,
         d_ffn: modelData.config.d_ffn,
@@ -5319,6 +5334,15 @@ function loadModelData(modelData, role) {
         has_shared_expert: modelData.config.has_shared_expert,
         expert_tensor_parallel_size: modelData.config.expert_tensor_parallel_size,
       };
+      // Mirror of the equivalent-side null-fill: keep topology-derived runtime
+      // params (seq_len / batch_size / micro_batch_size / vocab_size) that this
+      // payload may omit, otherwise /session/estimate silently uses its defaults.
+      for (var ko in prevOrig) {
+        if (prevOrig.hasOwnProperty(ko) && newOrig[ko] == null) {
+          newOrig[ko] = prevOrig[ko];
+        }
+      }
+      meshModelOrig = newOrig;
     }
     // If mesh already loaded, re-fetch estimates with correct model params
     if (meshOriginal) _refetchMeshEstimate("orig");
@@ -5361,6 +5385,16 @@ function loadModelData(modelData, role) {
   if (typeof checkSimReady === "function") checkSimReady();
 }
 
+// Params required for an estimate that matches the session state. When any of
+// them is missing, POST /api/session/estimate silently substitutes backend
+// defaults (_TOTAL_BATCH=32, _MICRO_BATCH=4, _DEFAULT_VOCAB_SIZE=32000), so a
+// re-fetch must never overwrite good estimates with such values.
+function _missingEstimateParams(model) {
+  return ["hidden_dim", "batch_size", "micro_batch_size", "vocab_size"].filter(
+    function (k) { return !model || model[k] == null; },
+  );
+}
+
 // ── Force refresh estimates via direct API call ──
 // Bypasses the internal async estimate pipeline (which may have stale
 // or incomplete data due to loadMeshData / loadModelData race conditions).
@@ -5376,6 +5410,13 @@ async function _forceRefreshEstimates() {
   }
   for (var i = 0; i < sides.length; i++) {
     var s = sides[i];
+    var missing = _missingEstimateParams(s.model);
+    if (missing.length) {
+      console.warn(
+        "[forceRefreshEstimates] skip " + s.side + " — missing " + missing.join(", "),
+      );
+      continue;
+    }
     try {
       var body = {
         device_type: s.mesh.device_type || s.mesh.deviceType,
@@ -5427,6 +5468,14 @@ async function _refetchMeshEstimate(side) {
   var mesh = side === "orig" ? meshOriginal : meshEquivalent;
   var model = side === "orig" ? meshModelOrig : meshModelEq;
   if (!mesh || !model || model.num_layers == null) return;
+  var missing = _missingEstimateParams(model);
+  if (missing.length) {
+    console.warn(
+      "[estimate] skip re-fetch for " + side + " — missing " + missing.join(", ") +
+      " (backend defaults would not match the session)",
+    );
+    return;
+  }
   // fetchEstimates automatically aborts any stale in-flight request for
   // this side via AbortController, so we can safely call it again without
   // guarding on _estimateInFlight.
