@@ -451,6 +451,12 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             "layer_types": [l.type for l in data.layers],
             "layers": [l.model_dump() for l in data.layers],
             "output_layer": data.output_layer.model_dump(),
+            # Runtime params live outside the model config, so they must be carried
+            # explicitly — the frontend needs them for POST /api/session/estimate.
+            "seq_len": getattr(session, f"{role}_seq_len", None) or getattr(session, "original_seq_len", None),
+            "batch_size": getattr(session, f"{role}_batch_size", None) or getattr(session, "original_batch_size", None),
+            "micro_batch_size": getattr(session, f"{role}_micro_batch", None) or getattr(session, "original_micro_batch", None),
+            "vocab_size": getattr(session, f"{role}_vocab_size", None) or getattr(session, "original_vocab_size", None),
             "_role": role,
             "session_id": session.session_id,
             "_type": "training_model_summary",
