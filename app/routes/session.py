@@ -20,6 +20,7 @@ from app.agent.session import session_manager
 from app.agent.guardrails import validate_input_params
 from app.config import config
 from app.mcp.client import mcp_client
+from app.rank_layout import pp_rank_of
 from app.models.schemas import (
     CardMetrics, CommDetail, DeviceType, DeviceSimulationDetail,
     HbmDetail, OperatorTrace, SessionState, TimelineSummary,
@@ -315,8 +316,8 @@ def estimate_metrics():
 
     cards = []
     for rank in range(total_nodes):
-        # 与前端 meshBuildData 一致：pp_idx = (rank // tp) % pp（TP 最低位）
-        pp_rank = (rank // tp) % pp
+        # Rank layout = TP-DP-PP（与仿真系统一致）：pp_idx = rank // (tp * dp)
+        pp_rank = pp_rank_of(rank, dp, tp)
         is_edge = pp > 1 and (pp_rank == 0 or pp_rank == pp - 1)
         flops = flops_edge if is_edge else flops_mid
         hbm = hbm_edge if is_edge else hbm_mid
@@ -424,7 +425,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
     return task_id, None
 
 
-def _build_comparison(original: SimulationResult, equivalent: SimulationResult, orig_tp: int, orig_pp: int, eq_tp: int, eq_pp: int) -> ComparisonReport:
+def _build_comparison(original: SimulationResult, equivalent: SimulationResult, orig_dp: int, orig_tp: int, orig_pp: int, eq_dp: int, eq_tp: int, eq_pp: int) -> ComparisonReport:
     eps = 1e-9
 
     def _diff_pct(ov, ev):
@@ -437,12 +438,15 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult, 
             vals = [v if v is not None else getattr(c, "hbm_gb") for v, c in zip(vals, cards)]
         return sum(vals) / max(len(vals), 1)
 
-    def _pp_stage_avg_local(cards: list[CardMetrics], tp: int, pp: int) -> dict:
-        """Compute average pp_comm_mb_per_micro for first, middle, last PP stages."""
+    def _pp_stage_avg_local(cards: list[CardMetrics], dp: int, tp: int, pp: int) -> dict:
+        """Compute average pp_comm_mb_per_micro for first, middle, last PP stages.
+
+        Rank layout = TP-DP-PP (calibrated to the simulation system), so the
+        pipeline stage of a rank is ``global_rank // (tp * dp)``.
+        """
         groups: dict[str, list[float]] = {"first": [], "middle": [], "last": []}
-        stride = tp * pp
         for c in cards:
-            pp_rank = (c.global_rank % stride) // tp
+            pp_rank = pp_rank_of(c.global_rank, dp, tp)
             if pp_rank == 0:
                 groups["first"].append(c.pp_comm_mb_per_micro)
             if pp > 1 and pp_rank == pp - 1:
@@ -460,8 +464,8 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult, 
     dp_diff = _diff_pct(_per_card(original.cards, "dp_comm_gb_per_step"), _per_card(equivalent.cards, "dp_comm_gb_per_step"))
 
     # ── Per-stage PP communication comparison ──
-    orig_pp_stage = _pp_stage_avg_local(original.cards, orig_tp, orig_pp)
-    eq_pp_stage = _pp_stage_avg_local(equivalent.cards, eq_tp, eq_pp)
+    orig_pp_stage = _pp_stage_avg_local(original.cards, orig_dp, orig_tp, orig_pp)
+    eq_pp_stage = _pp_stage_avg_local(equivalent.cards, eq_dp, eq_tp, eq_pp)
 
     stages_compared: list[str] = []
     for stage in ("first", "middle", "last"):
@@ -581,11 +585,13 @@ def run_simulation(session_id: str):
         if session.original_simulation and session.equivalent_simulation:
             orig_topo = session.original_topology
             eq_topo = session.equivalent_topology
+            orig_dp = orig_topo.dp_size if orig_topo else 1
             orig_tp = orig_topo.tp_size if orig_topo else 1
             orig_pp = orig_topo.pp_size if orig_topo else 1
+            eq_dp = eq_topo.dp_size if eq_topo else orig_dp
             eq_tp = eq_topo.tp_size if eq_topo else orig_tp
             eq_pp = eq_topo.pp_size if eq_topo else orig_pp
-            report = _build_comparison(session.original_simulation, session.equivalent_simulation, orig_tp, orig_pp, eq_tp, eq_pp)
+            report = _build_comparison(session.original_simulation, session.equivalent_simulation, orig_dp, orig_tp, orig_pp, eq_dp, eq_tp, eq_pp)
             session.comparison_report = report
             session.step = "completed"
             results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
@@ -651,7 +657,7 @@ _OPT_OPS = [
 ]
 
 
-def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_pp: int) -> tuple[list[OperatorTrace], TimelineSummary]:
+def _generate_mock_operators(global_rank: int, dp: int, tp: int, pp: int, num_layers_per_pp: int) -> tuple[list[OperatorTrace], TimelineSummary]:
     """Generate mock operator traces aligned with CSV schema + MCP computed fields."""
     rng = random.Random(global_rank * 137 + tp * 7 + pp * 13)
     operators: list[OperatorTrace] = []
@@ -662,7 +668,8 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
     op_index: int = 0
 
     dur_scale = 0.85 + rng.random() * 0.3
-    dp = max(1, tp * pp)  # approximate DP
+    # Rank layout = TP-DP-PP（与仿真系统一致）：PP 段号 = rank // (tp * dp)
+    pp_rank = pp_rank_of(global_rank, dp, tp)
 
     def _make_op(name, comm_type, stage, extra, start_us, dur, flops_val, msg_bytes):
         nonlocal op_index
@@ -693,7 +700,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
         return op
 
     # Embedding (first PP stage only)
-    if pp == 1 or (global_rank // tp) % pp == 0:
+    if pp == 1 or pp_rank == 0:
         emb_op = _FWD_OPS[0]
         dur = 800 * dur_scale
         flops = 1.5e12 * dur_scale
@@ -731,7 +738,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
                 comm_time_us += dur
 
         # PP Send (if not last PP stage)
-        if pp > 1 and (global_rank // tp) % pp != pp - 1:
+        if pp > 1 and pp_rank != pp - 1:
             dur = rng.uniform(50, 150) * dur_scale
             msg_bytes = rng.uniform(20e6, 60e6)
             extra_send = {"data_shape": "[B,S,d_model]", "data_type": "bf16", "comm_group": "pp_group", "additional": f"{msg_bytes/1e6:.1f}MB"}
@@ -760,7 +767,7 @@ def _generate_mock_operators(global_rank: int, tp: int, pp: int, num_layers_per_
                 comm_time_us += dur
 
         # PP Recv (if not first PP stage)
-        if pp > 1 and (global_rank // tp) % pp != 0:
+        if pp > 1 and pp_rank != 0:
             dur = rng.uniform(50, 150) * dur_scale
             msg_bytes = rng.uniform(20e6, 60e6)
             extra_recv = {"data_shape": "[B,S,d_model]", "data_type": "bf16", "comm_group": "pp_group", "additional": f"{msg_bytes/1e6:.1f}MB"}

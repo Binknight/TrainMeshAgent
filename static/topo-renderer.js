@@ -265,9 +265,25 @@ function meshBuildDisplayList(ppList) {
   return result;
 }
 
+// ── Canonical rank layout: TP-DP-PP (calibrated to the simulation system) ──
+// A global rank is composed as:
+//   globalRank = ppIdx * (tp * dp) + dpIdx * tp + tpIdx
+// i.e. TP is the innermost (fastest-varying) dimension, then DP, then PP.
+// Any place that maps between a global rank and its (dp, tp, pp) position must
+// use these two helpers so the mesh labels agree with the simulation ranks.
+function meshRankOf(tp, dp, ppIdx, dpIdx, tpIdx) {
+  return ppIdx * (tp * dp) + dpIdx * tp + tpIdx;
+}
+
+function meshDecomposeRank(globalRank, tp, dp) {
+  return {
+    tpIdx: globalRank % tp,
+    dpIdx: Math.floor(globalRank / tp) % dp,
+    ppIdx: Math.floor(globalRank / (tp * dp)),
+  };
+}
+
 function meshBuildData(tp, pp, dpCount, activeDp) {
-  var ranksPerDp = pp * tp;
-  var dpBase = activeDp * ranksPerDp;
   return {
     config: { tpCount: tp, ppCount: pp, dpCount: dpCount, activeDp: activeDp },
     dp: {
@@ -282,7 +298,7 @@ function meshBuildData(tp, pp, dpCount, activeDp) {
         id: pi,
         label: "PP" + pi,
         tps: d3.range(tp).map(function (ti) {
-          var gr = dpBase + pi * tp + ti;
+          var gr = meshRankOf(tp, dpCount, pi, activeDp, ti);
           return {
             id: ti,
             label: "TP" + ti,
@@ -314,14 +330,15 @@ function _mapRankToOtherSide(side, globalRank) {
   if (!srcTopo || !dstTopo) return null;
 
   var srcTp = srcTopo.tp,
-    srcPp = srcTopo.pp;
-  var srcRanksPerDp = srcTp * srcPp;
+    srcPp = srcTopo.pp,
+    srcDp = srcTopo.dp;
 
-  // Extract structural position (PP index, TP index) regardless of DP copy
-  var rankInDp = globalRank % srcRanksPerDp;
-  if (rankInDp < 0) rankInDp += srcRanksPerDp;
-  var srcPpIdx = Math.floor(rankInDp / srcTp);
-  var tpIdx = rankInDp % srcTp;
+  // Extract the structural position (PP / DP / TP index) from the rank, using
+  // the canonical TP-DP-PP layout (see meshDecomposeRank).
+  if (globalRank < 0) globalRank += srcTp * srcDp * srcPp;
+  var srcPos = meshDecomposeRank(globalRank, srcTp, srcDp);
+  var srcPpIdx = srcPos.ppIdx;
+  var tpIdx = srcPos.tpIdx;
 
   var dstTp = dstTopo.tp,
     dstPp = dstTopo.pp;
@@ -337,10 +354,8 @@ function _mapRankToOtherSide(side, globalRank) {
   var dstTpIdx = Math.min(tpIdx, dstTp - 1);
 
   // Map result using round-robin DP: source DP → target DP via modulo
-  var srcDp = Math.floor(globalRank / srcRanksPerDp);
-  var dstDp = srcDp % dstTopo.dp;
-  var dstRanksPerDp = dstTp * dstPp;
-  return dstDp * dstRanksPerDp + dstPpIdx * dstTp + dstTpIdx;
+  var dstDp = srcPos.dpIdx % dstTopo.dp;
+  return meshRankOf(dstTp, dstTopo.dp, dstPpIdx, dstDp, dstTpIdx);
 }
 
 function _getRoundRobinDp(srcDp, dstDpCount) {
@@ -1706,7 +1721,9 @@ function _meshNpuTotal(entry) {
 }
 
 function _meshUpdateRanks(parentG, tp, pp, oldDp, newDp) {
-  var delta = (newDp - oldDp) * pp * tp;
+  // Canonical layout strides DP by `tp` (PP is the outermost dimension, so it
+  // does not shift when only the DP slice changes).
+  var delta = (newDp - oldDp) * tp;
   if (delta === 0) return;
   parentG.selectAll(".tp-rect").each(function () {
     var currentRank = parseInt(this.getAttribute("data-rank"));
