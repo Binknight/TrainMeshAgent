@@ -21,6 +21,7 @@ from openai import OpenAI
 from app.agent.guardrails import validate_input_params
 from app.config import config
 from app.mcp.client import mcp_client
+from app.rank_layout import pp_rank_of
 from app.models.model_catalog import resolve_model_config
 from app.models.schemas import (
     AgentEvent,
@@ -294,13 +295,15 @@ def _execute_utility_tool(
             }
         orig_topo = session.original_topology
         eq_topo = session.equivalent_topology
+        orig_dp = orig_topo.dp_size if orig_topo else 1
         orig_tp = orig_topo.tp_size if orig_topo else 1
         orig_pp = orig_topo.pp_size if orig_topo else 1
+        eq_dp = eq_topo.dp_size if eq_topo else orig_dp
         eq_tp = eq_topo.tp_size if eq_topo else orig_tp
         eq_pp = eq_topo.pp_size if eq_topo else orig_pp
         report = _build_comparison_report(
             session.original_simulation, session.equivalent_simulation,
-            orig_tp, orig_pp, eq_tp, eq_pp,
+            orig_dp, orig_tp, orig_pp, eq_dp, eq_tp, eq_pp,
         )
         session.comparison_report = report
         session.step = "completed"
@@ -458,19 +461,19 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
     return data.model_dump() if hasattr(data, "model_dump") else data
 
 
-def _pp_stage_avg(cards: list[CardMetrics], tp: int, pp: int) -> dict:
+def _pp_stage_avg(cards: list[CardMetrics], dp: int, tp: int, pp: int) -> dict:
     """Compute average pp_comm_mb_per_micro for first, middle, last PP stages.
 
-    Rank layout (from training-mesh-gen-skill):
-      pp_rank = (global_rank % (tp * pp)) // tp
+    Rank layout (from training-mesh-gen-skill / app.rank_layout) is TP-DP-PP,
+    calibrated to the simulation system:
+      pp_rank = global_rank // (tp * dp)
 
     Returns {"first", "middle", "last"} — values are float averages, or 0.0 if
     the stage doesn't exist (e.g. no middle stage when pp <= 2).
     """
     groups: dict[str, list[float]] = {"first": [], "middle": [], "last": []}
-    stride = tp * pp
     for c in cards:
-        pp_rank = (c.global_rank % stride) // tp
+        pp_rank = pp_rank_of(c.global_rank, dp, tp)
         if pp_rank == 0:
             groups["first"].append(c.pp_comm_mb_per_micro)
         if pp > 1 and pp_rank == pp - 1:
@@ -485,7 +488,8 @@ def _pp_stage_avg(cards: list[CardMetrics], tp: int, pp: int) -> dict:
 
 def _build_comparison_report(
     original: SimulationResult, equivalent: SimulationResult,
-    orig_tp: int, orig_pp: int, eq_tp: int, eq_pp: int,
+    orig_dp: int, orig_tp: int, orig_pp: int,
+    eq_dp: int, eq_tp: int, eq_pp: int,
 ) -> ComparisonReport:
     eps = 1e-9
 
@@ -510,8 +514,8 @@ def _build_comparison_report(
     dp_comm_diff = _diff_pct(odp, edp)
 
     # ── Per-stage PP communication comparison ──
-    orig_pp_stage = _pp_stage_avg(original.cards, orig_tp, orig_pp)
-    eq_pp_stage = _pp_stage_avg(equivalent.cards, eq_tp, eq_pp)
+    orig_pp_stage = _pp_stage_avg(original.cards, orig_dp, orig_tp, orig_pp)
+    eq_pp_stage = _pp_stage_avg(equivalent.cards, eq_dp, eq_tp, eq_pp)
 
     # Determine which stages exist in BOTH topologies
     stages_compared: list[str] = []

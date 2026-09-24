@@ -4,6 +4,7 @@ import threading
 import logging
 from typing import Optional
 from app.models.schemas import SessionState
+from app.rank_layout import decompose
 
 logger = logging.getLogger(__name__)
 
@@ -295,14 +296,10 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                 total_nodes = tp.get("total_nodes", dp_size * tp_size * pp_size)
                 # Rebuild nodes from dp/tp/pp (deterministic, no need to persist separately)
                 nodes = []
-                ranks_per_dp = tp_size * pp_size
                 for g in range(total_nodes):
-                    dp_rank = g // ranks_per_dp
-                    remainder = g % ranks_per_dp
-                    # 与前端 meshBuildData 一致：TP 最低位、PP 居中
-                    # global_rank = dp*(tp*pp) + pp*tp + tp
-                    pp_rank = remainder // tp_size
-                    tp_rank = remainder % tp_size
+                    # Rank layout = TP-DP-PP, calibrated to the simulation system:
+                    # global_rank = pp*(tp*dp) + dp*tp + tp  (see app.rank_layout)
+                    dp_rank, tp_rank, pp_rank = decompose(g, dp_size, tp_size, pp_size)
                     nodes.append(MeshNode(
                         id=f"node_{g}",
                         device_type=device_type,
