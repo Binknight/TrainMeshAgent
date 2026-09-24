@@ -378,6 +378,25 @@
 
 > 与 `card_detail` 的区别：`card_detail` 返回卡级别的 7 个汇总指标（轻量，列表页用），`get_device_detail` 返回算子级别的完整 Trace（数据量大，按需点开单个 Rank 时用）。
 
+### Rank 布局约定（TrainMeshAgent ↔ 仿真系统）
+
+`global_rank` 采用 **TP-DP-PP** 排布：TP 为最低位（变化最快），其次 DP，PP 为最高位（最外层）。
+
+```
+global_rank = pp_rank * (tp * dp) + dp_rank * tp + tp_rank
+
+tp_rank = global_rank % tp
+dp_rank = (global_rank // tp) % dp
+pp_rank = global_rank // (tp * dp)
+```
+
+| 约束 | 说明 |
+|------|------|
+| 唯一实现 | TrainMeshAgent 侧：`app/rank_layout.py`；前端镜像：`static/topo-renderer.js` 的 `meshRankOf` / `meshDecomposeRank` |
+| 接口影响 | 所有以 `global_rank` 为入参的 tool（`card_detail`、`get_device_detail`、`get_hbm_detail`、`get_comm_detail`）都按该布局解释 rank |
+| 为何强约束 | PP 通信量按 rank 所属 PP 段分组比较（first / middle / last）；布局不一致会把不同 PP 段的指标混在一起，PP 等效性判定失真 |
+| 已废弃 | 旧布局 TP-PP-DP：`global_rank = dp_rank*(tp*pp) + pp_rank*tp + tp_rank` |
+
 ### 入参
 
 | 字段 | 类型 | 必填 | 说明 |

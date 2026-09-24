@@ -4,34 +4,40 @@ training-mesh-gen-skill: Generate structured JSON mesh topology from DP/TP/PP pa
 from app.skills.base import BaseSkill, SkillContext, SkillResult
 from app.models.schemas import DeviceType, GuardrailResult, MeshNode, MeshTopology
 from app.agent.guardrails import validate_input_params, validate_topology_output
+from app.rank_layout import decompose, rank_of
 
 
 def _build_communication_groups(dp: int, tp: int, pp: int) -> dict[str, list[list[int]]]:
+    """Collect the three communication domains using the canonical rank layout.
+
+    Rank layout = **TP-DP-PP** (calibrated to the simulation system), so a rank is
+    ``pp_rank * (tp * dp) + dp_rank * tp + tp_rank``. See ``app.rank_layout``.
+
+    Note: this builder used to compose ranks as ``tp_rank * pp + pp_rank`` (PP
+    innermost), which disagreed with the node table built by ``execute`` as soon
+    as both ``tp > 1`` and ``pp > 1``.
+    """
     groups: dict[str, list[list[int]]] = {"dp": [], "tp": [], "pp": []}
-    total = dp * tp * pp
 
     for tp_r in range(tp):
         for pp_r in range(pp):
             group = []
             for dp_r in range(dp):
-                rank = dp_r * tp * pp + tp_r * pp + pp_r
-                group.append(rank)
+                group.append(rank_of(dp, tp, dp_rank=dp_r, tp_rank=tp_r, pp_rank=pp_r))
             groups["dp"].append(group)
 
     for dp_r in range(dp):
         for pp_r in range(pp):
             group = []
             for tp_r in range(tp):
-                rank = dp_r * tp * pp + tp_r * pp + pp_r
-                group.append(rank)
+                group.append(rank_of(dp, tp, dp_rank=dp_r, tp_rank=tp_r, pp_rank=pp_r))
             groups["tp"].append(group)
 
     for dp_r in range(dp):
         for tp_r in range(tp):
             group = []
             for pp_r in range(pp):
-                rank = dp_r * tp * pp + tp_r * pp + pp_r
-                group.append(rank)
+                group.append(rank_of(dp, tp, dp_rank=dp_r, tp_rank=tp_r, pp_rank=pp_r))
             groups["pp"].append(group)
 
     return groups
@@ -94,12 +100,9 @@ class MeshGenSkill(BaseSkill):
         nodes: list[MeshNode] = []
 
         for global_rank in range(total_nodes):
-            dp_rank = global_rank // (tp * pp)
-            remainder = global_rank % (tp * pp)
-            # 与前端 meshBuildData 一致：TP 最低位、PP 居中
-            # global_rank = dp*(tp*pp) + pp*tp + tp
-            pp_rank = remainder // tp
-            tp_rank = remainder % tp
+            # Rank layout = TP-DP-PP, calibrated to the simulation system:
+            # global_rank = pp*(tp*dp) + dp*tp + tp  (see app.rank_layout)
+            dp_rank, tp_rank, pp_rank = decompose(global_rank, dp, tp, pp)
 
             neighbors = []
             if dp > 1:

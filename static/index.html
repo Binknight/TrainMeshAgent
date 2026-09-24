@@ -6841,13 +6841,14 @@
                 if (!rankInfoResolved && meshPinnedRank) {
                     var topo = getPinnedTopo();
                     if (topo) {
-                        var ranksPerDp = topo.tp * topo.pp;
                         var gr = meshPinnedRank.globalRank;
+                        // Canonical TP-DP-PP layout (see meshDecomposeRank)
+                        var pos = meshDecomposeRank(gr, topo.tp, topo.dp);
                         rankInfoResolved = {
                             globalRank: gr,
-                            dpIdx: Math.floor(gr / ranksPerDp),
-                            ppIdx: Math.floor((gr % ranksPerDp) / topo.tp),
-                            tpIdx: (gr % ranksPerDp) % topo.tp,
+                            dpIdx: pos.dpIdx,
+                            ppIdx: pos.ppIdx,
+                            tpIdx: pos.tpIdx,
                             tpSize: topo.tp, ppSize: topo.pp, dpSize: topo.dp
                         };
                     }
@@ -7275,13 +7276,14 @@
                 // Get rank position info from the pinned side
                 var topo = pinned.side === "orig" ? meshOriginal : meshEquivalent;
                 if (!topo) { area.innerHTML = '<span style="color:var(--text-muted)">无拓扑数据</span>'; return; }
-                var ranksPerDp = topo.tp * topo.pp;
                 var gr = pinned.globalRank;
+                // Canonical TP-DP-PP layout (see meshDecomposeRank)
+                var pos = meshDecomposeRank(gr, topo.tp, topo.dp);
                 var rankInfo = {
                     globalRank: gr,
-                    dpIdx: Math.floor(gr / ranksPerDp),
-                    ppIdx: Math.floor((gr % ranksPerDp) / topo.tp),
-                    tpIdx: (gr % ranksPerDp) % topo.tp,
+                    dpIdx: pos.dpIdx,
+                    ppIdx: pos.ppIdx,
+                    tpIdx: pos.tpIdx,
                     tpSize: topo.tp, ppSize: topo.pp, dpSize: topo.dp
                 };
 
@@ -7289,11 +7291,10 @@
                 var otherTopo = pinned.side === "orig" ? meshEquivalent : meshOriginal;
                 var otherRankInfo = null;
                 if (otherTopo) {
-                    var oRanksPerDp = otherTopo.tp * otherTopo.pp;
                     var oDpIdx = Math.min(rankInfo.dpIdx, otherTopo.dp - 1);
                     var oPpIdx = Math.min(rankInfo.ppIdx, otherTopo.pp - 1);
                     var oTpIdx = Math.min(rankInfo.tpIdx, otherTopo.tp - 1);
-                    var oGR = oDpIdx * oRanksPerDp + oPpIdx * otherTopo.tp + oTpIdx;
+                    var oGR = meshRankOf(otherTopo.tp, otherTopo.dp, oPpIdx, oDpIdx, oTpIdx);
                     otherRankInfo = {
                         globalRank: oGR,
                         dpIdx: oDpIdx, ppIdx: oPpIdx, tpIdx: oTpIdx,
