@@ -20,6 +20,9 @@ class MCPClient:
     def __init__(self, server_url: str | None = None):
         self.server_url = (server_url or config.MCP_SERVER_URL).rstrip("/")
         self._session = requests.Session()
+        # MCP server is only reachable via direct VPN routing; system/env proxy (HTTP_PROXY)
+        # cannot reach it and returns 504 Gateway Time-out. Force direct connection.
+        self._session.trust_env = False
         self._session.headers.update({"Content-Type": "application/json"})
 
     def _call_tool(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:

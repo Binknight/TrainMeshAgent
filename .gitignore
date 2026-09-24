@@ -10,3 +10,7 @@ UI/
 
 # model_catalog resolver cache (fetched config.json)
 app/models/.model_cache/
+.preferences
+
+# codegraph index cache
+.codegraph/
