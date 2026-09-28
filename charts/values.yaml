@@ -1,0 +1,83 @@
+app:
+  # 三处共用此值：k8s 资源名、镜像名（{{ repository }}/{{ name }}:{{ version }}）、
+  # 节点日志目录名。必须与平台镜像仓库中本服务的镜像名保持一致。
+  name: train-mesh-agent
+  version: 1.0.0
+
+images:
+  repository: @repository@
+  pullPolicy: IfNotPresent
+  pullSecret: @pullSecret@
+  # 平台注入的镜像 tag，原样使用。
+  # 注：源服务模板写的是 {{ int .Values.images.version }}，用于把纯数字构建号
+  # 归一化（如 "007"→"7"）；但 Sprig 的 int 对 1.0.0 / 1.0.0.20250920 这类
+  # 带点版本会静默得到 0，直接导致 ImagePullBackOff。这里按原样下发，
+  # 纯数字 tag 行为不变；若平台确实依赖 int 归一化，再改回。
+  version: @version@
+
+domain: @domain@
+
+eks:
+  clusterId: @eks.clusterId@
+
+deployment:
+  # 必须为 1：仿真工作区是节点本地 hostPath，且 MCP 的 task_store 是进程内内存态，
+  # 多副本会调度到不同节点、互相查不到对方的 task_id（TaskNotFound）。
+  replicas: 1
+
+resources:
+  # 本 Pod 同时承载 Flask(SSE/WebSocket) + MCP 仿真 Server + run.py 仿真子进程，
+  # 仿真本身吃 CPU/内存，故取最大档；若平台允许自定义，仿真密集时建议再上调。
+  cpuWeight: l
+  memoryWeight: l
+
+# 仿真任务工作区：每个 task 一个子目录，内含
+#   task_meta.json / topology_generated.sh / simulation.log / results/
+# 直接落在部署节点本地磁盘，容器重建、镜像升级都不会丢产物。
+workspace:
+  nodePath: /data/aicm/workspace
+  containerPath: /data/aicm/workspace
+
+log:
+  # 平台日志采集约定（ecslog-agent）。本服务日志走 stdout，此卷仅为对齐平台规范，
+  # 如本服务所在项目的日志前缀不同，请改 nodePrefix 或按需删除该卷。
+  containerDir: /home/virtualemulation/log
+  nodePrefix: /data01/log/ekslog/com.huawei.devicetestbmc/pro_biz_rnd_01
+
+# ── 非敏感运行期配置 → ConfigMap → envFrom ──
+# 注意：本服务读取的是「环境变量」，不是配置文件，因此不再挂 /home/config/。
+# 其余未列出的键沿用镜像内 ENV（见 Dockerfile ENV 段），无需重复声明。
+config:
+  # Flask 业务侧
+  flaskHost: "0.0.0.0"
+  flaskPort: "5000"
+  flaskDebug: "false"
+  flaskUseReloader: "false"
+  simPollInterval: "1.0"
+  # 同容器内两个进程，走回环地址；不要写成 Service 名
+  mcpServerUrl: "http://127.0.0.1:9000"
+  # MCP 仿真 Server
+  mcpHost: "0.0.0.0"
+  mcpPort: "9000"
+  simToolHome: "/home/aicm"
+  # 必须为空串：conda_launcher 在 conda_env 为空时回退为当前解释器，免装 conda
+  condaEnv: ""
+  # LLM
+  openaiBaseUrl: "https://api.openai.com/v1"
+  openaiModel: "gpt-4o"
+  openaiSslVerify: "true"
+
+# ── 敏感配置 → Secret → envFrom ──
+# 这三个占位符需要在平台变量替换配置中登记（或由运维在发布前直接填值）。
+# DATABASE_URL 必填：为空会退回镜像默认的 127.0.0.1，wait_for_db 失败 → 容器反复重启。
+secrets:
+  databaseUrl: @databaseUrl@
+  openaiApiKey: @openaiApiKey@
+  # 出网代理（可选）：确认平台已登记 @externalProxy@ 后再取消注释，
+  # 否则会原样下发 "@externalProxy@" 导致出网请求异常。
+  # externalProxy: @externalProxy@
+
+# 当前工作区走节点本地 hostPath（见 workspace）。若将来需要多副本/跨节点共享，
+# 可把 deployment 中的 sim-workspace 卷换成本 NFS（rwx）方案，server 由平台注入。
+nfs:
+  server: @nfs.server@
