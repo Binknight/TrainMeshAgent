@@ -2,11 +2,20 @@
 # ============================================================================
 # TrainMeshAgent 单容器 entrypoint
 #   拉起 MCP 仿真 Server + Flask 应用，并保证 SIGTERM 时连带回收仿真子进程。
-#   容器内仓库根为 /home（业务镜像解压位置）。
+#   容器内仓库根为 /home（业务镜像解压位置），仿真工作区在 /data/aicm/workspace
+#   （必须由部署侧挂载宿主机目录，否则启动即失败）。
 # ============================================================================
 set -euo pipefail
 
 log() { printf '[entrypoint] %s\n' "$*"; }
+
+# ---------- 仿真工作区自检：必须是挂载点且可写 ----------
+# 放在等数据库之前：配置错误应当立刻暴露，而不是白等一轮 DB 探测。
+# 兜底原则：宁可启动失败，也不要静默把仿真产物写进镜像层（容器重建即丢）。
+: "${AICM_MCP_WORKSPACE_ROOT:=/data/aicm/workspace}"
+export AICM_MCP_WORKSPACE_ROOT
+log "workspace=${AICM_MCP_WORKSPACE_ROOT}"
+python /home/docker/check_workspace.py || exit 1
 
 # ---------- 等待 PostgreSQL（app 启动即执行建表迁移） ----------
 python /home/docker/wait_for_db.py || exit 1
