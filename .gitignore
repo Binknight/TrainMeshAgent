@@ -14,3 +14,7 @@ app/models/.model_cache/
 
 # codegraph index cache
 .codegraph/
+
+# MCP Server runtime output: per-task workspaces and simulation results
+# (mcp_server/config.py derives workspace_root via parents[1] = repo root)
+/workspace/

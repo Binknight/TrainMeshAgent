@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     )
 
     host: str = "0.0.0.0"
-    port: int = 8765
+    # 与 TrainMeshAgent 侧 MCP_SERVER_URL 的默认值对齐（见 .env.example / app/config.py）
+    port: int = 9000
     log_level: str = "info"
     task_poll_timeout_sec: int = 300
 
