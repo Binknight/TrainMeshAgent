@@ -14,9 +14,25 @@
 #   - MCP Server 依赖     mcp_server/requirements.txt
 #   - 仿真工具依赖        docker/requirements-sim.txt   (numpy / pandas)
 #   - 仿真工具离线 wheel  docker/wheels/hccl_format-*.whl
+#   - PostgreSQL 14 服务端（内嵌数据库，见 docker/entrypoint.sh）
 #
 # 业务镜像见仓库根 Dockerfile。
 # 构建命令见 docker/build_base_image.sh。
+#
+# ── 为什么数据库要装进镜像，且为什么是 PG 14 ──
+# 1) 服务原先依赖「外部 PostgreSQL + 运行期注入 DATABASE_URL」，部署侧多一个必须
+#    存在、必须可连的组件；镜像内嵌后，一个容器即可自洽启动。
+# 2) 数据目录 PGDATA=/home/aicm/db/data，由部署侧挂载宿主机目录持久化
+#    （节点侧 /data/aicm/db → 容器内 /home/aicm/db），与仿真工作区同一范式。
+# 3) Ubuntu 22.04 官方源中的 PostgreSQL 只有 14 这一个主版本，因此这里钉
+#    postgresql-14 而非浮动的 postgresql：PG 的 PGDATA 与主版本强绑定，
+#    一旦容器升级主版本，已有数据目录会直接拒绝启动。升级必须走
+#    dump → 换镜像 → initdb → restore 的人工流程（见 docs/使用指南.md）。
+# 4) 不装 postgresql-contrib、不 CREATE EXTENSION uuid-ossp：建表用的
+#    gen_random_uuid() 自 PG 13 起已内建（pgcrypto 之外的核心函数）。
+# 5) libpq5 是 psycopg2-binary 的运行时依赖，已在下面安装；镜像内 PG 与
+#    psycopg2 同源于 Ubuntu 22.04，因此不会出现客户端/服务端版本错配
+#    （例如 libpq 17 对未启用加密的服务端报 "GSSAPI encryption required"）。
 # ============================================================================
 FROM kweecr05.his.huawei.com:80/public/ubuntu:x86-22.04
 
@@ -74,6 +90,7 @@ RUN set -ex && \
         python3-venv \
         python3-distutils \
         libpq5 \
+        postgresql-14 \
         curl \
         wget \
         tree \
@@ -119,6 +136,18 @@ RUN set -ex && \
     # (numpy, pandas, 及 pandas 传递出的 pytz / tzdata / python-dateutil -> six)
     python -c "import flask, flask_cors, flask_sock, openai, pydantic, psycopg2, requests, yaml, fastapi, uvicorn, pydantic_settings, numpy, pandas, pytz, tzdata, dateutil, six; print('[base] python deps OK')" && \
     \
+    # 内嵌数据库自检：二进制必须存在且版本恰好是 14。
+    # 这里不 initdb —— 数据目录的属主与初始化的时机都属于运行期（容器以 uid 1000
+    # 运行，见业务镜像 Dockerfile 与 charts/templates/deployment.yaml）。
+    # 另外断言基础镜像里**不存在** PGDATA：一旦镜像层里带了初始化过的数据目录，
+    # 它会被运行期挂载遮蔽而永远用不上，还会误导排查方向。
+    test -x /usr/lib/postgresql/14/bin/initdb && \
+    test -x /usr/lib/postgresql/14/bin/postgres && \
+    pg_isready --version && \
+    test "$(pg_isready --version | sed -n 's/.*PostgreSQL \([0-9]*\).*/\1/p')" = "14" && \
+    test ! -e /home/aicm/db && \
+    echo '[base] postgresql 14 OK' && \
+    \
     # 移除构建依赖以减少镜像大小
     apt-get remove -y --allow-unauthenticated \
         python3-dev \
@@ -129,6 +158,13 @@ RUN set -ex && \
     apt-get autoremove -y --allow-unauthenticated && \
     apt-get autoclean && \
     apt-get clean && \
+    \
+    # autoremove 之后的收尾断言：确认 postgresql-14 没有被当作「不再需要的依赖」
+    # 连带卸掉（它的依赖链与本次移除的构建工具无交集，理论安全，但这里要实测）。
+    test -x /usr/lib/postgresql/14/bin/initdb && \
+    test -x /usr/lib/postgresql/14/bin/postgres && \
+    echo '[base] postgresql 14 survived autoremove' && \
+    \
     rm -rf /var/lib/apt/lists/* \
            /tmp/* \
            /var/tmp/* \
