@@ -1,0 +1,137 @@
+# syntax=docker/dockerfile:1
+# ============================================================================
+# TrainMeshAgent 基础镜像 —— repository/python3.10-aicm-base:1.0
+#
+# 构建环境不支持外网，仅内网华为源可用：
+#   apt -> http://mirrors.tools.huawei.com
+#   pip -> http://mirrors.tools.huawei.com/pypi/simple/
+# Ubuntu 22.04 系统自带 python3 = 3.10，与仿真工具验证环境 (Python 3.10.2)
+# 天然吻合，因此无需从源码编译 Python。
+#
+# 本镜像承载「不常变」的部分，业务镜像构建期零网络：
+#   - Python 3.10 运行时
+#   - app 依赖            requirements.txt
+#   - MCP Server 依赖     mcp_server/requirements.txt
+#   - 仿真工具依赖        docker/requirements-sim.txt   (numpy / pandas)
+#   - 仿真工具离线 wheel  docker/wheels/hccl_format-*.whl
+#
+# 业务镜像见仓库根 Dockerfile。
+# 构建命令见 docker/build_base_image.sh。
+# ============================================================================
+FROM kweecr05.his.huawei.com:80/public/ubuntu:x86-22.04
+
+WORKDIR /home/
+
+COPY requirements.txt            /tmp/build/requirements-app.txt
+COPY mcp_server/requirements.txt /tmp/build/requirements-mcp.txt
+COPY docker/requirements-sim.txt /tmp/build/requirements-sim.txt
+COPY docker/wheels/              /tmp/wheels/
+
+# 禁用 SSL 证书验证 - 设置全局不验证 SSL
+ENV PYTHONHTTPSVERIFY=0
+# 设置非交互式环境变量
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NONINTERACTIVE_SEEN=true
+ENV LANG=C.UTF-8
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# SKIP_HCCL=1：尚未拿到 hccl_format-*.whl 时可先跳过，构建出基础镜像
+ARG SKIP_HCCL=0
+
+# 一次性完成所有系统配置、包安装和清理
+RUN set -ex && \
+    # 配置apt和dpkg不检查GPG签名和SSL证书
+    echo 'APT::Get::AllowUnauthenticated "true";' > /etc/apt/apt.conf.d/99disable-security && \
+    echo 'APT::Get::Assume-Yes "true";' >> /etc/apt/apt.conf.d/99disable-security && \
+    echo 'Acquire::AllowInsecureRepositories "true";' >> /etc/apt/apt.conf.d/99disable-security && \
+    echo 'Acquire::AllowDowngradeToInsecureRepositories "true";' >> /etc/apt/apt.conf.d/99disable-security && \
+    echo 'Acquire::https::Verify-Peer "false";' >> /etc/apt/apt.conf.d/99disable-security && \
+    echo 'Acquire::https::Verify-Host "false";' >> /etc/apt/apt.conf.d/99disable-security && \
+    echo 'DPkg::Options "--force-confdef";' >> /etc/apt/apt.conf.d/99disable-security && \
+    echo 'DPkg::Options "--force-confold";' >> /etc/apt/apt.conf.d/99disable-security && \
+    echo 'force-confdef' >> /etc/dpkg/dpkg.cfg && \
+    echo 'force-confold' >> /etc/dpkg/dpkg.cfg && \
+    \
+    # 配置华为的apt源
+    sed -i "s@http://.*archive.ubuntu.com@http://mirrors.tools.huawei.com@g" /etc/apt/sources.list && \
+    sed -i "s@http://.*security.ubuntu.com@http://mirrors.tools.huawei.com@g" /etc/apt/sources.list && \
+    \
+    # 更新包列表
+    apt-get update --allow-unauthenticated --allow-insecure-repositories && \
+    \
+    # 修复dpkg状态并移除problematic packages
+    dpkg --configure -a || true && \
+    apt-get remove -y --allow-unauthenticated unattended-upgrades || true && \
+    \
+    # 安装所有需要的包
+    # build-essential / python3-dev 只为 pip 可能的源码编译而装，装完即卸
+    apt-get install -y --allow-unauthenticated --no-install-recommends \
+        software-properties-common \
+        python3 \
+        python3-pip \
+        python3-dev \
+        python3-venv \
+        python3-distutils \
+        libpq5 \
+        curl \
+        wget \
+        tree \
+        vim \
+        lsof \
+        htop \
+        unzip \
+        tar \
+        gzip \
+        build-essential && \
+    \
+    # 创建Python软链接
+    ln -sf /usr/bin/python3 /usr/local/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/local/bin/pip && \
+    \
+    # 配置pip源
+    mkdir -p ~/.pip && \
+    echo "[global]" > ~/.pip/pip.conf && \
+    echo "index-url = http://mirrors.tools.huawei.com/pypi/simple/" >> ~/.pip/pip.conf && \
+    echo "trusted-host = mirrors.tools.huawei.com" >> ~/.pip/pip.conf && \
+    echo "disable-pip-version-check = true" >> ~/.pip/pip.conf && \
+    \
+    # 安装 Python 依赖：app + MCP Server + 仿真工具
+    pip3 install --trusted-host mirrors.tools.huawei.com --no-cache-dir \
+        -r /tmp/build/requirements-app.txt \
+        -r /tmp/build/requirements-mcp.txt \
+        -r /tmp/build/requirements-sim.txt && \
+    \
+    # 安装仿真工具随目录下发的离线 wheel（hccl_format-0.1-py3-none-any.whl）
+    if ls /tmp/wheels/*.whl > /dev/null 2>&1; then \
+        pip3 install --trusted-host mirrors.tools.huawei.com --no-cache-dir /tmp/wheels/*.whl; \
+    elif [ "${SKIP_HCCL}" = "1" ]; then \
+        echo "WARN: SKIP_HCCL=1，未安装 hccl-format"; \
+    else \
+        echo "ERROR: docker/wheels/ 下未找到 hccl_format-*.whl" >&2; \
+        echo "       请把 hccl_format-0.1-py3-none-any.whl 放入 docker/wheels/ 后重建，" >&2; \
+        echo "       或加 --build-arg SKIP_HCCL=1 先跳过。" >&2; \
+        exit 1; \
+    fi && \
+    \
+    # 依赖自检：任一 import 失败即构建失败，避免坏镜像流到业务层
+    python -c "import flask, flask_cors, flask_sock, openai, pydantic, psycopg2, requests, yaml, fastapi, uvicorn, pydantic_settings, numpy, pandas; print('[base] python deps OK')" && \
+    \
+    # 移除构建依赖以减少镜像大小
+    apt-get remove -y --allow-unauthenticated \
+        python3-dev \
+        build-essential \
+        software-properties-common && \
+    \
+    # 彻底清理系统缓存和临时文件
+    apt-get autoremove -y --allow-unauthenticated && \
+    apt-get autoclean && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* \
+           /tmp/* \
+           /var/tmp/* \
+           /root/.cache \
+           ~/.pip/cache \
+           /var/cache/apt/* \
+           /var/lib/dpkg/info/* \
+           /etc/apt/sources.list.bak
