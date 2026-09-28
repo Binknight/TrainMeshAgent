@@ -115,7 +115,9 @@ RUN set -ex && \
     fi && \
     \
     # 依赖自检：任一 import 失败即构建失败，避免坏镜像流到业务层
-    python -c "import flask, flask_cors, flask_sock, openai, pydantic, psycopg2, requests, yaml, fastapi, uvicorn, pydantic_settings, numpy, pandas; print('[base] python deps OK')" && \
+    # 覆盖 app / mcp_server 主链路 + 仿真工具依赖闭包
+    # (numpy, pandas, 及 pandas 传递出的 pytz / tzdata / python-dateutil -> six)
+    python -c "import flask, flask_cors, flask_sock, openai, pydantic, psycopg2, requests, yaml, fastapi, uvicorn, pydantic_settings, numpy, pandas, pytz, tzdata, dateutil, six; print('[base] python deps OK')" && \
     \
     # 移除构建依赖以减少镜像大小
     apt-get remove -y --allow-unauthenticated \

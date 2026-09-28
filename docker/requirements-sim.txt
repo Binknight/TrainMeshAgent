@@ -2,28 +2,47 @@
 # 仿真工具 (aicm_0525) 依赖 —— 由基础镜像 python3.10-aicm-base:1.0 安装
 # ============================================================================
 #
-# 版本依据（务必钉「实测可用」版本，而非 aicm 侧 requirements.txt 的钉版）：
-#   - 仿真工具验证环境为 Python 3.10.2（基础镜像用 Ubuntu 22.04 自带 python3=3.10）
-#   - 实测在用的是 numpy 1.26.4 / pandas 2.2.3
-#   - aicm 侧 requirements.txt 钉的 numpy 2.2.6 / pandas 2.3.3 与实测环境不一致，
-#     且 numpy 1.26 -> 2.x 属 ABI 破坏性升级（典型报错 _ARRAY_API not found /
-#     numpy.dtype size changed），若仿真侧存在针对 numpy 1.x 编译的扩展会直接崩，
-#     因此在未重新验证前不采用该钉版。
+# 完整依赖树共 7 个包，全部钉「实测可用」版本：
+#
+#   hccl-format 0.1     无 Requires
+#   numpy       1.26.4  无 Requires
+#   pandas      2.2.3   -> numpy / pytz / tzdata / python-dateutil
+#                          python-dateutil -> six
+#
+# 版本依据：以 aicm_0525 环境 pip freeze 推导出的【实际在装】版本为准，
+# 不采用 aicm 侧 requirements.txt 的钉版（与实测不一致，且未在真实链路验证）：
+#
+#   包                实测在装        aicm requirements.txt 钉版   采用
+#   numpy             1.26.4          2.2.6                        实测
+#   pandas            2.2.3           2.3.3                        实测
+#   pytz              2025.2          2026.1.post1                 实测
+#   tzdata            2025.3          2025.3                       一致
+#   python-dateutil   2.9.0.post0     2.9.0.post0                  一致
+#   six               1.17.0          1.17.0                       一致
+#
+# numpy 1.26 -> 2.x 属 ABI 破坏性升级（典型报错 _ARRAY_API not found /
+# numpy.dtype size changed），若仿真侧存在针对 numpy 1.x 编译的扩展会直接崩，
+# 因此在未重新验证前一律钉实测版本。
 #
 # 兼容性：
-#   - pandas 2.2.3 要求 numpy>=1.22.4,<3 -> 与 numpy 1.26.4 兼容
-#   - app/ 与 mcp_server/ 全文未引用 numpy/pandas，与主链路零冲突
+#   - pandas 2.2.3 要求 numpy>=1.22.4,<3，与 numpy 1.26.4 兼容
+#   - app/ 与 mcp_server/ 全文未引用 numpy / pandas，与主链路零冲突
 #
-# hccl-format==0.1 不在此处声明：它是随仿真工具目录下发的离线 wheel，
-# 由 docker/base/Dockerfile 从 docker/wheels/ 直接安装。
+# hccl-format==0.1 不在此处声明：它是随仿真工具下发的离线 wheel，由
+# docker/base/Dockerfile 从 docker/wheels/ 直接安装
+# （hccl_format-0.1-py3-none-any.whl）。此处缺失不影响依赖解析。
+#
+# 其余已装包（torch / matplotlib / Jinja2 等）不在本传递闭包内，属分支或
+# legacy 路径的可选依赖，不入镜像。
 
+# ---- 直接依赖 ----
 numpy==1.26.4
 pandas==2.2.3
 
-# ----------------------------------------------------------------------------
-# TODO(sim): 待补充仿真工具 pip freeze 的其余依赖，以锁定可复现版本。
-# 已知 pandas 2.2.3 的间接依赖（建议显式钉住实际版本）：
-#   python-dateutil>=2.8.2
-#   pytz>=2020.1
-#   tzdata>=2022.7
-# ----------------------------------------------------------------------------
+# ---- pandas 的间接依赖 ----
+pytz==2025.2
+tzdata==2025.3
+python-dateutil==2.9.0.post0
+
+# ---- python-dateutil 的间接依赖 ----
+six==1.17.0
