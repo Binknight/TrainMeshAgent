@@ -1,6 +1,7 @@
 # 基础镜像构建上下文（仓库根）只需要：
 #   requirements.txt / mcp_server/requirements.txt / docker/requirements-sim.txt
 #   docker/wheels/*.whl
+#   docker/base/ucf-shim.sh（构建期顶替 ucf/ucfr 的 shim，装完即摘除）
 # 业务镜像直接把 tgz 放进 deployPackages 目录构建，不使用本文件。
 
 # ---- VCS / 工具噪声 ----

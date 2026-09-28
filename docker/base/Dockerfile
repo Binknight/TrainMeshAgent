@@ -42,6 +42,7 @@ COPY requirements.txt            /tmp/build/requirements-app.txt
 COPY mcp_server/requirements.txt /tmp/build/requirements-mcp.txt
 COPY docker/requirements-sim.txt /tmp/build/requirements-sim.txt
 COPY docker/wheels/              /tmp/wheels/
+COPY docker/base/ucf-shim.sh     /tmp/ucf-shim.sh
 
 # 禁用 SSL 证书验证 - 设置全局不验证 SSL
 ENV PYTHONHTTPSVERIFY=0
@@ -80,21 +81,29 @@ RUN set -ex && \
     dpkg --configure -a || true && \
     apt-get remove -y --allow-unauthenticated unattended-upgrades || true && \
     \
-    # ── ucf 状态兜底（Docker < 20.10 的节点必需）────────────────────────────
+    # ── ucf/ucfr 拦截层（Docker < 20.10 的节点必需）─────────────────────────
     # 这类节点上容器内 test -w 对任何文件都返回假：默认 seccomp 白名单缺
     # faccessat2，而 jammy 的 glibc 用 faccessat2 实现 access()，且只在 ENOSYS
-    # 时回退老 syscall。于是 postgresql-common 的 postinst
-    # （setup_createclusterconf）里依次调用的
-    #   ucf : [ -e $statedir/hashfile -a ! -w $statedir/hashfile ]  → 恒成立 exit 1
-    #   ucfr: [ -e $statedir/registry -a ! -w $statedir/registry ]  → 恒成立 exit 1
-    # 都会失败，导致 postgresql-common 未配置、postgresql-14 连带未配置、
+    # 时回退老 syscall。而 ucf / ucfr 的前置检查是
+    #   ucf : [ -e $statedir/hashfile -a ! -w $statedir/hashfile ] → 恒成立 exit 1
+    #   ucfr: [ -e $statedir/registry -a ! -w $statedir/registry ] → 恒成立 exit 1
+    # 于是 postgresql-common 的 postinst 必然失败、postgresql-14 连带未配置、
     # apt 返回 100（与文件权限、基镜像内容无关，见 Ubuntu #1943049）。
-    # 两个检查都是「文件存在且不可写」才报错，因此：先单独装 ucf 让它的 postinst
-    # 把状态文件建出来，再删掉 —— 检查即跳过；ucf/ucfr 随后会自行重建
-    # （ucf 的 replace_md5sum 与 ucfr 的 touch 分支都处理了文件缺失）。
-    # 注意 ucf 是 postgresql-common 的 Depends，先装它不会影响后面的解析。
+    # 为什么不能"装包前删一次状态文件"：首次安装时该 postinst 会调用 ucf/ucfr 各两次
+    #   setup_createclusterconf                            → ucf + ucfr
+    #   末尾（"$2" 为空 ⇒ dpkg --compare-versions "" lt 183~ 成立）→ ucf --purge
+    #                                                        + ucfr --purge
+    # 第一次 ucf 就会把 hashfile 建回来，第二次调用便撞上检查；而 --purge 路径里
+    # ucfr 又要求 registry 存在（否则 exit 6），与「检查要求文件不存在」互斥 ——
+    # 任何静态的文件布局都无解，只能在每次调用前清状态。故用 shim 顶替：
+    # 真身 divert 到 /usr/bin/{ucf,ucfr}.real，装完 postgresql-14 立即摘除并还原
+    # （见文件末尾的还原断言）。先单独装 ucf：它是 postgresql-common 的 Depends。
     apt-get install -y --allow-unauthenticated --no-install-recommends ucf && \
-    rm -f /var/lib/ucf/hashfile /var/lib/ucf/registry && \
+    dpkg-divert --rename --divert /usr/bin/ucf.real  --add /usr/bin/ucf && \
+    dpkg-divert --rename --divert /usr/bin/ucfr.real --add /usr/bin/ucfr && \
+    cp /tmp/ucf-shim.sh /usr/bin/ucf && \
+    cp /tmp/ucf-shim.sh /usr/bin/ucfr && \
+    chmod 755 /usr/bin/ucf /usr/bin/ucfr && \
     \
     # 安装所有需要的包
     # build-essential / python3-dev 只为 pip 可能的源码编译而装，装完即卸
@@ -187,6 +196,18 @@ RUN set -ex && \
     test -f /usr/lib/postgresql/14/bin/postgres && \
     dpkg -s postgresql-14 | grep -q '^Status: install ok installed' && \
     echo '[base] postgresql 14 survived autoremove' && \
+    \
+    # 摘掉 ucf/ucfr shim、还原真身（--rename --remove 会把 *.real 改回原名）。
+    # 断言写清楚是必要的：绝不能把带拦截层的镜像发出去 —— divert 残留必须为空，
+    # 且文件内容确实是真身（grep 它独有的报错文案）。
+    rm -f /usr/bin/ucf /usr/bin/ucfr && \
+    dpkg-divert --rename --remove /usr/bin/ucf && \
+    dpkg-divert --rename --remove /usr/bin/ucfr && \
+    test ! -e /usr/bin/ucf.real && \
+    test ! -e /usr/bin/ucfr.real && \
+    grep -q 'do not have write privilege to the state data' /usr/bin/ucf && \
+    grep -q 'do not have write privilege to the registry data' /usr/bin/ucfr && \
+    echo '[base] ucf/ucfr restored' && \
     \
     rm -rf /var/lib/apt/lists/* \
            /tmp/* \
