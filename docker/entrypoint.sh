@@ -4,9 +4,10 @@
 #   拉起 内嵌 PostgreSQL + MCP 仿真 Server + Flask 应用，并保证 SIGTERM 时
 #   连带回收仿真子进程与数据库（-m fast，不做 crash recovery）。
 #
-#   容器内仓库根为 /home（业务镜像解压位置），仿真工作区在 /data/aicm/workspace，
-#   数据库在 /home/aicm/db（PGDATA=/home/aicm/db/data）。这两个目录都必须由部署
-#   侧挂载宿主机目录，否则启动即失败。
+#   容器内仓库根为 /home（业务镜像解压位置）。仿真工作区与数据库目录都挂在
+#   /home/aicm 下：workspace=/home/aicm/workspace，db=/home/aicm/db
+#   （PGDATA=/home/aicm/db/data）。这两个目录都必须由部署侧挂载宿主机目录，
+#   否则启动即失败。
 # ============================================================================
 set -euo pipefail
 
@@ -15,7 +16,7 @@ log() { printf '[entrypoint] %s\n' "$*"; }
 # ---------- 仿真工作区自检：必须是挂载点且可写 ----------
 # 放在其余步骤之前：配置错误应当立刻暴露，而不是白等一轮 DB 探测。
 # 兜底原则：宁可启动失败，也不要静默把仿真产物写进镜像层（容器重建即丢）。
-: "${AICM_MCP_WORKSPACE_ROOT:=/data/aicm/workspace}"
+: "${AICM_MCP_WORKSPACE_ROOT:=/home/aicm/workspace}"
 export AICM_MCP_WORKSPACE_ROOT
 log "workspace=${AICM_MCP_WORKSPACE_ROOT}"
 python /home/docker/check_workspace.py || exit 1

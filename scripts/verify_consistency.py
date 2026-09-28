@@ -140,6 +140,30 @@ def main() -> int:
             errors.append(f"entrypoint.sh 的 {key} 兜底值 {m.group(1)!r} != 镜像 ENV {expected!r}")
     print(f"    OK: entrypoint.sh 兜底默认值与镜像 ENV 一致")
 
+    # 工作区路径：chart / Dockerfile(mkdir) / Dockerfile(ENV) / entrypoint 兜底 四处必须一致。
+    # 这条是补的盲区：原先只校验数据库一侧，workspace 改一处漏一处不会被发现。
+    ws_chart = values["workspace"]["containerPath"]
+    ws_env = envs.get("AICM_MCP_WORKSPACE_ROOT", "")
+    m_ws_entry = re.search(r'AICM_MCP_WORKSPACE_ROOT:=([^}]+)', entrypoint)
+    ws_entry = m_ws_entry.group(1).strip() if m_ws_entry else ""
+    if not ws_env:
+        errors.append("镜像 Dockerfile 缺少 AICM_MCP_WORKSPACE_ROOT")
+    if not ws_entry:
+        errors.append("entrypoint.sh 缺少 AICM_MCP_WORKSPACE_ROOT 兜底默认值")
+    if ws_env and f"mkdir -p {ws_env}" not in app_df:
+        errors.append(f"Dockerfile 未预建工作区挂载点 {ws_env}（entrypoint 自检会误判为未挂载）")
+    ws_sources = {
+        "chart workspace.containerPath": ws_chart,
+        "镜像 ENV": ws_env,
+        "entrypoint 兜底": ws_entry,
+    }
+    if len(set(ws_sources.values())) != 1:
+        for label, val in ws_sources.items():
+            print(f"      {label} = {val!r}")
+        errors.append("工作区路径在上述四处不一致")
+    else:
+        print(f"    OK: 工作区路径四处一致 = {ws_chart}")
+
     # ── 4. PG 主版本一致性 ──
     apt_pkgs = set(re.findall(r"postgresql-(\d+)", base_df))
     bin_paths = set(re.findall(r"/usr/lib/postgresql/(\d+)/bin", base_df + app_df + entrypoint))

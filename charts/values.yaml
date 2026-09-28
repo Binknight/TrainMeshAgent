@@ -38,12 +38,15 @@ resources:
 # 仿真任务工作区：每个 task 一个子目录，内含
 #   task_meta.json / topology_generated.sh / simulation.log / results/
 # 直接落在部署节点本地磁盘，容器重建、镜像升级都不会丢产物。
+# 容器内路径与数据库统一在 /home/aicm 下：workspace → /home/aicm/workspace，
+# db → /home/aicm/db。镜像内也已预建该挂载点（见 Dockerfile）。
 workspace:
   nodePath: /data/aicm/workspace
-  containerPath: /data/aicm/workspace
+  containerPath: /home/aicm/workspace
 
 # 内嵌 PostgreSQL 数据目录（本次新增）。
-# 容器内固定为 /home/aicm/db（PGDATA=/home/aicm/db/data 在镜像 ENV 里钉住），
+# 与 workspace 统一：容器内都是 /home/aicm 下的子目录
+# （PGDATA=/home/aicm/db/data 在镜像 ENV 里钉住），
 # 节点侧给独立目录，与仿真工作区物理分离：升级/清理 workspace 时不会误伤数据库。
 # 由 initContainer chown 1000:1000（hostPath 的属主镜像管不到，见 deployment.yaml）。
 # 注意：这是节点本地目录，Pod 漂移到别的节点会看到一个「空」数据库

@@ -103,7 +103,7 @@ DAO 是真正的影响集中点。
 - **PGDATA 与 PG 主版本强绑定**。本机开发用 PG 18、容器用 PG 14 是正常组合，
   但**数据文件与 `pg_dump` 产物跨主版本不可直接复用**。
 - **`replicas` 必须为 1**：PGDATA 是单写者。Pod 漂移到其他节点会看到"空"数据库
-  （与 `/data/aicm/workspace` 同源的失效模式）。
+  （与 `/home/aicm/workspace` 同源的失效模式）。
 - **禁止把 PGDATA 放 NFS**：PostgreSQL 依赖本地文件锁与 `fsync`。
 - 存储方式支持双形态：镜像默认内嵌；集群 Secret 注入 `DATABASE_URL` 可切回外部 PG，
   **同一镜像无需重建**（回退逃生门，勿删）。
