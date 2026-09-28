@@ -2,9 +2,11 @@ flask>=3.0
 flask-cors>=4.0
 flask-sock>=0.7
 openai>=1.30
+# httpx 被 app/agent/orchestrator.py 直接 import 并用于构造 OpenAI 客户端
+# （传 OPENAI_SSL_VERIFY / EXTERNAL_PROXY），不能只依赖 openai 的传递依赖
+httpx>=0.23
 pydantic>=2.0
 python-dotenv>=1.0
-uuid7>=0.1
 pyyaml>=6.0
 requests>=2.31
 psycopg2-binary>=2.9
