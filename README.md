@@ -261,4 +261,36 @@ docker run -d --name train-mesh-agent \
 
 容器内两个挂载点**统一放在 `/home/aicm` 下**（`workspace` 与 `db`），节点侧各自独立目录。
 两个挂载**都是必需的**，缺失时容器明确报错退出。
+
+### 7.1 首次部署与重启的行为差异
+
+**首次部署**：`docker/entrypoint.sh` 会自动完成全部初始化，无需人工介入：
+
+```
+目录自检 → PG 版本守卫 → PGDATA 为空 ⇒ initdb
+        → 启动 postgres → 建库 train_mesh_agent → 建表迁移 → 启动业务进程
+```
+
+其中「建库」由 `docker/wait_for_db.py` 完成 —— `initdb` 只建 `postgres`/`template0`/`template1`，
+业务库需要显式 `CREATE DATABASE`。「建表」由 `app/main.py` 启动时的 `init_db()` 完成。
+
+**重启 / 重新部署**：前面的 `initdb` 与建库会**跳过**，但**建表迁移每次启动都会执行**。
+这不是遗漏，而是有意设计：
+
+- 迁移同时承担「**校验** schema 完整性」的职责。只有每次启动都跑，才能保证「schema 不完整
+  就拒绝启动」，而不是带着半可用的库对外服务。
+- 迁移是**幂等的**：所有 DDL 都带 `IF NOT EXISTS`，重放会静默成功，
+  所以重启不会报错、也不会重复建对象。
+- 顺带这也是升级路径：镜像里新增了表/列，重启后自动补建。
+
+日志可以直接区分这两种情况（无需猜数据卷是否为空）：
+
+```
+[migration] 首次建表完成，本次新建 7 张：sessions、topology_params、...
+[migration] 复用已有数据库（7 张表均已存在），迁移以幂等方式重放
+```
+
+> 若迁移失败（缺表/缺列），`init_db()` 会抛 `RuntimeError` 导致 Flask 进程退出；
+> entrypoint 的 `wait -n` 随即回收整个容器 —— **不会**以半可用状态继续运行。
+
 构建流程、持久化契约、主版本升级路径与运维须知见 **`docs/数据库内嵌化改造说明.md`**。

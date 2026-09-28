@@ -239,6 +239,14 @@ def init_db():
         # transaction — a failure in one won't abort the rest.
         conn.autocommit = True
         with conn.cursor() as cur:
+            # 先记下迁移前已存在的表：用于区分「首次建库」与「重启复用已有库」。
+            # 仅凭 DDL 是否报错区分不了 —— 语句都带 IF NOT EXISTS，重放会静默成功。
+            cur.execute(
+                """SELECT table_name FROM information_schema.tables
+                   WHERE table_schema = current_schema()"""
+            )
+            pre_existing = {row[0] for row in cur.fetchall()}
+
             # psycopg2 execute() only handles one statement per call.
             # Split on semicolons and execute each individually.
             for stmt in SCHEMA_SQL.split(";"):
@@ -302,6 +310,17 @@ def init_db():
         print(f"[migration] model_catalog seeded {count1} mindspeed dense + {count2} megatron dense + {count3} mindspeed moe + {count4} megatron moe models.")
     except Exception as e:
         print(f"[migration] model_catalog seed skipped: {e}")
+
+    # 明确区分「首次建表」与「重启复用已有库」：两者的日志否则完全一样，
+    # 排障时无法从容器的 stdout 判断数据卷是不是空的（这是很实际的需求）。
+    created = [t for t in REQUIRED_TABLES if t not in pre_existing]
+    if created:
+        print(f"[migration] 首次建表完成，本次新建 {len(created)} 张：{'、'.join(created)}")
+    else:
+        print(
+            f"[migration] 复用已有数据库（{len(REQUIRED_TABLES)} 张表均已存在），"
+            "迁移以幂等方式重放"
+        )
 
     print("[migration] All tables created successfully.")
 
