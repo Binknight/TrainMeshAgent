@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.app.name }}
+  labels:
+    app: {{ .Values.app.name }}
+spec:
+  ports:
+    # 对外只暴露 Flask（业务侧 API / SSE / WebSocket）。
+    # MCP(9000) 与 Flask 同容器，走 127.0.0.1，不需要 Service 暴露。
+    # 注意：前端依赖 SSE(/api/chat/stream) 与 WebSocket(/ws/simulation/<id>)，
+    # 若本服务经平台网关（domain）暴露，需为这两条路径关闭响应缓冲并放行 Upgrade。
+    - name: http
+      port: 80
+      targetPort: {{ .Values.config.flaskPort | int }}
+  selector:
+    app: {{ .Values.app.name }}

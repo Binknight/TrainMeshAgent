@@ -1,0 +1,5 @@
+name: train-mesh-agent
+version: 0.0.1
+description: "TrainMeshAgent 训练组网仿真分析服务（Flask Agent + MCP 仿真 Server）"
+engine: gotpl
+apiVersion: v1

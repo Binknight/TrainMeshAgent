@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.Values.app.name}}
+spec:
+  replicas: {{ .Values.deployment.replicas | default 1 }}
+  # 工作区是节点本地目录：滚动更新会同时存在新旧两个 Pod，争抢同一份 workspace
+  # 和同一批 run.py 仿真子进程，因此必须 Recreate。
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ .Values.app.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app.name }}
+        version: {{ .Values.app.version }}
+    spec:
+      # 限制微服务只能调度到“防火墙节点”
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.firewall/enabled
+                    operator: In
+                    values:
+                      - "true"
+      # 配置容器仓库的拉取凭证
+      imagePullSecrets:
+        - name: {{ if .Values.images.pullSecret }} {{ .Values.images.pullSecret }} {{ end }}
+      # 主容器以 uid/gid 1000 运行，与镜像内 chown 1000:1000 /home 对齐。
+      # 但镜像里的 chown 管不到 hostPath 挂载点，且 fsGroup 对 hostPath 无效，
+      # 所以节点目录的属主由下面的 root 初始化容器兜底。
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        # 目录属主初始化（日志目录 + 仿真工作区）
+        - name: volume-permission-init
+          # 原模板把 chown / chmod 写成两个 command 元素，sh -c 只执行了第一条
+          # （第二条会变成 $0 被丢弃），这里用 && 串成一条脚本。
+          command:
+            - /bin/sh
+            - '-c'
+            - >-
+              chown 1000:1000 {{ .Values.log.containerDir }}/{{ .Values.app.name }}
+              {{ .Values.workspace.containerPath }}
+              && chmod -R o+r {{ .Values.log.containerDir }}/{{ .Values.app.name }}
+              && chmod 750 {{ .Values.workspace.containerPath }}
+          image: {{ .Values.images.repository }}/{{ .Values.app.name }}:{{ .Values.images.version }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          resources: {}
+          securityContext:
+            runAsUser: 0
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - name: ecslog-agent
+              mountPath: {{ .Values.log.containerDir }}/{{ .Values.app.name }}
+              extendPathMode: PodUID
+            # 只 chown 顶层目录：子目录由容器内 uid 1000 自己创建，
+            # 递归改属主在产物很多时会明显拖慢启动。
+            - name: sim-workspace
+              mountPath: {{ .Values.workspace.containerPath }}
+      containers:
+        - name: {{ .Values.app.name }}
+          image: {{ .Values.images.repository }}/{{ .Values.app.name }}:{{ .Values.images.version }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          # 非敏感配置来自 ConfigMap、敏感配置来自 Secret，均以进程环境变量下发，
+          # 会覆盖镜像内 ENV（关键：把 AICM_MCP_WORKSPACE_ROOT 指到挂载点，
+          # 因此本次改动不需要重新构建镜像）。
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.app.name }}-configmap
+            - secretRef:
+                name: {{ .Values.app.name }}-secret
+          resources:
+            limits:
+              cpu:
+                {{ if eq .Values.resources.cpuWeight "s"}} 768m
+                {{ else if eq .Values.resources.cpuWeight "m"}} 896m
+                {{ else if eq .Values.resources.cpuWeight "l" }} 1024m
+                {{ end }}
+              memory:
+                {{ if eq .Values.resources.memoryWeight "s"}} 896Mi
+                {{ else if eq .Values.resources.memoryWeight "m"}} 1280Mi
+                {{ else if eq .Values.resources.memoryWeight "l"}} 1536Mi
+                {{ end }}
+            requests:
+              cpu:
+                {{ if eq .Values.resources.cpuWeight "s" }} 32m
+                {{ else if eq .Values.resources.cpuWeight "m" }} 64m
+                {{ else if eq .Values.resources.cpuWeight "l" }} 128m
+                {{ end }}
+              memory:
+                {{ if eq .Values.resources.memoryWeight "s" }} 640Mi
+                {{ else if eq .Values.resources.memoryWeight "m" }} 896Mi
+                {{ else if eq .Values.resources.memoryWeight "l" }} 1280Mi
+                {{ end }}
+          ports:
+            # 对外入口：Flask（SSE /api/chat/stream、WebSocket /ws/simulation/<id>）
+            - name: http
+              containerPort: {{ .Values.config.flaskPort | int }}
+            # MCP 仿真 Server：仅同容器内 127.0.0.1 访问，不进 Service
+            - name: mcp
+              containerPort: {{ .Values.config.mcpPort | int }}
+          # 就绪：Flask 能接流量即可。entrypoint 启动前会先等 PostgreSQL，
+          # 所以初始延迟给足，避免数据库慢时容器被判死。
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # 存活：与镜像 HEALTHCHECK 一致，要求 Flask 与 MCP 两个进程都健康；
+          # 进程直接退出由 entrypoint 的 wait -n 兜底，这里额外覆盖「MCP 卡死」。
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - '-c'
+                - "import urllib.request as u,sys;sys.exit(0 if all(u.urlopen(x,timeout=4).status<400 for x in ('http://127.0.0.1:{{ .Values.config.flaskPort | int }}/api/health','http://127.0.0.1:{{ .Values.config.mcpPort | int }}/health')) else 1)"
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - mountPath: {{ .Values.log.containerDir }}/{{ .Values.app.name }}
+              name: ecslog-agent
+              extendPathMode: PodUID
+            # 仿真任务工作区：每个 task_id 一个子目录，仿真产物写入其 results/
+            - mountPath: {{ .Values.workspace.containerPath }}
+              name: sim-workspace
+      volumes:
+        - name: ecslog-agent
+          hostPath:
+            path: >-
+              {{ .Values.log.nodePrefix }}/{{ .Values.eks.clusterId}}/ve/{{ .Values.app.name }}/
+            # 源模板为 ''（不校验、不创建）。但本服务换名后该节点目录首次并不存在，
+            # 而 containerd 不会为 bind mount 自动建目录，会让 Pod 卡在 ContainerCreating，
+            # 因此改为 DirectoryOrCreate（根属主，随后由初始化容器 chown 给 1000）。
+            type: DirectoryOrCreate
+        # 部署节点本地工作区。DirectoryOrCreate 保证新节点首次部署即可用
+        # （根属主，再由初始化容器 chown 给 1000）。
+        - name: sim-workspace
+          hostPath:
+            path: {{ .Values.workspace.nodePath }}
+            type: DirectoryOrCreate

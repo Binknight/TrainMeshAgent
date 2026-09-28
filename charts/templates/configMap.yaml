@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.app.name }}-configmap
+data:
+  # ── Flask（业务侧：SSE 对话流 + WebSocket 仿真状态） ──
+  FLASK_HOST: {{ .Values.config.flaskHost | quote }}
+  FLASK_PORT: {{ .Values.config.flaskPort | quote }}
+  FLASK_DEBUG: {{ .Values.config.flaskDebug | quote }}
+  FLASK_USE_RELOADER: {{ .Values.config.flaskUseReloader | quote }}
+  SIM_POLL_INTERVAL: {{ .Values.config.simPollInterval | quote }}
+  MCP_SERVER_URL: {{ .Values.config.mcpServerUrl | quote }}
+
+  # ── MCP 仿真 Server ──
+  AICM_MCP_HOST: {{ .Values.config.mcpHost | quote }}
+  AICM_MCP_PORT: {{ .Values.config.mcpPort | quote }}
+  AICM_MCP_SIM_TOOL_HOME: {{ .Values.config.simToolHome | quote }}
+  AICM_MCP_CONDA_ENV: {{ .Values.config.condaEnv | quote }}
+  # 与 deployment 中 sim-workspace 的 mountPath 同源，避免两处写歪
+  AICM_MCP_WORKSPACE_ROOT: {{ .Values.workspace.containerPath | quote }}
+
+  # ── LLM ──
+  OPENAI_BASE_URL: {{ .Values.config.openaiBaseUrl | quote }}
+  OPENAI_MODEL: {{ .Values.config.openaiModel | quote }}
+  OPENAI_SSL_VERIFY: {{ .Values.config.openaiSslVerify | quote }}
