@@ -20,7 +20,7 @@
 ```
 浏览器 ──> Flask app :5000 ──HTTP JSON-RPC──> MCP 仿真 Server :9000 ──拉起子进程──> aicm/run.py
                  │
-                 └──psycopg2──> PostgreSQL :5432
+                 └──sqlite3（默认）/ psycopg2（PG 逃生门）──> app/db.py
 ```
 
 | 组件 | 位置 | 职责 | 关键点 |
@@ -44,17 +44,23 @@ pip install -r mcp_server/requirements.txt   # MCP Server 侧
 # 启动（三个服务，各开一个终端；必须在仓库根执行）
 python -m app.main          # Flask       → http://localhost:5000
 python -m mcp_server        # MCP Server  → http://localhost:9000
-# PostgreSQL 需另行运行，且业务库 train_mesh_agent 须已存在（首次 createdb 一下）
+# 数据库默认是 SQLite，无需任何外部服务；首次启动自动建表并 seed 模型清单。
+# 只有要用外部 PostgreSQL 时才需要设 DATABASE_URL（见 §4.4 逃生门）。
 
 # 校验
-python scripts/verify_static.py        # db_migration.py 结构不变量 + 全仓库语法
-python scripts/verify_consistency.py   # 镜像 ENV / config.py / charts 三处契约对齐
+python scripts/verify_static.py        # db_migration.py 结构不变量（含两套 DDL 一致性 D1/D2）+ 全仓库语法
+python scripts/verify_consistency.py   # 镜像 ENV / config.py / charts / entrypoint 路径契约对齐
 python scripts/render_chart.py         # Helm 模板渲染校验（本机无 helm 时的替代）
+python scripts/sqlite_real_check.py    # 真实 SQLite：建表/幂等/硬校验正负向/DAO 全路径/并发写
+python scripts/backend_detect_check.py # DATABASE_URL 前缀判定矩阵（静默回落 SQLite 的边界）
 ADMIN_DSN=postgresql://postgres:<pw>@127.0.0.1:5432/postgres \
-  python scripts/pg_real_check.py      # 连真实 PG 跑建表/幂等/硬校验正负向
+  python scripts/pg_real_check.py      # PG 逃生门：连真实 PG 跑建表/幂等/硬校验正负向
 ```
 
-部署与镜像相关细节见 `docs/数据库内嵌化改造说明.md`、`README.md`。
+数据库默认是 **SQLite**，不需要任何外部服务，因此 `python -m app.main` 直接可跑
+（数据文件默认落在 `SQLITE_PATH`，本地开发可指到 `.tmp/` 下）。
+
+数据库选型与迁移细节见 `docs/PG迁移SQLite改造计划.md`；部署与镜像细节见 `README.md`。
 
 ---
 
@@ -95,18 +101,25 @@ global_rank = pp_rank * (tp * dp) + dp_rank * tp + tp_rank
 其余在 `app/db.py` 自身与 `app/db_migration.py`。也就是说路由层是通过 DAO 间接使用的，
 DAO 是真正的影响集中点。
 
-### 4.4 容器相关约束
+### 4.4 数据库相关约定（双后端：SQLite 默认 / PostgreSQL 逃生门）
 
-- **内嵌 PostgreSQL 14 由基础镜像提供**，`PGDATA=/home/aicm/db/data`，走 **Unix socket**
-  （`host=/home/aicm/db/run`），不开 TCP。`docker/entrypoint.sh` 负责
-  「目录自检 → 版本守卫 → 空目录 initdb → 启动 → 停机组」。
-- **PGDATA 与 PG 主版本强绑定**。本机开发用 PG 18、容器用 PG 14 是正常组合，
-  但**数据文件与 `pg_dump` 产物跨主版本不可直接复用**。
-- **`replicas` 必须为 1**：PGDATA 是单写者。Pod 漂移到其他节点会看到"空"数据库
+- **默认后端是 SQLite**：单文件 `SQLITE_PATH=/home/aicm/db/train_mesh_agent.db`，
+  由标准库 `sqlite3` 驱动。基础镜像**不再安装 PostgreSQL 服务端**（`libpq5` 保留，
+  供 PG 逃生门的 psycopg2 使用）。因此没有了 initdb / 版本守卫 / Unix socket /
+  就绪探测这一整套启动链。
+- **后端由 `DATABASE_URL` 的前缀自动侦测**（`app/dbapi.detect_backend`）：
+  `postgres://` / `postgresql://` 开头 → PG；其余（含空串）→ SQLite。
+  **不要引入 `DB_BACKEND` 这类独立开关** —— 开关与 URL 不一致会产生第四种状态。
+- **`replicas` 必须为 1**：SQLite（WAL）是库级单写者。Pod 漂移到其他节点会看到"空"数据库
   （与 `/home/aicm/workspace` 同源的失效模式）。
-- **禁止把 PGDATA 放 NFS**：PostgreSQL 依赖本地文件锁与 `fsync`。
-- 存储方式支持双形态：镜像默认内嵌；集群 Secret 注入 `DATABASE_URL` 可切回外部 PG，
-  **同一镜像无需重建**（回退逃生门，勿删）。
+- **禁止把数据库目录放 NFS**：SQLite 依赖本地文件锁（POSIX advisory lock）与 `fsync`，
+  NFS 上的锁语义不可靠，会损坏数据。
+- **WAL 伴生文件**：同目录还有 `-wal` / `-shm`。备份要整目录拷（或先走
+  `docker/checkpoint_db.py` 的 TRUNCATE checkpoint，停机时 entrypoint 会自动做）。
+- 逃生门：集群 Secret 注入 `DATABASE_URL` 即切回**外部** PostgreSQL，
+  **同一镜像无需重建**（勿删）。注意：镜像内已无 PG 服务端，逃生门只能连外部 PG。
+- 两套 DDL 的一致性是**硬约束**（见 §4.2），由 `scripts/verify_static.py` 的
+  D1/D2 断言把守。
 
 ### 4.5 行末符与编码
 
@@ -125,7 +138,11 @@ DAO 是真正的影响集中点。
 | **`aicm/` 缺失不阻止 MCP Server 启动** | 校验发生在 `simulation_runner.prepare_and_launch`，即真正下发任务时才报错。纯联调可用 `AICM_MCP_DRY_RUN=1`（只建任务不拉子进程） |
 | **依赖名与 import 名不一致** | `python-dotenv`→`dotenv`、`pyyaml`→`yaml`、`psycopg2-binary`→`psycopg2`、`flask-cors`→`flask_cors`、`flask-sock`→`flask_sock`。做依赖审计时必须归一化，否则全部误报 |
 | **`httpx` 是直接依赖** | `app/agent/orchestrator.py` 直接 import 并构造 OpenAI 客户端（承载 `OPENAI_SSL_VERIFY` / `EXTERNAL_PROXY`），已显式声明，不要当成 openai 的传递依赖而移除 |
-| **不要引入 PGDG 第三方 apt 源** | 基础镜像设计前提是"内网源可用、外网不可用"，PG 只从 Ubuntu 官方源装 |
+| **SQLite 读回 BOOLEAN 是 0/1，不是 bool** | `app/dao` 出口统一走 `normalize_row()`。漏了这一层，`is_equivalent` / `has_shared_expert` 等列进入 `app/models/schemas.py` 的 pydantic 模型时会因严格布尔校验直接抛错（不是美化问题） |
+| **SQLite 主键必须应用侧生成** | 没有 `gen_random_uuid()`。`app/dao` 用 `uuid4()` 显式传 `id`；`save_simulation_result` 还必须**先查已存在的 id**再 upsert，否则冲突时主键漂移，`comparison_reports` 的外键会指错行 |
+| **`ON CONFLICT` 在 SQLite 下必须能定位目标** | `comparison_reports` 两套 DDL 都建了 `session_id` 唯一约束（PG 侧是 `uq_comparison_reports_session`），否则「重复保存报告」在 SQLite 下会插入多行而非幂等。这条由 `verify_static.py` 的 D2 断言把守 |
+| **不要引入 `DB_BACKEND` 这类独立开关** | 后端由 `DATABASE_URL` 前缀侦测。开关与 URL 不一致会产生第四种状态，届时「为什么连不上」会成为排查陷阱 |
+| **非 postgres:// 前缀的 DSN 会被**静默**当成 SQLite** | 这是最容易误判的配置错误。DSN 写错协议头不会报错，只会连到 SQLite 而看起来「数据丢了」 |
 
 ---
 
@@ -172,9 +189,12 @@ python tests/test_mcp_server_e2e.py           # 需 MCP Server :9000
    `app/db_migration.py` 的 `__main__` 入口）；`get_db()`/`get_pool()` 的主要影响面是
    `app/dao/__init__.py`（26 处调用点中占 23 处）；rank 换算只应在 `app/rank_layout.py`。
 3. **改完跑校验**：至少 `scripts/verify_static.py` + `scripts/verify_consistency.py`；
-   涉及 schema 则加 `pg_real_check.py`；涉及 rank 则跑第 6 节相关测试。
+   涉及 schema 则另跑 `scripts/sqlite_real_check.py`（默认后端）与 `scripts/pg_real_check.py`
+   （逃生门）；涉及 rank 则跑第 6 节相关测试。
+   **改了任一套 DDL（`SCHEMA_SQL` 或 `SCHEMA_SQLITE_SQL`）必须同步改另一套** ——
+   `verify_static.py` 的 D1 断言会比对两套的「表→列」映射，漏改会直接让它失败。
 4. **改 Dockerfile / 部署契约时同步更新**：`charts/values.yaml`、`.env.example`、
-   `README.md`、`docs/使用指南.md`、`docs/数据库内嵌化改造说明.md` —— 这几处与代码存在
+   `README.md`、`docs/使用指南.md`、`docs/PG迁移SQLite改造计划.md` —— 这几处与代码存在
    跨文件契约，历史上多次因"只改一处"产生不一致。
 5. **提交前检查是否有失效引用**：删除文件后，全仓库搜索该文件名（曾出现删了
    `CLAUDE.md` 但 `docs/使用指南.md` 的目录树仍列着它）。
@@ -188,7 +208,7 @@ python tests/test_mcp_server_e2e.py           # 需 MCP Server :9000
 | `app/routes/session.py` | 1699 | **最大文件**：会话 + 拓扑 + 仿真 + 工作流 REST 端点全在这里 |
 | `app/agent/orchestrator.py` | 935 | Agent 主编排循环（LLM + 技能 + 工具） |
 | `app/models/model_catalog.py` | 681 | 模型参数解析（HF / MindSpeed / 内置） |
-| `app/dao/__init__.py` | 565 | PostgreSQL DAO 全集 |
+| `app/dao/__init__.py` | ~500 | DAO 全集（双后端 SQL；方言差异由 `app/dbapi.py` 在语句下发前转换） |
 | `mcp_server/services/results_reader.py` | 507 | 仿真结果解析 |
 | `app/skills/training-mesh-profiler-skill/` | 550 | 组网性能分析 skill（`__init__.py` + `moe_estimator.py`） |
 
@@ -203,10 +223,10 @@ python tests/test_mcp_server_e2e.py           # 需 MCP Server :9000
 
 | 路径 | 说明 |
 |------|------|
-| `app/` | Flask 应用（见 §2） |
+| `app/` | Flask 应用（见 §2）。`dbapi.py`=SQL 方言适配层，`db.py`=双后端连接池，`db_migration.py`=两套 DDL + 硬校验 |
 | `mcp_server/` | 仿真 MCP Server，独立部署单元 |
-| `docker/` | `base/Dockerfile`（基础镜像）、`entrypoint.sh`（启动链）、`check_*.py`（启动自检） |
-| `charts/` | Helm chart，含 `database` 卷与 socket 配置 |
+| `docker/` | `base/Dockerfile`（基础镜像）、`entrypoint.sh`（启动链）、`check_*.py`（启动自检）、`checkpoint_db.py`（停机 checkpoint） |
+| `charts/` | Helm chart，含 `database` 卷（SQLite 数据文件目录）与 `SQLITE_PATH` 配置 |
 | `scripts/` | 改造验证脚本（见 §3），可复跑 |
 | `docs/` | 需求规格、使用指南、设计文档、改造说明 |
 | `tests/` | 独立测试脚本（非 pytest，见 §6） |

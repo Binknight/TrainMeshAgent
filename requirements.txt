@@ -9,4 +9,8 @@ pydantic>=2.0
 python-dotenv>=1.0
 pyyaml>=6.0
 requests>=2.31
+# 仅 PG 逃生门（DATABASE_URL 注入外部 PostgreSQL）需要：SQLite 走标准库 sqlite3，
+# 不依赖任何三方包。保留此依赖是为了让「注入 DSN 即切回 PostgreSQL」无需重建镜像；
+# 运行期由 app/db.py 按 DSN 前缀惰性 import，SQLite 后端下不会加载它。
+# 注意 libpq5 是其运行时依赖，基础镜像显式保留（见 docker/base/Dockerfile）。
 psycopg2-binary>=2.9

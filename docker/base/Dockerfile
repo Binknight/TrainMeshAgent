@@ -14,25 +14,24 @@
 #   - MCP Server 依赖     mcp_server/requirements.txt
 #   - 仿真工具依赖        docker/requirements-sim.txt   (numpy / pandas)
 #   - 仿真工具离线 wheel  docker/wheels/hccl_format-*.whl
-#   - PostgreSQL 14 服务端（内嵌数据库，见 docker/entrypoint.sh）
+#   - libpq5（仅作为 psycopg2 的运行时依赖，见下）
 #
 # 业务镜像见仓库根 Dockerfile。
 # 构建命令见 docker/build_base_image.sh。
 #
-# ── 为什么数据库要装进镜像，且为什么是 PG 14 ──
-# 1) 服务原先依赖「外部 PostgreSQL + 运行期注入 DATABASE_URL」，部署侧多一个必须
-#    存在、必须可连的组件；镜像内嵌后，一个容器即可自洽启动。
-# 2) 数据目录 PGDATA=/home/aicm/db/data，由部署侧挂载宿主机目录持久化
-#    （节点侧 /data/aicm/db → 容器内 /home/aicm/db），与仿真工作区同一范式。
-# 3) Ubuntu 22.04 官方源中的 PostgreSQL 只有 14 这一个主版本，因此这里钉
-#    postgresql-14 而非浮动的 postgresql：PG 的 PGDATA 与主版本强绑定，
-#    一旦容器升级主版本，已有数据目录会直接拒绝启动。升级必须走
-#    dump → 换镜像 → initdb → restore 的人工流程（见 docs/使用指南.md）。
-# 4) 不装 postgresql-contrib、不 CREATE EXTENSION uuid-ossp：建表用的
-#    gen_random_uuid() 自 PG 13 起已内建（pgcrypto 之外的核心函数）。
-# 5) libpq5 是 psycopg2-binary 的运行时依赖，已在下面安装；镜像内 PG 与
-#    psycopg2 同源于 Ubuntu 22.04，因此不会出现客户端/服务端版本错配
-#    （例如 libpq 17 对未启用加密的服务端报 "GSSAPI encryption required"）。
+# ── 为什么数据库改成了 SQLite（本次改造），以及为什么不再装 PostgreSQL 服务端 ──
+# 1) 服务原先依赖「外部 PostgreSQL + 运行期注入 DATABASE_URL」，后来改成「内嵌
+#    PostgreSQL 14 服务端」，现在改为**默认 SQLite 单文件**：一个容器自洽启动，
+#    且不再需要 initdb / 版本守卫 / Unix socket / 就绪探测这一整套启动链。
+# 2) SQLite 由 Python 标准库 `sqlite3` 提供，**不需要任何 apt 包** —— 这是体积
+#    收益的来源（原先 postgresql-14 + postgresql-common + ucf 约 100~150MB）。
+# 3) **保留 libpq5**：`app/dao` 的 PG 逃生门（注入 DATABASE_URL 连外部 PG）依赖
+#    可 import 的 psycopg2，而 psycopg2-binary 在运行期需要 libpq5。删掉它会让
+#    逃生门在运行期 import 失败。
+# 4) **删除 postgresql-14 带来的直接好处**：下面那套 ucf/ucfr 拦截层是为了绕开
+#    `postgresql-common` 的 postinst 在 Docker<20.10 节点上必然失败而加的
+#    （见 git 历史：ucf/ucfr 的 test -w 恒假 → postinst exit 1 → apt 返回 100）。
+#    不再安装 postgresql-14 ⇒ 不再需要 ucf/ucfr divert ⇒ 构建链显著变短。
 # ============================================================================
 FROM kweecr05.his.huawei.com:80/public/ubuntu:x86-22.04
 
@@ -42,7 +41,6 @@ COPY requirements.txt            /tmp/build/requirements-app.txt
 COPY mcp_server/requirements.txt /tmp/build/requirements-mcp.txt
 COPY docker/requirements-sim.txt /tmp/build/requirements-sim.txt
 COPY docker/wheels/              /tmp/wheels/
-COPY docker/base/ucf-shim.sh     /tmp/ucf-shim.sh
 
 # 禁用 SSL 证书验证 - 设置全局不验证 SSL
 ENV PYTHONHTTPSVERIFY=0
@@ -81,41 +79,16 @@ RUN set -ex && \
     dpkg --configure -a || true && \
     apt-get remove -y --allow-unauthenticated unattended-upgrades || true && \
     \
-    # ── ucf/ucfr 拦截层（Docker < 20.10 的节点必需）─────────────────────────
-    # 这类节点上容器内 test -w 对任何文件都返回假：默认 seccomp 白名单缺
-    # faccessat2，而 jammy 的 glibc 用 faccessat2 实现 access()，且只在 ENOSYS
-    # 时回退老 syscall。而 ucf / ucfr 的前置检查是
-    #   ucf : [ -e $statedir/hashfile -a ! -w $statedir/hashfile ] → 恒成立 exit 1
-    #   ucfr: [ -e $statedir/registry -a ! -w $statedir/registry ] → 恒成立 exit 1
-    # 于是 postgresql-common 的 postinst 必然失败、postgresql-14 连带未配置、
-    # apt 返回 100（与文件权限、基镜像内容无关，见 Ubuntu #1943049）。
-    # 为什么不能"装包前删一次状态文件"：首次安装时该 postinst 会调用 ucf/ucfr 各两次
-    #   setup_createclusterconf                            → ucf + ucfr
-    #   末尾（"$2" 为空 ⇒ dpkg --compare-versions "" lt 183~ 成立）→ ucf --purge
-    #                                                        + ucfr --purge
-    # 第一次 ucf 就会把 hashfile 建回来，第二次调用便撞上检查；而 --purge 路径里
-    # ucfr 又要求 registry 存在（否则 exit 6），与「检查要求文件不存在」互斥 ——
-    # 任何静态的文件布局都无解，只能在每次调用前清状态。故用 shim 顶替：
-    # 真身 divert 到 /usr/bin/{ucf,ucfr}.real，装完 postgresql-14 立即摘除并还原
-    # （见文件末尾的还原断言）。先单独装 ucf：它是 postgresql-common 的 Depends。
-    apt-get install -y --allow-unauthenticated --no-install-recommends ucf && \
-    dpkg-divert --rename --divert /usr/bin/ucf.real  --add /usr/bin/ucf && \
-    dpkg-divert --rename --divert /usr/bin/ucfr.real --add /usr/bin/ucfr && \
-    cp /tmp/ucf-shim.sh /usr/bin/ucf && \
-    cp /tmp/ucf-shim.sh /usr/bin/ucfr && \
-    chmod 755 /usr/bin/ucf /usr/bin/ucfr && \
-    \
     # 安装所有需要的包
     # build-essential / python3-dev 只为 pip 可能的源码编译而装，装完即卸
+    # libpq5：psycopg2 的运行时依赖，PG 逃生门需要（不再装 postgresql-14）
     apt-get install -y --allow-unauthenticated --no-install-recommends \
-        software-properties-common \
         python3 \
         python3-pip \
         python3-dev \
         python3-venv \
         python3-distutils \
         libpq5 \
-        postgresql-14 \
         curl \
         wget \
         tree \
@@ -161,53 +134,36 @@ RUN set -ex && \
     # (numpy, pandas, 及 pandas 传递出的 pytz / tzdata / python-dateutil -> six)
     python -c "import flask, flask_cors, flask_sock, openai, pydantic, psycopg2, requests, yaml, fastapi, uvicorn, pydantic_settings, numpy, pandas, pytz, tzdata, dateutil, six; print('[base] python deps OK')" && \
     \
-    # 内嵌数据库自检：二进制必须存在且版本恰好是 14。
-    # 这里不 initdb —— 数据目录的属主与初始化的时机都属于运行期（容器以 uid 1000
-    # 运行，见业务镜像 Dockerfile 与 charts/templates/deployment.yaml）。
-    # 另外断言基础镜像里**不存在** PGDATA：一旦镜像层里带了初始化过的数据目录，
-    # 它会被运行期挂载遮蔽而永远用不上，还会误导排查方向。
-    # 用 test -f 而非 test -x：-x/-w 走 access()，在上面那类 Docker<20.10 的
-    # 节点上恒为假，会在完全健康的镜像上误报失败；存在性检查走 stat，不受影响。
-    test -f /usr/lib/postgresql/14/bin/initdb && \
-    test -f /usr/lib/postgresql/14/bin/postgres && \
-    # dpkg 层面必须真的 configured：postinst 失败时文件照样解包到位，
-    # 只测二进制存在会放过「包未配置」的半成品（正是本次失败的形态）
-    dpkg -s postgresql-common | grep -q '^Status: install ok installed' && \
-    dpkg -s postgresql-14 | grep -q '^Status: install ok installed' && \
-    pg_isready --version && \
-    test "$(pg_isready --version | sed -n 's/.*PostgreSQL \([0-9]*\).*/\1/p')" = "14" && \
+    # SQLite 自检：标准库自带，无需 apt 包。断言 sqlite3 可用、且本机 sqlite 版本
+    # 支持 UPSERT 的 `excluded` 伪表（3.24+）与 `RETURNING` 之外的必需特性。
+    # 这里同时断言 **镜像里不存在 PostgreSQL 服务端**：旧镜像残留会让「数据到底
+    # 存在哪」变得难以判断（内嵌 PG 与 SQLite 两种数据目录混放）。
+    python -c "import sqlite3; v=sqlite3.sqlite_version_info; assert v >= (3, 24, 0), v; \
+c=sqlite3.connect(':memory:'); c.execute('CREATE TABLE t(a)'); \
+c.execute('INSERT INTO t VALUES (1) ON CONFLICT DO NOTHING'); \
+c.execute('CREATE TABLE u(a TEXT PRIMARY KEY, b INT); INSERT INTO u VALUES (\'x\',1) \
+ON CONFLICT (a) DO UPDATE SET b=excluded.b'); c.close(); \
+print('[base] sqlite3 OK', sqlite3.sqlite_version)" && \
+    test ! -e /usr/lib/postgresql/14/bin/postgres && \
+    test -f /usr/lib/x86_64-linux-gnu/libpq.so.5 && \
+    echo '[base] no embedded postgresql server; libpq5 kept for pg escape hatch' && \
     test ! -e /home/aicm/db && \
-    echo '[base] postgresql 14 OK' && \
+    echo '[base] no database data dir in image layer' && \
     \
     # 移除构建依赖以减少镜像大小
     apt-get remove -y --allow-unauthenticated \
         python3-dev \
-        build-essential \
-        software-properties-common && \
+        build-essential && \
     \
     # 彻底清理系统缓存和临时文件
     apt-get autoremove -y --allow-unauthenticated && \
     apt-get autoclean && \
     apt-get clean && \
     \
-    # autoremove 之后的收尾断言：确认 postgresql-14 没有被当作「不再需要的依赖」
-    # 连带卸掉（它的依赖链与本次移除的构建工具无交集，理论安全，但这里要实测）。
-    test -f /usr/lib/postgresql/14/bin/initdb && \
-    test -f /usr/lib/postgresql/14/bin/postgres && \
-    dpkg -s postgresql-14 | grep -q '^Status: install ok installed' && \
-    echo '[base] postgresql 14 survived autoremove' && \
-    \
-    # 摘掉 ucf/ucfr shim、还原真身（--rename --remove 会把 *.real 改回原名）。
-    # 断言写清楚是必要的：绝不能把带拦截层的镜像发出去 —— divert 残留必须为空，
-    # 且文件内容确实是真身（grep 它独有的报错文案）。
-    rm -f /usr/bin/ucf /usr/bin/ucfr && \
-    dpkg-divert --rename --remove /usr/bin/ucf && \
-    dpkg-divert --rename --remove /usr/bin/ucfr && \
-    test ! -e /usr/bin/ucf.real && \
-    test ! -e /usr/bin/ucfr.real && \
-    grep -q 'do not have write privilege to the state data' /usr/bin/ucf && \
-    grep -q 'do not have write privilege to the registry data' /usr/bin/ucfr && \
-    echo '[base] ucf/ucfr restored' && \
+    # autoremove 之后的收尾断言：libpq5 与 psycopg2 必须仍然可用
+    # （逃生门依赖它们；它们与本次移除的构建工具无依赖交集，但要实测）。
+    test -f /usr/lib/x86_64-linux-gnu/libpq.so.5 && \
+    python -c "import psycopg2; print('[base] psycopg2 still importable (pg escape hatch)')" && \
     \
     rm -rf /var/lib/apt/lists/* \
            /tmp/* \

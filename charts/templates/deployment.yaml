@@ -67,8 +67,8 @@ spec:
             # 递归改属主在产物很多时会明显拖慢启动。
             - name: sim-workspace
               mountPath: {{ .Values.workspace.containerPath }}
-            # 数据库目录同理：只 chown 挂载点。其下的 data/ 与 run/ 由容器内
-            # uid 1000 创建；data 必须是 0700，由 initdb 自己保证，不要在这里 -R。
+            # 数据库目录同理：只 chown 挂载点。数据文件（含 -wal / -shm 伴生文件）
+            # 由容器内 uid 1000 自己创建，SQLite 对目录权限没有额外要求。
             - name: sim-db
               mountPath: {{ .Values.database.containerPath }}
       containers:
@@ -113,8 +113,8 @@ spec:
             # MCP 仿真 Server：仅同容器内 127.0.0.1 访问，不进 Service
             - name: mcp
               containerPort: {{ .Values.config.mcpPort | int }}
-          # 就绪：Flask 能接流量即可。entrypoint 启动前会先做 workspace/DB 目录自检、
-          # 拉起内嵌 PostgreSQL 并完成建表迁移，所以初始延迟给足，避免数据库慢时容器被判死。
+          # 就绪：Flask 能接流量即可。entrypoint 启动前会先做 workspace/DB 目录自检，
+          # 且 create_app() 内会完成建表迁移，所以初始延迟给足，避免首次建库慢时被判死。
           readinessProbe:
             httpGet:
               path: /api/health
@@ -142,7 +142,8 @@ spec:
             # 仿真任务工作区：每个 task_id 一个子目录，仿真产物写入其 results/
             - mountPath: {{ .Values.workspace.containerPath }}
               name: sim-workspace
-            # 内嵌 PostgreSQL 数据目录：PGDATA=<挂载点>/data，socket 在 <挂载点>/run
+            # 数据库目录（默认 SQLite）：数据文件 train_mesh_agent.db 与 -wal/-shm
+            # 伴生文件都在此目录内，因此这个挂载点就是数据库的持久化边界。
             - mountPath: {{ .Values.database.containerPath }}
               name: sim-db
       volumes:
@@ -160,10 +161,10 @@ spec:
           hostPath:
             path: {{ .Values.workspace.nodePath }}
             type: DirectoryOrCreate
-        # 内嵌 PostgreSQL 数据目录。同样 DirectoryOrCreate：新节点首次部署时
-        # 由初始化容器 chown 给 1000，容器内 initdb 才有权限初始化。
-        # 必须与 workspace 一样落在**节点本地磁盘**：PostgreSQL 依赖本地文件锁与
-        # fsync 语义，放 NFS 会直接损坏数据。
+        # 数据库目录（默认 SQLite）。同样 DirectoryOrCreate：新节点首次部署时
+        # 由初始化容器 chown 给 1000，容器内才能在该目录创建数据文件。
+        # 必须与 workspace 一样落在**节点本地磁盘**：SQLite 依赖本地文件锁
+        # （POSIX advisory lock）与 fsync 语义，放 NFS 上的锁不可靠，会损坏数据。
         - name: sim-db
           hostPath:
             path: {{ .Values.database.nodePath }}
