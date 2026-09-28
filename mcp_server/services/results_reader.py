@@ -1,6 +1,7 @@
 """解析 workspace/{task_id}/results 下的仿真产物。"""
 
 import csv
+import logging
 import re
 from pathlib import Path
 from typing import Any, Optional
@@ -21,8 +22,11 @@ from mcp_server.schemas.common import (
 )
 from mcp_server.services.task_store import TaskRecord
 
+logger = logging.getLogger(__name__)
+
 _KV_RE = re.compile(r"^\s*(.+?):\s*([\d.eE+-]+)\s*$")
 _COMM_GROUP_RE = re.compile(r"^\s*(\w+):\s*count=(\d+),\s*bytes=([\d.eE+-]+)")
+_GROUP_KEY_SUFFIX = "_group"
 
 # 规范化后的 key -> build_card_metrics / get_hbm_detail 使用的字段名
 _FLOPS_KEY_ALIASES: dict[str, str] = {
@@ -98,6 +102,7 @@ def _parse_statistic_file(path: Path) -> dict[str, Any]:
         "hbm": {},
         "flops": {},
         "comm_by_group": {},
+        "comm_totals": {},
     }
     if not path.is_file():
         return out
@@ -138,6 +143,11 @@ def _parse_statistic_file(path: Path) -> dict[str, Any]:
                 continue
             canonical = _FLOPS_KEY_ALIASES.get(norm_key, norm_key)
             out["flops"][canonical] = val
+        elif section == "comm":
+            # total_comm_count / total_comm_bytes：供分组汇总自洽校验（见
+            # comm_consistency_warnings）
+            if norm_key in ("total_comm_count", "total_comm_bytes"):
+                out["comm_totals"][norm_key] = val
 
     return out
 
@@ -337,6 +347,71 @@ def _build_card_comm_detail(
             comm.get("dp_group", {}),
             topology.dp_size,
         ),
+        # EP 通信组：仅 MoE（model_type="sparse"）任务有量，dense 解析不到即为 0
+        ep=_build_comm_group_detail(
+            comm.get("ep_group", {}),
+            topology.ep or 1,
+        ),
+    )
+
+
+def _rel_diff(got: float, want: float) -> float:
+    return abs(got - want) / want if want else 0.0
+
+
+def comm_consistency_warnings(stats: dict[str, Any]) -> list[str]:
+    """分组汇总与 ``total_comm_*`` 对不上时给出告警。
+
+    仿真输出的 ``breakdown_by_group`` 汇总应等于 ``total_comm_*``。一旦仿真侧引入新域
+    （如 ``edp_group`` / ``cp_group``）而解析漏读，这里能立刻暴露，避免通信量被静默少算 ——
+    这正是「EP 恒为 0 却看不出异常」这类问题的兜底。
+    """
+    groups = stats.get("comm_by_group", {})
+    totals = stats.get("comm_totals", {})
+    warnings: list[str] = []
+    group_items = [(k, v) for k, v in groups.items() if k.endswith(_GROUP_KEY_SUFFIX)]
+
+    declared_bytes = totals.get("total_comm_bytes")
+    if declared_bytes:
+        got_bytes = sum(float(v.get("bytes", 0.0)) for _, v in group_items)
+        if _rel_diff(got_bytes, float(declared_bytes)) > 1e-6:
+            warnings.append(
+                f"分组通信量汇总 {got_bytes:.0f} bytes 与 total_comm_bytes "
+                f"{float(declared_bytes):.0f} 不一致（差 {_rel_diff(got_bytes, float(declared_bytes)) * 100:.3f}%），"
+                "可能有分组未被解析"
+            )
+
+    declared_count = totals.get("total_comm_count")
+    if declared_count:
+        got_count = sum(int(v.get("count", 0)) for _, v in group_items)
+        if got_count != int(declared_count):
+            warnings.append(
+                f"分组通信次数汇总 {got_count} 与 total_comm_count {int(declared_count)} 不一致，"
+                "可能有分组未被解析"
+            )
+    return warnings
+
+
+def ep_zero_warning(
+    topology: SimulationTaskInput,
+    comm: dict[str, dict[str, Any]],
+) -> Optional[str]:
+    """稀疏(MoE)任务 ep>1 却解析不到 EP 通信量时的诊断提示。
+
+    仿真侧把专家并行通信（dispatch/combine 的 all_to_all）记在 ``ep_group``（已确认口径），
+    因此这里只读该域、不做 ``edp_group`` 兜底。但 MoE 任务读不到量时值得提示：
+    可能是本次 workload 未走到专家 dispatch/combine，也可能是仿真输出格式变了。
+    """
+    if getattr(topology, "model_type", "dense") != "sparse":
+        return None
+    ep = topology.ep or 1
+    if ep <= 1:
+        return None  # ep=1 时专家通信在卡内完成，ep_group 为 0 属正常
+    if float(comm.get("ep_group", {}).get("bytes", 0.0)) > 0:
+        return None
+    return (
+        f"稀疏(MoE)任务 ep={ep} 但 ep_group 通信量为 0：请确认本次运行确实包含 MoE 层"
+        "（专家 dispatch/combine 应产生 EP 通信）"
     )
 
 
@@ -361,6 +436,14 @@ def build_card_metrics(
     pp_bytes = comm.get("pp_group", {}).get("bytes", 0.0)
     dp_bytes = comm.get("dp_group", {}).get("bytes", 0.0)
     ep_bytes = comm.get("ep_group", {}).get("bytes", 0.0)
+
+    if rank == 0:
+        # 只在 rank0 上报：card_detail 会为上百张卡各构建一次，避免日志刷屏
+        for warning in comm_consistency_warnings(stats):
+            logger.warning("[results_reader] rank0 %s", warning)
+        ep_msg = ep_zero_warning(topology, comm)
+        if ep_msg:
+            logger.warning("[results_reader] rank0 %s", ep_msg)
 
     return CardMetrics(
         card_id=f"card_{rank}",
@@ -471,6 +554,7 @@ _COMM_GROUP_MAP = {
     "tp": "tp_group",
     "pp": "pp_group",
     "dp": "dp_group",
+    "ep": "ep_group",
 }
 
 
@@ -487,9 +571,14 @@ def get_comm_detail(
     count = int(info.get("count", 0))
     total_bytes = float(info.get("bytes", 0.0))
 
-    # 参与卡数：从 topology 推断
+    # 参与卡数：从 topology 推断（EP 仅 MoE 任务有值，dense 兜底 1）
     topo = record.topology
-    comm_cards = {"tp": topo.tp_size, "pp": topo.pp_size, "dp": topo.dp_size}[comm_type]
+    comm_cards = {
+        "tp": topo.tp_size,
+        "pp": topo.pp_size,
+        "dp": topo.dp_size,
+        "ep": topo.ep or 1,
+    }[comm_type]
     per_time = total_bytes / count if count else 0.0
 
     return CommDetailOutput(

@@ -20,6 +20,7 @@ from app.agent.session import session_manager
 from app.agent.guardrails import validate_input_params
 from app.config import config
 from app.mcp.client import mcp_client
+from app.models.model_catalog import lookup_builtin_model_config
 from app.rank_layout import pp_rank_of
 from app.models.schemas import (
     CardMetrics, CommDetail, DeviceType, DeviceSimulationDetail,
@@ -137,10 +138,25 @@ def _topo_with_model(topo, training_model, seq_len=None, batch_size=None, model_
             d["num_moe_layers"] = cfg.num_moe_layers
         if cfg.moe_ffn_hidden_size is not None:
             d["moe_ffn_hidden_size"] = cfg.moe_ffn_hidden_size
+        # 显式层分布模式（如 "([0,1]*24)" 交替 MoE 层）；缺省时由 MCP 按 num_moe_layers 推导
+        if cfg.moe_layer_freq is not None:
+            d["moe_layer_freq"] = cfg.moe_layer_freq
         if cfg.has_shared_expert:
             d["has_shared_expert"] = cfg.has_shared_expert
+        if cfg.shared_expert_intermediate_size is not None:
+            d["shared_expert_intermediate_size"] = cfg.shared_expert_intermediate_size
         if cfg.expert_tensor_parallel_size is not None:
             d["expert_tensor_parallel_size"] = cfg.expert_tensor_parallel_size
+    # ── MoE 兜底：共享专家 FFN 维度只存在于模型目录，TrainingModelConfig 未必承载 ──
+    # （缺它时脚本只能给出 --n-shared-experts 数量，仿真侧无法确定共享专家尺寸）
+    if (
+        d.get("model_type") == "sparse"
+        and d.get("has_shared_expert")
+        and not d.get("shared_expert_intermediate_size")
+    ):
+        hints = lookup_builtin_model_config(model_name or d.get("model_name") or "")
+        if hints and hints.get("shared_expert_intermediate_size"):
+            d["shared_expert_intermediate_size"] = hints["shared_expert_intermediate_size"]
     # ── MoE topology parameter (not in model config) ──
     if ep is not None:
         d["ep"] = ep
@@ -401,6 +417,7 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
                     tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
                     pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
                     dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
+                    ep_comm_gb_per_step=detail.get("ep_comm_gb_per_step", 0),
                 ))
             # Log first card as sample
             if cards:
@@ -408,7 +425,8 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
                 logger.info(f"[run_simulation] card_detail for {label}: {len(cards)} cards. "
                             f"sample[0]: flops={c0.flops_per_card}, hbm={c0.hbm_gb}, "
                             f"hbm_model={c0.hbm_model_gb}, "
-                            f"tp={c0.tp_comm_gb_per_micro}, pp={c0.pp_comm_mb_per_micro}, dp={c0.dp_comm_gb_per_step}")
+                            f"tp={c0.tp_comm_gb_per_micro}, pp={c0.pp_comm_mb_per_micro}, "
+                            f"dp={c0.dp_comm_gb_per_step}, ep={c0.ep_comm_gb_per_step}")
             device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
             result = SimulationResult(
                 topology_name=topo.name,
@@ -982,6 +1000,8 @@ _SCRIPT_FIELD_ALIASES = {
         "dp": ["dp", "DP"],
         "tp": ["tp", "TP"],
         "pp": ["pp", "PP"],
+        # MoE：EP（sparse 任务脚本暴露 EP=<n> 与 --expert-model-parallel-size）
+        "ep": ["ep", "EP", "expert-model-parallel-size", "expert-parallel-size"],
     },
     "model": {
         "num_layers": ["num_layers", "NUM_LAYERS", "num-layers", "n_layer", "n-layer"],
@@ -989,6 +1009,21 @@ _SCRIPT_FIELD_ALIASES = {
         "num_heads": ["num_heads", "NUM_HEADS", "num-heads", "n_head", "n-head"],
         "d_ffn": ["d_ffn", "D_FFN", "d-ffn", "ffn_dim", "intermediate_size"],
         "vocab_size": ["vocab_size", "VOCAB_SIZE", "vocab-size"],
+        # ── MoE 键（§11：仅 model_type="sparse" 的脚本会暴露；dense 缺省即省略）──
+        "num_experts": ["num_experts", "NUM_EXPERTS", "num-experts"],
+        "moe_router_topk": ["moe_router_topk", "MOE_ROUTER_TOPK", "moe-router-topk"],
+        "num_moe_layers": ["num_moe_layers", "NUM_MOE_LAYERS", "num-moe-layers"],
+        "moe_layer_freq": ["moe_layer_freq", "MOE_LAYER_FREQ", "moe-layer-freq"],
+        "moe_ffn_hidden_size": ["moe_ffn_hidden_size", "MOE_FFN_HIDDEN_SIZE", "moe-ffn-hidden-size"],
+        "has_shared_expert": ["has_shared_expert", "HAS_SHARED_EXPERT", "shared-expert"],
+        "shared_expert_intermediate_size": [
+            "shared_expert_intermediate_size", "SHARED_EXPERT_INTERMEDIATE_SIZE",
+            "moe-shared-expert-intermediate-size",
+        ],
+        "expert_tensor_parallel_size": [
+            "expert_tensor_parallel_size", "EXPERT_TENSOR_PARALLEL_SIZE",
+            "expert-tensor-parallel-size", "EXPERT_TP",
+        ],
     },
     "training": {
         "global_batch_size": ["global_batch_size", "GLOBAL_BATCH_SIZE", "global-batch-size", "batch_size", "BATCH_SIZE", "batch-size"],

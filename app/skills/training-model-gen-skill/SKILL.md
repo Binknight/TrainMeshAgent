@@ -16,12 +16,28 @@ description: "根据模型配置参数(num_layers, 可选d_model/num_heads/d_ffn
 - **activation**: (可选) 激活函数, 默认 GELU
 - **pp**: (可选) 原始组网流水线并行度, 用于等效缩放。pp≤3 时等效层数保持原始层数不变
 - **is_equivalent**: (可选) 是否为等效模型, 默认 false
+- **model_type**: (可选) 模型类型 `dense`(默认) / `sparse`(MoE)
+- **num_experts**: (可选) MoE: 每层专家数 E
+- **moe_router_topk**: (可选) MoE: 每 token 激活的 Top-K 专家数
+- **num_moe_layers**: (可选) MoE: MoE 层数 (其余层为 Dense FFN)
+- **moe_ffn_hidden_size**: (可选) MoE: 单个专家的 FFN 隐藏维度
+- **moe_layer_freq**: (可选) MoE: 层分布模式, 如 `[0]*3+[1]*58`、`([0,1]*24)`; 缺省时由 MCP 按 num_moe_layers 推导
+- **shared_expert_intermediate_size**: (可选) MoE: 共享专家 FFN 隐藏维度 (has_shared_expert=true 时建议提供)
+- **has_shared_expert**: (可选) MoE: 是否有共享专家, 默认 false
+- **expert_tensor_parallel_size**: (可选) MoE: 专家内部张量并行度, 默认 1
+
+> MoE 参数仅在 `model_type=sparse` 时写入 config；dense 模型一律置空，行为与旧版一致。
 
 ## 等效模型缩放
 
 等效模型层数计算规则:
 - pp ≤ 3: 等效模型层数 = 原始模型层数 (保持不变)
 - pp > 3: 等效模型层数 = 原始模型层数 / pp × 3
+
+MoE (model_type=sparse) 的补充规则:
+- 层数被缩减时 `num_moe_layers` 同步缩减, 保持「非 MoE 层数不变」: `L_moe_eq = L_eq - (L - L_moe)`
+- 此时原 L 上的 `moe_layer_freq` 表达式不再适用于新层数, 置空后由 MCP 侧按新的 `num_moe_layers` 推导
+  (前 L-L_moe 层 Dense、其余 MoE)
 
 示例:
 - pp=1,2,3: is_equivalent=true, num_layers=16, pp=2 → 输出 16 层 (pp≤3, 保持不变)

@@ -68,12 +68,42 @@ def _resolve_vocab_size(simulation_params: Optional[dict[str, Any]]) -> int:
     return int(raw)
 
 
-def _overlap_optimizer_args(dp_size: int) -> str:
-    """overlap-grad-reduce / overlap-param-gather 要求 DP > 1。"""
+def _overlap_optimizer_args(dp_size: int) -> list[str]:
+    """overlap-grad-reduce / overlap-param-gather 要求 DP > 1。
+
+    返回「行」列表（每行自带续行符）而非拼好的字符串：调用方按行拼接，
+    避免片段之间漏掉换行导致相邻参数被挤到同一行（曾把 MoE 的
+    ``--expert-model-parallel-size`` 粘到 ``--overlap-param-gather`` 上）。
+    """
     if dp_size <= 1:
-        return ""
-    return """    --overlap-grad-reduce \\
-    --overlap-param-gather \\"""
+        return []
+    return [
+        "    --overlap-grad-reduce \\",
+        "    --overlap-param-gather \\",
+    ]
+
+
+def resolve_moe_layer_freq(topology: SimulationTaskInput) -> str:
+    """MoE 层分布表达式（§11 解析契约与 GPT_ARGS 共用同一取值）。
+
+    - 调用方显式给出 ``moe_layer_freq`` 时原样使用：可表达交替 MoE 层
+      （如 ``([0,1]*24)``）这类仅靠层数无法还原的分布
+    - 否则由 ``num_moe_layers`` 推导：前 ``L-L_moe`` 层 Dense、其余 MoE，
+      与内置模型目录中 ``[0]*3+[1]*58`` 的写法语义一致
+    - 全 MoE 时用 ``1``（与 MindSpeed 的 ``-1`` 哨兵等价）
+
+    两种来源都保证与 ``num_layers`` / ``num_moe_layers`` 自洽——旧实现硬编码
+    ``MOE_LAYER_FREQ=1``（= 全层 MoE），与同一脚本里的 ``NUM_MOE_LAYERS=58`` 直接矛盾。
+    """
+    explicit = topology.moe_layer_freq
+    if explicit is not None and str(explicit).strip():
+        return str(explicit).strip()
+    num_layers = topology.num_layers
+    num_moe = min(topology.num_moe_layers or 0, num_layers)
+    num_dense = max(0, num_layers - num_moe)
+    if num_dense <= 0:
+        return "1"
+    return f"[0]*{num_dense}+[1]*{num_moe}"
 
 
 def _resolve_grad_accum_steps(
@@ -111,33 +141,69 @@ def generate_topology_script(
     vocab_size = _resolve_vocab_size(simulation_params)
     grad_accum = _resolve_grad_accum_steps(global_batch, micro_batch, topology.dp_size)
     max_pos = max(topology.seq_len, 4096)
-    overlap_args = _overlap_optimizer_args(topology.dp_size)
 
     is_moe = topology.model_type == "sparse"
     ep = topology.ep or 1
     expert_tp = topology.expert_tensor_parallel_size or 1
-    moe_keys = ""
-    moe_args = ""
-    moe_expert_args = ""
+    shared_expert_size = topology.shared_expert_intermediate_size
+    moe_key_lines: list[str] = []
+    moe_arg_lines: list[str] = []
     if is_moe:
+        moe_layer_freq = resolve_moe_layer_freq(topology)
         # §11 解析契约：脚本须暴露 MoE 键，供前端三张对比卡解析
-        moe_keys = f"""
-NUM_EXPERTS={topology.num_experts}
-MOE_ROUTER_TOPK={topology.moe_router_topk}
-NUM_MOE_LAYERS={topology.num_moe_layers}
-MOE_FFN_HIDDEN_SIZE={topology.moe_ffn_hidden_size}
-HAS_SHARED_EXPERT={'true' if topology.has_shared_expert else 'false'}
-EXPERT_TP={expert_tp}
-MOE_LAYER_FREQ=1"""
+        moe_key_lines = [
+            f"NUM_EXPERTS={topology.num_experts}",
+            f"MOE_ROUTER_TOPK={topology.moe_router_topk}",
+            f"NUM_MOE_LAYERS={topology.num_moe_layers}",
+            f"MOE_LAYER_FREQ={moe_layer_freq}",
+            f"MOE_FFN_HIDDEN_SIZE={topology.moe_ffn_hidden_size}",
+            f"HAS_SHARED_EXPERT={'true' if topology.has_shared_expert else 'false'}",
+            f"EXPERT_TP={expert_tp}",
+        ]
+        if shared_expert_size:
+            moe_key_lines.append(
+                f"SHARED_EXPERT_INTERMEDIATE_SIZE={shared_expert_size}"
+            )
         # GPT_ARGS 内参数供 run.py get_arg_value 读取并执行 MoE 语义
-        moe_args = f"""    --expert-model-parallel-size ${{EP}} \\
-    --num-experts {topology.num_experts} \\
-    --moe-router-topk {topology.moe_router_topk} \\
-    --moe-ffn-hidden-size {topology.moe_ffn_hidden_size} \\
-    --expert-tensor-parallel-size {expert_tp} \\
-"""
+        moe_arg_lines = [
+            "    --expert-model-parallel-size ${EP} \\",
+            f"    --num-experts {topology.num_experts} \\",
+            f"    --moe-router-topk {topology.moe_router_topk} \\",
+            f"    --moe-layer-freq {moe_layer_freq} \\",
+            f"    --moe-ffn-hidden-size {topology.moe_ffn_hidden_size} \\",
+            f"    --expert-tensor-parallel-size {expert_tp} \\",
+        ]
         if topology.has_shared_expert:
-            moe_expert_args = "    --n-shared-experts 1 \\\n"
+            moe_arg_lines.append("    --n-shared-experts 1 \\")
+            if shared_expert_size:
+                moe_arg_lines.append(
+                    f"    --moe-shared-expert-intermediate-size {shared_expert_size} \\"
+                )
+    moe_keys = ("\n" + "\n".join(moe_key_lines)) if moe_key_lines else ""
+
+    gpt_arg_lines = [
+        "    --use-mcore-models \\",
+        "    --tensor-model-parallel-size ${TP} \\",
+        "    --pipeline-model-parallel-size ${PP} \\",
+        f"    --num-layers {topology.num_layers} \\",
+        f"    --hidden-size {topology.hidden_dim} \\",
+        f"    --ffn-hidden-size {ffn_hidden} \\",
+        f"    --num-attention-heads {topology.num_heads} \\",
+        f"    --seq-length {topology.seq_len} \\",
+        f"    --max-position-embeddings {max_pos} \\",
+        f"    --micro-batch-size {micro_batch} \\",
+        f"    --global-batch-size {global_batch} \\",
+        "    --make-vocab-size-divisible-by 1 \\",
+        "    --bf16 \\",
+        *_overlap_optimizer_args(topology.dp_size),
+        *moe_arg_lines,
+        "    --use-flash-attn \\",
+        "    --swiglu \\",
+        "    --normalization RMSNorm \\",
+        "    --use-fused-rmsnorm \\",
+        "    --position-embedding-type rope",
+    ]
+    gpt_args = "\n".join(gpt_arg_lines)
 
     content = f"""#!/bin/bash
 # Auto-generated by AICM MCP Server
@@ -175,24 +241,7 @@ MASTER_PORT=6000
 WORLD_SIZE=$(($NPUS_PER_NODE * $NNODES))
 
 GPT_ARGS="
-    --use-mcore-models \\
-    --tensor-model-parallel-size ${{TP}} \\
-    --pipeline-model-parallel-size ${{PP}} \\
-    --num-layers {topology.num_layers} \\
-    --hidden-size {topology.hidden_dim} \\
-    --ffn-hidden-size {ffn_hidden} \\
-    --num-attention-heads {topology.num_heads} \\
-    --seq-length {topology.seq_len} \\
-    --max-position-embeddings {max_pos} \\
-    --micro-batch-size {micro_batch} \\
-    --global-batch-size {global_batch} \\
-    --make-vocab-size-divisible-by 1 \\
-    --bf16 \\
-{overlap_args}{moe_args}{moe_expert_args}    --use-flash-attn \\
-    --swiglu \\
-    --normalization RMSNorm \\
-    --use-fused-rmsnorm \\
-    --position-embedding-type rope
+{gpt_args}
 "
 
 # 占位：run.py 会过滤 torchrun 行
