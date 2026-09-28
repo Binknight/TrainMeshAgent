@@ -1,0 +1,42 @@
+# 基础镜像构建上下文（仓库根）只需要：
+#   requirements.txt / mcp_server/requirements.txt / docker/requirements-sim.txt
+#   docker/wheels/*.whl
+# 业务镜像直接把 tgz 放进 deployPackages 目录构建，不使用本文件。
+
+# ---- VCS / 工具噪声 ----
+.git
+.gitignore
+.claude/
+.codegraph/
+.preferences
+tmp/
+.tmp/
+
+# ---- Python 缓存 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# ---- 运行期产物 ----
+*.log
+/workspace/
+app/models/.model_cache/
+
+# ---- 打包产物 ----
+*.tgz
+chart.tgz
+buildInfo.properties
+deployPackages.*
+docker/chart.tgz
+
+# ---- 开发期/文档资源 ----
+mock/
+tests/
+docs/
+UI/
+BACKLOG.md
+test.md
+prompt.txt
+moe-equivalent-params.html
