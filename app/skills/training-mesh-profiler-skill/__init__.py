@@ -239,6 +239,7 @@ class MeshProfilerSkill(BaseSkill):
                         tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
                         pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
                         dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
+                        ep_comm_gb_per_step=detail.get("ep_comm_gb_per_step", 0),
                     )
                 )
 

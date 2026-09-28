@@ -177,6 +177,14 @@ class TrainingModelGenSkill(BaseSkill):
                             "type": "integer",
                             "description": "MoE: 单个专家的 FFN 隐藏维度",
                         },
+                        "moe_layer_freq": {
+                            "type": "string",
+                            "description": "MoE: 层分布模式, 如 '[0]*3+[1]*58' 或 '([0,1]*24)'; 缺省时由 MCP 按 num_moe_layers 推导",
+                        },
+                        "shared_expert_intermediate_size": {
+                            "type": "integer",
+                            "description": "MoE: 共享专家 FFN 隐藏维度 (has_shared_expert=true 时建议提供)",
+                        },
                         "has_shared_expert": {
                             "type": "boolean",
                             "description": "MoE: 是否有共享专家",
@@ -248,12 +256,17 @@ class TrainingModelGenSkill(BaseSkill):
         moe_router_topk = arguments.get("moe_router_topk")
         num_moe_layers = arguments.get("num_moe_layers")
         moe_ffn_hidden_size = arguments.get("moe_ffn_hidden_size")
+        moe_layer_freq = arguments.get("moe_layer_freq")
+        shared_expert_intermediate_size = arguments.get("shared_expert_intermediate_size")
         has_shared_expert = bool(arguments.get("has_shared_expert", False))
         expert_tensor_parallel_size = arguments.get("expert_tensor_parallel_size", 1)
 
         # ── MoE: L_moe equivalent conversion (keep non-MoE layer count invariant) ──
         if model_type == "sparse" and num_moe_layers and is_equivalent and num_layers != num_layers_input:
             num_moe_layers = max(1, num_layers - (num_layers_input - num_moe_layers))
+            # 层数已缩减，原 L 上的层分布表达式（如 '[0]*3+[1]*58'）不再适用于新层数，
+            # 置空后由 MCP 侧按新的 num_moe_layers 推导（前 L-L_moe 层 Dense、其余 MoE）
+            moe_layer_freq = None
 
         d_head = d_model // num_heads
         total_params = _estimate_total_params(
@@ -275,7 +288,11 @@ class TrainingModelGenSkill(BaseSkill):
             moe_router_topk=moe_router_topk if model_type == "sparse" else None,
             num_moe_layers=num_moe_layers if model_type == "sparse" else None,
             moe_ffn_hidden_size=moe_ffn_hidden_size if model_type == "sparse" else None,
+            moe_layer_freq=moe_layer_freq if model_type == "sparse" else None,
             has_shared_expert=has_shared_expert if model_type == "sparse" else False,
+            shared_expert_intermediate_size=(
+                shared_expert_intermediate_size if model_type == "sparse" else None
+            ),
             expert_tensor_parallel_size=expert_tensor_parallel_size if model_type == "sparse" else 1,
         )
 

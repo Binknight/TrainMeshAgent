@@ -65,6 +65,9 @@ class CardMetrics(BaseModel):
     tp_comm_gb_per_micro: float = Field(description="TP通信量 (GB/micro)")
     pp_comm_mb_per_micro: float = Field(description="PP通信量 (MB/micro)")
     dp_comm_gb_per_step: float = Field(description="DP通信量 (GB/step)")
+    ep_comm_gb_per_step: float = Field(
+        default=0.0, description="EP通信量 (GB/step)，MoE 任务专属；dense 任务为 0"
+    )
 
 
 class SimulationResult(BaseModel):
@@ -216,6 +219,13 @@ class TrainingModelConfig(BaseModel):
     num_moe_layers: int | None = Field(default=None, description="MoE: number of layers that use MoE")
     moe_ffn_hidden_size: int | None = Field(default=None, description="MoE: expert FFN hidden dimension")
     num_dense_layers: int | None = Field(default=None, description="MoE: number of non-MoE (dense) layers")
+    moe_layer_freq: str | int | None = Field(
+        default=None,
+        description=(
+            "MoE: layer distribution pattern (e.g. '[0]*3+[1]*58', '([0,1]*24)', -1); "
+            "None = MCP derives it from num_moe_layers"
+        ),
+    )
     has_shared_expert: bool = Field(default=False, description="MoE: whether a shared expert is present")
     shared_expert_intermediate_size: int | None = Field(default=None, description="MoE: shared expert FFN hidden dim")
     expert_tensor_parallel_size: int | None = Field(default=1, description="MoE: tensor parallelism within each expert")

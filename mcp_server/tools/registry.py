@@ -82,7 +82,7 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
     ),
     "get_comm_detail": ToolDefinition(
         name="get_comm_detail",
-        description="获取单卡 TP/PP/DP 通信详情（§10）",
+        description="获取单卡 TP/PP/DP/EP 通信详情（§10）",
         input_model=CommDetailInput,
         handler=handlers.get_comm_detail,
     ),

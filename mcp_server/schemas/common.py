@@ -58,7 +58,17 @@ class SimulationTaskInput(BaseModel):
     moe_router_topk: Optional[int] = Field(None, ge=1, description="MoE：每个 token 激活的专家数 Top-K")
     num_moe_layers: Optional[int] = Field(None, ge=1, description="MoE：MoE 层数 L_moe")
     moe_ffn_hidden_size: Optional[int] = Field(None, ge=1, description="MoE：单个专家 FFN 中间维度 F_expert")
+    moe_layer_freq: Optional[Union[int, str]] = Field(
+        None,
+        description=(
+            'MoE：层分布模式（整数周期 / "-1" 哨兵 / 列表表达式如 "[0]*3+[1]*58"）；'
+            "缺省时由 num_moe_layers 推导（前 L-L_moe 层 Dense、其余 MoE）"
+        ),
+    )
     has_shared_expert: bool = Field(False, description="MoE：是否含共享专家")
+    shared_expert_intermediate_size: Optional[int] = Field(
+        None, ge=1, description="MoE：共享专家 FFN 中间维度（has_shared_expert=true 时建议提供）"
+    )
     expert_tensor_parallel_size: Optional[int] = Field(
         None, ge=1, description="MoE：专家内部张量并行度 TP_e，默认 1"
     )
@@ -98,7 +108,15 @@ class SimulationTaskInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_moe_fields(self) -> "SimulationTaskInput":
-        """§3.1：model_type="sparse" 时 MoE 条件必填字段校验。"""
+        """§3.1：model_type="sparse" 时 MoE 条件必填字段 + 组合合法性校验。
+
+        组合校验只挡「语义上不可能成立」的参数，避免脏组合被带到仿真侧才失败：
+        MoE 层数不能超过总层数、Top-K 不能超过专家数、专家数必须能被 EP 整除
+        （Megatron/MindSpeed 的硬约束）、EP 不能超过可用于专家的卡数 dp*tp。
+
+        显式给出的 ``moe_layer_freq`` 表达式在此不做展开校验（解释权在仿真侧），
+        由调用方保证其长度与 num_layers 一致。
+        """
         if self.model_type != "sparse":
             return self
         missing = [
@@ -116,6 +134,28 @@ class SimulationTaskInput(BaseModel):
             raise ValueError(
                 'model_type="sparse" requires fields: ' + ", ".join(missing)
             )
+
+        errors: list[str] = []
+        if self.num_moe_layers > self.num_layers:
+            errors.append(
+                f"num_moe_layers ({self.num_moe_layers}) > "
+                f"num_layers ({self.num_layers})"
+            )
+        if self.moe_router_topk > self.num_experts:
+            errors.append(
+                f"moe_router_topk ({self.moe_router_topk}) > "
+                f"num_experts ({self.num_experts})"
+            )
+        if self.num_experts % self.ep != 0:
+            errors.append(
+                f"num_experts ({self.num_experts}) not divisible by ep ({self.ep})"
+            )
+        if self.ep > self.dp_size * self.tp_size:
+            errors.append(
+                f"ep ({self.ep}) > dp*tp ({self.dp_size * self.tp_size})"
+            )
+        if errors:
+            raise ValueError("invalid MoE config: " + "; ".join(errors))
         return self
 
 
@@ -235,11 +275,12 @@ class CommGroupDetail(BaseModel):
 
 
 class CardCommDetail(BaseModel):
-    """TP / PP / DP 通信二级明细。"""
+    """TP / PP / DP / EP 通信二级明细（EP 仅 MoE 任务有量，dense 为 0）。"""
 
     tp: CommGroupDetail = Field(default_factory=CommGroupDetail)
     pp: CommGroupDetail = Field(default_factory=CommGroupDetail)
     dp: CommGroupDetail = Field(default_factory=CommGroupDetail)
+    ep: CommGroupDetail = Field(default_factory=CommGroupDetail)
 
 
 class CardMetrics(BaseModel):
@@ -353,12 +394,12 @@ class HbmDetailOutput(BaseModel):
 class CommDetailInput(BaseModel):
     task_id: str
     global_rank: int = Field(..., ge=0)
-    comm_type: Literal["tp", "pp", "dp"]
+    comm_type: Literal["tp", "pp", "dp", "ep"]
 
 
 class CommDetailOutput(BaseModel):
     global_rank: int
-    comm_type: Literal["tp", "pp", "dp"]
+    comm_type: Literal["tp", "pp", "dp", "ep"]
     comm_count: int
     comm_cards: int
     comm_size_per_time_gb: float

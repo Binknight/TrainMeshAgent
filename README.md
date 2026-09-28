@@ -99,13 +99,13 @@ MCP Server 侧变量以 `AICM_MCP_` 为前缀（见 `mcp_server/config.py`），
 | `AICM_MCP_PORT` | `9000` | 监听端口（须与 `MCP_SERVER_URL` 一致） |
 | `AICM_MCP_SIM_TOOL_HOME` | `<仓库根>/aicm` | 仿真工具目录 |
 | `AICM_MCP_WORKSPACE_ROOT` | `<仓库根>/workspace` | 仿真任务产物目录 |
-| `AICM_MCP_CONDA_ENV` | `aicb` | 拉起 `run.py` 用的 conda 环境名 |
+| `AICM_MCP_CONDA_ENV` | *(空)* | 拉起 `run.py` 用的 conda 环境名；默认为空 = 用当前 Python 解释器 |
 | `AICM_MCP_DRY_RUN` | `false` | `true` 时只建任务目录与脚本，不拉起子进程 |
 
-> ⚠️ **`AICM_MCP_CONDA_ENV` 默认值是 `aicb`**，本机没有该 conda 环境时子进程会启动失败。
-> 两种处理：`conda create -n aicb python=3.10`（并装上 `aicm` 的依赖），
-> 或设 `AICM_MCP_CONDA_ENV=`（空串）让它**回退到当前 Python 解释器** ——
-> 这是 `conda_launcher.build_simulation_command` 对空值的既有处理，容器镜像里走的就是后者。
+> **`AICM_MCP_CONDA_ENV` 默认为空串**：`conda_launcher.build_simulation_command` 在空值时
+> **回退到当前 Python 解释器**，因此本机与容器都不需要 conda（容器镜像走的正是这条）。
+> 只有确实要跑在某个 conda 环境里时才显式设置 `AICM_MCP_CONDA_ENV=<环境名>`
+> （该环境需已装好 `aicm` 的依赖）。
 
 ---
 
@@ -152,11 +152,10 @@ curl http://localhost:9000/health          # {"status":"ok"}
 curl http://localhost:9000/tools           # 已注册工具及 JSON Schema（联调用）
 ```
 
-自定义端口 / 免 conda / 只建任务不跑仿真：
+自定义端口 / 只建任务不跑仿真（默认已免 conda，需要特定 conda 环境时才设 `AICM_MCP_CONDA_ENV=<环境名>`）：
 
 ```bash
 AICM_MCP_PORT=9001 \
-AICM_MCP_CONDA_ENV= \
 AICM_MCP_DRY_RUN=1 \
 python -m mcp_server
 ```
@@ -238,7 +237,7 @@ Get-NetTCPConnection -LocalPort 5000,9000 -State Listen
 | `ModuleNotFoundError: No module named 'app'` / `'mcp_server'` | 不在仓库根执行 | `cd` 到仓库根，并用 `python -m ...` 形式 |
 | 启动即退出 / `[db] 建池失败 ...` | PostgreSQL 未启动或缺 `train_mesh_agent` 库 | 见 §3.1；`app/db.py` 会重试 10 次 × 1.5s 后放弃 |
 | `sim_tool_home not found` | 仓库根缺 `aicm/` | 放入仿真工具（§2.2），或先设 `AICM_MCP_DRY_RUN=1` 联调 |
-| 仿真子进程起不来、日志有 conda 报错 | `AICM_MCP_CONDA_ENV` 默认 `aicb`，本机无此环境 | 建该 conda 环境，或设 `AICM_MCP_CONDA_ENV=` 回退当前解释器（§2.3） |
+| 仿真子进程起不来、日志有 conda 报错 | 显式设了 `AICM_MCP_CONDA_ENV=<环境名>`，但本机无此环境 | 清空该变量（默认即空，回退当前解释器），或建好该 conda 环境并装上 `aicm` 依赖（§2.3） |
 | 前端对话无响应 / 报 LLM 错误 | 未配 `OPENAI_API_KEY`，或需走代理 | 配置 `.env` 的 `OPENAI_API_KEY` / `EXTERNAL_PROXY` |
 | MCP 连不上 | 端口不一致 | 确认 `MCP_SERVER_URL` 与 `AICM_MCP_PORT` 相同（默认均 9000） |
 | 历史列表标题显示「新建任务」 | schema 不完整（缺表/缺列） | 看启动日志的 `[migration]` 行；迁移失败会抛错而非静默继续 |

@@ -3,8 +3,9 @@ Model catalog & resolver — fetch model architecture config (L/H/A/dff/V) from
 HuggingFace / ModelScope config.json, with local JSON cache and a builtin
 offline fallback table.
 
-Only dense (non-MoE) models are supported in v1. Sparse/MoE models are detected
-and surfaced as model_type="sparse" so the caller can refuse them.
+Both dense and sparse/MoE models are supported: MoE configs are surfaced as
+model_type="sparse" together with num_experts / moe_router_topk / num_moe_layers /
+moe_layer_freq / moe_ffn_hidden_size / has_shared_expert / expert_tensor_parallel_size.
 
 Returned field names mirror TrainingModelConfig (app/models/schemas.py) so the
 result can be reused directly:
@@ -556,6 +557,41 @@ _OFFICIAL_ORGS = {
 def _normalize_for_match(name: str) -> str:
     """Normalize for fuzzy name comparison: lowercase, strip - _ and spaces."""
     return (name or "").lower().replace("-", "").replace("_", "").replace(" ", "")
+
+
+# 离线内置目录全集（dense + MoE），供 lookup_builtin_model_config 使用
+_OFFLINE_CATALOGS: tuple[dict[str, dict], ...] = (
+    MINDSPEED_DENSE_MODELS,
+    MEGATRON_DENSE_MODELS,
+    BUILTIN_DENSE_MODELS,
+    MINDSPEED_MOE_MODELS,
+    MEGATRON_MOE_MODELS,
+)
+
+
+def lookup_builtin_model_config(model_name: str) -> dict | None:
+    """离线内置目录查询（含 MoE 表），**不做任何网络访问**。
+
+    与 ``resolve_model_config`` 的区别：后者在 PG 未命中时会走 HuggingFace /
+    ModelScope 搜索（10s 超时、依赖外网），不适合放在仿真下发的同步链路里。
+    本函数只查仓库内置表，用于补齐 TrainingModelConfig 未承载的 MoE 字段
+    （共享专家 FFN 维度等）。
+
+    匹配规则：忽略大小写与 ``-``/``_``/空格；``org/repo`` 形式先整体匹配、
+    再退回 basename。未命中返回 ``None``。
+    """
+    raw = (model_name or "").strip()
+    if not raw:
+        return None
+    candidates = {_normalize_for_match(raw)}
+    if "/" in raw:
+        candidates.add(_normalize_for_match(raw.rsplit("/", 1)[-1]))
+    candidates.discard("")
+    for catalog in _OFFLINE_CATALOGS:
+        for name, cfg in catalog.items():
+            if _normalize_for_match(name) in candidates:
+                return {**cfg}
+    return None
 
 
 def _remote_fetch(repo_id: str) -> dict | None:

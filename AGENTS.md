@@ -121,7 +121,7 @@ DAO 是真正的影响集中点。
 | 陷阱 | 说明 |
 |------|------|
 | **不要用 `python app/main.py`** | 实测报 `ModuleNotFoundError: No module named 'app'` —— Python 把**脚本所在目录**（`app/`）放进 `sys.path` 而非 CWD。必须用 `python -m app.main`（或 `PYTHONPATH=. python app/main.py`） |
-| **`AICM_MCP_CONDA_ENV` 默认是 `aicb`** | 本机没有该 conda 环境时仿真子进程起不来。设**空串**可回退到当前解释器（`mcp_server/services/conda_launcher.py` 对空值的处理），容器里走的就是这条 |
+| **`AICM_MCP_CONDA_ENV` 默认为空串** | 空值即回退到当前 Python 解释器（`mcp_server/services/conda_launcher.py` 对空值的处理），因此本机与容器都无须 conda。只有显式设了 `<环境名>` 而该环境不存在时，仿真子进程才会起不来 |
 | **`aicm/` 缺失不阻止 MCP Server 启动** | 校验发生在 `simulation_runner.prepare_and_launch`，即真正下发任务时才报错。纯联调可用 `AICM_MCP_DRY_RUN=1`（只建任务不拉子进程） |
 | **依赖名与 import 名不一致** | `python-dotenv`→`dotenv`、`pyyaml`→`yaml`、`psycopg2-binary`→`psycopg2`、`flask-cors`→`flask_cors`、`flask-sock`→`flask_sock`。做依赖审计时必须归一化，否则全部误报 |
 | **`httpx` 是直接依赖** | `app/agent/orchestrator.py` 直接 import 并构造 OpenAI 客户端（承载 `OPENAI_SSL_VERIFY` / `EXTERNAL_PROXY`），已显式声明，不要当成 openai 的传递依赖而移除 |
@@ -141,6 +141,8 @@ python tests/test_pp_compare_grouping.py      # PASS  PP 段分组与仿真系�
 python tests/test_hbm_equiv.py                # PASS  HBM 等效性
 python tests/test_mesh_profiler.py            # PASS  B 缩放
 python tests/test_mcp_server_rank_layout.py   # PASS  MCP Server rank 分解契约
+python tests/test_moe_mcp_contract.py          # PASS  MoE 脚本生成/参数校验/EP 数据返回契约
+python tests/test_moe_agent_plumbing.py        # PASS  MoE 在 Agent 侧的透传与脚本解析契约
 python tests/test_check_workspace.py          # PASS（Windows 上 SKIP mountinfo 检查）
 
 # 当前基线为失败（exit 1）

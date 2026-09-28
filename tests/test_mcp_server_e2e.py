@@ -16,6 +16,7 @@ Run: python tests/test_mcp_server_e2e.py
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -315,6 +316,7 @@ try:
         "原始组网", DP, TP, PP,
         model_type="sparse", ep=8, num_experts=256, moe_router_topk=8,
         num_moe_layers=58, moe_ffn_hidden_size=2048, has_shared_expert=True,
+        shared_expert_intermediate_size=2048,
     )
     result = rpc_ok("execute_task(sparse/MoE)", "execute_task", {"topology": moe, "simulation_params": {}})
     moe_task = result.get("task_id", "")
@@ -326,11 +328,62 @@ try:
             "NUM_EXPERTS=256",
             "MOE_ROUTER_TOPK=8",
             "NUM_MOE_LAYERS=58",
+            "MOE_LAYER_FREQ=[0]*6+[1]*58",
+            "MOE_FFN_HIDDEN_SIZE=2048",
+            "HAS_SHARED_EXPERT=true",
+            "SHARED_EXPERT_INTERMEDIATE_SIZE=2048",
             "EP=8",
+            "--expert-model-parallel-size ${EP}",
             "--num-experts 256",
+            "--moe-router-topk 8",
+            "--moe-layer-freq [0]*6+[1]*58",
+            "--moe-ffn-hidden-size 2048",
             "--n-shared-experts 1",
+            "--moe-shared-expert-intermediate-size 2048",
         ):
             check(f"  MoE 脚本含 {token}", token in mscript)
+
+        # GPT_ARGS 逐行结构：续行符齐备且每行只有一个参数
+        # （曾把 --expert-model-parallel-size 粘到 --overlap-param-gather 同一行）
+        body = mscript.split('GPT_ARGS="', 1)[1].rsplit('"', 1)[0]
+        arg_lines = body.strip("\n").splitlines()
+        glued = [ln for ln in arg_lines if re.search(r"\\\s+--", ln)]
+        check("  MoE GPT_ARGS 无「反斜杠+空格+参数」粘连行", not glued, str(glued))
+        check(
+            "  MoE GPT_ARGS 每行一个参数且续行符齐备",
+            all(ln.count("--") == 1 for ln in arg_lines)
+            and all(ln.rstrip().endswith("\\") for ln in arg_lines[:-1])
+            and not arg_lines[-1].rstrip().endswith("\\"),
+            str(arg_lines),
+        )
+
+        # ── MoE 结果读取：EP 通信量 ──
+        seed_results(ws_root / moe_task, (0,))
+        res = rpc_ok("MoE card_detail", "card_detail", {"task_id": moe_task})
+        moe_cards = res.get("cards", [])
+        check(
+            "  MoE card_detail 返回 ep_comm_gb_per_step > 0",
+            bool(moe_cards) and moe_cards[0].get("ep_comm_gb_per_step", 0) > 0,
+            str(moe_cards[:1]),
+        )
+        check(
+            "  MoE card_detail comm_detail 含 ep 二级明细",
+            bool(moe_cards)
+            and moe_cards[0].get("comm_detail", {}).get("ep", {}).get("comm_count", 0) > 0,
+            str(moe_cards[:1]),
+        )
+        res = rpc_ok(
+            "MoE get_comm_detail(ep)",
+            "get_comm_detail",
+            {"task_id": moe_task, "global_rank": 0, "comm_type": "ep"},
+        )
+        check(
+            "  MoE get_comm_detail(ep) 返回 EP 通信详情",
+            res.get("comm_type") == "ep"
+            and res.get("comm_count", 0) > 0
+            and res.get("comm_cards") == 8,
+            str(res),
+        )
 
 finally:
     proc.terminate()

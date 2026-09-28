@@ -93,13 +93,19 @@
 | | `moe_router_topk` | integer | ⬜ 条件必填¹ | MoE：每个 token 激活的专家数 Top-K |
 | | `num_moe_layers` | integer | ⬜ 条件必填¹ | MoE：MoE 层数 L_moe（等效组网传入该组网的等效缩减值，如 58→18） |
 | | `moe_ffn_hidden_size` | integer | ⬜ 条件必填¹ | MoE：单个专家 FFN 中间维度 F_expert |
+| | `moe_layer_freq` | integer \| string | ⬜ 可选 | MoE：层分布模式（整数周期 / `-1` 哨兵 / 列表表达式如 `[0]*3+[1]*58`、`([0,1]*24)`）。缺省时 MCP 按 `num_moe_layers` 推导：前 `L-L_moe` 层 Dense、其余 MoE；显式给出时原样透传（调用方负责其长度与 `num_layers` 一致） |
 | | `has_shared_expert` | boolean | ⬜ 可选 | MoE：是否含共享专家（如 DeepSeek-V3/R1），默认 `false` |
+| | `shared_expert_intermediate_size` | integer | ⬜ 可选 | MoE：共享专家 FFN 中间维度；提供时脚本额外给出 `--moe-shared-expert-intermediate-size` |
 | | `expert_tensor_parallel_size` | integer | ⬜ 可选 | MoE：专家内部张量并行度 TP_e，默认 `1` |
 | **运行时参数** | `seq_len` | integer | ✅ | 序列长度 S |
 | | `batch_size` | integer | ✅ | 总批次大小 B |
 | | `micro_batch_size` | integer | ✅ | 微批次大小 b（per pipeline stage micro-batch） |
 
 > **¹ 条件必填**：`model_type="sparse"` 时 `ep`、`num_experts`、`moe_router_topk`、`num_moe_layers`、`moe_ffn_hidden_size` 必须提供；缺失按 §14 参数错误约定返回可读错误，不得静默忽略后按稠密模型执行。`model_type="dense"`（或缺省）时上述 MoE 字段缺失或为 `null`，MCP Server 按稠密模型处理。
+>
+> **组合校验（同样返回 `-32602`，不静默降级）**：`num_moe_layers ≤ num_layers`、
+> `moe_router_topk ≤ num_experts`、`num_experts % ep == 0`（Megatron/MindSpeed 硬约束）、
+> `ep ≤ dp_size × tp_size`。这些组合在仿真侧必然启动失败，提前拦住以免脏参数进仿真队列。
 
 > **额外字段**：`MeshTopology.model_dump()` 还会输出 `nodes`（`MeshNode[]`）和 `communication_groups`（通信组列表）。这些是组网拓扑的内部结构，MCP Server 可忽略，但 `execute_task` 的 `topology` 参数中可能包含。后续版本考虑剥离。
 >
@@ -367,6 +373,19 @@
 | `dp_comm_gb_per_step` | float | DP 通信量 (GB/step) |
 | `ep_comm_gb_per_step` | float | EP 通信量 (GB/step)，MoE（`model_type="sparse"`）任务建议返回；dense 任务可缺失，调用方按 0 兜底 |
 
+> 出参同时包含二级明细 `flops_detail` / `hbm_detail` / `comm_detail`；其中
+> `comm_detail.tp` / `pp` / `dp` / `ep` 各含 `comm_count` / `comm_cards` /
+> `comm_size_per_time_gb` / `total_comm_gb`，`comm_detail.ep` 仅 MoE 任务有量（dense 为 0）。
+>
+> **EP 通信口径（已与仿真侧确认）**：MoE 的专家并行通信（dispatch/combine 的 all_to_all）
+> 记在 **`ep_group`**，因此 `ep_comm_gb_per_step` 与 `comm_detail.ep` **只取该域**，
+> 不做 `edp_group` 兜底。`ep=1` 时专家通信在卡内完成，`ep_group` 为 0 属正常。
+> 仿真输出还可能包含 `edp_group` / `cp_group` 等未消费域；由于分组解析按 `(\w+)_group`
+> **全名捕获**，这些域各自独立成键，前缀相同也不会互相覆盖（如 `edp_group` 不会污染 `dp_group`）。
+>
+> **分组自洽校验**：MCP 侧会核对 `Σ breakdown_by_group` 与 `total_comm_bytes` / `total_comm_count`，
+> 不一致时在服务日志打 warn（提示可能有分组未被解析）。仿真运行中出现该 warn 说明输出引入了新域或格式变化。
+
 ---
 
 ## 8. get_device_detail — 获取单卡算子级 Trace（支持增量轮询）
@@ -539,7 +558,7 @@ MoE 层（`model_type="sparse"`）的算子建议以 `moe_` 前缀区分于稠�
 |------|------|------|------|
 | `task_id` | string | ✅ | 任务 ID |
 | `global_rank` | integer | ✅ | 全局 Rank 编号 |
-| `comm_type` | string | ✅ | 通信类型枚举：`tp` / `pp` / `dp` |
+| `comm_type` | string | ✅ | 通信类型枚举：`tp` / `pp` / `dp` / `ep`（`ep` 取自 `ep_group`，仅 MoE 任务有量；`ep=1` 时为 0） |
 
 ### 出参
 
@@ -612,6 +631,12 @@ TrainMeshAgent 从 `script_content` 解析以下三组参数，分别填充「�
 > `d_head` = `d_model / num_heads`、`total_params` 由 TrainMeshAgent 推导（MoE 模型为含专家权重的估算值）。
 >
 > MoE 模型（`model_type="sparse"`）的脚本**必须**暴露上述 MoE 键（至少 `num_experts`、`moe_router_topk`、`moe_layer_freq` 或 `num_moe_layers`、`moe_ffn_hidden_size`、`ep`）；dense 模型可省略。脚本未暴露的字段前端显示 `—`，不阻塞下载。
+>
+> **`moe_layer_freq` 与 `num_moe_layers` 必须自洽**：未显式传入 `moe_layer_freq` 时，
+> MCP 按 `num_moe_layers` 推导为 `[0]*(L-L_moe)+[1]*L_moe`（全 MoE 时为 `1`，等价于 `-1` 哨兵），
+> 并在 `GPT_ARGS` 中同时给出 `--moe-layer-freq`；显式传入时原样透传。
+> 两者相互矛盾（例如 `MOE_LAYER_FREQ=1` 配 `NUM_MOE_LAYERS=58`）会让仿真按「全层 MoE」计算，
+> 等效组网的 MoE 层缩减随之失效——这是必须避免的形态。
 
 #### 训练运行时参数（对应「模型训练参数对比」卡，当前全为 mock）
 
@@ -779,6 +804,17 @@ submitted  →  running  →  completed
 - [ ] `get_device_detail`（§8）对 MoE 任务的算子含 `moe_router` / `moe_dispatch` / `moe_expert_ffn` / `moe_combine` 等命名（或自有命名，能被前端展示）
 - [ ] `get_training_script` 对 MoE 任务返回的脚本含 `ep` / `num_experts` / `moe_router_topk` / `moe_layer_freq`（或 `num_moe_layers`）/ `moe_ffn_hidden_size` 等键，可解析填充对比卡
 - [ ] dense 模型兼容：不传任何 MoE 字段时行为与旧版一致
+
+> **本地已验证**（`tests/test_moe_mcp_contract.py` + `tests/test_mcp_server_e2e.py`）：
+> 上表第 1（仅 task_id 返回）/2/3/5/6 项在 MCP 侧已覆盖——MoE 任务下发返回 `task_id`、
+> sparse 缺字段与非法组合返回 `-32602`、脚本含全部 MoE 键与 `--moe-layer-freq`
+> （且 `MOE_LAYER_FREQ` 与 `NUM_MOE_LAYERS`/`NUM_LAYERS` 自洽）、
+> `card_detail.ep_comm_gb_per_step` 与 `get_comm_detail(comm_type="ep")` 有值。
+> 另附**真实 `rank0.txt` 格式回归**：`grad` / `Backward_B_Flops` 别名、`edp_group` 不污染
+> `dp_group`、`Σ breakdown_by_group == total_comm_*` 的自洽校验、以及稀疏任务
+> `ep_group=0` 时的诊断告警。
+> 第 1 项中「仿真真正按 MoE 语义执行」与第 4 项（MoE 算子命名）依赖真实 `aicm/run.py`，
+> 需与仿真侧联调确认。
 
 **容错**
 

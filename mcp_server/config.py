@@ -28,8 +28,9 @@ class Settings(BaseSettings):
     workspace_root: Path = _SERVER_ROOT / "workspace"
     # 为 True 时仅创建任务目录与脚本，不拉起子进程（测试用）
     dry_run: bool = False
-    # 执行 run.py 时使用的 conda 环境名；置空则用当前 Python 解释器
-    conda_env: str = "aicb"
+    # 执行 run.py 时使用的 conda 环境名；默认置空 = 用当前 Python 解释器
+    # （conda_launcher.build_simulation_command 对空值的处理），容器与本地都不再强依赖 conda
+    conda_env: str = ""
 
 
 settings = Settings()
