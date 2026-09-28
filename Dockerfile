@@ -14,8 +14,12 @@
 #   /home/docker       entrypoint.sh + wait_for_db.py + check_workspace.py + check_db.py
 #
 # 路径契约：mcp_server/config.py 以 parents[1] 推导默认值，而代码被解压到 /home，
-# 故 sim_tool_home=/home/aicm；workspace_root 则**不再**与仓库根一致，改为
-# 运行期挂载宿主机目录的 /data/aicm/workspace（见下方 mkdir 与 entrypoint 自检）。
+# 故 sim_tool_home=/home/aicm。工作区与数据库则**都放在 /home/aicm 下**，二者
+# 统一挂载（见下方 mkdir 与 entrypoint 自检）：
+#   /home/aicm/workspace   仿真任务产物（节点侧 /data/aicm/workspace）
+#   /home/aicm/db          内嵌 PostgreSQL 数据目录（节点侧 /data/aicm/db）
+# 容器内父目录 /home/aicm 不被整体挂载，只是两个子目录各自挂载，
+# 因此仿真工具本体（/home/aicm/run.py 等）仍在镜像层里，不受挂载影响。
 # 下面用 ENV 显式钉住，不依赖隐式推导。
 #
 # ── 内嵌数据库（本次改造）──
@@ -39,19 +43,20 @@ ENV LANG C.UTF-8
 # 解压应用包
 RUN tar -xzf app.tgz && rm app.tgz
 
-# 仿真任务工作区（每个 task_id 一个子目录，仿真产物写入其 results/）：
-# 运行期必须由部署侧把宿主机目录挂到这个路径（k8s hostPath / docker -v），
-# 否则容器重建、镜像升级会连产物一起丢掉。
-# 这里只预建挂载点并给出正确属主（容器以 uid 1000 运行，与下面的 chown 对齐）；
-# 预建的另一个作用是让 entrypoint 自检能明确报出「未挂载」，而不是静默写进镜像层。
+# 仿真任务工作区与数据库目录，两者都在 /home/aicm 下：
+# 工作区（每个 task_id 一个子目录，仿真产物写入其 results/）运行期必须由部署侧
+# 把宿主机目录挂到这个路径（k8s hostPath / docker -v），否则容器重建、镜像升级
+# 会连产物一起丢掉。
+# 这里只预建挂载点并给出正确属主（容器以 uid 1000 运行），预建的另一个作用是
+# 让 entrypoint 自检能明确报出「未挂载」，而不是静默写进镜像层。
 #
-# 数据库目录同理，且顺序有讲究：必须在 `tar -xzf` **之后**创建，
-# 否则 tar 展开 aicm/ 时会重建该目录。
-#   - data 预置 0700：PostgreSQL 对数据目录权限敏感，权限过宽会拒绝启动；
-#   - run  预置 0750：socket 目录，PG 需要在其中创建 .s.PGSQL.<port>。
-# 两步分开写而不是一次 chmod -R：避免将来 initdb 产出的文件被误改权限。
-RUN mkdir -p /data/aicm/workspace \
-    && chown 1000:1000 /data/aicm/workspace \
+# 顺序有讲究：必须在 `tar -xzf` **之后**创建，否则 tar 展开 aicm/ 时会重建该目录。
+#   - workspace 预置 0755：容器内 uid 1000 需在其下建 task 子目录；
+#   - db/data   预置 0700：PostgreSQL 对数据目录权限敏感，权限过宽会拒绝启动；
+#   - db/run    预置 0750：socket 目录，PG 需要在其中创建 .s.PGSQL.<port>。
+# 分开写而不是一次 chmod -R：避免将来 initdb 产出的文件被误改权限。
+RUN mkdir -p /home/aicm/workspace \
+    && chown 1000:1000 /home/aicm/workspace \
     && chmod +x /home/docker/entrypoint.sh \
     && mkdir -p /home/aicm/db/data /home/aicm/db/run \
     && chown 1000:1000 /home/aicm/db /home/aicm/db/data /home/aicm/db/run \
@@ -77,7 +82,7 @@ ENV PYTHONPATH=/home \
     AICM_MCP_HOST=0.0.0.0 \
     AICM_MCP_PORT=9000 \
     AICM_MCP_SIM_TOOL_HOME=/home/aicm \
-    AICM_MCP_WORKSPACE_ROOT=/data/aicm/workspace \
+    AICM_MCP_WORKSPACE_ROOT=/home/aicm/workspace \
     AICM_MCP_CONDA_ENV= \
     MCP_SERVER_URL=http://127.0.0.1:9000 \
     PGDATA=/home/aicm/db/data \

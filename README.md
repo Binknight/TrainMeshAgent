@@ -22,8 +22,12 @@ AI 训练组网仿真测试 Agent：以 Web 服务形式对接测试人员，用
 
 ```
 浏览器 ──> Flask :5000 ──HTTP/JSON-RPC──> MCP 仿真 Server :9000 ──拉起子进程──> aicm/run.py
-                │
+                │                                    │
+                │                                    └──写产物──> /home/aicm/workspace（挂载）
                 └──psycopg2──> PostgreSQL :5432
+                                   └──数据目录──> /home/aicm/db（挂载）
+
+本地开发：PG 在本机 5432；容器内：PG 随容器内嵌，两个挂载点都在 /home/aicm 下
 ```
 
 ---
@@ -250,10 +254,11 @@ Get-NetTCPConnection -LocalPort 5000,9000 -State Listen
 
 ```bash
 docker run -d --name train-mesh-agent \
-  -v /data/aicm/workspace:/data/aicm/workspace \
+  -v /data/aicm/workspace:/home/aicm/workspace \
   -v /data/aicm/db:/home/aicm/db \
   -p 5000:5000 <image>
 ```
 
-两个挂载目录（工作区与数据库）**都是必需的**，缺失时容器明确报错退出。
+容器内两个挂载点**统一放在 `/home/aicm` 下**（`workspace` 与 `db`），节点侧各自独立目录。
+两个挂载**都是必需的**，缺失时容器明确报错退出。
 构建流程、持久化契约、主版本升级路径与运维须知见 **`docs/数据库内嵌化改造说明.md`**。
