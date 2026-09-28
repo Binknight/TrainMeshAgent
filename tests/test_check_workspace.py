@@ -207,6 +207,10 @@ def main() -> None:
     else:
         print("  [SKIP] 当前平台无 /proc/self/mountinfo")
 
+    # 各用例目录已随 tmp_dir() 退出时删除，这里连 TMP_ROOT 一起清掉，
+    # 避免每次跑测试都在仓库 .tmp/ 下留一个空目录。
+    shutil.rmtree(TMP_ROOT, ignore_errors=True)
+
     print()
     if _failures:
         print(f"  [FAIL] {len(_failures)} 项未通过: {_failures}")
