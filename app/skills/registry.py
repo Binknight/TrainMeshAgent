@@ -6,7 +6,7 @@ Features:
   2. Registration: skills register via registry.register(skill_instance)
   3. Tool list generation: registry.list_tools() → OpenAI function schemas
   4. Unified dispatch: registry.execute_tool(name, args, context) → SkillResult
-  5. Built-in guardrail + retry loop (per prompt.txt §2.3)
+  5. Built-in guardrail + retry loop (per docs/需求规格.md §2.3)
 """
 from __future__ import annotations
 
