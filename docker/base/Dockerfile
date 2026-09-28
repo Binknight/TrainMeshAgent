@@ -80,6 +80,22 @@ RUN set -ex && \
     dpkg --configure -a || true && \
     apt-get remove -y --allow-unauthenticated unattended-upgrades || true && \
     \
+    # ── ucf 状态兜底（Docker < 20.10 的节点必需）────────────────────────────
+    # 这类节点上容器内 test -w 对任何文件都返回假：默认 seccomp 白名单缺
+    # faccessat2，而 jammy 的 glibc 用 faccessat2 实现 access()，且只在 ENOSYS
+    # 时回退老 syscall。于是 postgresql-common 的 postinst
+    # （setup_createclusterconf）里依次调用的
+    #   ucf : [ -e $statedir/hashfile -a ! -w $statedir/hashfile ]  → 恒成立 exit 1
+    #   ucfr: [ -e $statedir/registry -a ! -w $statedir/registry ]  → 恒成立 exit 1
+    # 都会失败，导致 postgresql-common 未配置、postgresql-14 连带未配置、
+    # apt 返回 100（与文件权限、基镜像内容无关，见 Ubuntu #1943049）。
+    # 两个检查都是「文件存在且不可写」才报错，因此：先单独装 ucf 让它的 postinst
+    # 把状态文件建出来，再删掉 —— 检查即跳过；ucf/ucfr 随后会自行重建
+    # （ucf 的 replace_md5sum 与 ucfr 的 touch 分支都处理了文件缺失）。
+    # 注意 ucf 是 postgresql-common 的 Depends，先装它不会影响后面的解析。
+    apt-get install -y --allow-unauthenticated --no-install-recommends ucf && \
+    rm -f /var/lib/ucf/hashfile /var/lib/ucf/registry && \
+    \
     # 安装所有需要的包
     # build-essential / python3-dev 只为 pip 可能的源码编译而装，装完即卸
     apt-get install -y --allow-unauthenticated --no-install-recommends \
@@ -141,8 +157,14 @@ RUN set -ex && \
     # 运行，见业务镜像 Dockerfile 与 charts/templates/deployment.yaml）。
     # 另外断言基础镜像里**不存在** PGDATA：一旦镜像层里带了初始化过的数据目录，
     # 它会被运行期挂载遮蔽而永远用不上，还会误导排查方向。
-    test -x /usr/lib/postgresql/14/bin/initdb && \
-    test -x /usr/lib/postgresql/14/bin/postgres && \
+    # 用 test -f 而非 test -x：-x/-w 走 access()，在上面那类 Docker<20.10 的
+    # 节点上恒为假，会在完全健康的镜像上误报失败；存在性检查走 stat，不受影响。
+    test -f /usr/lib/postgresql/14/bin/initdb && \
+    test -f /usr/lib/postgresql/14/bin/postgres && \
+    # dpkg 层面必须真的 configured：postinst 失败时文件照样解包到位，
+    # 只测二进制存在会放过「包未配置」的半成品（正是本次失败的形态）
+    dpkg -s postgresql-common | grep -q '^Status: install ok installed' && \
+    dpkg -s postgresql-14 | grep -q '^Status: install ok installed' && \
     pg_isready --version && \
     test "$(pg_isready --version | sed -n 's/.*PostgreSQL \([0-9]*\).*/\1/p')" = "14" && \
     test ! -e /home/aicm/db && \
@@ -161,8 +183,9 @@ RUN set -ex && \
     \
     # autoremove 之后的收尾断言：确认 postgresql-14 没有被当作「不再需要的依赖」
     # 连带卸掉（它的依赖链与本次移除的构建工具无交集，理论安全，但这里要实测）。
-    test -x /usr/lib/postgresql/14/bin/initdb && \
-    test -x /usr/lib/postgresql/14/bin/postgres && \
+    test -f /usr/lib/postgresql/14/bin/initdb && \
+    test -f /usr/lib/postgresql/14/bin/postgres && \
+    dpkg -s postgresql-14 | grep -q '^Status: install ok installed' && \
     echo '[base] postgresql 14 survived autoremove' && \
     \
     rm -rf /var/lib/apt/lists/* \
