@@ -19,6 +19,11 @@ data:
   # 与 deployment 中 sim-workspace 的 mountPath 同源，避免两处写歪
   AICM_MCP_WORKSPACE_ROOT: {{ .Values.workspace.containerPath | quote }}
 
+  # ── 内嵌数据库 ──
+  # PGDATA 与 DATABASE_URL 都留在镜像 ENV（单一来源），这里只下发 socket 目录，
+  # 供 wait_for_db.py 的 pg_isready 探测与排障使用，避免与挂载路径写歪。
+  PG_SOCKET_DIR: {{ .Values.config.pgSocketDir | quote }}
+
   # ── LLM ──
   OPENAI_BASE_URL: {{ .Values.config.openaiBaseUrl | quote }}
   OPENAI_MODEL: {{ .Values.config.openaiModel | quote }}
