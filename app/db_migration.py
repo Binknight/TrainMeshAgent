@@ -1,4 +1,15 @@
-"""Database migration script. Creates all tables if they don't exist."""
+"""Database migration script. Creates all tables if they don't exist.
+
+改动说明（数据库内嵌化重构）：
+  1. 删除了 5 条 `ALTER TABLE simulation_results DROP COLUMN IF EXISTS ...`。
+     它们是一次性历史清理（把 total_flops / total_hbm / total_tp_comm /
+     total_pp_comm / total_dp_comm 换成了 cards JSONB），却在**每次启动**都
+     重新执行一遍：白拿 5 把表锁，且对已有部署毫无意义。需要清理旧库时手工执行。
+  2. 不再静默吞 DDL 异常。原实现把每条失败只 `print` 出来，末尾打一句 WARNING
+     就继续启动 —— 结果是「schema 不完整但服务照常跑」，直到有人发现历史标题
+     全是「新建任务」。现在改为：可预期的重放类错误仍放行（打日志），
+     **收尾硬校验核心表与关键列**，缺失即抛异常让容器启动失败。
+"""
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -119,12 +130,6 @@ CREATE TABLE IF NOT EXISTS model_catalog (
 
 CREATE INDEX IF NOT EXISTS idx_model_catalog_name_key ON model_catalog(name_key);
 
-ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_flops;
-ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_hbm;
-ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_tp_comm;
-ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_pp_comm;
-ALTER TABLE simulation_results DROP COLUMN IF EXISTS total_dp_comm;
-
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS d_ffn INT;
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS micro_batch_size INT;
 ALTER TABLE topology_params ADD COLUMN IF NOT EXISTS vocab_size INT;
@@ -169,9 +174,65 @@ CREATE INDEX IF NOT EXISTS idx_comparison_reports_session ON comparison_reports(
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_session ON conversation_messages(session_id);
 """
 
+# ── 迁移收尾硬校验 ──
+# 这些是 dao 层实际读写的表与列。缺任何一个，服务「看起来能启动」但会在运行时
+# 反复出错（最常见的症状是历史列表标题退化成「新建任务」）。
+REQUIRED_TABLES = (
+    "sessions",
+    "topology_params",
+    "simulation_params",
+    "simulation_results",
+    "comparison_reports",
+    "conversation_messages",
+    "model_catalog",
+)
+
+# 只校验最容易被漏掉的「后加列」：全表列校验噪音太大，也没必要。
+REQUIRED_COLUMNS = (
+    ("sessions", "formula_lines"),
+    ("topology_params", "model_type"),
+    ("simulation_results", "cards"),
+    ("simulation_params", "level0_config"),
+    ("model_catalog", "name_key"),
+)
+
+# 重放 DDL 时可预期的「无害」错误码，命中即放行（只打日志）：
+#   42P07 duplicate_table / 42710 duplicate_object —— 并发建表/建索引
+#   42701 duplicate_column                        —— 列已存在但语句没带 IF NOT EXISTS
+#   42P16 invalid_table_definition                 —— 同名列 + 默认值差异（IF NOT EXISTS 下不会触发）
+#   42P01 undefined_table                          —— 表由更早的语句创建失败（会在收尾校验里被抓住）
+#   23505 unique_violation                         —— 建索引时撞唯一约束
+BENIGN_DDL_ERRORS = {"42P07", "42710", "42701", "42P16", "23505"}
+
+
+def _verify_schema(cur) -> list[str]:
+    """返回缺失项描述列表；空列表表示校验通过。"""
+    missing: list[str] = []
+
+    cur.execute(
+        """SELECT table_name FROM information_schema.tables
+           WHERE table_schema = current_schema()"""
+    )
+    present = {row[0] for row in cur.fetchall()}
+    missing.extend(f"表 {t}" for t in REQUIRED_TABLES if t not in present)
+
+    cur.execute(
+        """SELECT table_name, column_name FROM information_schema.columns
+           WHERE table_schema = current_schema()"""
+    )
+    columns = {(row[0], row[1]) for row in cur.fetchall()}
+    missing.extend(
+        f"列 {t}.{c}" for t, c in REQUIRED_COLUMNS if (t, c) not in columns
+    )
+    return missing
+
+
 def init_db():
     """Run migration to create all tables (UUID PKs from the start)."""
     from app.db import get_db
+
+    skipped: list[tuple[str, str]] = []   # (语句首行, 错误) —— 已放行的无害失败
+    failed: list[tuple[str, str]] = []    # (语句首行, 错误) —— 需要人工关注的失败
 
     with get_db() as conn:
         # Enable autocommit so each DDL statement runs in its own
@@ -180,26 +241,43 @@ def init_db():
         with conn.cursor() as cur:
             # psycopg2 execute() only handles one statement per call.
             # Split on semicolons and execute each individually.
-            skipped: list[str] = []
             for stmt in SCHEMA_SQL.split(";"):
                 stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
-                    try:
-                        cur.execute(stmt)
-                    except Exception as e:
-                        first_line = stmt.splitlines()[0].strip()[:80]
-                        skipped.append(f"{first_line} -> {e}")
-                        print(f"[migration] SKIP: {e}")
+                if not stmt or stmt.startswith("--"):
+                    continue
+                first_line = stmt.splitlines()[0].strip()[:80]
+                try:
+                    cur.execute(stmt)
+                except Exception as e:
+                    # psycopg2 errors expose .pgcode; treat a missing one as unknown.
+                    code = getattr(e, "pgcode", None)
+                    if code in BENIGN_DDL_ERRORS:
+                        skipped.append((first_line, f"{e}"))
+                        print(f"[migration] 已存在/可忽略: {e}")
+                        continue
+                    failed.append((first_line, f"{e}"))
+                    print(f"[migration] FAIL: {e}  <- {first_line}")
+
+            # 收尾硬校验：只看「语句是否报错」是不够的 —— 表可能压根没建出来，
+            # 也可能被更早的失败连累。这里直接查 information_schema 定论。
+            missing = _verify_schema(cur)
         conn.autocommit = False
 
     if skipped:
-        print(
-            f"[migration] WARNING: {len(skipped)} DDL statement(s) SKIPPED — "
-            "DB schema may be incomplete and session data will fail to persist "
-            "(history titles may show 新建任务)."
+        print(f"[migration] 有 {len(skipped)} 条 DDL 可安全跳过（对象已存在）。")
+
+    if failed or missing:
+        detail = []
+        if missing:
+            detail.append("缺失对象：" + "、".join(missing))
+        for stmt, err in failed:
+            detail.append(f"执行失败：{stmt} -> {err}")
+        raise RuntimeError(
+            "[migration] 数据库 schema 不完整，拒绝以半可用状态启动服务。\n  "
+            + "\n  ".join(detail)
+            + "\n  排查提示：内嵌模式下先确认 entrypoint 已完成 initdb 且目标库存在；"
+            + "若是从外部 PG 迁入，确认 DATABASE_URL 指向的库与用户名有 DDL 权限。"
         )
-        for item in skipped:
-            print(f"[migration]   - {item}")
 
     # Seed model catalog entries (idempotent upsert).
     # Each category runs independently so one failure doesn't skip the rest.
@@ -230,3 +308,5 @@ def init_db():
 
 if __name__ == "__main__":
     init_db()
+
+
