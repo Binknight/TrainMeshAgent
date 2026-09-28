@@ -10,10 +10,11 @@
 #   /home/static       前端静态资源（无 npm 构建，直接托管）
 #   /home/mcp_server   MCP 仿真 Server
 #   /home/aicm         仿真工具（run.py / examples/time_args.json / workload_generator/）
-#   /home/docker       entrypoint.sh + wait_for_db.py
+#   /home/docker       entrypoint.sh + wait_for_db.py + check_workspace.py
 #
 # 路径契约：mcp_server/config.py 以 parents[1] 推导默认值，而代码被解压到 /home，
-# 故 sim_tool_home=/home/aicm、workspace_root=/home/workspace（与仓库根一致）。
+# 故 sim_tool_home=/home/aicm；workspace_root 则**不再**与仓库根一致，改为
+# 运行期挂载宿主机目录的 /data/aicm/workspace（见下方 mkdir 与 entrypoint 自检）。
 # 下面用 ENV 显式钉住，不依赖隐式推导。
 # ============================================================================
 FROM repository/python3.10-aicm-base:1.0
@@ -28,8 +29,14 @@ ENV LANG C.UTF-8
 # 解压应用包
 RUN tar -xzf app.tgz && rm app.tgz
 
-# 仿真任务工作区（每个 task_id 一个子目录，仿真产物写入其 results/）
-RUN mkdir -p /home/workspace && chmod +x /home/docker/entrypoint.sh
+# 仿真任务工作区（每个 task_id 一个子目录，仿真产物写入其 results/）：
+# 运行期必须由部署侧把宿主机目录挂到这个路径（k8s hostPath / docker -v），
+# 否则容器重建、镜像升级会连产物一起丢掉。
+# 这里只预建挂载点并给出正确属主（容器以 uid 1000 运行，与下面的 chown 对齐）；
+# 预建的另一个作用是让 entrypoint 自检能明确报出「未挂载」，而不是静默写进镜像层。
+RUN mkdir -p /data/aicm/workspace \
+    && chown 1000:1000 /data/aicm/workspace \
+    && chmod +x /home/docker/entrypoint.sh
 
 # 设置权限
 RUN chown 1000:1000 /home/ -R
@@ -49,7 +56,7 @@ ENV PYTHONPATH=/home \
     AICM_MCP_HOST=0.0.0.0 \
     AICM_MCP_PORT=9000 \
     AICM_MCP_SIM_TOOL_HOME=/home/aicm \
-    AICM_MCP_WORKSPACE_ROOT=/home/workspace \
+    AICM_MCP_WORKSPACE_ROOT=/data/aicm/workspace \
     AICM_MCP_CONDA_ENV= \
     MCP_SERVER_URL=http://127.0.0.1:9000
 
