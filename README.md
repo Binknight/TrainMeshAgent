@@ -10,25 +10,31 @@ AI 训练组网仿真测试 Agent：以 Web 服务形式对接测试人员，用
 
 ## 1. 本地启动总览
 
-本地运行需要**三个服务**。它们相互独立，建议各开一个终端窗口：
+本地运行需要**两个服务**，外加一个**内嵌数据库**。数据库无需单独启动，数据默认落在
+本地 SQLite 单文件里（`SQLITE_PATH`）。
 
 | 服务 | 组成 | 默认地址 | 是否必需 |
 |------|------|----------|----------|
-| **PostgreSQL** | 数据库 | `127.0.0.1:5432` | 必需 —— Agent 启动即执行建表迁移 |
+| **数据库** | 默认内嵌 SQLite（标准库 `sqlite3`） | 本地文件 `SQLITE_PATH` | 必需 —— Agent 启动即执行建表迁移，**无需单独启动** |
 | **MCP 仿真 Server** | FastAPI + uvicorn | `http://localhost:9000` | 必需 —— 否则无法下发仿真任务 |
 | **Flask 应用** | Web 前端 + Agent + SSE/WebSocket | `http://localhost:5000` | 必需 —— 入口，浏览器访问这个 |
 
-启动顺序按上表从上到下：**数据库 → MCP Server → Flask**。
+启动顺序：**MCP Server → Flask**（数据库随 Flask 进程自动就绪）。
 
 ```
 浏览器 ──> Flask :5000 ──HTTP/JSON-RPC──> MCP 仿真 Server :9000 ──拉起子进程──> aicm/run.py
                 │                                    │
                 │                                    └──写产物──> /home/aicm/workspace（挂载）
-                └──psycopg2──> PostgreSQL :5432
-                                   └──数据目录──> /home/aicm/db（挂载）
+                └──sqlite3（默认）/ psycopg2（PG 逃生门）
+                       └──数据目录──> /home/aicm/db（挂载）或本地 SQLITE_PATH
 
-本地开发：PG 在本机 5432；容器内：PG 随容器内嵌，两个挂载点都在 /home/aicm 下
+本地开发：数据库默认是仓库外的单文件，可用 SQLITE_PATH 指到任意可写位置；
+容器内：数据库文件与 workspace 两个挂载点都在 /home/aicm 下。
 ```
+
+> **数据库是双后端的**：默认走 SQLite；把 `DATABASE_URL` 设成 `postgresql://...`
+> 即切换到 PostgreSQL（逃生门，代码同一份）。切换机制与取舍见
+> `docs/PG迁移SQLite改造计划.md`。
 
 ---
 
@@ -85,11 +91,18 @@ cp .env.example .env
 | `OPENAI_MODEL` | `gpt-4o` | 模型名 |
 | `OPENAI_SSL_VERIFY` | `true` | 内网证书不全时设 `false` |
 | `EXTERNAL_PROXY` | *(空)* | 出网代理，如 `http://proxy.company.com:8080` |
-| `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/train_mesh_agent` | 本机 PG 连接串 |
+| `DATABASE_URL` | *(空)* | **留空 = 用内置 SQLite**；填 `postgresql://...` 才切到外部 PostgreSQL |
+| `SQLITE_PATH` | `/home/aicm/db/train_mesh_agent.db` | SQLite 数据文件路径（本地开发建议指到仓库外或 `.tmp/`） |
+| `SQLITE_BUSY_TIMEOUT_MS` | `5000` | 写锁等待上限（毫秒）；WAL 下单写者，靠等待而非报错 |
+| `SQLITE_SYNCHRONOUS` | `NORMAL` | `OFF` / `NORMAL` / `FULL` / `EXTRA`；WAL 下 `NORMAL` 只在 checkpoint 时 fsync |
 | `MCP_SERVER_URL` | `http://localhost:9000` | Flask 侧要连的 MCP 地址 |
 | `FLASK_PORT` | `5000` | Flask 端口 |
 | `FLASK_DEBUG` | `false` | 调试模式（本地可设 `true`） |
 | `FLASK_USE_RELOADER` | `false` | 代码热重载 |
+
+> **`DATABASE_URL` 的判定只看前缀**：以 `postgres://` / `postgresql://` 开头才走 PostgreSQL，
+> 其余（含留空）一律走 SQLite。**写错协议头不会报错**，只会静默连到 SQLite 而看起来像"数据丢了"，
+> 这是最常见的配置困惑点。
 
 MCP Server 侧变量以 `AICM_MCP_` 为前缀（见 `mcp_server/config.py`），默认值已与 Flask 侧对齐：
 
@@ -111,11 +124,38 @@ MCP Server 侧变量以 `AICM_MCP_` 为前缀（见 `mcp_server/config.py`），
 
 ## 3. 逐个启动
 
-### 3.1 PostgreSQL
+### 3.1 数据库（默认内嵌，无需启动）
 
-需要本地 PostgreSQL 已运行，且存在业务库 `train_mesh_agent`。
+**默认不需要做任何事。** Agent 启动时会自动建表、自动 seed 内置模型清单，数据落到
+`SQLITE_PATH` 指定的单文件里。
 
-Agent 启动时会**自动建表**，但**不会自动建库**，所以首次需手工创建：
+```bash
+# 本地开发建议把数据文件放到仓库外或 .tmp/，避免污染工作区
+export SQLITE_PATH=/tmp/train_mesh_agent.db     # Windows: $env:SQLITE_PATH=".tmp\train_mesh_agent.db"
+python -m app.db_migration                       # 可选：只跑迁移，不启动服务
+```
+
+验证（迁移结束会打印新建/复用的表清单）：
+
+```
+[migration] 首次建表完成，本次新建 7 张：sessions、topology_params、...
+```
+
+> **与 PG 时代的两点行为差异**：
+> 1. **不再需要 `createdb`**。SQLite 按路径建库，库与表一起由迁移创建。
+> 2. **数据文件是整体备份单位**。WAL 模式下同目录还有 `train_mesh_agent.db-wal` /
+>    `-shm`，备份或搬迁要整目录拷，别只拷 `.db` 主文件。
+
+#### 3.1.1 （可选）切到 PostgreSQL 逃生门
+
+需要外部 PostgreSQL 时，只要设置 `DATABASE_URL`（**前缀必须是 `postgresql://` 或 `postgres://`**）：
+
+```bash
+export DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/train_mesh_agent'
+python -m app.db_migration
+```
+
+此时业务库需已存在（Agent 只建表、不建库）:
 
 ```bash
 createdb -U postgres train_mesh_agent
@@ -123,14 +163,9 @@ createdb -U postgres train_mesh_agent
 psql -U postgres -c "CREATE DATABASE train_mesh_agent;"
 ```
 
-验证：
-
-```bash
-psql -U postgres -d train_mesh_agent -c '\dt'
-```
-
-> **关于版本**：本机 PG 无需与容器内嵌的 PG 14 同版本。但两者**数据文件与 `pg_dump` 产物跨主版本不可直接复用**，
-> 本机 PG 18 + 容器 PG 14 是正常组合，只是两份数据彼此独立。详见 `docs/使用指南.md` §3.2。
+> **注意**：容器镜像里**已不装 PostgreSQL 服务端**，逃生门只能连**外部** PG。
+> 本机 PG 与容器 PG 的数据文件、`pg_dump` 产物**跨主版本不可直接复用**。
+> 详见 `docs/使用指南.md` §3.2 与 `docs/PG迁移SQLite改造计划.md`。
 
 ### 3.2 MCP 仿真 Server
 
@@ -195,13 +230,15 @@ curl http://localhost:5000/api           # 端点清单
 
 ## 4. 启动完成自检
 
-三条都通过即三个服务就绪：
+三条都通过即两个服务 + 数据库就绪：
 
 ```bash
 curl -s http://localhost:5000/api/health            # Flask
 curl -s http://localhost:9000/health                # MCP
-psql -U postgres -d train_mesh_agent -c '\dt'       # PostgreSQL（应列出 7 张表）
+python -c "import sqlite3,os;print(sorted(r[0] for r in sqlite3.connect(os.getenv('SQLITE_PATH','/home/aicm/db/train_mesh_agent.db')).execute(\"SELECT name FROM sqlite_master WHERE type='table'\")))"   # 数据库（应列出 7 张表）
 ```
+
+（逃生门形态改用 `psql -U postgres -d train_mesh_agent -c '\dt'`。）
 
 期望的 7 张表：`sessions`、`topology_params`、`simulation_params`、`simulation_results`、`comparison_reports`、`conversation_messages`、`model_catalog`。
 
@@ -215,7 +252,7 @@ MCP Server 注册 9 个工具：`execute_task`、`report_status`、`sync_logs`�
 |------|------|----------|
 | Flask | 5000 | 前台 `Ctrl+C` |
 | MCP Server | 9000 | 前台 `Ctrl+C` |
-| PostgreSQL | 5432 | 系统服务管理（如 `systemctl stop postgresql`） |
+| PostgreSQL | 5432 | 仅逃生门使用；默认不涉及（数据库是内嵌 SQLite 文件） |
 
 端口占用排查：
 
@@ -235,13 +272,14 @@ Get-NetTCPConnection -LocalPort 5000,9000 -State Listen
 | 现象 | 原因 | 处理 |
 |------|------|------|
 | `ModuleNotFoundError: No module named 'app'` / `'mcp_server'` | 不在仓库根执行 | `cd` 到仓库根，并用 `python -m ...` 形式 |
-| 启动即退出 / `[db] 建池失败 ...` | PostgreSQL 未启动或缺 `train_mesh_agent` 库 | 见 §3.1；`app/db.py` 会重试 10 次 × 1.5s 后放弃 |
+| 启动即退出 / `[db] 建池失败 ...` | 数据库不可用：`SQLITE_PATH` 目录不可写，或（逃生门）`DATABASE_URL` 指向的 PG 未启动 | 检查 `SQLITE_PATH` 父目录权限；PG 情形见 §3.1.1。`app/db.py` 会重试 10 次 × 1.5s 后放弃 |
 | `sim_tool_home not found` | 仓库根缺 `aicm/` | 放入仿真工具（§2.2），或先设 `AICM_MCP_DRY_RUN=1` 联调 |
 | 仿真子进程起不来、日志有 conda 报错 | 显式设了 `AICM_MCP_CONDA_ENV=<环境名>`，但本机无此环境 | 清空该变量（默认即空，回退当前解释器），或建好该 conda 环境并装上 `aicm` 依赖（§2.3） |
 | 前端对话无响应 / 报 LLM 错误 | 未配 `OPENAI_API_KEY`，或需走代理 | 配置 `.env` 的 `OPENAI_API_KEY` / `EXTERNAL_PROXY` |
 | MCP 连不上 | 端口不一致 | 确认 `MCP_SERVER_URL` 与 `AICM_MCP_PORT` 相同（默认均 9000） |
 | 历史列表标题显示「新建任务」 | schema 不完整（缺表/缺列） | 看启动日志的 `[migration]` 行；迁移失败会抛错而非静默继续 |
-| 想重置数据库 | —— | `DROP DATABASE train_mesh_agent;` 后重建，重启 Flask 会自动建表并重新 seed 模型目录 |
+| 明明设了 `DATABASE_URL` 却像在用 SQLite（"数据丢了"） | 前缀不是 `postgres://` / `postgresql://`（如写成 `postgresql:/`、`postgres@Data`） | 前缀不对就一律走 SQLite。启动日志的 `(backend=sqlite\|postgres)` 能直接确认真实后端 |
+| 想重置数据库 | —— | 默认后端：停服后删除 `SQLITE_PATH` 指向的文件**及其 `-wal`/`-shm` 伴生文件**，重启 Flask 会自动建表并重新 seed 模型目录；PG 后端：`DROP DATABASE train_mesh_agent;` 后重建 |
 
 更多排障（含容器内嵌数据库的 7 类故障）见 `docs/使用指南.md` §12。
 
@@ -249,7 +287,8 @@ Get-NetTCPConnection -LocalPort 5000,9000 -State Listen
 
 ## 7. 容器化部署（可选）
 
-生产/联调环境走「数据库内嵌」形态：一个容器自洽启动，无需外部 PostgreSQL。
+生产/联调环境走「数据库内嵌」形态：一个容器自洽启动，**无需任何外部数据库服务**
+（默认后端是 SQLite 单文件，由镜像内的 Python 标准库驱动）。
 
 ```bash
 docker run -d --name train-mesh-agent \
@@ -259,22 +298,33 @@ docker run -d --name train-mesh-agent \
 ```
 
 容器内两个挂载点**统一放在 `/home/aicm` 下**（`workspace` 与 `db`），节点侧各自独立目录。
-两个挂载**都是必需的**，缺失时容器明确报错退出。
+两个挂载**都是必需的**，缺失时容器明确报错退出 —— 这是有意的：数据库文件一旦静默落进
+镜像层，容器重建就会丢掉全部会话历史。
+
+需要外部 PostgreSQL 时（逃生门），注入 `DATABASE_URL` 即可，**同一镜像无需重建**：
+
+```bash
+docker run -d --name train-mesh-agent \
+  -v /data/aicm/workspace:/home/aicm/workspace \
+  -v /data/aicm/db:/home/aicm/db \
+  -e DATABASE_URL='postgresql://user:pw@pg.internal:5432/train_mesh_agent' \
+  -p 5000:5000 <image>
+```
+
+> 镜像内**已不再安装 PostgreSQL 服务端**，因此逃生门只能连**外部** PG。
 
 ### 7.1 首次部署与重启的行为差异
 
 **首次部署**：`docker/entrypoint.sh` 会自动完成全部初始化，无需人工介入：
 
 ```
-目录自检 → PG 版本守卫 → PGDATA 为空 ⇒ initdb
-        → 启动 postgres → 建库 train_mesh_agent → 建表迁移 → 启动业务进程
+工作区自检 → DB 目录自检 → 启动 MCP Server → 启动 Flask（建表迁移 + seed）
 ```
 
-其中「建库」由 `docker/wait_for_db.py` 完成 —— `initdb` 只建 `postgres`/`template0`/`template1`，
-业务库需要显式 `CREATE DATABASE`。「建表」由 `app/main.py` 启动时的 `init_db()` 完成。
+数据库文件不存在时由建表迁移直接创建 —— **既不需要 `initdb`，也不需要建库**，
+这正是本次改造去掉的一整段启动链。
 
-**重启 / 重新部署**：前面的 `initdb` 与建库会**跳过**，但**建表迁移每次启动都会执行**。
-这不是遗漏，而是有意设计：
+**重启 / 重新部署**：数据在挂载目录里，行为与首次部署完全一致（幂等）：
 
 - 迁移同时承担「**校验** schema 完整性」的职责。只有每次启动都跑，才能保证「schema 不完整
   就拒绝启动」，而不是带着半可用的库对外服务。
@@ -286,10 +336,16 @@ docker run -d --name train-mesh-agent \
 
 ```
 [migration] 首次建表完成，本次新建 7 张：sessions、topology_params、...
-[migration] 复用已有数据库（7 张表均已存在），迁移以幂等方式重放
+[migration] 复用已有数据库（后端 sqlite，7 张表均已存在），迁移以幂等方式重放
+[migration] All tables created successfully. (backend=sqlite)
 ```
+
+停机时 entrypoint 会对 SQLite 做一次 `wal_checkpoint(TRUNCATE)`，把 `-wal` 里的
+已提交事务并回主文件 —— 这纯粹是为了让「拷贝数据目录」这类运维动作拿到完整快照，
+失败也不会阻止容器退出。
 
 > 若迁移失败（缺表/缺列），`init_db()` 会抛 `RuntimeError` 导致 Flask 进程退出；
 > entrypoint 的 `wait -n` 随即回收整个容器 —— **不会**以半可用状态继续运行。
 
-构建流程、持久化契约、主版本升级路径与运维须知见 **`docs/数据库内嵌化改造说明.md`**。
+构建流程、持久化契约与运维须知见 **`docs/PG迁移SQLite改造计划.md`**；
+上一版「内嵌 PostgreSQL」形态的实现细节见 **`docs/数据库内嵌化改造说明.md`**（已被本次改造取代，仅作历史参考）。

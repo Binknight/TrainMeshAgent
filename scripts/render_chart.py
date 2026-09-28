@@ -9,13 +9,13 @@
         {{ if eq .Values.x "s"}} ... {{ else if eq ... }} ... {{ end }}
         {{- ... }} 与 {{ ... }} 的空行裁剪
     目的不是替代 helm，而是抓住本次改动的两类高危错误：
-        1. 模板引用了 values.yaml 里不存在的键（删了 secrets.databaseUrl、
-           新增 database.* / config.pgSocketDir，正是高危区）
+        1. 模板引用了 values.yaml 里不存在的键（删了 config.pgSocketDir、
+           新增 config.sqlitePath / database.*，正是高危区）
         2. 渲染产物不是合法 YAML / 占位符没被替换干净 / 关键字段缺失
 
-覆盖两种部署形态：
-    A. 默认（内嵌数据库）—— 不应出现 DATABASE_URL
-    B. 外部数据库回退 —— 必须出现 DATABASE_URL（逃生门可用）
+覆盖两种部署形态（与改造后的数据库语义对齐）：
+    A. 默认（SQLite，DATABASE_URL 留空）—— 不应出现 DATABASE_URL 键
+    B. 外部 PostgreSQL 逃生门 —— 必须出现 DATABASE_URL 键
 """
 from __future__ import annotations
 
@@ -24,6 +24,11 @@ import re
 import sys
 
 import yaml
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from _console import ensure_utf8_console  # noqa: E402
+
+ensure_utf8_console()
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CHART = ROOT / "charts"
@@ -273,10 +278,12 @@ def main() -> int:
 
     cm = rendered_a.get("configMap.yaml", "")
     if cm:
-        ok = "PG_SOCKET_DIR: " in cm and "/home/aicm/db/run" in cm
-        print(f"    {'OK  ' if ok else 'FAIL'}: configMap 下发 PG_SOCKET_DIR")
+        # 改造后 configMap 下发的是 SQLite 数据文件路径（原先下发 PG socket 目录）。
+        # 断言两件事：键存在，且路径落在 database.containerPath 挂载目录之内。
+        ok = "SQLITE_PATH: " in cm and "/home/aicm/db/" in cm
+        print(f"    {'OK  ' if ok else 'FAIL'}: configMap 下发 SQLITE_PATH（落在 db 挂载目录内）")
         if not ok:
-            errors.append("[A] configMap.yaml 缺少 PG_SOCKET_DIR 或取值不对")
+            errors.append("[A] configMap.yaml 缺少 SQLITE_PATH 或取值不在 /home/aicm/db/ 下")
 
     if errors:
         print(f"\n发现 {len(errors)} 个问题:")

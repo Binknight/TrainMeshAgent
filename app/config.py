@@ -14,25 +14,37 @@ class Config:
     MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:9000")
 
     # ── 数据库 ──
-    # 默认值刻意保留「TCP 连本机 5432」这一形态：Windows 本地开发直连本机
-    # PostgreSQL（如 18.x）时零改动。容器内由镜像 ENV 覆盖为 Unix socket 形态
-    # （见仓库根 Dockerfile），环境变量优先级高于这里的默认值。
+    # 双后端：默认 SQLite；`DATABASE_URL` 指向 PG 时自动切回 PostgreSQL（逃生门）。
     #
-    # 容器内形态：postgresql://postgres@/train_mesh_agent?host=/home/aicm/db/run
-    #   - 空 hostname + host=/path 查询参数 => psycopg2 走 Unix socket
-    #   - 不走 TCP，因此没有 listen_addresses / 端口占用 / 主机名解析的问题
-    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/train_mesh_agent")
+    # 后端由 DSN 前缀侦测（见 app/dbapi.detect_backend），刻意不引入 `DB_BACKEND`
+    # 独立开关 —— 开关与 URL 不一致会产生第四种状态。
+    #
+    # 空串 = 用下面 SQLITE_PATH 指定的 SQLite 文件。
+    # 注意：这里**不再是**那串 TCP 默认值 —— 显式注入 PG 串的部署行为不变，
+    # 但依赖旧默认值的部署需要显式设置 DATABASE_URL（见迁移说明）。
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-    # 内嵌 PostgreSQL 的数据目录（仅容器内模式使用；与镜像 ENV 一致）。
-    # 由 docker/entrypoint.sh 做「版本守卫 -> 空目录 initdb -> 启动」。
-    # PGDATA 是 PostgreSQL 自身的标准环境变量，postgres / initdb / pg_ctl
-    # 都直接识别它，因此这里只做读取与默认值对齐，不改写语义。
+    # SQLite 数据文件（默认后端）。父目录即部署侧的挂载点 /home/aicm/db。
+    # WAL 模式下同目录还会出现 -wal / -shm 两个伴生文件，备份需整目录拷贝。
+    SQLITE_PATH = os.getenv("SQLITE_PATH", "/home/aicm/db/train_mesh_agent.db")
+
+    # SQLite 写锁等待上限（毫秒）。WAL 是库级单写者，并发写靠这个等待而非立刻报错。
+    SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000"))
+
+    # SQLite 同步级别：NORMAL 在 WAL 下只在 checkpoint 时 fsync，
+    # 极端掉电可能丢最后若干事务 —— 会话历史非关键数据，这是有意折衷。
+    SQLITE_SYNCHRONOUS = os.getenv("SQLITE_SYNCHRONOUS", "NORMAL").strip().upper()
+    if SQLITE_SYNCHRONOUS not in ("OFF", "NORMAL", "FULL", "EXTRA"):
+        SQLITE_SYNCHRONOUS = "NORMAL"
+
+    # 外部/内嵌 PostgreSQL 数据目录（仅 PG 后端与版本排障使用；SQLite 路径忽略）。
+    # PGDATA 是 PostgreSQL 自身的标准环境变量，这里只做读取与默认值对齐。
     PGDATA = os.getenv("PGDATA", "/home/aicm/db/data")
 
-    # Unix socket 所在目录，用于 pg_isready / 就绪探测。
+    # Unix socket 所在目录，仅 PG 后端的就绪探测与排障使用。
     PG_SOCKET_DIR = os.getenv("PG_SOCKET_DIR", "/home/aicm/db/run")
 
-    # 本地开发豁免开关：跳过「PGDATA 必须是挂载点」的自检（等价于
+    # 本地开发豁免开关：跳过「数据库目录必须是挂载点」的自检（等价于
     # AICM_MCP_WORKSPACE_ALLOW_LOCAL，但独立控制数据库一侧）。
     DB_ALLOW_LOCAL = os.getenv("DB_ALLOW_LOCAL", "").strip().lower() in ("1", "true", "yes", "on")
 

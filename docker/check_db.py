@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""启动前校验内嵌 PostgreSQL 的数据目录（PGDATA）。
+"""启动前校验数据库目录（默认后端 SQLite）。
 
 为什么要有这个检查（与 docker/check_workspace.py 同一套理由）：
-    PGDATA 若只是镜像层里的普通目录，容器重建、镜像升级时整个数据库都会消失。
+    数据库文件若只是镜像层里的普通文件，容器重建、镜像升级时整个数据库都会消失。
     更糟的是服务表面上一切正常（建表成功、会话可写），直到下次重建才发现历史
-    全没了。因此默认要求数据目录必须落在「挂载点」之下，不满足就直接退出。
+    全没了。因此默认要求数据库目录必须落在「挂载点」之下，不满足就直接退出。
 
     本地开发（docker run 不挂卷）确实不想挂载时，设 DB_ALLOW_LOCAL=1 可豁免
-    挂载点校验（会打印醒目告警，权限与可写性检查照旧）。
+    挂载点校验（会打印醒目告警，可写性检查照旧）。
 
-检查项：
-    1. PGDATA 存在且是目录
-    2. PGDATA 自身或其任一父目录是挂载点（= 落在持久化卷里）
-    3. PGDATA 可写（真写一个临时文件，不用 os.access）
-    4. PGDATA 权限为 0700 —— PostgreSQL 对数据目录权限敏感，权限过宽会拒绝启动
-    5. PGDATA 属主与父目录一致（提示用，PG 要求数据目录属主 = 运行进程用户）
+检查项（SQLite 后端，默认）：
+    1. SQLITE_PATH 的父目录存在且是目录
+    2. 该目录自身或其任一父目录是挂载点（= 落在持久化卷里）
+    3. 该目录可写（真写一个临时文件，不用 os.access）
+    4. 若数据库文件已存在，确认它是普通文件且可写
+
+检查项（PG 逃生门：DATABASE_URL 指向 postgresql:// 时）：
+    数据库目录不参与持久化（数据在外部 PG 上），因此只做提示，不阻断启动。
+
+与改造前的差异：原实现校验 PGDATA 的 0700 权限与属主一致性 —— 那是 PostgreSQL
+特有的敏感点（权限过宽会拒绝启动），SQLite 没有这个要求，一并去掉。
 
 退出码：0 = 通过；1 = 未通过。
 """
@@ -22,13 +27,11 @@
 from __future__ import annotations
 
 import os
-import shutil
-import stat
 import sys
 import tempfile
 from pathlib import Path
 
-DEFAULT_PGDATA = "/home/aicm/db/data"
+DEFAULT_SQLITE_PATH = "/home/aicm/db/train_mesh_agent.db"
 MOUNTINFO_PATH = "/proc/self/mountinfo"
 ALLOW_LOCAL_ENV = "DB_ALLOW_LOCAL"
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -60,125 +63,136 @@ def read_mount_points(mountinfo_path: str = MOUNTINFO_PATH) -> set[str]:
 
     points: set[str] = set()
     for line in raw.splitlines():
-        fields = line.split(" ")
+        fields = line.split()
         if len(fields) >= 5:
-            points.add(unescape_mount_field(fields[4]))
+            points.add(unescape_mount_field(fields[4]).rstrip("/") or "/")
     return points
 
 
-def first_mount_ancestor(path: Path, mountinfo_path: str = MOUNTINFO_PATH) -> str | None:
-    """返回 path 自身或最近的挂载点祖先；都不命中则返回 None。
-
-    与 check_workspace.py 的 is_mount_point() 不同：这里不只比较 path 自身。
-    PGDATA 是「挂载目录的子目录」（/home/aicm/db/data 挂在 /home/aicm/db 之下），
-    真正被挂载的是它的父目录，因此必须向上回溯。
-    """
-    points = read_mount_points(mountinfo_path)
-    if not points:
-        # 非 Linux 或读不到 mountinfo：无法证明它是挂载点
+def is_under_mount_point(target: Path, mount_points: set[str]) -> str | None:
+    """target 自身或其任一祖先是否落在挂载点上；返回命中的挂载点。"""
+    if not mount_points:
         return None
+    chain = [target, *target.parents]
+    for candidate in chain:
+        key = str(candidate).rstrip("/") or "/"
+        if key in mount_points:
+            return key
+    return None
 
-    real_points = {os.path.realpath(p) for p in points}
+
+def writable_probe(directory: Path) -> bool:
+    """真写一个临时文件（不使用 os.access —— 受限环境下它可能失真）。"""
     try:
-        candidate = Path(os.path.realpath(path))
-    except OSError:
-        return None
-
-    while True:
-        if str(candidate) in real_points:
-            return str(candidate)
-        if str(candidate) in ("/", "") or candidate == candidate.parent:
-            return None
-        candidate = candidate.parent
-
-
-def writability_error(path: Path) -> str:
-    """真实写一个临时文件来判断可写性。
-
-    不用 os.access(W_OK)：容器以 root 运行时它对目录权限位不敏感，
-    但仍会被只读挂载挡住 —— 那种情况只有真写一次才能发现。
-    """
-    try:
-        with tempfile.NamedTemporaryFile(dir=str(path), prefix=".db_check_"):
+        with tempfile.NamedTemporaryFile(dir=directory, prefix=".dbcheck-", delete=True):
             pass
+        return True
     except OSError as exc:
-        return str(exc)
-    return ""
+        log(f"目录不可写：{directory}（{exc}）")
+        return False
 
 
-def check(pgdata: Path, allow_local: bool, mountinfo_path: str = MOUNTINFO_PATH) -> list[str]:
-    """返回致命问题列表，空列表表示通过。"""
-    if not pgdata.is_dir():
-        return [
-            f"{pgdata} 不存在或不是目录"
-            "（提示：应指向挂载进容器的持久化目录，如 /home/aicm/db/data）"
-        ]
+def backend_of(database_url: str) -> str:
+    """按 DSN 前缀判定后端。
 
-    problems: list[str] = []
-
-    ancestor = first_mount_ancestor(pgdata, mountinfo_path)
-    if ancestor:
-        log(f"{pgdata} 落在挂载点 {ancestor} 上（持久化）")
-    else:
-        reason = f"{pgdata} 不在任何挂载点下：数据库会随镜像层/容器一起丢失"
-        if allow_local:
-            log(f"警告：{reason}（{ALLOW_LOCAL_ENV}=1，仅限本地开发）")
-        else:
-            problems.append(reason)
-
-    error = writability_error(pgdata)
-    if error:
-        problems.append(f"{pgdata} 不可写（当前 uid={current_uid()}）：{error}")
-    else:
-        try:
-            mode = stat.S_IMODE(pgdata.stat().st_mode)
-            if mode != 0o700:
-                problems.append(
-                    f"{pgdata} 权限为 {mode:04o}，PostgreSQL 要求数据目录为 0700"
-                )
-            uid = pgdata.stat().st_uid
-            if uid != current_uid():
-                problems.append(
-                    f"{pgdata} 属主 uid={uid} 与容器运行用户 uid={current_uid()} 不一致"
-                    "（PG 要求数据目录属主即运行用户；k8s 下由 initContainer chown 修正）"
-                )
-        except OSError as exc:
-            problems.append(f"无法读取 {pgdata} 的权限/属主：{exc}")
-
-    return problems
-
-
-def describe(pgdata: Path) -> None:
-    try:
-        st = pgdata.stat()
-        free_gib = shutil.disk_usage(pgdata).free / 1024**3
-        version_file = pgdata / "PG_VERSION"
-        version = version_file.read_text().strip() if version_file.exists() else "未初始化"
-        log(
-            f"就绪：{pgdata} owner={st.st_uid}:{st.st_gid} mode={stat.S_IMODE(st.st_mode):04o} "
-            f"PG_VERSION={version} 剩余空间={free_gib:.1f}GiB"
-        )
-    except OSError as exc:
-        log(f"就绪：{pgdata}（无法读取磁盘信息：{exc}）")
+    ⚠️ 这段逻辑与 `app/dbapi.detect_backend` **有意重复**：本脚本在容器里以
+    `/home/docker/check_db.py` 独立运行，早于仓库 `app/` 包被 import，为了不引入
+    路径/依赖耦合而自带一份。两处必须保持一致 —— 判定一旦分叉，会出现
+    「check_db 认为要用 SQLite（于是校验挂载点）而 app 实际连 PG」这类诡异现象。
+    `scripts/verify_consistency.py` 会对这段前缀元组做断言，改一处忘了另一处会直接失败。
+    """
+    url = (database_url or "").strip().lower()
+    return "postgres" if url.startswith(("postgres://", "postgresql://")) else "sqlite"
 
 
 def main() -> int:
-    pgdata = Path(os.getenv("PGDATA") or DEFAULT_PGDATA)
-    allow_local = os.getenv(ALLOW_LOCAL_ENV, "").strip().lower() in _TRUTHY
+    failures: list[str] = []
 
-    problems = check(pgdata, allow_local, MOUNTINFO_PATH)
-    if problems:
-        for problem in problems:
-            log(f"FATAL: {problem}")
-        log(
-            "提示：把宿主机目录挂到 PGDATA 的父目录（k8s hostPath / docker -v），"
-            f"并保证容器运行用户（uid={current_uid()}）可写；"
-            f"本地开发可设 {ALLOW_LOCAL_ENV}=1 豁免挂载点校验。"
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    active = backend_of(database_url)
+
+    if active == "postgres":
+        # PG 逃生门：数据在外部 PG 上，本地数据库目录不参与持久化。
+        log(f"检测到 DATABASE_URL 指向 PostgreSQL（{database_url.split('@')[-1]}），"
+            f"跳过本地数据库目录持久化校验。")
+        log("提示：此时容器内不再运行任何数据库进程，数据生命周期由外部 PG 负责；")
+        log("     若为空库，首次启动会自动建表并 seed 内置模型清单。")
+        return 0
+
+    sqlite_path = Path(os.getenv("SQLITE_PATH") or DEFAULT_SQLITE_PATH)
+    db_dir = sqlite_path.parent
+
+    log(f"后端=sqlite  数据文件={sqlite_path}")
+    log(f"数据库目录={db_dir}  运行用户 uid={current_uid()}")
+
+    # 1. 父目录存在且是目录
+    if not db_dir.exists():
+        failures.append(
+            f"数据库目录不存在：{db_dir}（应由镜像预建并由部署侧挂载宿主机目录）"
         )
+    elif not db_dir.is_dir():
+        failures.append(f"数据库目录不是目录：{db_dir}")
+
+    if failures:
+        for f in failures:
+            log(f"FATAL: {f}")
+        _print_hint(db_dir)
         return 1
 
-    describe(pgdata)
+    # 2. 挂载点校验（唯一可豁免项）
+    mount_points = read_mount_points()
+    hit = is_under_mount_point(db_dir, mount_points)
+    allow_local = os.getenv(ALLOW_LOCAL_ENV, "").strip().lower() in _TRUTHY
+
+    if hit:
+        log(f"挂载点校验通过：{db_dir} 位于挂载点 {hit} 之下")
+    elif not mount_points:
+        log("警告：本平台无 /proc/self/mountinfo，跳过挂载点校验（非 Linux 环境正常）")
+    elif allow_local:
+        log("=" * 68)
+        log(f"警告：{db_dir} 不在任何挂载点之下，但 {ALLOW_LOCAL_ENV} 已设置，继续启动。")
+        log("      容器重建或镜像升级会**丢失全部会话历史**。仅供本地开发使用！")
+        log("=" * 68)
+    else:
+        failures.append(
+            f"数据库目录 {db_dir} 不在挂载点之下 —— 数据库会落在可写镜像层里，"
+            f"容器重建即丢全部会话历史"
+        )
+
+    # 3. 目录可写
+    if not writable_probe(db_dir):
+        failures.append(f"数据库目录不可写：{db_dir}（检查属主与权限）")
+
+    # 4. 已存在的数据库文件必须是普通文件且可写
+    if sqlite_path.exists():
+        if not sqlite_path.is_file():
+            failures.append(f"数据库路径已存在但不是普通文件：{sqlite_path}")
+        elif not os.access(sqlite_path, os.W_OK):
+            failures.append(f"数据库文件不可写：{sqlite_path}")
+        else:
+            log(f"数据库文件已存在且可写（{sqlite_path.stat().st_size} 字节）")
+        for suffix in ("-wal", "-shm"):
+            companion = sqlite_path.with_name(sqlite_path.name + suffix)
+            if companion.exists():
+                log(f"  WAL 伴生文件存在：{companion.name}（正常，停机时会自动合并）")
+    else:
+        log("数据库文件尚不存在，将在首次启动时创建")
+
+    if failures:
+        for f in failures:
+            log(f"FATAL: {f}")
+        _print_hint(db_dir)
+        return 1
+
+    log("数据库目录自检通过")
     return 0
+
+
+def _print_hint(db_dir: Path) -> None:
+    log(f"  排查建议：把宿主机目录挂到 {db_dir}（docker -v / k8s hostPath），")
+    log(f"           并确保其属主是容器运行用户（uid={current_uid()}）。")
+    log("           k8s 下由 initContainer 执行 chown（见 charts/templates/deployment.yaml）。")
+    log(f"           仅本地验证时可设 {ALLOW_LOCAL_ENV}=1 豁免挂载点校验。")
 
 
 if __name__ == "__main__":

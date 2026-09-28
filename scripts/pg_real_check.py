@@ -23,6 +23,11 @@ import psycopg2
 from psycopg2 import sql
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from _console import ensure_utf8_console  # noqa: E402
+
+ensure_utf8_console()
 
 from app.db_migration import SCHEMA_SQL, _verify_schema, BENIGN_DDL_ERRORS  # noqa: E402
 
