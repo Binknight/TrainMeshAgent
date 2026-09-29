@@ -31,7 +31,7 @@ from _console import ensure_utf8_console  # noqa: E402
 ensure_utf8_console()
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CHART = ROOT / "charts"
+CHART = ROOT / "charts" / "equivalent-modeling-service"
 TEMPLATES = sorted((CHART / "templates").glob("*.yaml"))
 
 ACTION_RE = re.compile(r"\{\{-?\s*(.*?)\s*-?\}\}")
@@ -241,7 +241,7 @@ def main() -> int:
     print("\n[3] 形态 B —— 外部 PostgreSQL 回退")
     values_b = {k: (dict(v) if isinstance(v, dict) else v) for k, v in values.items()}
     values_b["secrets"] = dict(values_b.get("secrets", {}))
-    values_b["secrets"]["databaseUrl"] = "postgresql://user:pass@10.1.2.3:5432/train_mesh_agent"
+    values_b["secrets"]["databaseUrl"] = "postgresql://user:pass@10.1.2.3:5432/equivalent_modeling_service"
     rendered_b, errs_b = render_all(values_b, "B")
     errors += errs_b
 

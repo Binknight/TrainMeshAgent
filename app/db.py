@@ -176,7 +176,7 @@ def _make_pg_pool():
                 minconn=_POOL_MIN,
                 maxconn=_POOL_MAX,
                 dsn=config.DATABASE_URL,
-                application_name="train-mesh-agent",
+                application_name="equivalent-modeling-service",
             )
         except psycopg2.OperationalError as exc:
             last_exc = exc

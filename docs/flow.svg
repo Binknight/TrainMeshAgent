@@ -23,7 +23,7 @@
 
   <!-- Title Bar -->
   <rect x="0" y="0" width="1250" height="48" fill="url(#headerGrad)"/>
-  <text x="625" y="31" text-anchor="middle" fill="#fff" font-size="17" font-weight="bold">TrainMesh Agent — 业务流程图 (Business Process Flow)</text>
+  <text x="625" y="31" text-anchor="middle" fill="#fff" font-size="17" font-weight="bold">equivalent-modeling-service — 业务流程图 (Business Process Flow)</text>
 
   <!-- ==================== SWIMLANES ==================== -->
   <!-- Lane 1: User -->

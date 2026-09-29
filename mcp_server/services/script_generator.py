@@ -211,7 +211,7 @@ def generate_topology_script(
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-# --- 组网参数（TrainMeshAgent 解析契约 §11）---
+# --- 组网参数（equivalent-modeling-service 解析契约 §11）---
 DEVICE_TYPE={topology.device_type}
 DP={topology.dp_size}
 TP={topology.tp_size}

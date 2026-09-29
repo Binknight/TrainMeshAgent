@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="AICM Simulation MCP Server",
-    description="TrainMeshAgent 对接的仿真系统 MCP Server（HTTP JSON-RPC）",
+    description="equivalent-modeling-service 对接的仿真系统 MCP Server（HTTP JSON-RPC）",
     version=__version__,
 )
 

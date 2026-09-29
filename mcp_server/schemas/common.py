@@ -81,7 +81,7 @@ class SimulationTaskInput(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_mesh_topology(cls, data: Any) -> Any:
-        """兼容 TrainMeshAgent MeshTopology.model_dump() 入参。"""
+        """兼容 equivalent-modeling-service MeshTopology.model_dump() 入参。"""
         if not isinstance(data, dict):
             return data
         normalized = dict(data)

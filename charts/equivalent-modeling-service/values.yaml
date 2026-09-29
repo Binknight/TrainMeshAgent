@@ -1,7 +1,7 @@
 app:
   # 三处共用此值：k8s 资源名、镜像名（{{ repository }}/{{ name }}:{{ version }}）、
   # 节点日志目录名。必须与平台镜像仓库中本服务的镜像名保持一致。
-  name: train-mesh-agent
+  name: equivalent-modeling-service
   version: 1.0.0
 
 images:
@@ -47,7 +47,7 @@ workspace:
 
 # 数据库目录（默认后端 SQLite）。
 # 与 workspace 统一：容器内都是 /home/aicm 下的子目录。
-# 数据文件是 containerPath 下的 train_mesh_agent.db（另有 -wal / -shm 伴生文件）。
+# 数据文件是 containerPath 下的 equivalent_modeling_service.db（另有 -wal / -shm 伴生文件）。
 # 节点侧给独立目录，与仿真工作区物理分离：升级/清理 workspace 时不会误伤数据库。
 # 由 initContainer chown 1000:1000（hostPath 的属主镜像管不到，见 deployment.yaml）。
 # 注意：这是节点本地目录，Pod 漂移到别的节点会看到一个「空」数据库
@@ -81,7 +81,7 @@ config:
   simToolHome: "/home/aicm"
   # 数据库文件路径（默认后端 SQLite）。父目录与 database.containerPath 同源，
   # 便于 verify_consistency.py 断言「配置的路径确实落在挂载目录内」。
-  sqlitePath: "/home/aicm/db/train_mesh_agent.db"
+  sqlitePath: "/home/aicm/db/equivalent_modeling_service.db"
   # 必须为空串：conda_launcher 在 conda_env 为空时回退为当前解释器，免装 conda
   condaEnv: ""
   # LLM
@@ -92,7 +92,7 @@ config:
 # ── 敏感配置 → Secret → envFrom ──
 # 前两个占位符需要在平台变量替换配置中登记（或由运维在发布前直接填值）。
 # databaseUrl **可选**：留空/不声明时沿用镜像内默认值（空串），即使用
-# **本容器内的 SQLite**（数据文件 /home/aicm/db/train_mesh_agent.db）。
+# **本容器内的 SQLite**（数据文件 /home/aicm/db/equivalent_modeling_service.db）。
 # 仅当要改用**外部 PostgreSQL** 时才需要在这里填一条完整 TCP 连接串覆盖它 ——
 # 这就是回退逃生门：同一镜像、无需重建，注入 DSN 即切换后端
 # （后端由 DSN 前缀 postgres:// / postgresql:// 自动侦测，见 app/dbapi.py）。
@@ -103,7 +103,7 @@ secrets:
   # 不是 postgres:// 而**静默回落 SQLite**（与下面 externalProxy 同理，但更隐蔽）。
   # 需要切回外部 PG 时，取消注释并登记平台变量或直接写死连接串。
   # databaseUrl: @databaseUrl@
-  # databaseUrl: "postgresql://user:pass@10.x.x.x:5432/train_mesh_agent"
+  # databaseUrl: "postgresql://user:pass@10.x.x.x:5432/equivalent_modeling_service"
   # 出网代理（可选）：确认平台已登记 @externalProxy@ 后再取消注释，
   # 否则会原样下发 "@externalProxy@" 导致出网请求异常。
   # externalProxy: @externalProxy@

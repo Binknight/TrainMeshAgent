@@ -7,7 +7,7 @@
 
 ## 1. 项目是什么
 
-**TrainMeshAgent**：AI 训练组网仿真测试 Agent。测试人员通过 Web 界面用自然语言描述组网
+**equivalent-modeling-service**：AI 训练组网仿真测试 Agent。测试人员通过 Web 界面用自然语言描述组网
 （设备类型 A2/A3/A5、DP/TP/PP 并行度），Agent 生成结构化组网图 → 下发仿真 → 对比原始组网与
 等效组网的**计算强度 / 内存占用 / 通信流量**，验证"模型等效"是否成立。
 
@@ -103,7 +103,7 @@ DAO 是真正的影响集中点。
 
 ### 4.4 数据库相关约定（双后端：SQLite 默认 / PostgreSQL 逃生门）
 
-- **默认后端是 SQLite**：单文件 `SQLITE_PATH=/home/aicm/db/train_mesh_agent.db`，
+- **默认后端是 SQLite**：单文件 `SQLITE_PATH=/home/aicm/db/equivalent_modeling_service.db`，
   由标准库 `sqlite3` 驱动。基础镜像**不再安装 PostgreSQL 服务端**（`libpq5` 保留，
   供 PG 逃生门的 psycopg2 使用）。因此没有了 initdb / 版本守卫 / Unix socket /
   就绪探测这一整套启动链。
@@ -111,11 +111,11 @@ DAO 是真正的影响集中点。
   `postgres://` / `postgresql://` 开头 → PG；其余（含空串）→ SQLite。
   **不要引入 `DB_BACKEND` 这类独立开关** —— 开关与 URL 不一致会产生第四种状态。
 - **Windows / 本机首启必须改 `SQLITE_PATH`**：默认值是**容器路径**
-  `/home/aicm/db/train_mesh_agent.db`，在 Windows 上会被解析成 `\home\aicm\db`（即当前盘符
+  `/home/aicm/db/equivalent_modeling_service.db`，在 Windows 上会被解析成 `\home\aicm\db`（即当前盘符
   根下的 `home\aicm\db`）而**不存在**，启动直接抛
   `RuntimeError: SQLite 数据目录不存在：\home\aicm\db`。`init_db()` 有意**不自动建父目录**
   （避免数据库悄悄落进可写镜像层），所以必须自己建好并指到可写位置，例如
-  `SQLITE_PATH=./.tmp/train_mesh_agent.db`（`.tmp/` 已在 `.gitignore` 中，需先 `mkdir .tmp`）。
+  `SQLITE_PATH=./.tmp/equivalent_modeling_service.db`（`.tmp/` 已在 `.gitignore` 中，需先 `mkdir .tmp`）。
   正斜杠与反斜杠写法都能被 `python-dotenv` 正确读取。
 - **`replicas` 必须为 1**：SQLite（WAL）是库级单写者。Pod 漂移到其他节点会看到"空"数据库
   （与 `/home/aicm/workspace` 同源的失效模式）。

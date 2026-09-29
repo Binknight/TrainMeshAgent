@@ -31,7 +31,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-DEFAULT_SQLITE_PATH = "/home/aicm/db/train_mesh_agent.db"
+DEFAULT_SQLITE_PATH = "/home/aicm/db/equivalent_modeling_service.db"
 MOUNTINFO_PATH = "/proc/self/mountinfo"
 ALLOW_LOCAL_ENV = "DB_ALLOW_LOCAL"
 _TRUTHY = {"1", "true", "yes", "on"}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# TrainMeshAgent 单容器 entrypoint
+# equivalent-modeling-service 单容器 entrypoint
 #   拉起 MCP 仿真 Server + Flask 应用，保证 SIGTERM 时连带回收仿真子进程。
 #
 #   容器内仓库根为 /home（业务镜像解压位置）。仿真工作区与数据库目录都挂在
@@ -32,12 +32,12 @@ log "workspace=${AICM_MCP_WORKSPACE_ROOT}"
 python /home/docker/check_workspace.py || exit 1
 
 # ---------- 数据库目录自检：必须在挂载点下且可写 ----------
-# 默认后端是 SQLite，数据文件 SQLITE_PATH 默认 /home/aicm/db/train_mesh_agent.db。
+# 默认后端是 SQLite，数据文件 SQLITE_PATH 默认 /home/aicm/db/equivalent_modeling_service.db。
 # 与 workspace 自检同一哲学，但这里的失败代价更高：静默落在镜像层里意味着
 # 容器重建即丢全部会话历史。因此不做「豁免后继续」的降级，只认挂载点。
 # PG 逃生门（DATABASE_URL 指向外部 PG）下这个目录不会被使用，check_db.py
 # 会据此跳过挂载点校验，只提示。
-: "${SQLITE_PATH:=/home/aicm/db/train_mesh_agent.db}"
+: "${SQLITE_PATH:=/home/aicm/db/equivalent_modeling_service.db}"
 export SQLITE_PATH
 python /home/docker/check_db.py || exit 1
 

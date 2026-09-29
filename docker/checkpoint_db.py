@@ -18,7 +18,7 @@ import os
 import sqlite3
 import sys
 
-DEFAULT_SQLITE_PATH = "/home/aicm/db/train_mesh_agent.db"
+DEFAULT_SQLITE_PATH = "/home/aicm/db/equivalent_modeling_service.db"
 
 
 def log(message: str) -> None:
