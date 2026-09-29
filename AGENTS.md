@@ -97,8 +97,8 @@ global_rank = pp_rank * (tp * dp) + dp_rank * tp + tp_rank
 `get_db()` / `get_pool()`（`app/db.py`）的 **commit / rollback / 归还连接**语义是
 `app/dao/` 等调用方的公共前提。可以改内部重试与错误提示，但不要改它们的对外行为。
 
-调用点分布（共 26 处，改前请知悉影响面）：**23 处在 `app/dao/__init__.py`**，
-其余在 `app/db.py` 自身与 `app/db_migration.py`。也就是说路由层是通过 DAO 间接使用的，
+调用点分布（共 24 处，改前请知悉影响面）：**23 处在 `app/dao/__init__.py`**，
+其余在 `app/db_migration.py`。也就是说路由层是通过 DAO 间接使用的，
 DAO 是真正的影响集中点。
 
 ### 4.4 数据库相关约定（双后端：SQLite 默认 / PostgreSQL 逃生门）
@@ -110,6 +110,13 @@ DAO 是真正的影响集中点。
 - **后端由 `DATABASE_URL` 的前缀自动侦测**（`app/dbapi.detect_backend`）：
   `postgres://` / `postgresql://` 开头 → PG；其余（含空串）→ SQLite。
   **不要引入 `DB_BACKEND` 这类独立开关** —— 开关与 URL 不一致会产生第四种状态。
+- **Windows / 本机首启必须改 `SQLITE_PATH`**：默认值是**容器路径**
+  `/home/aicm/db/train_mesh_agent.db`，在 Windows 上会被解析成 `\home\aicm\db`（即当前盘符
+  根下的 `home\aicm\db`）而**不存在**，启动直接抛
+  `RuntimeError: SQLite 数据目录不存在：\home\aicm\db`。`init_db()` 有意**不自动建父目录**
+  （避免数据库悄悄落进可写镜像层），所以必须自己建好并指到可写位置，例如
+  `SQLITE_PATH=./.tmp/train_mesh_agent.db`（`.tmp/` 已在 `.gitignore` 中，需先 `mkdir .tmp`）。
+  正斜杠与反斜杠写法都能被 `python-dotenv` 正确读取。
 - **`replicas` 必须为 1**：SQLite（WAL）是库级单写者。Pod 漂移到其他节点会看到"空"数据库
   （与 `/home/aicm/workspace` 同源的失效模式）。
 - **禁止把数据库目录放 NFS**：SQLite 依赖本地文件锁（POSIX advisory lock）与 `fsync`，
@@ -187,7 +194,7 @@ python tests/test_mcp_server_e2e.py           # 需 MCP Server :9000
 1. **明确要改哪个组件**（`app/` / `mcp_server/` / `docker/` / `charts/`），别跨组件耦合。
 2. **搜索影响面**：`init_db()` 由 `app/main.py:31` 在启动时调用（另有
    `app/db_migration.py` 的 `__main__` 入口）；`get_db()`/`get_pool()` 的主要影响面是
-   `app/dao/__init__.py`（26 处调用点中占 23 处）；rank 换算只应在 `app/rank_layout.py`。
+   `app/dao/__init__.py`（24 处调用点中占 23 处）；rank 换算只应在 `app/rank_layout.py`。
 3. **改完跑校验**：至少 `scripts/verify_static.py` + `scripts/verify_consistency.py`；
    涉及 schema 则另跑 `scripts/sqlite_real_check.py`（默认后端）与 `scripts/pg_real_check.py`
    （逃生门）；涉及 rank 则跑第 6 节相关测试。
