@@ -1,7 +1,11 @@
 flask>=3.0
 flask-cors>=4.0
 flask-sock>=0.7
-openai>=1.30
+# openai 设上界：本仓库无锁定文件，只写 >= 会让不同节点装出不同大版本
+# （实测同一份 requirements 在本机装到 2.32、在节点装到 3.20）。
+# 代码依赖 openai 1.x 引入的 OpenAI(http_client=...) 用法（app/agent/orchestrator.py），
+# 大版本跳跃属于未验证变更，故先挡住 3.x；升级需连同回归测试一起做。
+openai>=1.30,<3
 # httpx 被 app/agent/orchestrator.py 直接 import 并用于构造 OpenAI 客户端
 # （传 OPENAI_SSL_VERIFY / EXTERNAL_PROXY），不能只依赖 openai 的传递依赖
 httpx>=0.23
