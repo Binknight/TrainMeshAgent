@@ -150,6 +150,7 @@ DAO 是真正的影响集中点。
 | **`ON CONFLICT` 在 SQLite 下必须能定位目标** | `comparison_reports` 两套 DDL 都建了 `session_id` 唯一约束（PG 侧是 `uq_comparison_reports_session`），否则「重复保存报告」在 SQLite 下会插入多行而非幂等。这条由 `verify_static.py` 的 D2 断言把守 |
 | **不要引入 `DB_BACKEND` 这类独立开关** | 后端由 `DATABASE_URL` 前缀侦测。开关与 URL 不一致会产生第四种状态，届时「为什么连不上」会成为排查陷阱 |
 | **非 postgres:// 前缀的 DSN 会被**静默**当成 SQLite** | 这是最容易误判的配置错误。DSN 写错协议头不会报错，只会连到 SQLite 而看起来「数据丢了」 |
+| **`NO_PROXY` 含方括号 IPv6 会让 httpx 直接抛异常** | httpx 0.28 解析 `NO_PROXY=...,::1,[::1]` 这类值时，`URLPattern` 会崩在 `InvalidURL: Invalid port: ':1]'`。而 `app/agent/orchestrator.py` 用 `httpx.Client(verify=..., proxy=...)` 构造 OpenAI 客户端 —— 一旦运行环境设了这个值，**首次 LLM 调用即失败**（不是降级，是直接抛）。对策是清掉 `NO_PROXY` 里的 `[::1]` 写法（只留 `127.0.0.1` 与 `::1`），代码侧无法规避 |
 
 ---
 
