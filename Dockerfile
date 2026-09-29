@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 # ============================================================================
-# TrainMeshAgent 业务镜像
+# equivalent-modeling-service 业务镜像
 #
 # 依赖已全部预置在基础镜像 repository/python3.10-aicm-base:1.0 中，
 # 本层只做「解压 + 启动」，构建期不联网、不装任何包。
 #
-# 包内容（TrainMeshAgent.tgz）解压后落在 /home/，即仓库根：
+# 包内容（equivalent-modeling-service.tgz）解压后落在 /home/，即仓库根：
 #   /home/app          Flask 应用 + Agent + skills
 #   /home/static       前端静态资源（无 npm 构建，直接托管）
 #   /home/mcp_server   MCP 仿真 Server
@@ -24,7 +24,7 @@
 # ── 数据库：默认 SQLite（本次改造）──
 # 原先是「内嵌 PostgreSQL 14 服务端 + Unix socket」，现在是一**个文件**：
 #   /home/aicm/db                  挂载点：部署侧必须把宿主机目录挂到这里
-#   /home/aicm/db/train_mesh_agent.db    主库（WAL 模式下另有 -wal / -shm 伴生文件）
+#   /home/aicm/db/equivalent_modeling_service.db    主库（WAL 模式下另有 -wal / -shm 伴生文件）
 # 因此镜像里不再需要 PGDATA / PG_SOCKET_DIR / PG_BIN，也没有 initdb、版本守卫、
 # 就绪探测与 socket 目录。数据库目录自检仍**不可豁免**（workspace 有 ALLOW_LOCAL
 # 开关），因为数据库静默落在镜像层里意味着容器重建即丢全部会话历史。
@@ -34,7 +34,7 @@ FROM repository/python3.10-aicm-base:1.0
 
 WORKDIR /home/
 
-COPY TrainMeshAgent*.tgz app.tgz
+COPY equivalent-modeling-service*.tgz app.tgz
 
 EXPOSE 5000 9000
 ENV LANG C.UTF-8
@@ -82,7 +82,7 @@ ENV PYTHONPATH=/home \
     AICM_MCP_WORKSPACE_ROOT=/home/aicm/workspace \
     AICM_MCP_CONDA_ENV= \
     MCP_SERVER_URL=http://127.0.0.1:9000 \
-    SQLITE_PATH=/home/aicm/db/train_mesh_agent.db \
+    SQLITE_PATH=/home/aicm/db/equivalent_modeling_service.db \
     DATABASE_URL=
 
 # 健康检查：两个进程都要活着。用 python 而非 curl。

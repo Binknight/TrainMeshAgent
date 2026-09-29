@@ -39,7 +39,7 @@ from app.skills.registry import registry
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """你是 TrainMesh Agent，一个专为 AI 训练组网仿真测试设计的智能助手。
+SYSTEM_PROMPT = """你是 equivalent-modeling-service，一个专为 AI 训练组网仿真测试设计的智能助手。
 
 你的职责：
 1. 帮助测试人员输入原始组网参数（设备类型 A2/A3/A5、DP/TP/PP、模型参数）

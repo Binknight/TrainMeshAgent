@@ -98,9 +98,9 @@ def main() -> int:
     config_py = read("app/config.py")
     migration_py = read("app/db_migration.py")
     entrypoint = read("docker/entrypoint.sh")
-    values_text = read("charts/values.yaml")
+    values_text = read("charts/equivalent-modeling-service/values.yaml")
     values = yaml.safe_load(re.sub(r"@([A-Za-z0-9_.]+)@", r'"PH_\1"', values_text))
-    configmap = read("charts/templates/configMap.yaml")
+    configmap = read("charts/equivalent-modeling-service/templates/configMap.yaml")
 
     # ── 1. 镜像 ENV vs app/config.py ──
     envs = env_from_dockerfile(app_df)
@@ -111,7 +111,7 @@ def main() -> int:
     sqlite_chart = values["config"].get("sqlitePath", "")
     mount_path = values["database"]["containerPath"]
 
-    expected_sqlite = "/home/aicm/db/train_mesh_agent.db"
+    expected_sqlite = "/home/aicm/db/equivalent_modeling_service.db"
     if sqlite_env != expected_sqlite:
         errors.append(f"Dockerfile ENV SQLITE_PATH={sqlite_env!r}，期望 {expected_sqlite!r}")
     if sqlite_cfg != expected_sqlite:
@@ -208,7 +208,7 @@ def main() -> int:
         "base Dockerfile": strip_comments(base_df),
         "entrypoint.sh": strip_comments(entrypoint),
         "values.yaml": strip_comments(values_text),
-        "charts/configMap.yaml": strip_comments(configmap),
+        "charts/equivalent-modeling-service/configMap.yaml": strip_comments(configmap),
     }
     stale_tokens = [
         "PGDATA",

@@ -1,4 +1,4 @@
-# TrainMeshAgent
+# equivalent-modeling-service
 
 AI 训练组网仿真测试 Agent：以 Web 服务形式对接测试人员，用自然语言完成 AI 组网仿真与**模型等效性验证**。
 
@@ -59,7 +59,7 @@ pip install -r mcp_server/requirements.txt   # MCP Server 侧依赖（独立，�
 仿真工具源码需放在仓库根的 **`aicm/`** 目录（含 `run.py`、`workload_generator/`）：
 
 ```
-TrainMeshAgent/
+equivalent-modeling-service/
 ├── aicm/          ← 仿真工具放这里
 ├── app/
 ├── mcp_server/
@@ -92,7 +92,7 @@ cp .env.example .env
 | `OPENAI_SSL_VERIFY` | `true` | 内网证书不全时设 `false` |
 | `EXTERNAL_PROXY` | *(空)* | 出网代理，如 `http://proxy.company.com:8080` |
 | `DATABASE_URL` | *(空)* | **留空 = 用内置 SQLite**；填 `postgresql://...` 才切到外部 PostgreSQL |
-| `SQLITE_PATH` | `/home/aicm/db/train_mesh_agent.db` | SQLite 数据文件路径（本地开发建议指到仓库外或 `.tmp/`） |
+| `SQLITE_PATH` | `/home/aicm/db/equivalent_modeling_service.db` | SQLite 数据文件路径（本地开发建议指到仓库外或 `.tmp/`） |
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000` | 写锁等待上限（毫秒）；WAL 下单写者，靠等待而非报错 |
 | `SQLITE_SYNCHRONOUS` | `NORMAL` | `OFF` / `NORMAL` / `FULL` / `EXTRA`；WAL 下 `NORMAL` 只在 checkpoint 时 fsync |
 | `MCP_SERVER_URL` | `http://localhost:9000` | Flask 侧要连的 MCP 地址 |
@@ -131,7 +131,7 @@ MCP Server 侧变量以 `AICM_MCP_` 为前缀（见 `mcp_server/config.py`），
 
 ```bash
 # 本地开发建议把数据文件放到仓库外或 .tmp/，避免污染工作区
-export SQLITE_PATH=/tmp/train_mesh_agent.db     # Windows: $env:SQLITE_PATH=".tmp\train_mesh_agent.db"
+export SQLITE_PATH=/tmp/equivalent_modeling_service.db     # Windows: $env:SQLITE_PATH=".tmp\equivalent_modeling_service.db"
 python -m app.db_migration                       # 可选：只跑迁移，不启动服务
 ```
 
@@ -143,7 +143,7 @@ python -m app.db_migration                       # 可选：只跑迁移，不�
 
 > **与 PG 时代的两点行为差异**：
 > 1. **不再需要 `createdb`**。SQLite 按路径建库，库与表一起由迁移创建。
-> 2. **数据文件是整体备份单位**。WAL 模式下同目录还有 `train_mesh_agent.db-wal` /
+> 2. **数据文件是整体备份单位**。WAL 模式下同目录还有 `equivalent_modeling_service.db-wal` /
 >    `-shm`，备份或搬迁要整目录拷，别只拷 `.db` 主文件。
 
 #### 3.1.1 （可选）切到 PostgreSQL 逃生门
@@ -151,16 +151,16 @@ python -m app.db_migration                       # 可选：只跑迁移，不�
 需要外部 PostgreSQL 时，只要设置 `DATABASE_URL`（**前缀必须是 `postgresql://` 或 `postgres://`**）：
 
 ```bash
-export DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/train_mesh_agent'
+export DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/equivalent_modeling_service'
 python -m app.db_migration
 ```
 
 此时业务库需已存在（Agent 只建表、不建库）:
 
 ```bash
-createdb -U postgres train_mesh_agent
+createdb -U postgres equivalent_modeling_service
 # 或
-psql -U postgres -c "CREATE DATABASE train_mesh_agent;"
+psql -U postgres -c "CREATE DATABASE equivalent_modeling_service;"
 ```
 
 > **注意**：容器镜像里**已不装 PostgreSQL 服务端**，逃生门只能连**外部** PG。
@@ -211,7 +211,7 @@ python -m app.main
 
 ```
 INFO [app.db_migration] All tables created successfully.
-INFO [app.main] Starting TrainMesh Agent on 0.0.0.0:5000
+INFO [app.main] Starting equivalent-modeling-service on 0.0.0.0:5000
 ```
 
 启动后浏览器打开 **http://localhost:5000**。
@@ -219,7 +219,7 @@ INFO [app.main] Starting TrainMesh Agent on 0.0.0.0:5000
 验证：
 
 ```bash
-curl http://localhost:5000/api/health    # {"status":"ok","service":"trainmesh-agent"}
+curl http://localhost:5000/api/health    # {"status":"ok","service":"equivalent-modeling-service"}
 curl http://localhost:5000/api           # 端点清单
 ```
 
@@ -235,10 +235,10 @@ curl http://localhost:5000/api           # 端点清单
 ```bash
 curl -s http://localhost:5000/api/health            # Flask
 curl -s http://localhost:9000/health                # MCP
-python -c "import sqlite3,os;print(sorted(r[0] for r in sqlite3.connect(os.getenv('SQLITE_PATH','/home/aicm/db/train_mesh_agent.db')).execute(\"SELECT name FROM sqlite_master WHERE type='table'\")))"   # 数据库（应列出 7 张表）
+python -c "import sqlite3,os;print(sorted(r[0] for r in sqlite3.connect(os.getenv('SQLITE_PATH','/home/aicm/db/equivalent_modeling_service.db')).execute(\"SELECT name FROM sqlite_master WHERE type='table'\")))"   # 数据库（应列出 7 张表）
 ```
 
-（逃生门形态改用 `psql -U postgres -d train_mesh_agent -c '\dt'`。）
+（逃生门形态改用 `psql -U postgres -d equivalent_modeling_service -c '\dt'`。）
 
 期望的 7 张表：`sessions`、`topology_params`、`simulation_params`、`simulation_results`、`comparison_reports`、`conversation_messages`、`model_catalog`。
 
@@ -279,7 +279,7 @@ Get-NetTCPConnection -LocalPort 5000,9000 -State Listen
 | MCP 连不上 | 端口不一致 | 确认 `MCP_SERVER_URL` 与 `AICM_MCP_PORT` 相同（默认均 9000） |
 | 历史列表标题显示「新建任务」 | schema 不完整（缺表/缺列） | 看启动日志的 `[migration]` 行；迁移失败会抛错而非静默继续 |
 | 明明设了 `DATABASE_URL` 却像在用 SQLite（"数据丢了"） | 前缀不是 `postgres://` / `postgresql://`（如写成 `postgresql:/`、`postgres@Data`） | 前缀不对就一律走 SQLite。启动日志的 `(backend=sqlite\|postgres)` 能直接确认真实后端 |
-| 想重置数据库 | —— | 默认后端：停服后删除 `SQLITE_PATH` 指向的文件**及其 `-wal`/`-shm` 伴生文件**，重启 Flask 会自动建表并重新 seed 模型目录；PG 后端：`DROP DATABASE train_mesh_agent;` 后重建 |
+| 想重置数据库 | —— | 默认后端：停服后删除 `SQLITE_PATH` 指向的文件**及其 `-wal`/`-shm` 伴生文件**，重启 Flask 会自动建表并重新 seed 模型目录；PG 后端：`DROP DATABASE equivalent_modeling_service;` 后重建 |
 
 更多排障（含容器内嵌数据库的 7 类故障）见 `docs/使用指南.md` §12。
 
@@ -291,7 +291,7 @@ Get-NetTCPConnection -LocalPort 5000,9000 -State Listen
 （默认后端是 SQLite 单文件，由镜像内的 Python 标准库驱动）。
 
 ```bash
-docker run -d --name train-mesh-agent \
+docker run -d --name equivalent-modeling-service \
   -v /data/aicm/workspace:/home/aicm/workspace \
   -v /data/aicm/db:/home/aicm/db \
   -p 5000:5000 <image>
@@ -304,10 +304,10 @@ docker run -d --name train-mesh-agent \
 需要外部 PostgreSQL 时（逃生门），注入 `DATABASE_URL` 即可，**同一镜像无需重建**：
 
 ```bash
-docker run -d --name train-mesh-agent \
+docker run -d --name equivalent-modeling-service \
   -v /data/aicm/workspace:/home/aicm/workspace \
   -v /data/aicm/db:/home/aicm/db \
-  -e DATABASE_URL='postgresql://user:pw@pg.internal:5432/train_mesh_agent' \
+  -e DATABASE_URL='postgresql://user:pw@pg.internal:5432/equivalent_modeling_service' \
   -p 5000:5000 <image>
 ```
 

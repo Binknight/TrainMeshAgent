@@ -27,7 +27,7 @@
   <!-- Title -->
   <rect x="0" y="0" width="1200" height="52" fill="url(#headerGrad)" rx="8"/>
   <rect x="0" y="30" width="1200" height="22" fill="url(#headerGrad)"/>
-  <text x="600" y="34" text-anchor="middle" fill="#fff" font-size="18" font-weight="bold">TrainMesh Agent — 系统架构图 (Agentic Service Architecture)</text>
+  <text x="600" y="34" text-anchor="middle" fill="#fff" font-size="18" font-weight="bold">equivalent-modeling-service — 系统架构图 (Agentic Service Architecture)</text>
 
   <!-- ==================== LAYER 1: WEB FRONTEND ==================== -->
   <rect x="30" y="72" width="1140" height="110" rx="10" fill="#eef2ff" stroke="#818cf8" stroke-width="1.5" filter="url(#shadow)"/>

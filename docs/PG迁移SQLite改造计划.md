@@ -87,7 +87,7 @@ DATABASE_URL 以 postgres:// 或 postgresql:// 开头  →  PG 后端（逃生�
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `DATABASE_URL` | `""`（空） | 留空 = 用 SQLite。默认值**从 TCP PG 串改为空串**，是本次唯一的行为变更 |
-| `SQLITE_PATH` | `/home/aicm/db/train_mesh_agent.db` | SQLite 数据文件；父目录即挂载点 `/home/aicm/db` |
+| `SQLITE_PATH` | `/home/aicm/db/equivalent_modeling_service.db` | SQLite 数据文件；父目录即挂载点 `/home/aicm/db` |
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000` | `busy_timeout` |
 | `PGDATA` / `PG_SOCKET_DIR` | 保留读取 | **仅用于 PG 后端的报错文案**（提示该去查哪里），不参与任何判定；SQLite 路径完全不读 |
 

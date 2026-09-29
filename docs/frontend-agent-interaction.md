@@ -1,4 +1,4 @@
-# TrainMesh Agent — 前端与 Agent 交互逻辑分析
+# equivalent-modeling-service — 前端与 Agent 交互逻辑分析
 
 ## 一、整体架构
 
@@ -101,7 +101,7 @@ done        → 处理完成
 ### 3.1 System Prompt
 
 ```python
-SYSTEM_PROMPT = """你是 TrainMesh Agent，一个专为 AI 训练组网仿真测试设计的智能助手。
+SYSTEM_PROMPT = """你是 equivalent-modeling-service，一个专为 AI 训练组网仿真测试设计的智能助手。
 
 你的职责：
 1. 帮助测试人员输入原始组网和等效组网的参数（设备类型 A2/A3/A5、DP/TP/PP）

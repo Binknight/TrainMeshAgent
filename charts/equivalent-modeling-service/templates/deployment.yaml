@@ -142,7 +142,7 @@ spec:
             # 仿真任务工作区：每个 task_id 一个子目录，仿真产物写入其 results/
             - mountPath: {{ .Values.workspace.containerPath }}
               name: sim-workspace
-            # 数据库目录（默认 SQLite）：数据文件 train_mesh_agent.db 与 -wal/-shm
+            # 数据库目录（默认 SQLite）：数据文件 equivalent_modeling_service.db 与 -wal/-shm
             # 伴生文件都在此目录内，因此这个挂载点就是数据库的持久化边界。
             - mountPath: {{ .Values.database.containerPath }}
               name: sim-db

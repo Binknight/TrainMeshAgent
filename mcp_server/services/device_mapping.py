@@ -1,4 +1,4 @@
-"""TrainMeshAgent 设备枚举 → AICM ASCEND 设备类型。"""
+"""equivalent-modeling-service 设备枚举 → AICM ASCEND 设备类型。"""
 
 from typing import Literal, Optional, Union
 
@@ -15,7 +15,7 @@ _VALID_ASCEND_DEVICE_TYPES = frozenset(TOPOLOGY_DEVICE_TO_ASCEND.values()) | {
     "ASCEND_910B1",
 }
 
-# TrainMeshAgent / spec 中常见的泛称，需结合 topology 解析
+# equivalent-modeling-service / spec 中常见的泛称，需结合 topology 解析
 _GENERIC_ASCEND_ALIASES = frozenset(
     {
         "ASCEND_910B",

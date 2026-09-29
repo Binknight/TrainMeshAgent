@@ -1,4 +1,4 @@
-"""TrainMesh Agent — main Flask application entry point."""
+"""equivalent-modeling-service — main Flask application entry point."""
 import logging
 import os
 from flask import Flask, jsonify, send_from_directory
@@ -21,7 +21,7 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
-    app.config["SECRET_KEY"] = "trainmesh-agent-secret"
+    app.config["SECRET_KEY"] = "equivalent-modeling-service-secret"
 
     # CORS support
     CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -46,13 +46,13 @@ def create_app() -> Flask:
     # Health check
     @app.route("/api/health")
     def health():
-        return jsonify({"status": "ok", "service": "trainmesh-agent"})
+        return jsonify({"status": "ok", "service": "equivalent-modeling-service"})
 
     # API info
     @app.route("/api")
     def api_info():
         return jsonify({
-            "service": "TrainMesh Agent",
+            "service": "equivalent-modeling-service",
             "version": "0.1.0",
             "endpoints": {
                 "chat_stream": "POST /api/chat/stream  (SSE)",
@@ -82,7 +82,7 @@ def create_app() -> Flask:
 app = create_app()
 
 if __name__ == "__main__":
-    logger.info(f"Starting TrainMesh Agent on {config.FLASK_HOST}:{config.FLASK_PORT}")
+    logger.info(f"Starting equivalent-modeling-service on {config.FLASK_HOST}:{config.FLASK_PORT}")
     app.run(
         host=config.FLASK_HOST,
         port=config.FLASK_PORT,

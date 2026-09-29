@@ -1,4 +1,4 @@
-你好呀！我是 **TrainMesh Agent**，一个专为 AI 训练组网仿真测试设计的智能助手。🚀
+你好呀！我是 **equivalent-modeling-service**，一个专为 AI 训练组网仿真测试设计的智能助手。🚀
 
 以下是我的核心技能：
 

@@ -164,7 +164,7 @@ def _derive_parallel_ranks(global_rank: int, topology: SimulationTaskInput) -> t
     global_rank 在两侧归属不同的流水段，PP 通信量按段分组比较时错配。
 
     注意：不可改为 import app.rank_layout —— 本服务部署在仿真系统侧，
-    是独立交付物，不能反向依赖 TrainMeshAgent 的 app 包。此处为实现唯一副本。
+    是独立交付物，不能反向依赖 equivalent-modeling-service 的 app 包。此处为实现唯一副本。
     """
     tp, dp = max(1, topology.tp_size), max(1, topology.dp_size)
     tp_rank = global_rank % tp

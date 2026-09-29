@@ -1,10 +1,10 @@
 #!/bin/bash
 # ============================================================================
-# TrainMeshAgent 业务镜像打包脚本
+# equivalent-modeling-service 业务镜像打包脚本
 #
 # 产物：deployPackages.<datetime>.tar.gz
 #   ├── Dockerfile                 业务镜像 Dockerfile（FROM python3.10-aicm-base:1.0）
-#   ├── TrainMeshAgent.tgz         app / static / mcp_server / aicm / docker
+#   ├── equivalent-modeling-service.tgz         app / static / mcp_server / aicm / docker
 #   └── chart.tgz                  helm chart（若仓库存在 charts/）
 #
 # 依赖已预置在基础镜像中，业务镜像构建期不联网、不装包。
@@ -47,7 +47,7 @@ fi
 ###   docker/wheels/*  已装进基础镜像，无需重复携带
 ###   docker/base/*    基础镜像 Dockerfile，业务镜像用不到
 ### 用 <dir>/* 而非 <dir>，避免依赖 tar 对「目录本身匹配即跳过整棵子树」的语义差异
-tar zcvf TrainMeshAgent.tgz \
+tar zcvf equivalent-modeling-service.tgz \
     --exclude='docker/wheels/*' \
     --exclude='docker/base/*' \
     --exclude='*/__pycache__' \
@@ -61,7 +61,7 @@ if [ -d charts ]; then
 fi
 
 mkdir deployPackages.${datetime}
-cp Dockerfile TrainMeshAgent*.tgz deployPackages.${datetime}/
+cp Dockerfile equivalent-modeling-service*.tgz deployPackages.${datetime}/
 if [ -f chart.tgz ]; then
     cp chart.tgz deployPackages.${datetime}/
 fi

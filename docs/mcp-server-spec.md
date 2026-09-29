@@ -10,7 +10,7 @@
 
 ## 1. 目标与范围
 
-本文档定义 TrainMeshAgent 对接"仿真系统 MCP Server"的完整需求规格，覆盖：
+本文档定义 equivalent-modeling-service 对接"仿真系统 MCP Server"的完整需求规格，覆盖：
 
 - 接口协议与传输约定
 - 9 个 MCP tools 完整定义（核心 5 + 详情 3 + 脚本下载 1，含完整入参/出参）
@@ -61,7 +61,7 @@
 ### 3.1 仿真任务入参对象 `SimulationTaskInput`
 
 每次调用 `execute_task` 传入一个 `SimulationTaskInput` 对象，作为 `arguments.topology` 的值。  
-该对象由 TrainMeshAgent 在 Workflow Step 1 完成后自动组装，包含**组网参数**、**模型参数**和**运行时参数**三部分。
+该对象由 equivalent-modeling-service 在 Workflow Step 1 完成后自动组装，包含**组网参数**、**模型参数**和**运行时参数**三部分。
 
 #### 顶层结构
 
@@ -282,7 +282,7 @@
 
 ## 4. report_status — 状态查询
 
-**调用场景**：前端通过 WebSocket 订阅后，TrainMeshAgent 每秒轮询，实时推送进度。
+**调用场景**：前端通过 WebSocket 订阅后，equivalent-modeling-service 每秒轮询，实时推送进度。
 
 ### 入参
 
@@ -397,7 +397,7 @@
 
 > 与 `card_detail` 的区别：`card_detail` 返回卡级别的 7 个汇总指标（轻量，列表页用），`get_device_detail` 返回算子级别的完整 Trace（数据量大，按需点开单个 Rank 时用）。
 
-### Rank 布局约定（TrainMeshAgent ↔ 仿真系统）
+### Rank 布局约定（equivalent-modeling-service ↔ 仿真系统）
 
 `global_rank` 采用 **TP-DP-PP** 排布：TP 为最低位（变化最快），其次 DP，PP 为最高位（最外层）。
 
@@ -411,7 +411,7 @@ pp_rank = global_rank // (tp * dp)
 
 | 约束 | 说明 |
 |------|------|
-| 唯一实现 | TrainMeshAgent 侧：`app/rank_layout.py`；前端镜像：`static/topo-renderer.js` 的 `meshRankOf` / `meshDecomposeRank` |
+| 唯一实现 | equivalent-modeling-service 侧：`app/rank_layout.py`；前端镜像：`static/topo-renderer.js` 的 `meshRankOf` / `meshDecomposeRank` |
 | 接口影响 | 所有以 `global_rank` 为入参的 tool（`card_detail`、`get_device_detail`、`get_hbm_detail`、`get_comm_detail`）都按该布局解释 rank |
 | 为何强约束 | PP 通信量按 rank 所属 PP 段分组比较（first / middle / last）；布局不一致会把不同 PP 段的指标混在一起，PP 等效性判定失真 |
 | 已废弃 | 旧布局 TP-PP-DP：`global_rank = dp_rank*(tp*pp) + pp_rank*tp + tp_rank` |
@@ -459,7 +459,7 @@ pp_rank = global_rank // (tp * dp)
        前端追加最后 17 条，渲染完整视图，停止轮询
 ```
 
-轮询间隔由 TrainMeshAgent 侧控制（建议 1~2 秒），`offset` 从 0 开始，每次用上次返回的 `next_offset` 作为下次的 `offset`。与 `sync_logs`（§5）的增量模式语义一致。
+轮询间隔由 equivalent-modeling-service 侧控制（建议 1~2 秒），`offset` 从 0 开始，每次用上次返回的 `next_offset` 作为下次的 `offset`。与 `sync_logs`（§5）的增量模式语义一致。
 
 ### 兼容性
 
@@ -577,7 +577,7 @@ MoE 层（`model_type="sparse"`）的算子建议以 `moe_` 前缀区分于稠�
 
 **调用场景**：`execute_task` 下发后，MCP Server 已在服务端生成对应的 pretrain.sh 训练脚本。前端「等效结果」页的「输出训练脚本」按钮，以及组网参数 / 模型结构参数 / 模型训练参数三张对比卡片，均通过本接口获取脚本文本并解析。
 
-> 脚本由 MCP Server 依据 `execute_task` 传入的 `topology` + `simulation_params` 生成，是组网参数、模型结构参数、训练运行时参数的权威载体。TrainMeshAgent 不再 mock 这些参数，统一从本接口返回的 `script_content` 解析。
+> 脚本由 MCP Server 依据 `execute_task` 传入的 `topology` + `simulation_params` 生成，是组网参数、模型结构参数、训练运行时参数的权威载体。equivalent-modeling-service 不再 mock 这些参数，统一从本接口返回的 `script_content` 解析。
 
 ### 入参
 
@@ -593,11 +593,11 @@ MoE 层（`model_type="sparse"`）的算子建议以 `moe_` 前缀区分于稠�
 | `topology_name` | string | ✅ | 组网名称，`原始组网` / `等效组网`，用于前端标签 |
 | `script_path` | string | ⬜ | 服务端脚本路径，如 `/opt/ascend/script/pretrain_xxxx.sh` |
 | `script_filename` | string | ⬜ | 建议下载文件名，如 `pretrain_orig.sh` / `pretrain_equiv.sh` |
-| `script_content` | string | ✅ | pretrain.sh 完整脚本文本（UTF-8）；TrainMeshAgent 原样作为文件下载，并从中解析下列参数 |
+| `script_content` | string | ✅ | pretrain.sh 完整脚本文本（UTF-8）；equivalent-modeling-service 原样作为文件下载，并从中解析下列参数 |
 
 ### 脚本须包含的可解析字段（解析契约）
 
-TrainMeshAgent 从 `script_content` 解析以下三组参数，分别填充「等效结果」页的三张对比卡片。脚本可以 bash 变量赋值（`KEY=value`）或启动参数（`--key value`）形式暴露，但下述键名须稳定可识别：
+equivalent-modeling-service 从 `script_content` 解析以下三组参数，分别填充「等效结果」页的三张对比卡片。脚本可以 bash 变量赋值（`KEY=value`）或启动参数（`--key value`）形式暴露，但下述键名须稳定可识别：
 
 #### 组网参数（对应「组网参数对比」卡）
 
@@ -609,7 +609,7 @@ TrainMeshAgent 从 `script_content` 解析以下三组参数，分别填充「�
 | `pp` / `PP` | 流水线并行度 | `8` |
 | `ep` / `EP` / `expert-parallel-size` | 专家并行度（MoE 模型） | `8` |
 
-> `total_nodes` = `dp × tp × pp`，由 TrainMeshAgent 推导，无需脚本暴露。
+> `total_nodes` = `dp × tp × pp`，由 equivalent-modeling-service 推导，无需脚本暴露。
 
 #### 模型结构参数（对应「模型结构参数对比」卡）
 
@@ -628,7 +628,7 @@ TrainMeshAgent 从 `script_content` 解析以下三组参数，分别填充「�
 | `has_shared_expert` / `HAS_SHARED_EXPERT` / `shared-expert` | MoE：是否含共享专家 | `true` |
 | `expert_tensor_parallel_size` / `EXPERT_TENSOR_PARALLEL_SIZE` / `expert-tensor-parallel-size` | MoE：专家内部 TP | `1` |
 
-> `d_head` = `d_model / num_heads`、`total_params` 由 TrainMeshAgent 推导（MoE 模型为含专家权重的估算值）。
+> `d_head` = `d_model / num_heads`、`total_params` 由 equivalent-modeling-service 推导（MoE 模型为含专家权重的估算值）。
 >
 > MoE 模型（`model_type="sparse"`）的脚本**必须**暴露上述 MoE 键（至少 `num_experts`、`moe_router_topk`、`moe_layer_freq` 或 `num_moe_layers`、`moe_ffn_hidden_size`、`ep`）；dense 模型可省略。脚本未暴露的字段前端显示 `—`，不阻塞下载。
 >
@@ -649,7 +649,7 @@ TrainMeshAgent 从 `script_content` 解析以下三组参数，分别填充「�
 | `optimizer` / `OPTIMIZER` | 优化器 | `AdamW` |
 | `grad_accum_steps` / `GRAD_ACCUM_STEPS` | 梯度累积步数 | `1` |
 
-> 若脚本未暴露某字段，TrainMeshAgent 在对应卡片显示 `—`，不阻塞下载。
+> 若脚本未暴露某字段，equivalent-modeling-service 在对应卡片显示 `—`，不阻塞下载。
 
 ### 调用时序
 
@@ -660,7 +660,7 @@ execute_task(topology, simulation_params) → task_id
                                           ↓
 get_training_script(task_id) → script_content + 解析三组参数
                                           ↓
-       TrainMeshAgent REST 转发 → 前端文件下载 + 填充三张对比卡
+       equivalent-modeling-service REST 转发 → 前端文件下载 + 填充三张对比卡
 ```
 
 `execute_task` 返回 `task_id` 后即可调用，无需等待仿真 `completed`。
@@ -680,7 +680,7 @@ submitted  →  running  →  completed
 - `completed` 时 `get_result(task_id)` 必须可用
 - `failed` / `error` 时 `report_status.message` 应给出可读原因
 - `progress` 应单调非递减
-- 轮询超时阈值（TrainMeshAgent 侧）：**300 秒**，超时后前端收到 `error` 事件
+- 轮询超时阈值（equivalent-modeling-service 侧）：**300 秒**，超时后前端收到 `error` 事件
 
 ---
 
@@ -702,7 +702,7 @@ submitted  →  running  →  completed
 
 ### 13.2 接口类型归属
 
-#### 类型一：纯 REST API（TrainMeshAgent 内部，无需 MCP）
+#### 类型一：纯 REST API（equivalent-modeling-service 内部，无需 MCP）
 
 | 接口 | 说明 |
 |------|------|
@@ -731,9 +731,9 @@ submitted  →  running  →  completed
 
 #### 类型三：需同时满足（REST 入口 + MCP 数据源）
 
-以下接口当前全为 Mock，上线后需由 MCP Server 提供真实数据，TrainMeshAgent REST 负责转发/格式化给前端：
+以下接口当前全为 Mock，上线后需由 MCP Server 提供真实数据，equivalent-modeling-service REST 负责转发/格式化给前端：
 
-| REST 接口（TrainMeshAgent） | 需要的 MCP 数据 | 入参（TrainMeshAgent → MCP）|
+| REST 接口（equivalent-modeling-service） | 需要的 MCP 数据 | 入参（equivalent-modeling-service → MCP）|
 |----------------------------|----------------|---------------------------|
 | `GET /api/session/<id>/simulation/<side>/<rank>/detail` | 算子 Trace、Timeline | `task_id` + `global_rank` |
 | `GET /api/session/<id>/simulation/<side>/<rank>/hbm-detail` | HBM 分项占用 | `task_id` + `global_rank` |
@@ -744,7 +744,7 @@ submitted  →  running  →  completed
 | WebSocket `/ws/simulation/<id>` | `report_status` + `sync_logs` + `get_result` | `task_id` 列表 |
 | `GET /api/session/<id>/training-script/<side>` | 训练脚本文本 + 组网/模型/训练参数（解析自脚本） | `task_id`（按 side 取 original/equivalent） |
 
-> 以下三个 tool 已正式纳入规格，完整定义见 §8 `get_device_detail`、§9 `get_hbm_detail`、§10 `get_comm_detail`。若仿真系统不方便新增独立 Tool，也可将 §8~§10 的数据扩展到 `card_detail` 的每个 card 对象中，TrainMeshAgent 侧按需取用。
+> 以下三个 tool 已正式纳入规格，完整定义见 §8 `get_device_detail`、§9 `get_hbm_detail`、§10 `get_comm_detail`。若仿真系统不方便新增独立 Tool，也可将 §8~§10 的数据扩展到 `card_detail` 的每个 card 对象中，equivalent-modeling-service 侧按需取用。
 
 ---
 
@@ -793,7 +793,7 @@ submitted  →  running  →  completed
 
 **脚本下载（M8/M9 解 mock）**
 
-- [ ] `get_training_script`（§11）返回 `script_content`，TrainMeshAgent 可作文件下载
+- [ ] `get_training_script`（§11）返回 `script_content`，equivalent-modeling-service 可作文件下载
 - [ ] 从脚本解析出的组网/模型/训练参数可填充三张对比卡，值与 `execute_task` 入参一致
 
 **MoE 模型适配（§3.1 / §7 / §8 / §11）**
