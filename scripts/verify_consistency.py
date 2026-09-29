@@ -282,6 +282,23 @@ def main() -> int:
     else:
         print("    OK: 后端前缀判定两处实现一致（dbapi / check_db）")
 
+    # ── 6c. 直连校验脚本必须显式声明被测后端 ──
+    # `_verify_schema(cur, backend=None)` 的默认是**按进程 DATABASE_URL 侦测**，而不是
+    # 「这个 cursor 连的是什么」。pg_real_check.py 走 ADMIN_DSN 直连、sqlite_real_check.py
+    # 走 SQLITE_PATH 直连，两者都与 DATABASE_URL 无关 —— 一旦漏传 backend，就会拿另一种
+    # 方言的取数语句去查连接，抛方言无关的报错，且**只在特定环境变量组合下才暴露**。
+    # 已经因此踩过一次（pg_real_check 的硬校验永远跑不通），故把调用形态钉死。
+    for script in ("scripts/pg_real_check.py", "scripts/sqlite_real_check.py"):
+        text = read(script)
+        bare = re.findall(r"_verify_schema\(\s*cur\s*\)", text)
+        if bare:
+            errors.append(
+                f"{script} 有 {len(bare)} 处 `_verify_schema(cur)` 未显式传 backend —— "
+                "会按进程 DATABASE_URL 猜后端，与直连的连接无关"
+            )
+        else:
+            print(f"    OK: {script} 的 _verify_schema 调用均显式声明后端")
+
     # ── 7. 关键文件存在性 ──
     for rel in (
         "docker/check_db.py",

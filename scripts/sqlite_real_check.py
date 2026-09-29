@@ -87,12 +87,15 @@ def check_schema() -> None:
 
     with get_db() as conn:
         with conn.cursor() as cur:
-            missing = _verify_schema(cur)
+            # 显式传 "sqlite"：本脚本按 SQLITE_PATH 直连被测库，判定依据必须是
+            # 「这个连接是什么」，而不是进程的 DATABASE_URL（虽已在上方 pop，但显式
+            # 传参才能让脚本在 DATABASE_URL 指向 PG 的环境里也不会走错分支）。
+            missing = _verify_schema(cur, "sqlite")
             check(not missing, "硬校验 _verify_schema 通过（7 表 + 关键列）", f"硬校验报缺失: {missing}")
 
             # 负向：删一张核心表，校验必须发现
             cur.execute("DROP TABLE comparison_reports")
-            missing2 = _verify_schema(cur)
+            missing2 = _verify_schema(cur, "sqlite")
             check(
                 any("comparison_reports" in m for m in missing2),
                 f"负向测试：删表后正确报出 -> {missing2}",

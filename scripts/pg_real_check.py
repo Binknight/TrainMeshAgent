@@ -96,9 +96,15 @@ def main() -> int:
             if fatal2:
                 failures += [f"幂等重放失败: {f}" for f in fatal2]
 
-            # 收尾硬校验
+            # 收尾硬校验。
+            # ⚠️ 必须显式传 backend="postgres"：本脚本走的是 ADMIN_DSN 直连（psycopg2），
+            # 与被测进程的 DATABASE_URL 无关。而 _verify_schema 的 backend 省略时会按
+            # DATABASE_URL 侦测 —— 若环境里 DATABASE_URL 为空（默认即 SQLite），它就会用
+            # SQLite 的取数方式（`SELECT name FROM sqlite_master`）去查一个 PG 连接，
+            # 直接抛 UndefinedTable，导致这条"逃生门未破"的验收脚本永远跑不通。
+            # 判定依据只能是「这个连接是什么」，不能是「进程配置是什么」。
             with conn.cursor() as cur:
-                missing = _verify_schema(cur)
+                missing = _verify_schema(cur, "postgres")
             if missing:
                 failures.append(f"硬校验报缺失: {missing}")
             else:
@@ -108,7 +114,7 @@ def main() -> int:
             conn.autocommit = True
             with conn.cursor() as cur:
                 cur.execute("DROP TABLE comparison_reports CASCADE")
-                missing2 = _verify_schema(cur)
+                missing2 = _verify_schema(cur, "postgres")
             if any("comparison_reports" in m for m in missing2):
                 log(f"负向测试: 删除 comparison_reports 后校验正确报出 -> {missing2}")
             else:

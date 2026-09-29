@@ -89,19 +89,25 @@ DATABASE_URL 以 postgres:// 或 postgresql:// 开头  →  PG 后端（逃生�
 | `DATABASE_URL` | `""`（空） | 留空 = 用 SQLite。默认值**从 TCP PG 串改为空串**，是本次唯一的行为变更 |
 | `SQLITE_PATH` | `/home/aicm/db/train_mesh_agent.db` | SQLite 数据文件；父目录即挂载点 `/home/aicm/db` |
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000` | `busy_timeout` |
-| `PGDATA` / `PG_SOCKET_DIR` | 保留读取 | 仅 PG 后端与版本守卫使用；SQLite 路径忽略 |
+| `PGDATA` / `PG_SOCKET_DIR` | 保留读取 | **仅用于 PG 后端的报错文案**（提示该去查哪里），不参与任何判定；SQLite 路径完全不读 |
 
 ### 4.2 SQL 方言抽象：把 `%s` 留在原地
 
-不重写 26 处 SQL 的参数风格（那是纯噪音改动、且极易改错）。在 `app/dbapi.py` 提供薄适配层：
+不重写 26 处 SQL 的参数风格（那是纯噪音改动、且极易改错）。在 `app/dbapi.py` 提供薄适配层
+（**实际实现见 11.2**，下面是开工时的设想，类/方法名以实际代码为准）：
 
 ```python
-class _Cursor:
+class _Cursor:                           # 实际类名为 DBCursor（app/dbapi.py:212）
     """psycopg2 cursor 与 sqlite3 cursor 的共同外观。"""
     def execute(self, sql, params=None):   # sqlite 后端下把 %s 逐字替换为 ?
     def executemany(self, sql, seq):       # 同上
     def fetchone/fetchall/description/rowcount/close
 ```
+
+> 注：方括号两项（26 处调用点）是**改造前**的统计口径，含注释/文档串中的出现；
+> 按 AST 精确统计（`scripts/_audit_callsites.py`）实际为 **24 处**，其中
+> `app/dao/__init__.py` **23 处**（该数字准确）、`app/db_migration.py` 1 处。
+> 调用点总数不属于本次改造的断言对象，无需强求一致。
 
 语义差异集中在一处处理：
 
@@ -120,6 +126,9 @@ class _Cursor:
 ### 4.3 类型映射与返回值契约（最容易出错的地方）
 
 **必须保持对外 JSON 形态不变**，否则前端静默错乱：
+
+> ⚠️ 下表的「处理」列是**开工时的设想**，其中时间戳一行**未被采用** —— 最终没有注册
+> `detect_types`/converter，改为 DAO 出口统一归一（理由见 11.2）。布尔与 UUID 两行按计划落地。
 
 | 列 | PG 读回 | SQLite 读回 | 处理 |
 |----|--------|------------|------|
@@ -171,11 +180,13 @@ PG 分支的 `SCHEMA_SQL` 与 SQLite 分支的 DDL 是**两份手写 DDL**，天
 
 | 文件 | 改动 |
 |------|------|
-| `app/dbapi.py` | **新增**：占位符/`NOW()`/`EXCLUDED` 转换、`_Cursor` 外观、`_json_in/_json_out`、`bool` 归一 |
+| `app/dbapi.py` | **新增**：占位符/`NOW()`/`EXCLUDED` 转换、`DBCursor` 外观、`normalize_row`/`to_bool` 归一 |
 | `app/db.py` | 内部改走 `dbapi`；暴露 `backend()`；PG 分支行为逐字不变 |
-| `scripts/verify_static.py` | 补「占位符转换不触碰字符串字面量」的单测 |
+| `scripts/verify_static.py` | 补「占位符转换不触碰字符串字面量」的单测 → **未落地**，说明见 11.4 |
 
 **验收**：existing PG 环境（本机 PG 18）跑通全部 DAO 路径；`python scripts/pg_real_check.py` 仍全绿。
+→ **未达成**：本机无 PG，该验收未执行；且审计发现脚本本身有一处使该验收永远无法通过的错误
+（见 11.5）。
 
 ### Phase 1 — DDL 双分支（验收：`sqlite_real_check.py` 正负向）
 
@@ -326,7 +337,7 @@ python tests/test_moe_agent_plumbing.py / test_check_workspace.py
 
 | 项 | 结果 |
 |----|------|
-| Phase 0 抽象层（`app/dbapi.py`） | 完成。`translate()` 只改写字符串字面量之外的 `%s` / `NOW()` / `EXCLUDED` |
+| Phase 0 抽象层（`app/dbapi.py`） | 完成。`translate()` 只改写字符串字面量之外的 `%s` / `NOW()` / `EXCLUDED`。**但计划中该项的验收标准（在既有 PG 上跑通 DAO）未执行**，见 11.5 |
 | Phase 1 双分支 DDL | 完成。`SCHEMA_SQL`（PG 43 条，原样保留） + `SCHEMA_SQLITE_SQL`（13 条：7 建表 + 6 建索引） |
 | Phase 2 DAO 全路径 | 完成。`scripts/sqlite_real_check.py` 覆盖全 DAO 往返 |
 | Phase 3 容器与部署 | 完成。PG 服务端、`wait_for_db.py` 已删除（非"退化保留"） |
@@ -354,9 +365,11 @@ python tests/test_moe_agent_plumbing.py / test_check_workspace.py
 
 ### 11.3 实施中新发现、计划里没预见的坑
 
-1. **`psycopg2` 缺失时 PG 分支的崩溃点很晚**：`import psycopg2` 在模块顶层，SQLite 路径已验证
-   完全不依赖它（把 import 屏蔽后 DAO 仍全绿）。但反过来，PG 逃生门在**基础镜像里
-   `autoremove` 之后**是否仍能 import，只能在构建期断言（已在 `docker/base/Dockerfile` 加了自检）。
+1. **`psycopg2` 是惰性 import，SQLite 路径确实零 PG 依赖**（§11.3 原文写"在模块顶层"，
+   与代码不符，已更正）：`import psycopg2` 位于 `app/db.py` 的 `_make_pool()` 内部，
+   只有 PG 分支才会执行。审计中用 import hook 真实屏蔽 psycopg2 后跑完整 DAO 往返，
+   `sys.modules` 中无 psycopg2 且读写正常（见 11.5）。但反过来，PG 逃生门在**基础镜像里
+   `autoremove` 之后**是否仍能 import，只能在构建期断言（已在 `docker/base/Dockerfile` 加自检）。
 2. **Windows 控制台 cp1252 会把"校验失败"伪装成编码崩溃**：`init_db()` 的中文日志在
    cp1252 控制台下抛 `UnicodeEncodeError`，而且发生在**建表成功之后** —— 极易被误判成迁移本身出错。
    已在 `app/dbapi.ensure_utf8_console()`（`app/db.py` import 时调用）与
@@ -377,3 +390,57 @@ python tests/test_moe_agent_plumbing.py / test_check_workspace.py
 | 镜像构建与容器启动 | 本机无 docker，Dockerfile / base 镜像 / entrypoint 的改动**只经过静态校验**，未实际构建运行 |
 | helm 渲染 | 本机无 helm，`charts/` 改动只经过 `scripts/render_chart.py` 的近似渲染校验 |
 | 存量数据搬运 | 按决策不做（见第 8 节） |
+
+### 11.5 独立审计的结果（对本文档与实现逐条核实）
+
+对本文档的每条声明做了一次**对照代码的实证审计**，而不是复述结论。审计脚本
+（一次性，已删除）核对了 13 项，结果如下。
+
+**已核实为真（含直接跑代码验证的行为）：**
+
+| 声明 | 核实方式 | 结果 |
+|------|---------|------|
+| 首次建表 7 张、与 `REQUIRED_TABLES` 一致 | 真实 `init_db()` 后查 `sqlite_master` | ✅ |
+| `init_db()` 重放幂等 | 连跑两次，表集合与 `model_catalog` 行数不变 | ✅（38 条恒定） |
+| seed 数量 14+12+5+7 | 打印值与 `SUM(model_catalog)=38` 相符 | ✅ |
+| **D1：7 表 / 108 列两套逐一致** | 用 `verify_static` 的解析器**复算**，非读断言输出 | ✅ 108 |
+| SQLite 路径零 psycopg2 依赖 | import hook 真实屏蔽 psycopg2，跑 DAO 往返 | ✅ |
+| `is_simulated` 出口是 `bool` 而非 0/1 | 实际读回断言类型 | ✅ `bool=True` |
+| `created_at` 出口可 `datetime.fromisoformat` 解析 | 实际读回断言 | ✅ |
+| `translate()` 只在字面量之外改写 | 13 条对抗性用例 + 幂等性检查 | ✅（1 处边界见下） |
+| 后端前缀判定两处实现一致 | 10 条边界矩阵（大小写/空白/单斜杠/简写） | ✅ |
+
+**关于翻译器的一处边界（不影响本仓库，但需记录）：** `_LITERAL_RE` 只按 SQL 标准的
+`''` 转义处理单引号，**不把反斜杠视为转义符**。因此 `'a\'s %s'` 这种写法下 `%s` 会被
+误替换。这在本仓库不可达（全仓库无任何反斜杠转义引号的 SQL，已 grep 确认），且该写法
+本身也不是标准 SQL —— 但若将来有人在 SQL 字面量里写反斜杠转义引号，需先修这个状态机。
+
+### 11.6 审计中发现的逃生门缺陷（已修复）
+
+**`scripts/pg_real_check.py` 的硬校验永远无法通过** —— 这条恰好是"逃生门未被破坏"的
+唯一验收脚本，属于本次改造最要紧的验证工具，却带着一个自伤 bug：
+
+- `_verify_schema(cur, backend=None)` 的 `backend` 省略时，按**进程的 `DATABASE_URL`** 侦测，
+  而不是"这个 cursor 连的是什么"。
+- 该脚本走 `ADMIN_DSN` **直连**被测 PG，与被测进程的 `DATABASE_URL` 无关。
+- 按文档给出的用法（`ADMIN_DSN=... python scripts/pg_real_check.py`）而不额外设
+  `DATABASE_URL` 时，侦测结果是 `sqlite`，于是它会用 SQLite 的取数语句
+  （`SELECT name FROM sqlite_master`）去查一个 psycopg2 连接 → 抛
+  `psycopg2.errors.UndefinedTable: relation "sqlite_master" does not exist`。
+- 后果：**从改造完成起，这条验收就一直没跑过**（本机无 PG，脚本 SKIP），
+  所以缺陷没有被暴露 —— 一旦真的在验收环境补跑，硬校验与负向测试（两处调用）都会失败。
+
+修复：
+
+1. `pg_real_check.py` 的两处调用改为 `_verify_schema(cur, "postgres")`；
+   `sqlite_real_check.py` 同样显式传 `"sqlite"`（原先只在靠上方 `pop DATABASE_URL` 才成立）。
+2. `_verify_schema` 的 docstring 写清"默认值按进程配置、直连别的库时必须显式传"。
+3. `verify_consistency.py` 增加断言：这两个直连脚本中**不允许出现裸 `_verify_schema(cur)`**，
+   把这类"只在特定环境变量组合下才暴露"的错误钉死。
+
+> **教训**：判定依据必须是"对象本身是什么"，不能是"进程配置说是什么"。
+> 双后端下任何依赖全局配置来推断连接类型的地方，都值得怀疑一遍。
+>
+> 修复后的新断言已做过**负向测试**：人为把 `pg_real_check.py` 改回裸调用，
+> `verify_consistency.py` 立刻报出 2 处违规并 exit 1，改回后恢复 exit 0 ——
+> 即该断言确实会拦，而不是一条永远为真的空话。

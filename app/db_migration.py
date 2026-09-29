@@ -498,8 +498,11 @@ def _read_columns(cur, backend: str) -> set[tuple[str, str]]:
 def _verify_schema(cur, backend: str | None = None) -> list[str]:
     """返回缺失项描述列表；空列表表示校验通过。
 
-    `backend` 可省略（默认按 `DATABASE_URL` 侦测）—— `scripts/pg_real_check.py`
-    与 `scripts/sqlite_real_check.py` 都以 `_verify_schema(cur)` 的形式调用它。
+    ⚠️ `backend` 省略时会按**进程的 `DATABASE_URL`** 侦测，而不是「这个 cursor 连的是什么」。
+    两者在正常启动路径上一致（迁移与连接同源），但**直连别的库做校验时必须显式传入** ——
+    否则会拿 SQLite 的取数方式（`sqlite_master`）去查 PG 连接（或反之），抛方言无关的
+    报错。`scripts/pg_real_check.py` 走 ADMIN_DSN 直连，因此它显式传 `"postgres"`。
+    仅当 cursor 就来自当前进程配置的那个后端时才可省略。
     """
     if backend is None:
         backend = _active_backend()
