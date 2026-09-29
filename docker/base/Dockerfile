@@ -135,15 +135,22 @@ RUN set -ex && \
     python -c "import flask, flask_cors, flask_sock, openai, pydantic, psycopg2, requests, yaml, fastapi, uvicorn, pydantic_settings, numpy, pandas, pytz, tzdata, dateutil, six; print('[base] python deps OK')" && \
     \
     # SQLite 自检：标准库自带，无需 apt 包。断言 sqlite3 可用、且本机 sqlite 版本
-    # 支持 UPSERT 的 `excluded` 伪表（3.24+）与 `RETURNING` 之外的必需特性。
-    # 这里同时断言 **镜像里不存在 PostgreSQL 服务端**：旧镜像残留会让「数据到底
-    # 存在哪」变得难以判断（内嵌 PG 与 SQLite 两种数据目录混放）。
+    # 支持 UPSERT 的 `excluded` 伪表（3.24+）。
+    # ⚠️ 一条 execute() 只能跑一条语句 —— 多条语句合在一个字符串里会抛
+    # ProgrammingError: You can only execute one statement at a time（曾因此让构建失败）。
+    # 另：脚本整体已在 shell 的 "..." 内，故用 chr(120) 代替字面量 'x'，少一层转义。
+    # 输出刻意只用 ASCII：容器内 stdout 编码不保证是 UTF-8，中文 print 会出现乱码
+    # （本机验证时已复现）。自检的读者是构建日志，用英文更稳。
     python -c "import sqlite3; v=sqlite3.sqlite_version_info; assert v >= (3, 24, 0), v; \
 c=sqlite3.connect(':memory:'); c.execute('CREATE TABLE t(a)'); \
 c.execute('INSERT INTO t VALUES (1) ON CONFLICT DO NOTHING'); \
-c.execute('CREATE TABLE u(a TEXT PRIMARY KEY, b INT); INSERT INTO u VALUES (\'x\',1) \
-ON CONFLICT (a) DO UPDATE SET b=excluded.b'); c.close(); \
-print('[base] sqlite3 OK', sqlite3.sqlite_version)" && \
+c.execute('CREATE TABLE u(a TEXT PRIMARY KEY, b INT)'); \
+c.execute('INSERT INTO u VALUES (?,1) ON CONFLICT (a) DO UPDATE SET b=excluded.b', (chr(120),)); \
+c.execute('INSERT INTO u VALUES (?,2) ON CONFLICT (a) DO UPDATE SET b=excluded.b', (chr(120),)); \
+row=c.execute('SELECT b FROM u').fetchone(); assert row[0]==2, row; \
+c.close(); print('[base] sqlite3 OK', sqlite3.sqlite_version, '- upsert/excluded works')" && \
+    # 这里同时断言 **镜像里不存在 PostgreSQL 服务端**：旧镜像残留会让「数据到底
+    # 存在哪」变得难以判断（内嵌 PG 与 SQLite 两种数据目录混放）。
     test ! -e /usr/lib/postgresql/14/bin/postgres && \
     test -f /usr/lib/x86_64-linux-gnu/libpq.so.5 && \
     echo '[base] no embedded postgresql server; libpq5 kept for pg escape hatch' && \
