@@ -3,7 +3,7 @@
 # equivalent-modeling-service 业务镜像打包脚本
 #
 # 产物：deployPackages.<datetime>.tar.gz
-#   ├── Dockerfile                 业务镜像 Dockerfile（FROM python3.10-aicm-base:1.0）
+#   ├── Dockerfile                 业务镜像 Dockerfile（FROM python3.10-aicm-base:1.2）
 #   ├── equivalent-modeling-service.tgz         app / static / mcp_server / aicm / docker
 #   └── chart.tgz                  helm chart（若仓库存在 charts/）
 #
