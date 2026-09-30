@@ -24,12 +24,12 @@ AI 训练组网仿真测试 Agent：以 Web 服务形式对接测试人员，用
 ```
 浏览器 ──> Flask :5000 ──HTTP/JSON-RPC──> MCP 仿真 Server :9000 ──拉起子进程──> aicm/run.py
                 │                                    │
-                │                                    └──写产物──> /home/aicm/workspace（挂载）
+                │                                    └──写产物──> /home/data/workspace（挂载）
                 └──sqlite3（默认）/ psycopg2（PG 逃生门）
-                       └──数据目录──> /home/aicm/db（挂载）或本地 SQLITE_PATH
+                       └──数据目录──> /home/data/db（挂载）或本地 SQLITE_PATH
 
 本地开发：数据库默认是仓库外的单文件，可用 SQLITE_PATH 指到任意可写位置；
-容器内：数据库文件与 workspace 两个挂载点都在 /home/aicm 下。
+容器内：数据库文件与 workspace 两个挂载点都在 /home/data 下（仿真工具在 /home/aicm）。
 ```
 
 > **数据库是双后端的**：默认走 SQLite；把 `DATABASE_URL` 设成 `postgresql://...`
@@ -92,7 +92,7 @@ cp .env.example .env
 | `OPENAI_SSL_VERIFY` | `true` | 内网证书不全时设 `false` |
 | `EXTERNAL_PROXY` | *(空)* | 出网代理，如 `http://proxy.company.com:8080` |
 | `DATABASE_URL` | *(空)* | **留空 = 用内置 SQLite**；填 `postgresql://...` 才切到外部 PostgreSQL |
-| `SQLITE_PATH` | `/home/aicm/db/equivalent_modeling_service.db` | SQLite 数据文件路径（本地开发建议指到仓库外或 `.tmp/`） |
+| `SQLITE_PATH` | `/home/data/db/equivalent_modeling_service.db` | SQLite 数据文件路径（本地开发建议指到仓库外或 `.tmp/`） |
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000` | 写锁等待上限（毫秒）；WAL 下单写者，靠等待而非报错 |
 | `SQLITE_SYNCHRONOUS` | `NORMAL` | `OFF` / `NORMAL` / `FULL` / `EXTRA`；WAL 下 `NORMAL` 只在 checkpoint 时 fsync |
 | `MCP_SERVER_URL` | `http://localhost:9000` | Flask 侧要连的 MCP 地址 |
@@ -110,7 +110,7 @@ MCP Server 侧变量以 `AICM_MCP_` 为前缀（见 `mcp_server/config.py`），
 |------|--------|------|
 | `AICM_MCP_HOST` | `0.0.0.0` | 监听地址 |
 | `AICM_MCP_PORT` | `9000` | 监听端口（须与 `MCP_SERVER_URL` 一致） |
-| `AICM_MCP_SIM_TOOL_HOME` | `<仓库根>/aicm` | 仿真工具目录 |
+| `AICM_MCP_SIM_TOOL_HOME` | 本地 `<仓库根>/aicm`；容器内钉为 `/home/aicm` | 仿真工具目录（容器内数据挂载在 `/home/data`，与工具目录分置，避免整目录挂载遮掉工具） |
 | `AICM_MCP_WORKSPACE_ROOT` | `<仓库根>/workspace` | 仿真任务产物目录 |
 | `AICM_MCP_CONDA_ENV` | *(空)* | 拉起 `run.py` 用的 conda 环境名；默认为空 = 用当前 Python 解释器 |
 | `AICM_MCP_DRY_RUN` | `false` | `true` 时只建任务目录与脚本，不拉起子进程 |
@@ -235,7 +235,7 @@ curl http://localhost:5000/api           # 端点清单
 ```bash
 curl -s http://localhost:5000/api/health            # Flask
 curl -s http://localhost:9000/health                # MCP
-python -c "import sqlite3,os;print(sorted(r[0] for r in sqlite3.connect(os.getenv('SQLITE_PATH','/home/aicm/db/equivalent_modeling_service.db')).execute(\"SELECT name FROM sqlite_master WHERE type='table'\")))"   # 数据库（应列出 7 张表）
+python -c "import sqlite3,os;print(sorted(r[0] for r in sqlite3.connect(os.getenv('SQLITE_PATH','/home/data/db/equivalent_modeling_service.db')).execute(\"SELECT name FROM sqlite_master WHERE type='table'\")))"   # 数据库（应列出 7 张表）
 ```
 
 （逃生门形态改用 `psql -U postgres -d equivalent_modeling_service -c '\dt'`。）
@@ -292,21 +292,23 @@ Get-NetTCPConnection -LocalPort 5000,9000 -State Listen
 
 ```bash
 docker run -d --name equivalent-modeling-service \
-  -v /data/aicm/workspace:/home/aicm/workspace \
-  -v /data/aicm/db:/home/aicm/db \
+  -v /data/aicm/workspace:/home/data/workspace \
+  -v /data/aicm/db:/home/data/db \
   -p 5000:5000 <image>
 ```
 
-容器内两个挂载点**统一放在 `/home/aicm` 下**（`workspace` 与 `db`），节点侧各自独立目录。
+容器内两个挂载点**统一放在 `/home/data` 下**（`workspace` 与 `db`），节点侧各自独立目录。
 两个挂载**都是必需的**，缺失时容器明确报错退出 —— 这是有意的：数据库文件一旦静默落进
 镜像层，容器重建就会丢掉全部会话历史。
+仿真工具本体（`run.py` 等）在镜像内 `/home/aicm`，**不**与数据挂载树同名 ——
+数据挂载与工具目录分置后，整目录挂载不会再遮掉工具代码（工具始终留在镜像层）。
 
 需要外部 PostgreSQL 时（逃生门），注入 `DATABASE_URL` 即可，**同一镜像无需重建**：
 
 ```bash
 docker run -d --name equivalent-modeling-service \
-  -v /data/aicm/workspace:/home/aicm/workspace \
-  -v /data/aicm/db:/home/aicm/db \
+  -v /data/aicm/workspace:/home/data/workspace \
+  -v /data/aicm/db:/home/data/db \
   -e DATABASE_URL='postgresql://user:pw@pg.internal:5432/equivalent_modeling_service' \
   -p 5000:5000 <image>
 ```

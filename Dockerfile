@@ -12,19 +12,20 @@
 #   /home/aicm         仿真工具（run.py / examples/time_args.json / workload_generator/）
 #   /home/docker       entrypoint.sh + check_workspace.py + check_db.py + checkpoint_db.py
 #
-# 路径契约：mcp_server/config.py 以 parents[1] 推导默认值，而代码被解压到 /home，
-# 故 sim_tool_home=/home/aicm。工作区与数据库则**都放在 /home/aicm 下**，二者
-# 统一挂载（见下方 mkdir 与 entrypoint 自检）：
-#   /home/aicm/workspace   仿真任务产物（节点侧 /data/aicm/workspace）
-#   /home/aicm/db          SQLite 数据库目录（节点侧 /data/aicm/db）
-# 容器内父目录 /home/aicm 不被整体挂载，只是两个子目录各自挂载，
-# 因此仿真工具本体（/home/aicm/run.py 等）仍在镜像层里，不受挂载影响。
+# 路径契约：mcp_server/config.py 以 parents[1] 推导默认值（仓库根/aicm，本地开发用），
+# 镜像 ENV 则显式钉住 AICM_MCP_SIM_TOOL_HOME=/home/aicm。
+# 仿真工具保持 /home/aicm（镜像层）；数据挂载树**刻意移到 /home/data 下**：
+#   /home/data/workspace   仿真任务产物（节点侧 /data/aicm/workspace）
+#   /home/data/db          SQLite 数据库目录（节点侧 /data/aicm/db）
+# 历史坑：数据挂载曾放在 /home/aicm 下，与工具目录同名 —— 整目录挂载 /home/aicm 时
+# 会把镜像层里的工具代码遮掉（工具被迫落到宿主机）。工具目录与挂载路径分置后，
+# /home/aicm 不再被任何挂载覆盖。
 # 下面用 ENV 显式钉住，不依赖隐式推导。
 #
 # ── 数据库：默认 SQLite（本次改造）──
 # 原先是「内嵌 PostgreSQL 14 服务端 + Unix socket」，现在是一**个文件**：
-#   /home/aicm/db                  挂载点：部署侧必须把宿主机目录挂到这里
-#   /home/aicm/db/equivalent_modeling_service.db    主库（WAL 模式下另有 -wal / -shm 伴生文件）
+#   /home/data/db                  挂载点：部署侧必须把宿主机目录挂到这里
+#   /home/data/db/equivalent_modeling_service.db    主库（WAL 模式下另有 -wal / -shm 伴生文件）
 # 因此镜像里不再需要 PGDATA / PG_SOCKET_DIR / PG_BIN，也没有 initdb、版本守卫、
 # 就绪探测与 socket 目录。数据库目录自检仍**不可豁免**（workspace 有 ALLOW_LOCAL
 # 开关），因为数据库静默落在镜像层里意味着容器重建即丢全部会话历史。
@@ -39,26 +40,29 @@ COPY equivalent-modeling-service*.tgz app.tgz
 EXPOSE 5000 9000
 ENV LANG C.UTF-8
 
-# 解压应用包
+# 解压应用包（aicm/ 工具目录保持 /home/aicm 不变；数据挂载点已移出到 /home/data，
+# 因此工具目录不再与任何挂载路径同名，也不会被整目录挂载遮掉）。
 RUN tar -xzf app.tgz && rm app.tgz
 
-# 仿真任务工作区与数据库目录，两者都在 /home/aicm 下：
+# 数据挂载点（workspace/db）**刻意不放在 /home/aicm 下**：/home/aicm 是仿真工具目录，
+# 若数据挂载树与工具目录同名，整目录挂载会把镜像层里的工具代码遮掉（工具被迫落到
+# 宿主机）。故数据统一放到 /home/data 下：
+#   /home/data/workspace  仿真任务产物（节点侧 /data/aicm/workspace）
+#   /home/data/db         SQLite 数据文件目录（节点侧 /data/aicm/db）
 # 工作区（每个 task_id 一个子目录，仿真产物写入其 results/）与数据库目录都必须由
-# 部署侧把宿主机目录挂到这个路径（k8s hostPath / docker -v），否则容器重建、镜像
+# 部署侧把宿主机目录挂到这里（k8s hostPath / docker -v），否则容器重建、镜像
 # 升级会连产物与**全部会话历史**一起丢掉。
 # 这里只预建挂载点并给出正确属主（容器以 uid 1000 运行），预建的另一个作用是
 # 让 entrypoint 自检能明确报出「未挂载」，而不是静默写进镜像层。
-#
-# 顺序有讲究：必须在 `tar -xzf` **之后**创建，否则 tar 展开 aicm/ 时会重建该目录。
 #   - workspace 预置 0755：容器内 uid 1000 需在其下建 task 子目录；
 #   - db        预置 0755：SQLite 需在该目录内创建主库与 -wal / -shm 伴生文件。
 #     （改造前这里是 PGDATA 的 0700 —— 那是 PostgreSQL 对数据目录的特殊敏感点，
 #      SQLite 无此要求，因此不再收窄权限。）
-RUN mkdir -p /home/aicm/workspace \
-    && chown 1000:1000 /home/aicm/workspace \
+RUN mkdir -p /home/data/workspace \
+    && chown 1000:1000 /home/data/workspace \
     && chmod +x /home/docker/entrypoint.sh \
-    && mkdir -p /home/aicm/db \
-    && chown 1000:1000 /home/aicm/db
+    && mkdir -p /home/data/db \
+    && chown 1000:1000 /home/data/db
 
 # 设置权限
 RUN chown 1000:1000 /home/ -R
@@ -79,10 +83,10 @@ ENV PYTHONPATH=/home \
     AICM_MCP_HOST=0.0.0.0 \
     AICM_MCP_PORT=9000 \
     AICM_MCP_SIM_TOOL_HOME=/home/aicm \
-    AICM_MCP_WORKSPACE_ROOT=/home/aicm/workspace \
+    AICM_MCP_WORKSPACE_ROOT=/home/data/workspace \
     AICM_MCP_CONDA_ENV= \
     MCP_SERVER_URL=http://127.0.0.1:9000 \
-    SQLITE_PATH=/home/aicm/db/equivalent_modeling_service.db \
+    SQLITE_PATH=/home/data/db/equivalent_modeling_service.db \
     DATABASE_URL=
 
 # 健康检查：两个进程都要活着。用 python 而非 curl。

@@ -24,9 +24,9 @@ class Config:
     # 但依赖旧默认值的部署需要显式设置 DATABASE_URL（见迁移说明）。
     DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-    # SQLite 数据文件（默认后端）。父目录即部署侧的挂载点 /home/aicm/db。
+    # SQLite 数据文件（默认后端）。父目录即部署侧的挂载点 /home/data/db。
     # WAL 模式下同目录还会出现 -wal / -shm 两个伴生文件，备份需整目录拷贝。
-    SQLITE_PATH = os.getenv("SQLITE_PATH", "/home/aicm/db/equivalent_modeling_service.db")
+    SQLITE_PATH = os.getenv("SQLITE_PATH", "/home/data/db/equivalent_modeling_service.db")
 
     # SQLite 写锁等待上限（毫秒）。WAL 是库级单写者，并发写靠这个等待而非立刻报错。
     SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000"))

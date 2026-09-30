@@ -111,7 +111,7 @@ def main() -> int:
     sqlite_chart = values["config"].get("sqlitePath", "")
     mount_path = values["database"]["containerPath"]
 
-    expected_sqlite = "/home/aicm/db/equivalent_modeling_service.db"
+    expected_sqlite = "/home/data/db/equivalent_modeling_service.db"
     if sqlite_env != expected_sqlite:
         errors.append(f"Dockerfile ENV SQLITE_PATH={sqlite_env!r}，期望 {expected_sqlite!r}")
     if sqlite_cfg != expected_sqlite:
@@ -158,8 +158,8 @@ def main() -> int:
         )
     else:
         print(f"    OK: SQLITE_PATH 位于挂载点 {mount_path}/ 之下")
-    if mount_path != "/home/aicm/db":
-        errors.append(f"chart database.containerPath={mount_path!r}，期望 /home/aicm/db")
+    if mount_path != "/home/data/db":
+        errors.append(f"chart database.containerPath={mount_path!r}，期望 /home/data/db")
 
     # ── 4. entrypoint 兜底值一致 ──
     m_sqlite_entry = re.search(r'SQLITE_PATH:=([^}]+)', entrypoint)
@@ -193,6 +193,28 @@ def main() -> int:
         errors.append("工作区路径在上述四处不一致")
     else:
         print(f"    OK: 工作区路径四处一致 = {ws_chart}")
+
+    # ── 4b. 仿真工具目录：镜像 ENV 与 chart 一致，且与数据挂载树隔离 ──
+    # 历史坑：数据挂载曾放在 /home/aicm 下，与工具目录同名 —— 整目录挂载 /home/aicm
+    # 会把镜像层里的工具代码遮掉（工具被迫落到宿主机）。工具固定 /home/aicm，
+    # 数据挂载树固定 /home/data，二者互不嵌套。
+    sim_env = envs.get("AICM_MCP_SIM_TOOL_HOME", "")
+    sim_chart = values["config"].get("simToolHome", "")
+    expected_sim = "/home/aicm"
+    if sim_env != expected_sim:
+        errors.append(f"Dockerfile ENV AICM_MCP_SIM_TOOL_HOME={sim_env!r}，期望 {expected_sim!r}")
+    if sim_chart != expected_sim:
+        errors.append(f"chart config.simToolHome={sim_chart!r}，期望 {expected_sim!r}")
+    if expected_sim and (
+        expected_sim.startswith(mount_path.rstrip("/") + "/")
+        or mount_path.rstrip("/").startswith(expected_sim)
+    ):
+        errors.append(
+            f"仿真工具目录 {expected_sim} 不能与数据挂载树 {mount_path} 相互嵌套"
+            "（整目录挂载会遮掉镜像层里的工具代码）"
+        )
+    else:
+        print(f"    OK: 仿真工具目录 {expected_sim} 与数据挂载树 {mount_path} 隔离（ENV 与 chart 一致）")
 
     # 数据库挂载点也必须被 Dockerfile 预建（否则自检把「未挂载」判定成「目录不存在」）
     db_dir = sqlite_env.rsplit("/", 1)[0]

@@ -39,14 +39,15 @@ resources:
 # 仿真任务工作区：每个 task 一个子目录，内含
 #   task_meta.json / topology_generated.sh / simulation.log / results/
 # 直接落在部署节点本地磁盘，容器重建、镜像升级都不会丢产物。
-# 容器内路径与数据库统一在 /home/aicm 下：workspace → /home/aicm/workspace，
-# db → /home/aicm/db。镜像内也已预建该挂载点（见 Dockerfile）。
+# 容器内数据路径统一在 /home/data 下（**刻意**不放在 /home/aicm —— 那是仿真工具
+# 目录，同名会被整目录挂载遮掉工具代码）：workspace → /home/data/workspace，
+# db → /home/data/db。镜像内也已预建该挂载点（见 Dockerfile）。
 workspace:
   nodePath: /data/aicm/workspace
-  containerPath: /home/aicm/workspace
+  containerPath: /home/data/workspace
 
 # 数据库目录（默认后端 SQLite）。
-# 与 workspace 统一：容器内都是 /home/aicm 下的子目录。
+# 与 workspace 统一：容器内都是 /home/data 下的子目录。
 # 数据文件是 containerPath 下的 equivalent_modeling_service.db（另有 -wal / -shm 伴生文件）。
 # 节点侧给独立目录，与仿真工作区物理分离：升级/清理 workspace 时不会误伤数据库。
 # 由 initContainer chown 1000:1000（hostPath 的属主镜像管不到，见 deployment.yaml）。
@@ -55,7 +56,7 @@ workspace:
 # 但**不能**用 NFS —— SQLite 不支持网络文件系统上的可靠锁。
 database:
   nodePath: /data/aicm/db
-  containerPath: /home/aicm/db
+  containerPath: /home/data/db
 
 log:
   # 平台日志采集约定（ecslog-agent）。本服务日志走 stdout，此卷仅为对齐平台规范，
@@ -78,10 +79,14 @@ config:
   # MCP 仿真 Server
   mcpHost: "0.0.0.0"
   mcpPort: "9000"
+  # 仿真工具本体目录（镜像层内，保持 /home/aicm 不变）。
+  # 与 Dockerfile ENV AICM_MCP_SIM_TOOL_HOME 保持一致。数据挂载树已移到
+  # /home/data（workspace/db），工具目录不再与任何挂载路径同名，整目录挂载
+  # 也不会把镜像层里的工具代码遮掉（工具不用被迫落到宿主机）。
   simToolHome: "/home/aicm"
   # 数据库文件路径（默认后端 SQLite）。父目录与 database.containerPath 同源，
   # 便于 verify_consistency.py 断言「配置的路径确实落在挂载目录内」。
-  sqlitePath: "/home/aicm/db/equivalent_modeling_service.db"
+  sqlitePath: "/home/data/db/equivalent_modeling_service.db"
   # 必须为空串：conda_launcher 在 conda_env 为空时回退为当前解释器，免装 conda
   condaEnv: ""
   # LLM
@@ -92,7 +97,7 @@ config:
 # ── 敏感配置 → Secret → envFrom ──
 # 前两个占位符需要在平台变量替换配置中登记（或由运维在发布前直接填值）。
 # databaseUrl **可选**：留空/不声明时沿用镜像内默认值（空串），即使用
-# **本容器内的 SQLite**（数据文件 /home/aicm/db/equivalent_modeling_service.db）。
+# **本容器内的 SQLite**（数据文件 /home/data/db/equivalent_modeling_service.db）。
 # 仅当要改用**外部 PostgreSQL** 时才需要在这里填一条完整 TCP 连接串覆盖它 ——
 # 这就是回退逃生门：同一镜像、无需重建，注入 DSN 即切换后端
 # （后端由 DSN 前缀 postgres:// / postgresql:// 自动侦测，见 app/dbapi.py）。

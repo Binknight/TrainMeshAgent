@@ -87,7 +87,7 @@ DATABASE_URL 以 postgres:// 或 postgresql:// 开头  →  PG 后端（逃生�
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `DATABASE_URL` | `""`（空） | 留空 = 用 SQLite。默认值**从 TCP PG 串改为空串**，是本次唯一的行为变更 |
-| `SQLITE_PATH` | `/home/aicm/db/equivalent_modeling_service.db` | SQLite 数据文件；父目录即挂载点 `/home/aicm/db` |
+| `SQLITE_PATH` | `/home/data/db/equivalent_modeling_service.db` | SQLite 数据文件；父目录即挂载点 `/home/data/db` |
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000` | `busy_timeout` |
 | `PGDATA` / `PG_SOCKET_DIR` | 保留读取 | **仅用于 PG 后端的报错文案**（提示该去查哪里），不参与任何判定；SQLite 路径完全不读 |
 
@@ -219,7 +219,7 @@ PG 分支的 `SCHEMA_SQL` 与 SQLite 分支的 DDL 是**两份手写 DDL**，天
 
 | 文件 | 改动 |
 |------|------|
-| `Dockerfile` | 预建 `/home/aicm/db`（去掉 `data`/`run` 子目录语义）；ENV 去 `PGDATA`/`PG_SOCKET_DIR`/`PG_BIN`，加 `SQLITE_PATH`；`DATABASE_URL` 默认值改空；HEALTHCHECK 去掉 `pg_isready`（改打 `/api/health`） |
+| `Dockerfile` | 预建 `/home/data/db`（去掉 `data`/`run` 子目录语义）；ENV 去 `PGDATA`/`PG_SOCKET_DIR`/`PG_BIN`，加 `SQLITE_PATH`；`DATABASE_URL` 默认值改空；HEALTHCHECK 去掉 `pg_isready`（改打 `/api/health`） |
 | `docker/base/Dockerfile` | 去掉 `postgresql-14` 安装与版本自检；**保留 `libpq5`**（逃生门用 `psycopg2` 需要） |
 | `docker/entrypoint.sh` | 删掉「版本守卫 / initdb / 起 postgres / pg_isready 就绪探测 / 建库 / 停机 pg_ctl stop」六段；保留 workspace 与 DB 目录自检 |
 | `docker/check_db.py` | 语义改写：PGDATA 检查 → SQLite **父目录**是挂载点且可写（去掉 0700 / 属主与 PG 相关的部分） |

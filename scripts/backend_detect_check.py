@@ -28,8 +28,8 @@ CASES = [
     ("postgres:/u:p@h/db", "sqlite", "写坏的前缀（单斜杠）"),
     ("postgres@Data", "sqlite", "DSN 简写 → 静默回落 SQLite"),
     ("mysql://u:p@h/db", "sqlite", "别的协议 → 静默回落 SQLite"),
-    ("/home/aicm/db/x.db", "sqlite", "误把文件路径写进 DATABASE_URL"),
-    ("sqlite:///home/aicm/db/x.db", "sqlite", "显式 sqlite:// 也归 SQLite"),
+    ("/home/data/db/x.db", "sqlite", "误把文件路径写进 DATABASE_URL"),
+    ("sqlite:///home/data/db/x.db", "sqlite", "显式 sqlite:// 也归 SQLite"),
 ]
 
 

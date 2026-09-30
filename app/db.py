@@ -96,7 +96,7 @@ def _open_sqlite_connection() -> sqlite3.Connection:
         raise RuntimeError(
             f"SQLite 数据目录不存在：{parent}\n"
             f"  SQLITE_PATH={path}\n"
-            f"  提示：容器内该目录应由镜像预建并由部署侧挂载（/home/aicm/db）。"
+            f"  提示：容器内该目录应由镜像预建并由部署侧挂载（/home/data/db）。"
         )
 
     conn = sqlite3.connect(

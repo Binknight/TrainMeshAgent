@@ -4,7 +4,9 @@
 #   拉起 MCP 仿真 Server + Flask 应用，保证 SIGTERM 时连带回收仿真子进程。
 #
 #   容器内仓库根为 /home（业务镜像解压位置）。仿真工作区与数据库目录都挂在
-#   /home/aicm 下：workspace=/home/aicm/workspace，db=/home/aicm/db。
+#   /home/data 下：workspace=/home/data/workspace，db=/home/data/db。
+#   （数据挂载树**刻意**与仿真工具目录 /home/aicm 分置：同名会被整目录挂载遮掉，
+#   工具代码被迫落到宿主机。）
 #   这两个目录都必须由部署侧挂载宿主机目录，否则启动即失败。
 #
 #   ── 本次改造：内嵌 PostgreSQL 已替换为 SQLite ──────────────────────────────
@@ -26,18 +28,18 @@ log() { printf '[entrypoint] %s\n' "$*"; }
 # ---------- 仿真工作区自检：必须是挂载点且可写 ----------
 # 放在其余步骤之前：配置错误应当立刻暴露，而不是白等一轮 DB 探测。
 # 兜底原则：宁可启动失败，也不要静默把仿真产物写进镜像层（容器重建即丢）。
-: "${AICM_MCP_WORKSPACE_ROOT:=/home/aicm/workspace}"
+: "${AICM_MCP_WORKSPACE_ROOT:=/home/data/workspace}"
 export AICM_MCP_WORKSPACE_ROOT
 log "workspace=${AICM_MCP_WORKSPACE_ROOT}"
 python /home/docker/check_workspace.py || exit 1
 
 # ---------- 数据库目录自检：必须在挂载点下且可写 ----------
-# 默认后端是 SQLite，数据文件 SQLITE_PATH 默认 /home/aicm/db/equivalent_modeling_service.db。
+# 默认后端是 SQLite，数据文件 SQLITE_PATH 默认 /home/data/db/equivalent_modeling_service.db。
 # 与 workspace 自检同一哲学，但这里的失败代价更高：静默落在镜像层里意味着
 # 容器重建即丢全部会话历史。因此不做「豁免后继续」的降级，只认挂载点。
 # PG 逃生门（DATABASE_URL 指向外部 PG）下这个目录不会被使用，check_db.py
 # 会据此跳过挂载点校验，只提示。
-: "${SQLITE_PATH:=/home/aicm/db/equivalent_modeling_service.db}"
+: "${SQLITE_PATH:=/home/data/db/equivalent_modeling_service.db}"
 export SQLITE_PATH
 python /home/docker/check_db.py || exit 1
 
