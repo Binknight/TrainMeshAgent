@@ -5,7 +5,7 @@
 # 只在依赖变化时重建，日常打包部署走 build.sh，不碰基础镜像。
 # 用法：
 #   bash docker/build_base_image.sh
-#   BASE_TAG=repository/python3.10-aicm-base:1.1 bash docker/build_base_image.sh
+#   BASE_TAG=repository/python3.10-aicm-base:1.2 bash docker/build_base_image.sh
 #   SKIP_HCCL=1 bash docker/build_base_image.sh          # 尚未拿到 hccl whl 时
 #
 # ── 本次改造：ucf/seccomp 兜底逻辑已整体移除 ─────────────────────────────────
@@ -28,7 +28,7 @@
 # ============================================================================
 set -ex
 
-BASE_TAG="${BASE_TAG:-repository/python3.10-aicm-base:1.0}"
+BASE_TAG="${BASE_TAG:-repository/python3.10-aicm-base:1.2}"
 SKIP_HCCL="${SKIP_HCCL:-0}"
 
 if ! ls docker/wheels/*.whl > /dev/null 2>&1 && [ "${SKIP_HCCL}" != "1" ]; then

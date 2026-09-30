@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ============================================================================
-# equivalent-modeling-service 基础镜像 —— repository/python3.10-aicm-base:1.0
+# equivalent-modeling-service 基础镜像 —— repository/python3.10-aicm-base:1.2
 #
 # 构建环境不支持外网，仅内网华为源可用：
 #   apt -> http://mirrors.tools.huawei.com

@@ -2,7 +2,7 @@
 # ============================================================================
 # equivalent-modeling-service 业务镜像
 #
-# 依赖已全部预置在基础镜像 repository/python3.10-aicm-base:1.0 中，
+# 依赖已全部预置在基础镜像 repository/python3.10-aicm-base:1.2 中，
 # 本层只做「解压 + 启动」，构建期不联网、不装任何包。
 #
 # 包内容（equivalent-modeling-service.tgz）解压后落在 /home/，即仓库根：
@@ -30,7 +30,7 @@
 # 开关），因为数据库静默落在镜像层里意味着容器重建即丢全部会话历史。
 # PG 逃生门保留：注入 DATABASE_URL=postgresql://... 即切回外部 PG（同一镜像，无需重建）。
 # ============================================================================
-FROM repository/python3.10-aicm-base:1.0
+FROM repository/python3.10-aicm-base:1.2
 
 WORKDIR /home/
 
