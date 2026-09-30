@@ -154,7 +154,7 @@ c.close(); print('[base] sqlite3 OK', sqlite3.sqlite_version, '- upsert/excluded
     test ! -e /usr/lib/postgresql/14/bin/postgres && \
     test -f /usr/lib/x86_64-linux-gnu/libpq.so.5 && \
     echo '[base] no embedded postgresql server; libpq5 kept for pg escape hatch' && \
-    test ! -e /home/aicm/db && \
+    test ! -e /home/data/db && \
     echo '[base] no database data dir in image layer' && \
     \
     # 移除构建依赖以减少镜像大小

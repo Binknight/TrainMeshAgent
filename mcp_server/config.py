@@ -4,7 +4,9 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# 默认路径：aicm_mcp_server 根目录下的 aicm 与 workspace
+# 默认路径：aicm_mcp_server 根目录下的 aicm 与 workspace（本地开发用）。
+# 容器内由镜像 ENV / chart 覆盖：sim_tool_home 钉为 /home/aicm；数据挂载树
+# （workspace/db）在 /home/data 下，与工具目录分置 —— 同名会被整目录挂载遮掉。
 _SERVER_ROOT = Path(__file__).resolve().parents[1]
 
 

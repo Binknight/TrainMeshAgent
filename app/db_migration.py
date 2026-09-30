@@ -446,7 +446,7 @@ def _preflight_sqlite(path: str) -> None:
             f"[migration] SQLite 数据目录不存在：{parent}\n"
             f"  SQLITE_PATH={path}\n"
             f"  提示：容器内该目录应由镜像预建并由部署侧挂载宿主机目录"
-            f"（/home/aicm/db）。不自动创建，是为了避免数据库落在可写镜像层里。"
+            f"（/home/data/db）。不自动创建，是为了避免数据库落在可写镜像层里。"
         )
     try:
         with tempfile.NamedTemporaryFile(dir=parent, prefix=".migcheck-", delete=True):

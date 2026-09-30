@@ -22,7 +22,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-DEFAULT_WORKSPACE = "/home/aicm/workspace"
+DEFAULT_WORKSPACE = "/home/data/workspace"
 MOUNTINFO_PATH = "/proc/self/mountinfo"
 ALLOW_LOCAL_ENV = "AICM_MCP_WORKSPACE_ALLOW_LOCAL"
 _TRUTHY = {"1", "true", "yes", "on"}

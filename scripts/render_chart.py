@@ -268,8 +268,8 @@ def main() -> int:
             "sim-db 卷定义": "name: sim-db" in dep,
             "hostPath 节点路径 /data/aicm/db": "path: /data/aicm/db" in dep,
             "DirectoryOrCreate ≥2（workspace + db）": dep.count("DirectoryOrCreate") >= 2,
-            "容器内挂载点 /home/aicm/db 出现 ≥3 次（init chown + init mount + 主容器 mount）":
-                dep.count("/home/aicm/db") >= 3,
+            "容器内挂载点 /home/data/db 出现 ≥3 次（init chown + init mount + 主容器 mount）":
+                dep.count("/home/data/db") >= 3,
         }
         for label, ok in checks.items():
             print(f"    {'OK  ' if ok else 'FAIL'}: deployment {label}")
@@ -280,10 +280,10 @@ def main() -> int:
     if cm:
         # 改造后 configMap 下发的是 SQLite 数据文件路径（原先下发 PG socket 目录）。
         # 断言两件事：键存在，且路径落在 database.containerPath 挂载目录之内。
-        ok = "SQLITE_PATH: " in cm and "/home/aicm/db/" in cm
+        ok = "SQLITE_PATH: " in cm and "/home/data/db/" in cm
         print(f"    {'OK  ' if ok else 'FAIL'}: configMap 下发 SQLITE_PATH（落在 db 挂载目录内）")
         if not ok:
-            errors.append("[A] configMap.yaml 缺少 SQLITE_PATH 或取值不在 /home/aicm/db/ 下")
+            errors.append("[A] configMap.yaml 缺少 SQLITE_PATH 或取值不在 /home/data/db/ 下")
 
     if errors:
         print(f"\n发现 {len(errors)} 个问题:")
