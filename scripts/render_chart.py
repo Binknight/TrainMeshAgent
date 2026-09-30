@@ -8,14 +8,18 @@
         {{ .Values.x | default 1 }} / {{ if .Values.x }}...{{ end }}
         {{ if eq .Values.x "s"}} ... {{ else if eq ... }} ... {{ end }}
         {{- ... }} 与 {{ ... }} 的空行裁剪
-    目的不是替代 helm，而是抓住本次改动的两类高危错误：
+    目的不是替代 helm，而是抓住本次改动的三类高危错误：
         1. 模板引用了 values.yaml 里不存在的键（删了 config.pgSocketDir、
            新增 config.sqlitePath / database.*，正是高危区）
         2. 渲染产物不是合法 YAML / 占位符没被替换干净 / 关键字段缺失
+        3. **ConfigMap/Secret 里出现 null 值**（渲染成 `KEY:`）—— k8s 会以
+           `unknown object type "nil"` 拒绝发布，且本机没有 helm 时最难自查。
+           历史事故：平台未登记 `openaiApiKey` 占位符 → 空串 → nil → 发布失败。
 
 覆盖两种部署形态（与改造后的数据库语义对齐）：
-    A. 默认（SQLite，DATABASE_URL 留空）—— 不应出现 DATABASE_URL 键
-    B. 外部 PostgreSQL 逃生门 —— 必须出现 DATABASE_URL 键
+    A. 默认（SQLite，DATABASE_URL 留空）—— ConfigMap 不应出现 DATABASE_URL 键，
+       且必须出现非空 OPENAI_API_KEY（本 chart 已删除 secret.yaml，明文经 ConfigMap 下发）
+    B. 外部 PostgreSQL 逃生门（config.databaseUrl）—— ConfigMap 必须出现 DATABASE_URL 键
 """
 from __future__ import annotations
 
@@ -62,7 +66,11 @@ def apply_pipe(value, pipe: str, origin: str = ""):
         if not stage:
             continue
         if stage == "quote":
-            value = '"%s"' % value
+            # 必须与 Sprig 对齐：quote(nil) 返回**空串**（不是 "None"，也不是
+            # Go 模板的 "<no value>"），于是模板只剩 `KEY:` → YAML null。
+            # 本地渲染器若把 nil 渲染成 "None" 就会漏掉这类事故 —— 历史上
+            # OPENAI_API_KEY 的发布失败正是这样漏过去的。
+            value = "" if value is None else '"%s"' % value
         elif stage == "int":
             if value is None:
                 raise RenderError(f"{origin} 取值为空，无法 int()（键名可能写错）")
@@ -89,6 +97,14 @@ def eval_expr(expr: str, scope: dict):
             return expr[1:-1]
         if re.fullmatch(r"-?\d+", expr):
             return int(expr)
+        # 取值必须是 .Values.a.b 形态。**不要**在这里放行未知表达式：
+        # templates/ 下连 YAML 注释里的模板记号也会被 Go 模板引擎执行（真 helm 会直接
+        # 语法报错），放行未知表达式会让这类错误在本地静默通过 —— 实测就漏过一次。
+        if not re.fullmatch(r"\.?[A-Za-z_][A-Za-z0-9_.]*", expr):
+            raise RenderError(
+                f"无法解析的表达式: {expr!r}（只支持 .Values.a.b / \"字符串\" / 整数；"
+                f"管道只支持 quote|int|default。注意：注释里写成 {{{{ }}}} 的内容同样会被模板引擎执行）"
+            )
         return get_path(scope, expr)
     except RenderError:
         raise
@@ -185,7 +201,7 @@ def check_referenced_keys(values: dict) -> list[str]:
     """静态提取模板引用的 .Values.a.b.c，逐个查存在性（带 if 保护的可选键除外）。"""
     errors = []
     pattern = re.compile(r"\.Values\.([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)")
-    optional = {"secrets.databaseUrl", "secrets.externalProxy"}
+    optional = {"config.databaseUrl", "config.externalProxy"}
     scope = {"Values": values}
     for path in TEMPLATES:
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -224,6 +240,36 @@ def render_all(values: dict, label: str):
     return rendered, errors
 
 
+def check_no_null_values(rendered: dict, label: str) -> list:
+    """ConfigMap.data / Secret.stringData 里的 null 或非字符串都是发布级故障。
+
+    YAML 的 `KEY:`（冒号后无值）会被解析成 None，k8s 校验直接报
+    `unknown object type "nil" in ConfigMap.data.KEY` —— 报错点离根因（占位符没被
+    替换、values 里该键是 nil）很远，所以必须在渲染阶段拦下。ConfigMap 的 data
+    还额外要求**所有值都是字符串**（YAML 数字/布尔会让 k8s 反序列化失败）。
+    """
+    errors = []
+    for name, out in rendered.items():
+        try:
+            docs = list(yaml.safe_load_all(out))
+        except yaml.YAMLError:
+            continue  # 已在 render_all 里报过
+        for doc in docs:
+            if not isinstance(doc, dict):
+                continue
+            for field in ("data", "stringData"):
+                section = doc.get(field)
+                if not isinstance(section, dict):
+                    continue
+                for key, val in section.items():
+                    if not isinstance(val, str):
+                        errors.append(
+                            f"[{label}] {name} 的 {field}.{key} 不是字符串（{val!r}）"
+                            f'—— k8s 会以 unknown object type "nil" 拒绝发布'
+                        )
+    return errors
+
+
 def main() -> int:
     values = load_values((CHART / "values.yaml").read_text(encoding="utf-8"))
     print(f"[0] values.yaml 顶层键: {sorted(values)}")
@@ -232,18 +278,27 @@ def main() -> int:
     errors = check_referenced_keys(values)
     print(f"[1] 键引用检查: {'OK' if not errors else str(len(errors)) + ' 个问题'}")
 
+    # secret.yaml 已按 2026-09-30 发布事故的复盘结论删除：LLM Key 改为经 ConfigMap
+    # 明文下发。这里挡住「有人顺手把 Secret 加回来」——加回来就要重新面对 nil 值问题。
+    if (CHART / "templates" / "secret.yaml").exists():
+        errors.append(
+            "templates/secret.yaml 已删除（LLM Key 改用 ConfigMap 明文下发），不应重新出现"
+        )
+
     print("\n[2] 形态 A —— 默认（内嵌数据库）")
     rendered_a, errs_a = render_all(values, "A")
     errors += errs_a
+    errors += check_no_null_values(rendered_a, "A")
     for name, out in rendered_a.items():
         print(f"    {name}: {len(out.splitlines())} 行，渲染 + YAML 解析通过")
 
     print("\n[3] 形态 B —— 外部 PostgreSQL 回退")
     values_b = {k: (dict(v) if isinstance(v, dict) else v) for k, v in values.items()}
-    values_b["secrets"] = dict(values_b.get("secrets", {}))
-    values_b["secrets"]["databaseUrl"] = "postgresql://user:pass@10.1.2.3:5432/equivalent_modeling_service"
+    values_b["config"] = dict(values_b.get("config", {}))
+    values_b["config"]["databaseUrl"] = "postgresql://user:pass@10.1.2.3:5432/equivalent_modeling_service"
     rendered_b, errs_b = render_all(values_b, "B")
     errors += errs_b
+    errors += check_no_null_values(rendered_b, "B")
 
     def has_active_key(doc: str, key: str) -> bool:
         """只看未被注释的 YAML 键行，避免注释里提到 DATABASE_URL 造成误判。"""
@@ -251,16 +306,32 @@ def main() -> int:
             re.match(rf"^\s*{key}\s*:", line) for line in doc.splitlines()
         )
 
-    if "secret.yaml" in rendered_a:
-        if has_active_key(rendered_a["secret.yaml"], "DATABASE_URL"):
+    if "configMap.yaml" in rendered_a:
+        if has_active_key(rendered_a["configMap.yaml"], "DATABASE_URL"):
             errors.append("[A] 默认形态不应渲染出 DATABASE_URL（应回退镜像内默认值）")
         else:
             print("    OK: 形态 A 无 DATABASE_URL 键 -> 回退镜像内嵌默认值")
-    if "secret.yaml" in rendered_b:
-        if not has_active_key(rendered_b["secret.yaml"], "DATABASE_URL"):
+    if "configMap.yaml" in rendered_b:
+        if not has_active_key(rendered_b["configMap.yaml"], "DATABASE_URL"):
             errors.append("[B] 外部 PG 形态必须渲染出 DATABASE_URL")
         else:
             print("    OK: 形态 B 渲染出 DATABASE_URL 键 -> 外部 PG 逃生门可用")
+
+    # OPENAI_API_KEY 必须由 ConfigMap 明文下发：secret.yaml 删除后它是唯一来源，
+    # 缺失时部署照样成功、只在首次 LLM 调用时报鉴权失败（静默得多，故在此断言）。
+    if "configMap.yaml" in rendered_a:
+        try:
+            cm_doc = next(d for d in yaml.safe_load_all(rendered_a["configMap.yaml"]) if d)
+            api_key = (cm_doc.get("data") or {}).get("OPENAI_API_KEY")
+        except (yaml.YAMLError, StopIteration):
+            api_key = None
+        if not isinstance(api_key, str) or not api_key:
+            errors.append(
+                "[A] configMap.yaml 未下发非空 OPENAI_API_KEY"
+                "（secret.yaml 已删除，LLM Key 只能来自此处）"
+            )
+        else:
+            print(f"    OK: 形态 A 明文下发 OPENAI_API_KEY（{len(api_key)} 字符）")
 
     dep = rendered_a.get("deployment.yaml", "")
     if dep:

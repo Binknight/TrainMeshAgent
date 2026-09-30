@@ -123,8 +123,10 @@ DAO 是真正的影响集中点。
   NFS 上的锁语义不可靠，会损坏数据。
 - **WAL 伴生文件**：同目录还有 `-wal` / `-shm`。备份要整目录拷（或先走
   `docker/checkpoint_db.py` 的 TRUNCATE checkpoint，停机时 entrypoint 会自动做）。
-- 逃生门：集群 Secret 注入 `DATABASE_URL` 即切回**外部** PostgreSQL，
-  **同一镜像无需重建**（勿删）。注意：镜像内已无 PG 服务端，逃生门只能连外部 PG。
+- 逃生门：注入 `DATABASE_URL` 即切回**外部** PostgreSQL，**同一镜像无需重建**（勿删）。
+  chart 侧对应 `values.yaml` 的 `config.databaseUrl`（条件渲染 → ConfigMap 下发，
+  见 `charts/equivalent-modeling-service/templates/configMap.yaml`）。
+  注意：镜像内已无 PG 服务端，逃生门只能连外部 PG。
 - 两套 DDL 的一致性是**硬约束**（见 §4.2），由 `scripts/verify_static.py` 的
   D1/D2 断言把守。
 
@@ -150,6 +152,7 @@ DAO 是真正的影响集中点。
 | **`ON CONFLICT` 在 SQLite 下必须能定位目标** | `comparison_reports` 两套 DDL 都建了 `session_id` 唯一约束（PG 侧是 `uq_comparison_reports_session`），否则「重复保存报告」在 SQLite 下会插入多行而非幂等。这条由 `verify_static.py` 的 D2 断言把守 |
 | **不要引入 `DB_BACKEND` 这类独立开关** | 后端由 `DATABASE_URL` 前缀侦测。开关与 URL 不一致会产生第四种状态，届时「为什么连不上」会成为排查陷阱 |
 | **非 postgres:// 前缀的 DSN 会被**静默**当成 SQLite** | 这是最容易误判的配置错误。DSN 写错协议头不会报错，只会连到 SQLite 而看起来「数据丢了」 |
+| **chart 里不能有取值为 nil 的模板键** | Sprig 的 `quote(nil)` 返回**空串**（不是 `"None"`），于是 `KEY: {{ .Values.x \| quote }}` 渲染成 `KEY:` → YAML null → k8s 直接拒绝整次发布：`unknown object type "nil" in Secret.stringData.OPENAI_API_KEY`（2026-09-30 真实事故：平台未登记 `openaiApiKey` 占位符 → 空串 → nil）。规则：**可选项一律条件渲染**（`{{- if ... }}` 整行不渲染），不要渲染成空值；`templates/secret.yaml` 因此已删除，`OPENAI_API_KEY` 改为 `values.yaml` 的 `config.openaiApiKey` 明文经 ConfigMap 下发。`scripts/render_chart.py` 的 `check_no_null_values` 会拦下这类渲染结果 |
 | **`NO_PROXY` 含方括号 IPv6 会让 httpx 直接抛异常** | httpx 0.28 解析 `NO_PROXY=...,::1,[::1]` 这类值时，`URLPattern` 会崩在 `InvalidURL: Invalid port: ':1]'`。而 `app/agent/orchestrator.py` 用 `httpx.Client(verify=..., proxy=...)` 构造 OpenAI 客户端 —— 一旦运行环境设了这个值，**首次 LLM 调用即失败**（不是降级，是直接抛）。对策是清掉 `NO_PROXY` 里的 `[::1]` 写法（只留 `127.0.0.1` 与 `::1`），代码侧无法规避 |
 
 ---

@@ -74,7 +74,8 @@ RUN chown 1000:1000 /home/ -R
 # 在 conda_env 为空串时回退为 [sys.executable, ...]，从而免装 conda。
 # 端口两侧默认值已对齐为 9000（HEAD 5fa5f4b），此处显式写出作为单一来源。
 # 数据库默认 SQLite：SQLITE_PATH 钉在挂载目录内；DATABASE_URL **留空**
-# （留空即走 SQLite；集群 Secret 注入 PG 串即切回外部 PostgreSQL 逃生门）。
+# （留空即走 SQLite；集群侧注入 PG 串即切回外部 PostgreSQL 逃生门 ——
+#  chart 侧是 values.yaml 的 config.databaseUrl，经 configMap.yaml 条件渲染下发）。
 ENV PYTHONPATH=/home \
     FLASK_HOST=0.0.0.0 \
     FLASK_PORT=5000 \

@@ -64,9 +64,11 @@ log:
   containerDir: /home/virtualemulation/log
   nodePrefix: /data01/log/ekslog/com.huawei.devicetestbmc/pro_biz_rnd_01
 
-# ── 非敏感运行期配置 → ConfigMap → envFrom ──
+# ── 运行期配置 → ConfigMap → envFrom ──
 # 注意：本服务读取的是「环境变量」，不是配置文件，因此不再挂 /home/config/。
 # 其余未列出的键沿用镜像内 ENV（见 Dockerfile ENV 段），无需重复声明。
+# 本 chart **不再创建 Secret**（templates/secret.yaml 已删除）：原先经 Secret 下发的
+# OPENAI_API_KEY 改为在这里以明文配置，理由与代价见下方 config.openaiApiKey。
 config:
   # Flask 业务侧
   flaskHost: "0.0.0.0"
@@ -93,25 +95,34 @@ config:
   openaiBaseUrl: "https://api.openai.com/v1"
   openaiModel: "gpt-4o"
   openaiSslVerify: "true"
-
-# ── 敏感配置 → Secret → envFrom ──
-# 前两个占位符需要在平台变量替换配置中登记（或由运维在发布前直接填值）。
-# databaseUrl **可选**：留空/不声明时沿用镜像内默认值（空串），即使用
-# **本容器内的 SQLite**（数据文件 /home/data/db/equivalent_modeling_service.db）。
-# 仅当要改用**外部 PostgreSQL** 时才需要在这里填一条完整 TCP 连接串覆盖它 ——
-# 这就是回退逃生门：同一镜像、无需重建，注入 DSN 即切换后端
-# （后端由 DSN 前缀 postgres:// / postgresql:// 自动侦测，见 app/dbapi.py）。
-secrets:
-  openaiApiKey: @openaiApiKey@
-  # 外部 PostgreSQL（可选，默认不启用）。刻意不登记 @databaseUrl@ 占位符 ——
-  # 未经登记的占位符会被原样下发成字符串 "@databaseUrl@"，那会被当成 DSN 前缀
-  # 不是 postgres:// 而**静默回落 SQLite**（与下面 externalProxy 同理，但更隐蔽）。
-  # 需要切回外部 PG 时，取消注释并登记平台变量或直接写死连接串。
-  # databaseUrl: @databaseUrl@
+  # LLM API Key（**明文**）。发布前把下面的占位串换成真实 Key。
+  #
+  # 为什么改成明文：原先它写在 charts/templates/secret.yaml 里，值是形如
+  # `@<变量名>@` 的占位符（此处刻意不写出字面 token —— 流水线的替换循环连注释里的
+  # 占位符也会命中并 sed，写出来只会在日志里多一次无意义的替换）。
+  # 平台变量替换未登记该变量时，占位符被替换成空串 → values 里该键为 YAML null →
+  # Sprig 的 `quote` 对 nil 返回空串 → 渲染出 `OPENAI_API_KEY:`（无值）→ k8s 校验
+  # 直接以 `unknown object type "nil" in Secret.stringData.OPENAI_API_KEY` 拒绝发布。
+  # 现在值直接写在 values.yaml 里，不依赖占位符替换，那条 sed 分支也不会再触发
+  # （流水线的变量替换来自 `grep -oP '@\w+(\.\w+)*@' values.yaml`，找不到占位符即不迭代）。
+  #
+  # 代价（已知并接受）：密钥会随 chart 进版本库与部署包，且 ConfigMap 本身是明文的
+  # （`kubectl get cm -o yaml` / `describe` 可读；Secret 也只是 base64，并非加密）。
+  # 若将来要恢复密文，需重新加回 Secret 模板，并用平台密文变量或
+  # `kubectl create secret generic` 注入。
+  #
+  # 该键为空时 configMap.yaml 会**整行不渲染**（而不是渲染成空串/空值），
+  # 因此把值清空不会再把发布卡在 k8s 校验上，而是退化为「镜像内也没有该 ENV，
+  # 首次 LLM 调用报鉴权失败」。
+  openaiApiKey: "REPLACE_ME_WITH_REAL_OPENAI_API_KEY"
+  # 外部 PostgreSQL 逃生门（可选，明文）。取消注释并填入**真实 DSN** 即切回外部 PG：
+  # 同一镜像、无需重建。注意前缀必须是 postgres:// 或 postgresql://，写成别的
+  # （例如 postgres:/）会被静默判定为 SQLite（见 app/dbapi.detect_backend）。
+  # 刻意用注释 + 字面示例，**不登记任何 @...@ 占位符**：未登记的占位符会被流水线
+  # 原样下发成字符串。
   # databaseUrl: "postgresql://user:pass@10.x.x.x:5432/equivalent_modeling_service"
-  # 出网代理（可选）：确认平台已登记 @externalProxy@ 后再取消注释，
-  # 否则会原样下发 "@externalProxy@" 导致出网请求异常。
-  # externalProxy: @externalProxy@
+  # 出网代理（可选，明文）：填了才下发 EXTERNAL_PROXY（app/config.py 读取，回退 LLM_PROXY）。
+  # externalProxy: "http://proxy.example.com:8080"
 
 # 当前工作区走节点本地 hostPath（见 workspace）。若将来需要多副本/跨节点共享，
 # 可把 deployment 中的 sim-workspace 卷换成本 NFS（rwx）方案，server 由平台注入。

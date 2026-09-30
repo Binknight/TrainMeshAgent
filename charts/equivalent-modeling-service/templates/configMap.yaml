@@ -28,3 +28,26 @@ data:
   OPENAI_BASE_URL: {{ .Values.config.openaiBaseUrl | quote }}
   OPENAI_MODEL: {{ .Values.config.openaiModel | quote }}
   OPENAI_SSL_VERIFY: {{ .Values.config.openaiSslVerify | quote }}
+
+  # ── 明文密钥与可选覆盖（未配置时**整行不渲染**）──
+  # 本 chart 不再创建 Secret（templates/secret.yaml 已删除），LLM API Key 以明文经
+  # 本 ConfigMap 下发，理由与代价见 values.yaml 的 config.openaiApiKey 注释。
+  #
+  # 条件渲染是刻意保留的：Sprig 的 `quote` 遇到 nil 会返回空串，于是模板只剩
+  # `KEY:`（YAML null），k8s 会以 unknown object type "nil" 直接拒绝发布 ——
+  # 这正是历史上 OPENAI_API_KEY 把整条流水线卡失败的原因。空值必须表现为
+  # 「键不存在」，而不是「键为空」。
+  {{- if .Values.config.openaiApiKey }}
+  OPENAI_API_KEY: {{ .Values.config.openaiApiKey | quote }}
+  {{- end }}
+
+  # 数据库逃生门（可选）：取消注释 values.yaml 的 config.databaseUrl 才下发；
+  # 不填时完全沿用镜像内 ENV 的 DATABASE_URL（空串 = SQLite）。
+  {{- if .Values.config.databaseUrl }}
+  DATABASE_URL: {{ .Values.config.databaseUrl | quote }}
+  {{- end }}
+
+  # 出网代理（可选）：EXTERNAL_PROXY 由 app/config.py 读取（回退 LLM_PROXY）。
+  {{- if .Values.config.externalProxy }}
+  EXTERNAL_PROXY: {{ .Values.config.externalProxy | quote }}
+  {{- end }}
