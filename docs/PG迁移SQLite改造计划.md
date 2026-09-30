@@ -78,7 +78,9 @@ DATABASE_URL 以 postgres:// 或 postgresql:// 开头  →  PG 后端（逃生�
 
 这条规则保证两件事：
 
-- 集群里已有的 `charts/templates/secret.yaml` 注入 `DATABASE_URL` 的部署**行为不变**；
+- 集群里已有的「注入 `DATABASE_URL`」的部署**行为不变**（当时经 `charts/templates/secret.yaml`
+  下发；该模板在 2026-09-30 因 nil 值导致发布失败而删除，现由 `configMap.yaml` 条件渲染
+  `config.databaseUrl` 下发）；
 - 不注入时自动落到 SQLite，无需新增必填环境变量，也无需 `DB_BACKEND` 这类双开关
   （双开关会产生「URL 与开关不一致」的第四种状态，故意不引入）。
 
@@ -225,7 +227,7 @@ PG 分支的 `SCHEMA_SQL` 与 SQLite 分支的 DDL 是**两份手写 DDL**，天
 | `docker/check_db.py` | 语义改写：PGDATA 检查 → SQLite **父目录**是挂载点且可写（去掉 0700 / 属主与 PG 相关的部分） |
 | `docker/wait_for_db.py` | SQLite 后端下退化为「文件可打开 + 能建表」，或直接删除并把这步并进 `db_migration` |
 | `requirements.txt` | `psycopg2-binary` 标注为「仅 PG 逃生门需要，可选」 |
-| `charts/values.yaml`、`charts/templates/deployment.yaml`、`configMap.yaml`、`secret.yaml` | `sim-db` 卷语义由 PGDATA 目录改为 SQLite 单文件所在目录；`replicas=1` 注释改为「SQLite 单写者」；`secrets.databaseUrl` 语义不变（逃生门） |
+| `charts/values.yaml`、`charts/templates/deployment.yaml`、`configMap.yaml`、`secret.yaml` | `sim-db` 卷语义由 PGDATA 目录改为 SQLite 单文件所在目录；`replicas=1` 注释改为「SQLite 单写者」；`secrets.databaseUrl` 语义不变（逃生门）。<br>**后续变更（2026-09-30）**：`secret.yaml` 已删除（渲染出 nil 值被 k8s 拒绝发布），`databaseUrl` 迁移为 `config.databaseUrl` 并经 ConfigMap 下发 |
 | `scripts/verify_consistency.py` | PGDATA/socket 三处对齐断言 → 改为 `SQLITE_PATH` / `db` 挂载点 / 镜像 ENV 三处对齐 |
 | `scripts/render_chart.py` | 形态 A/B 断言保留，期望值同步 |
 

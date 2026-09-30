@@ -27,9 +27,16 @@ spec:
                     operator: In
                     values:
                       - "true"
-      # 配置容器仓库的拉取凭证
+      # 配置容器仓库的拉取凭证。
+      # 必须整体条件渲染，不要写成「`- name:` 后再用条件包住值」的形式：
+      # 占位符未替换时那种写法会渲染出 `name:`（YAML null），k8s 直接以
+      # unknown object type "nil" 拒绝发布（与本次 OPENAI_API_KEY 同源的事故形态）。
+      # （此处刻意不写出反例的字面模板记号：templates/ 下连 YAML 注释里的模板记号
+      #   也会被 Go 模板引擎解析执行，写出来会直接导致 helm 语法报错。）
+      {{- if .Values.images.pullSecret }}
       imagePullSecrets:
-        - name: {{ if .Values.images.pullSecret }} {{ .Values.images.pullSecret }} {{ end }}
+        - name: {{ .Values.images.pullSecret | quote }}
+      {{- end }}
       # 主容器以 uid/gid 1000 运行，与镜像内 chown 1000:1000 /home 对齐。
       # 但镜像里的 chown 管不到 hostPath 挂载点，且 fsGroup 对 hostPath 无效，
       # 所以节点目录的属主由下面的 root 初始化容器兜底。
@@ -75,14 +82,13 @@ spec:
         - name: {{ .Values.app.name }}
           image: {{ .Values.images.repository }}/{{ .Values.app.name }}:{{ .Values.images.version }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
-          # 非敏感配置来自 ConfigMap、敏感配置来自 Secret，均以进程环境变量下发，
-          # 会覆盖镜像内 ENV（关键：把 AICM_MCP_WORKSPACE_ROOT 指到挂载点，
-          # 因此本次改动不需要重新构建镜像）。
+          # 配置全部来自 ConfigMap，以进程环境变量下发，会覆盖镜像内 ENV
+          # （关键：把 AICM_MCP_WORKSPACE_ROOT 指到挂载点，因此本次改动不需要重新构建镜像）。
+          # 本 chart **不再创建 Secret**（templates/secret.yaml 已删除）：LLM API Key
+          # 以明文经该 ConfigMap 下发，取舍见 values.yaml 的 config.openaiApiKey 注释。
           envFrom:
             - configMapRef:
                 name: {{ .Values.app.name }}-configmap
-            - secretRef:
-                name: {{ .Values.app.name }}-secret
           resources:
             limits:
               cpu:
