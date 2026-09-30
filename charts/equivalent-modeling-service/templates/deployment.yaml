@@ -84,8 +84,8 @@ spec:
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           # 配置全部来自 ConfigMap，以进程环境变量下发，会覆盖镜像内 ENV
           # （关键：把 AICM_MCP_WORKSPACE_ROOT 指到挂载点，因此本次改动不需要重新构建镜像）。
-          # 本 chart **不再创建 Secret**（templates/secret.yaml 已删除）：LLM API Key
-          # 以明文经该 ConfigMap 下发，取舍见 values.yaml 的 config.openaiApiKey 注释。
+          # 本 chart **不再创建 Secret**（templates/secret.yaml 已删除）：LLM 的四个键
+          # （含 API Key）由平台变量注入，经该 ConfigMap 条件渲染下发。
           envFrom:
             - configMapRef:
                 name: {{ .Values.app.name }}-configmap

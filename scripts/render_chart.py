@@ -16,10 +16,12 @@
            `unknown object type "nil"` 拒绝发布，且本机没有 helm 时最难自查。
            历史事故：平台未登记 `openaiApiKey` 占位符 → 空串 → nil → 发布失败。
 
-覆盖两种部署形态（与改造后的数据库语义对齐）：
-    A. 默认（SQLite，DATABASE_URL 留空）—— ConfigMap 不应出现 DATABASE_URL 键，
-       且必须出现非空 OPENAI_API_KEY（本 chart 已删除 secret.yaml，明文经 ConfigMap 下发）
+覆盖三种部署形态：
+    A. 默认（平台变量已登记）—— ConfigMap 不应出现 DATABASE_URL 键，且必须出现
+       非空 OPENAI_API_KEY（本 chart 已删除 secret.yaml，LLM 四个键经 ConfigMap 下发）
     B. 外部 PostgreSQL 逃生门（config.databaseUrl）—— ConfigMap 必须出现 DATABASE_URL 键
+    C. 平台变量一个都没登记（四个 LLM 键全为空）—— 必须**不下发**任何 OPENAI_* 键，
+       而不是渲染出 null（2026-09-30 事故的直接复现条件）
 """
 from __future__ import annotations
 
@@ -188,9 +190,16 @@ def _emit(text: str, stack: list[dict]) -> str:
 
 
 def load_values(raw_text: str) -> dict:
-    """替换平台占位符（@repository@ 等）再解析 —— 裸 @ 不是合法 YAML 起始字符。"""
+    """替换平台占位符（@repository@ 等）再解析 —— 裸 @ 不是合法 YAML 起始字符。
+
+    占位符**可能已经带引号**（LLM 四个键刻意写成 "@config.openaiModel@"，这样平台
+    替换出的值一定是字符串而非 YAML 布尔/数字）。这类写法要连引号一起替换，否则会
+    拼成 `""PLACEHOLDER_...""` 而解析失败。正则同时对齐平台那句
+    `grep -oP '@\\w+(\\.\\w+)*@'`：首字符必须是名字字符，所以注释里的 `@...@`
+    不会被当成占位符。
+    """
     substituted = re.sub(
-        r"@([A-Za-z0-9_.]+)@",
+        r'"?@([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)@"?',
         lambda m: '"PLACEHOLDER_' + m.group(1).replace(".", "_").upper() + '"',
         raw_text,
     )
@@ -201,7 +210,17 @@ def check_referenced_keys(values: dict) -> list[str]:
     """静态提取模板引用的 .Values.a.b.c，逐个查存在性（带 if 保护的可选键除外）。"""
     errors = []
     pattern = re.compile(r"\.Values\.([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)")
-    optional = {"config.databaseUrl", "config.externalProxy"}
+    # 这四个 LLM 键与两个逃生门键都是**条件渲染**的：未登记/未启用时整行不出现，
+    # 因此 values.yaml 里即使写成占位符（解析成本地渲染器用的 PLACEHOLDER_*）或缺失，
+    # 也不该报「键不存在」。
+    optional = {
+        "config.databaseUrl",
+        "config.externalProxy",
+        "config.openaiBaseUrl",
+        "config.openaiModel",
+        "config.openaiSslVerify",
+        "config.openaiApiKey",
+    }
     scope = {"Values": values}
     for path in TEMPLATES:
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -278,11 +297,28 @@ def main() -> int:
     errors = check_referenced_keys(values)
     print(f"[1] 键引用检查: {'OK' if not errors else str(len(errors)) + ' 个问题'}")
 
-    # secret.yaml 已按 2026-09-30 发布事故的复盘结论删除：LLM Key 改为经 ConfigMap
-    # 明文下发。这里挡住「有人顺手把 Secret 加回来」——加回来就要重新面对 nil 值问题。
+    # 四个 LLM 键的占位符**必须带引号**。流水线是纯文本 sed 替换：若写成
+    # `openaiSslVerify: @config.openaiSslVerify@`，平台给 false 会得到 YAML 布尔
+    # false → `{{- if }}` 判假 → 该键被静默丢弃（想关 SSL 结果仍走默认 true）。
+    # 带引号可保证替换结果始终是字符串，也避开纯数字/日期形态被解析成其他类型。
+    raw_values = (CHART / "values.yaml").read_text(encoding="utf-8")
+    quoted_ok = True
+    for llm_key in ("openaiBaseUrl", "openaiModel", "openaiSslVerify", "openaiApiKey"):
+        if not re.search(rf'(?m)^\s*{llm_key}:\s*"@[^"]+@"\s*$', raw_values):
+            quoted_ok = False
+            errors.append(
+                f'values.yaml 的 config.{llm_key} 占位符必须写成 "@...@"（带引号）'
+                "：纯文本替换后要保持 YAML 字符串，否则 false/数字 会被解析成非字符串而丢键"
+            )
+    if quoted_ok:
+        print("    OK: 四个 LLM 占位符均带引号（替换后仍是字符串）")
+
+    # secret.yaml 已按 2026-09-30 发布事故的复盘结论删除：LLM 四个键改为由平台变量
+    # 注入、经 ConfigMap 条件渲染下发。这里挡住「有人顺手把 Secret 加回来」——
+    # 加回来就要重新面对 nil 值问题。
     if (CHART / "templates" / "secret.yaml").exists():
         errors.append(
-            "templates/secret.yaml 已删除（LLM Key 改用 ConfigMap 明文下发），不应重新出现"
+            "templates/secret.yaml 已删除（LLM 键改用 ConfigMap 下发），不应重新出现"
         )
 
     print("\n[2] 形态 A —— 默认（内嵌数据库）")
@@ -317,8 +353,9 @@ def main() -> int:
         else:
             print("    OK: 形态 B 渲染出 DATABASE_URL 键 -> 外部 PG 逃生门可用")
 
-    # OPENAI_API_KEY 必须由 ConfigMap 明文下发：secret.yaml 删除后它是唯一来源，
-    # 缺失时部署照样成功、只在首次 LLM 调用时报鉴权失败（静默得多，故在此断言）。
+    # OPENAI_API_KEY 的值来自平台变量 config.openaiApiKey，由 ConfigMap 下发：
+    # secret.yaml 删除后它是唯一来源。变量已登记时必须渲染出来（缺失时部署照样成功、
+    # 只在首次 LLM 调用时报鉴权失败，静默得多，故在此断言）。
     if "configMap.yaml" in rendered_a:
         try:
             cm_doc = next(d for d in yaml.safe_load_all(rendered_a["configMap.yaml"]) if d)
@@ -328,10 +365,36 @@ def main() -> int:
         if not isinstance(api_key, str) or not api_key:
             errors.append(
                 "[A] configMap.yaml 未下发非空 OPENAI_API_KEY"
-                "（secret.yaml 已删除，LLM Key 只能来自此处）"
+                "（secret.yaml 已删除，LLM Key 只能来自 config.openaiApiKey）"
             )
         else:
-            print(f"    OK: 形态 A 明文下发 OPENAI_API_KEY（{len(api_key)} 字符）")
+            print(f"    OK: 形态 A 下发 OPENAI_API_KEY（{len(api_key)} 字符）")
+
+    # ── 形态 C：平台变量一个都没登记（四个 LLM 键全为空）──
+    # 这是 2026-09-30 事故的直接复现条件（占位符被替换成空串）。四个键都条件渲染，
+    # 因此必须表现为「一个 OPENAI_* 键都不下发」，绝不能渲染出 null。
+    print("\n[4] 形态 C —— 平台变量全未登记（四个 LLM 键都为空）")
+    values_c = {k: (dict(v) if isinstance(v, dict) else v) for k, v in values.items()}
+    values_c["config"] = dict(values_c["config"])
+    for llm_key in ("openaiBaseUrl", "openaiModel", "openaiSslVerify", "openaiApiKey"):
+        values_c["config"][llm_key] = ""
+    rendered_c, errs_c = render_all(values_c, "C")
+    errors += errs_c
+    errors += check_no_null_values(rendered_c, "C")
+    if "configMap.yaml" in rendered_c:
+        try:
+            cm_c = next(d for d in yaml.safe_load_all(rendered_c["configMap.yaml"]) if d)
+            data_c = cm_c.get("data") or {}
+        except (yaml.YAMLError, StopIteration):
+            data_c = {}
+        leaked_llm = sorted(k for k in data_c if k.startswith("OPENAI_"))
+        if leaked_llm:
+            errors.append(
+                f"[C] 变量未登记时不应下发 {leaked_llm}"
+                "（空值必须表现为键不存在，不能渲染成 null/空值）"
+            )
+        else:
+            print("    OK: 形态 C 不下发任何 OPENAI_* 键 -> 回退 app/config.py 默认值，且无 nil 值")
 
     dep = rendered_a.get("deployment.yaml", "")
     if dep:

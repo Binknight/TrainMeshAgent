@@ -99,7 +99,12 @@ def main() -> int:
     migration_py = read("app/db_migration.py")
     entrypoint = read("docker/entrypoint.sh")
     values_text = read("charts/equivalent-modeling-service/values.yaml")
-    values = yaml.safe_load(re.sub(r"@([A-Za-z0-9_.]+)@", r'"PH_\1"', values_text))
+    # 占位符可能**已带引号**（LLM 四个键刻意写成 "@config.openaiModel@"，保证平台用
+    # 纯文本 sed 替换出的值一定是字符串而非 YAML 布尔/数字）。要连引号一起替换，
+    # 否则会拼成 `""PH_config.openaiModel""` 而 YAML 解析失败。
+    values = yaml.safe_load(
+        re.sub(r'"?@([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)@"?', r'"PH_\1"', values_text)
+    )
     configmap = read("charts/equivalent-modeling-service/templates/configMap.yaml")
 
     # ── 1. 镜像 ENV vs app/config.py ──

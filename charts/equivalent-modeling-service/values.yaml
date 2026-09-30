@@ -67,8 +67,8 @@ log:
 # ── 运行期配置 → ConfigMap → envFrom ──
 # 注意：本服务读取的是「环境变量」，不是配置文件，因此不再挂 /home/config/。
 # 其余未列出的键沿用镜像内 ENV（见 Dockerfile ENV 段），无需重复声明。
-# 本 chart **不再创建 Secret**（templates/secret.yaml 已删除）：原先经 Secret 下发的
-# OPENAI_API_KEY 改为在这里以明文配置，理由与代价见下方 config.openaiApiKey。
+# 本 chart **不再创建 Secret**（templates/secret.yaml 已删除）：LLM 的四个键
+# （含 API Key）改为由**平台变量**注入，见下方 LLM 段。
 config:
   # Flask 业务侧
   flaskHost: "0.0.0.0"
@@ -91,30 +91,34 @@ config:
   sqlitePath: "/home/data/db/equivalent_modeling_service.db"
   # 必须为空串：conda_launcher 在 conda_env 为空时回退为当前解释器，免装 conda
   condaEnv: ""
-  # LLM
-  openaiBaseUrl: "https://api.openai.com/v1"
-  openaiModel: "gpt-4o"
-  openaiSslVerify: "true"
-  # LLM API Key（**明文**）。发布前把下面的占位串换成真实 Key。
+  # ── LLM（四个值全部由平台变量注入，占位符即变量名）──
+  # 流水线按占位符里的名字去 params.props（= 部署脚本里 `env` 的导出）取值，因此
+  # 平台侧必须以**完全一致**的名字登记这四个变量：
+  #   config.openaiBaseUrl / config.openaiModel / config.openaiSslVerify / config.openaiApiKey
+  # （点号是名字的一部分，与既有的 eks.clusterId、nfs.server 是同一套机制。）
   #
-  # 为什么改成明文：原先它写在 charts/templates/secret.yaml 里，值是形如
-  # `@<变量名>@` 的占位符（此处刻意不写出字面 token —— 流水线的替换循环连注释里的
-  # 占位符也会命中并 sed，写出来只会在日志里多一次无意义的替换）。
-  # 平台变量替换未登记该变量时，占位符被替换成空串 → values 里该键为 YAML null →
-  # Sprig 的 `quote` 对 nil 返回空串 → 渲染出 `OPENAI_API_KEY:`（无值）→ k8s 校验
-  # 直接以 `unknown object type "nil" in Secret.stringData.OPENAI_API_KEY` 拒绝发布。
-  # 现在值直接写在 values.yaml 里，不依赖占位符替换，那条 sed 分支也不会再触发
-  # （流水线的变量替换来自 `grep -oP '@\w+(\.\w+)*@' values.yaml`，找不到占位符即不迭代）。
+  # 未登记时占位符会被替换成**空串**，这正是 2026-09-30 那次发布失败的成因：
+  # 空串 → values 里该键为 YAML null → Sprig 的 quote(nil) 返回空串（不是 "None"）
+  # → 渲染出 `OPENAI_XXX:`（无值）→ k8s 以 unknown object type "nil" 拒绝整次发布。
+  # 因此 configMap.yaml 对这四个键**全部条件渲染**：空值 = 整行不渲染 =
+  # 回退 app/config.py 的默认值（https://api.openai.com/v1 / gpt-4o / true），
+  # 绝不会再渲染出 nil。这是硬要求，不是风格问题。
   #
-  # 代价（已知并接受）：密钥会随 chart 进版本库与部署包，且 ConfigMap 本身是明文的
-  # （`kubectl get cm -o yaml` / `describe` 可读；Secret 也只是 base64，并非加密）。
-  # 若将来要恢复密文，需重新加回 Secret 模板，并用平台密文变量或
-  # `kubectl create secret generic` 注入。
+  # 副作用（需要知道）：变量没登记时发布照样成功，但
+  #   - baseUrl / model / sslVerify：静默使用 app/config.py 的默认值；
+  #   - openaiApiKey：ConfigMap 里就没有 OPENAI_API_KEY，首次 LLM 调用才报鉴权失败。
+  # 发布后自检：`kubectl get cm equivalent-modeling-service-configmap -o yaml`
+  # 看这四个键是否都在。
   #
-  # 该键为空时 configMap.yaml 会**整行不渲染**（而不是渲染成空串/空值），
-  # 因此把值清空不会再把发布卡在 k8s 校验上，而是退化为「镜像内也没有该 ENV，
-  # 首次 LLM 调用报鉴权失败」。
-  openaiApiKey: "REPLACE_ME_WITH_REAL_OPENAI_API_KEY"
+  # 占位符**必须带引号**：流水线做的是纯文本 sed 替换，写成不带引号的
+  # `openaiSslVerify: @config.openaiSslVerify@` 时，平台给 `false` 会得到 YAML 的
+  # **布尔** false → `{{- if }}` 判假 → 该键被静默丢弃（想关 SSL 结果仍是默认的
+  # true）。带引号可保证替换结果始终是字符串，也顺便避开把纯数字/日期形态的值
+  # 解析成其他类型。render_chart.py 有断言把守这一点。
+  openaiBaseUrl: "@config.openaiBaseUrl@"
+  openaiModel: "@config.openaiModel@"
+  openaiSslVerify: "@config.openaiSslVerify@"
+  openaiApiKey: "@config.openaiApiKey@"
   # 外部 PostgreSQL 逃生门（可选，明文）。取消注释并填入**真实 DSN** 即切回外部 PG：
   # 同一镜像、无需重建。注意前缀必须是 postgres:// 或 postgresql://，写成别的
   # （例如 postgres:/）会被静默判定为 SQLite（见 app/dbapi.detect_backend）。
