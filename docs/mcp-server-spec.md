@@ -637,6 +637,11 @@ equivalent-modeling-service 从 `script_content` 解析以下三组参数，分�
 > 并在 `GPT_ARGS` 中同时给出 `--moe-layer-freq`；显式传入时原样透传。
 > 两者相互矛盾（例如 `MOE_LAYER_FREQ=1` 配 `NUM_MOE_LAYERS=58`）会让仿真按「全层 MoE」计算，
 > 等效组网的 MoE 层缩减随之失效——这是必须避免的形态。
+>
+> **MoE 脚本的 `GPT_ARGS` 必须给出 `--sequence-parallel`**：aicm（仿真侧）对 MoE 任务校验
+> 该参数，缺失会导致仿真 100% 失败。脚本生成器在 `model_type="sparse"` 分支无条件追加
+> `--sequence-parallel`（dense 脚本不追加）。该参数不进对比卡解析（`_parse_script_params`
+> 不识别 `--sequence-parallel`，脚本未暴露的字段显示 `—` 是预期行为）。
 
 #### 训练运行时参数（对应「模型训练参数对比」卡，当前全为 mock）
 

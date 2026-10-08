@@ -165,7 +165,10 @@ def generate_topology_script(
                 f"SHARED_EXPERT_INTERMEDIATE_SIZE={shared_expert_size}"
             )
         # GPT_ARGS 内参数供 run.py get_arg_value 读取并执行 MoE 语义
+        # aicm 对 MoE 任务校验 sequence parallel 参数（缺失即仿真失败），
+        # 故 MoE 脚本必须在 GPT_ARGS 中给出 --sequence-parallel。
         moe_arg_lines = [
+            "    --sequence-parallel \\",
             "    --expert-model-parallel-size ${EP} \\",
             f"    --num-experts {topology.num_experts} \\",
             f"    --moe-router-topk {topology.moe_router_topk} \\",

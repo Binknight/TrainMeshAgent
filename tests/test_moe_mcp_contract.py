@@ -198,6 +198,11 @@ with WorkDir(REPO / ".tmp" / "moe_mcp_contract") as tmp:
         "",
     )
     check(
+        "dense: 不含 --sequence-parallel（aicm 仅 MoE 校验）",
+        "--sequence-parallel" not in dense_script,
+        "",
+    )
+    check(
         "dense: 仍暴露 EP 键（兜底 1）",
         bool(re.search(r"^EP=1$", dense_script, re.M)),
         "",
@@ -208,6 +213,7 @@ with WorkDir(REPO / ".tmp" / "moe_mcp_contract") as tmp:
     moe_script = generate_topology_script(moe_topology(), tmp_dir / "moe.sh").read_text("utf-8")
     moe_lines = check_gpt_args_structure("MoE", moe_script)
     for token in (
+        "    --sequence-parallel \\",
         "    --expert-model-parallel-size ${EP} \\",
         "    --num-experts 256 \\",
         "    --moe-router-topk 8 \\",

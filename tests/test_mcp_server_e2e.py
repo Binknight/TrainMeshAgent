@@ -333,6 +333,7 @@ try:
             "HAS_SHARED_EXPERT=true",
             "SHARED_EXPERT_INTERMEDIATE_SIZE=2048",
             "EP=8",
+            "--sequence-parallel",
             "--expert-model-parallel-size ${EP}",
             "--num-experts 256",
             "--moe-router-topk 8",
