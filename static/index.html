@@ -4,15 +4,17 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>equivalent-modeling-service</title>
-        <script src="/static/marked.min.js"></script>
-        <script src="/static/d3.v7.min.js"></script>
+        <!-- 资源用**相对路径**：页面可能被 nginx 挂在任意前缀下（如 /ftbot/equivalent/），
+             写死 /static/... 会让浏览器把它打到 nginx 根上（那里没有本应用的 location）而 404。 -->
+        <script src="static/marked.min.js"></script>
+        <script src="static/d3.v7.min.js"></script>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
             href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap"
             rel="stylesheet"
         />
-        <link rel="stylesheet" href="/static/moe-arch-renderer.css" />
+        <link rel="stylesheet" href="static/moe-arch-renderer.css" />
         <style>
             :root {
                 --bg-deep: #0a0e14;
@@ -3328,7 +3330,21 @@
         </div>
 
         <script>
-            const API = "/api";
+            // ═══════════════════════════════════════════════════════════════
+            // 部署前缀自适应（单一事实来源）
+            //   nginx 常用 `location /ftbot/equivalent/ { proxy_pass http://.../; }`
+            //   把本应用挂在子路径下 —— 尾斜杠会把前缀剥掉后才转发给 Flask，
+            //   所以**后端不需要知道前缀，浏览器必须知道**。前端所有请求地址都由
+            //   下面的 APP_BASE 推导；写死 "/api"、"/ws/..." 会被浏览器打到 nginx
+            //   根上（那里没有本应用的 location），表现为页面能开、但资源和接口全 404。
+            //   根路径部署（"/"）与任意前缀部署（含 /a/b/ 多级）都由此覆盖。
+            // ═══════════════════════════════════════════════════════════════
+            const APP_BASE = (function () {
+                var p = location.pathname;
+                if (p.charAt(p.length - 1) === "/") return p.slice(0, -1);
+                return p.replace(/\/[^/]*$/, ""); // /pfx/index.html → /pfx
+            })();
+            const API = APP_BASE + "/api";
             let sessionId = "";
             let isStreaming = false;
             let _pendingMeshList = []; // batch mesh_json events until "done"
@@ -7556,7 +7572,7 @@
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
                 if (_simPollTimer) { clearTimeout(_simPollTimer); _simPollTimer = null; }
 
-                var wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/simulation/" + sessionId;
+                var wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + APP_BASE + "/ws/simulation/" + sessionId;
                 var ws = new WebSocket(wsUrl);
                 _simWs = ws;
                 var completedTasks = {};
@@ -7784,8 +7800,8 @@
                 document.getElementById("chat-input").focus();
             })();
         </script>
-        <script src="/static/moe-arch-renderer.js?v=20260709b"></script>
-        <script src="/static/topo-renderer.js?v=20260506"></script>
-        <script src="/static/sim-data-stream.js?v=20260506"></script>
+        <script src="static/moe-arch-renderer.js?v=20260709b"></script>
+        <script src="static/topo-renderer.js?v=20260506"></script>
+        <script src="static/sim-data-stream.js?v=20260506"></script>
     </body>
 </html>

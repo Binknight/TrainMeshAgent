@@ -35,6 +35,15 @@ _estimator = importlib.import_module("app.skills.training-mesh-profiler-skill")
 
 session_bp = Blueprint("session", __name__, url_prefix="/api/session")
 
+# SSE 响应头：`X-Accel-Buffering: no` 让 nginx 不对该响应启用缓冲，否则
+# 「逐行推送」会在 nginx 侧被攒成一坨、直到流结束才一次性下发（前端表现为
+# 进度条长时间不动然后瞬间跑完）。app/routes/chat.py 已带这一条，这里补齐。
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
 
 @session_bp.route("", methods=["POST"])
 def create_session():
@@ -1304,7 +1313,8 @@ def workflow_step2_stream(session_id: str):
     session = session_manager.get_session(session_id)
     if not session:
         return Response("data: " + json.dumps({"type": "error", "message": "session not found"}) + "\n\n",
-                        mimetype="text/event-stream")
+                        mimetype="text/event-stream",
+                        headers=_SSE_HEADERS)
 
     orig = session.original_topology
     eq_params = session.equivalent_params if hasattr(session, "equivalent_params") else None
@@ -1641,7 +1651,7 @@ def workflow_step2_stream(session_id: str):
         # Signal done
         yield f"data: {json.dumps({'type': 'done', 'data': {'stage': 'step2'}})}\n\n"
 
-    return Response(generate(), mimetype="text/event-stream")
+    return Response(generate(), mimetype="text/event-stream", headers=_SSE_HEADERS)
 
 
 @session_bp.route("/<session_id>/workflow/step3", methods=["POST"])

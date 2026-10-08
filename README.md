@@ -351,3 +351,75 @@ docker run -d --name equivalent-modeling-service \
 
 构建流程、持久化契约与运维须知见 **`docs/PG迁移SQLite改造计划.md`**；
 上一版「内嵌 PostgreSQL」形态的实现细节见 **`docs/数据库内嵌化改造说明.md`**（已被本次改造取代，仅作历史参考）。
+
+### 7.2 反向代理 / 子路径前缀（如 nginx `/ftbot/equivalent/`）
+
+本应用可以被 nginx（或任何反向代理）挂在**任意子路径**下，例如：
+
+```nginx
+location /ftbot/equivalent/ {
+    proxy_pass http://7.185.127.30:38088/;   # 尾斜杠 = 剥掉前缀后再转发，必须保留
+}
+```
+
+**前缀归属：浏览器一侧，不是后端。** `proxy_pass` 结尾的 `/` 会把 `/ftbot/equivalent/`
+从前缀里剥掉，因此 Flask 收到的仍是 `/`、`/api/...`、`/static/...`、`/ws/...`，
+后端**不需要**（也不应该）知道这个前缀。真正要知道前缀的是浏览器，所以前端把
+所有地址都从**当前文档地址**推导（`static/index.html` 里的 `APP_BASE`，单一事实来源）：
+
+- 6 处资源引用写成**相对路径** `static/xxx`（随文档地址解析，天然带前缀）；
+- `API = APP_BASE + "/api"`（`topo-renderer.js` 的 6 处 fetch 都复用这个全局量）；
+- WebSocket 用 `location.host + APP_BASE + "/ws/simulation/<id>"`。
+
+于是**根路径部署与任意前缀部署共用同一份前端代码**，无需按环境改 HTML，
+也不需要 `SCRIPT_NAME` / `X-Forwarded-Prefix` / `ProxyFix` 之类的后端配合。
+
+> 历史故障：资源与接口曾写死为 `/static/...`、`/api`。挂在 `/ftbot/equivalent/` 下时
+> 页面能返回 200，但浏览器会把资源请求打到 nginx **根**上（那里没有本应用的 location），
+> 表现为「页面打开是白的、控制台一片 404」——静态资源、API、WebSocket 全挂。
+
+四条容易漏掉的代理配置：
+
+```nginx
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+server {
+    # ① 裸前缀（不带尾斜杠）匹配不到 location /ftbot/equivalent/ → 必须显式跳转
+    location = /ftbot/equivalent { return 301 /ftbot/equivalent/; }
+
+    location /ftbot/equivalent/ {
+        proxy_pass http://7.185.127.30:38088/;
+        proxy_http_version 1.1;
+
+        # ② WebSocket（/ws/simulation/<id>）：缺这两个头握手直接失败
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # ③ SSE（/api/chat/stream、/api/session/<id>/workflow/step2/stream）：
+        #    应用已回 X-Accel-Buffering: no，这里再显式关一层缓冲，
+        #    否则「逐行推送」会被攒成一坨、流结束才一次性下发
+        proxy_buffering off;
+        proxy_cache off;
+
+        # ④ 长任务（LLM 调用 / 仿真轮询）：默认 60s 读超时会被掐断
+        proxy_read_timeout 3600s;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+**端口映射别改容器内端口**：上面 `38088` 是宿主侧映射（`-p 38088:5000`）。
+容器内保持 `FLASK_PORT=5000` —— `Dockerfile` 的 `HEALTHCHECK` 写死探测
+`127.0.0.1:5000`，改成 38088 会让容器被判定为不健康。
+
+自检（把 `<host>` 换成实际入口即可，应全部 2xx / 101）：
+
+```bash
+curl -sI http://<host>/ftbot/equivalent/                     # 页面 200
+curl -sI http://<host>/ftbot/equivalent/static/d3.v7.min.js  # 静态资源 200
+curl -s  http://<host>/ftbot/equivalent/api/health           # API 200 {"status":"ok",...}
+```
