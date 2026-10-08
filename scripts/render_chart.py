@@ -489,6 +489,57 @@ def main() -> int:
                     " —— 数字形态必须经 int64 归一化，字符串形态原样下发"
                 )
 
+    # ── 形态 E：Service 暴露方式（values.service.type，当前 NodePort）──
+    # 两个断言点：
+    #   1) type 必须与 values.service.type 一致（模板不得硬编码，否则想切回
+    #      ClusterIP 得改模板，容易漏改）
+    #   2) nodePort 为空时**整行不得渲染** —— `nodePort:`（冒号后无值）是 YAML
+    #      null，k8s 以 cannot unmarshal 拒绝发布，与 2026-09-30 的 nil 事故同类
+    print("\n[6] Service 暴露方式")
+    try:
+        svc_doc = next(d for d in yaml.safe_load_all(rendered_a.get("service.yaml", "")) if d)
+    except (yaml.YAMLError, StopIteration):
+        svc_doc = None
+    if not isinstance(svc_doc, dict):
+        errors.append("[6] service.yaml 未渲染出合法 YAML 文档")
+    else:
+        spec = svc_doc.get("spec") or {}
+        want_type = values["service"]["type"]
+        if spec.get("type") != want_type:
+            errors.append(
+                f"[6] Service spec.type={spec.get('type')!r}，期望 {want_type!r}"
+                "（应取自 values.service.type，不要硬编码）"
+            )
+        else:
+            print(f"    OK  : Service type = {spec.get('type')}")
+        for port in spec.get("ports") or []:
+            if "nodePort" in port:
+                errors.append(
+                    f"[6] values.service.nodePort 为空时不应下发 nodePort（渲染出 {port['nodePort']!r}）"
+                    " —— 空值会变成 YAML null，k8s 以 cannot unmarshal 拒绝"
+                )
+        if "nodePort" not in (spec.get("ports") or [{}])[0]:
+            print("    OK  : nodePort 留空时不渲染该键（无 null 值）")
+
+        # 显式配置 nodePort 时必须渲染成**整数**（字符串会被 k8s 拒绝）
+        values_e = {k: (dict(v) if isinstance(v, dict) else v) for k, v in values.items()}
+        values_e["service"] = dict(values_e["service"])
+        values_e["service"]["nodePort"] = 30080
+        rendered_e, errs_e = render_all(values_e, "E")
+        errors += errs_e
+        try:
+            svc_e = next(d for d in yaml.safe_load_all(rendered_e.get("service.yaml", "")) if d)
+            got = ((svc_e.get("spec") or {}).get("ports") or [{}])[0].get("nodePort")
+            if got != 30080 or isinstance(got, bool):
+                errors.append(
+                    f"[6] values.service.nodePort=30080 时渲染为 {got!r}，期望整数 30080"
+                    "（模板需走 | int，字符串形态会被 k8s 拒绝）"
+                )
+            else:
+                print("    OK  : 显式 nodePort=30080 渲染为整数")
+        except (yaml.YAMLError, StopIteration, IndexError, KeyError, TypeError) as exc:
+            errors.append(f"[6] 指定 nodePort 时 service.yaml 渲染/解析失败: {type(exc).__name__}: {exc}")
+
     if errors:
         print(f"\n发现 {len(errors)} 个问题:")
         for e in errors:

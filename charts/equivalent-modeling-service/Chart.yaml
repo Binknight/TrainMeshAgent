@@ -1,5 +1,5 @@
 name: equivalent-modeling-service
-version: 0.0.2
+version: 0.0.3
 description: "equivalent-modeling-service 训练组网仿真分析服务（Flask Agent + MCP 仿真 Server）"
 engine: gotpl
 apiVersion: v1

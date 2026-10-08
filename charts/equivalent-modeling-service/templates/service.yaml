@@ -5,6 +5,10 @@ metadata:
   labels:
     app: {{ .Values.app.name }}
 spec:
+  # NodePort：集群外可经 <节点IP>:<nodePort> 直连 Flask（SSE / WebSocket 直连，
+  # 没有网关缓冲问题）。改回 ClusterIP 则仅集群内可达，由平台网关(domain)转发。
+  # 取值来自 values.yaml 的 service.type，模板不硬编码，便于随时切回。
+  type: {{ .Values.service.type }}
   ports:
     # 对外只暴露 Flask（业务侧 API / SSE / WebSocket）。
     # MCP(9000) 与 Flask 同容器，走 127.0.0.1，不需要 Service 暴露。
@@ -13,5 +17,10 @@ spec:
     - name: http
       port: 80
       targetPort: {{ .Values.config.flaskPort | int }}
+      # 仅在显式配置了 nodePort 时下发。空值必须整行不渲染：`nodePort:` 会被
+      # 解析成 YAML null，k8s 直接以 cannot unmarshal 拒绝（同 nil 值事故一类）。
+      {{- if .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort | int }}
+      {{- end }}
   selector:
     app: {{ .Values.app.name }}

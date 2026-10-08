@@ -30,6 +30,20 @@ domain: @domain@
 eks:
   clusterId: @eks.clusterId@
 
+# 服务暴露方式。原为 ClusterIP（仅集群内可达，靠平台网关/domain 转发），
+# 现改为 NodePort：集群外可经 <节点IP>:<nodePort> 直接访问 Flask。
+# 注意：本服务的 Pod 受 node.firewall/enabled 节点亲和限制，NodePort 只在这些
+# 节点上监听 —— 访问要用实际调度到的节点 IP，且端口需在防火墙放行范围内。
+service:
+  # NodePort / ClusterIP。改回 ClusterIP 即回到「只经平台网关暴露」的原形态，
+  # 不需要改模板。
+  type: NodePort
+  # 固定 nodePort（k8s 默认范围 30000-32767）。留空 = 由 k8s 自动分配。
+  # 留空时模板整行不渲染 —— 不能下发空值：`nodePort:`（冒号后无值）会被解析成
+  # YAML null，k8s 以 cannot unmarshal 拒绝发布（与 2026-09-30 那次 OPENAI_API_KEY
+  # 的 nil 事故同一类）。端口是**节点级**资源，同一节点上不能与其他 Service 冲突。
+  nodePort: ""
+
 deployment:
   # 必须为 1，两个独立原因：
   #   1. 仿真工作区是节点本地 hostPath，且 MCP 的 task_store 是进程内内存态，
