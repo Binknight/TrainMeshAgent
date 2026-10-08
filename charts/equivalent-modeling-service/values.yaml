@@ -8,12 +8,18 @@ images:
   repository: @repository@
   pullPolicy: IfNotPresent
   pullSecret: @pullSecret@
-  # 平台注入的镜像 tag，原样使用。
+  # 平台注入的镜像 tag，**必须带引号**（与 config 里 LLM 四个键同一约定）：
+  # 流水线做的是纯文本 sed 替换，不写引号时注入的纯数字/日期形态
+  # （如 20260930171306）会成为 YAML 数字，一旦经过 YAML/JSON 解析回写或
+  # 数值化处理，就会被浮点最短表示重写成科学计数法 —— 真实事故：镜像 tag
+  # 变成 equivalent-modeling-service:2.0260930171306e+13，而其他服务是
+  # full-stress-test-service:20251226094438（同一份 YYYYMMDDHHMMSS 时间戳）。
+  # 带引号保证替换后始终是字符串，任何解析回写都不会再把它当数字。
   # 注：源服务模板写的是 {{ int .Values.images.version }}，用于把纯数字构建号
   # 归一化（如 "007"→"7"）；但 Sprig 的 int 对 1.0.0 / 1.0.0.20250920 这类
   # 带点版本会静默得到 0，直接导致 ImagePullBackOff。这里按原样下发，
   # 纯数字 tag 行为不变；若平台确实依赖 int 归一化，再改回。
-  version: @version@
+  version: "@version@"
 
 domain: @domain@
 
