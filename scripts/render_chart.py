@@ -77,6 +77,14 @@ def apply_pipe(value, pipe: str, origin: str = ""):
             if value is None:
                 raise RenderError(f"{origin} 取值为空，无法 int()（键名可能写错）")
             value = str(int(value))
+        elif stage in ("int64", "float64"):
+            # deployment.yaml 用 `| int64` 把数值形态的镜像 tag 转回整数：
+            # Helm 加载 values 时纯数字会变成 float64，Go 模板按 %v 渲染大
+            # 浮点数就是科学计数法（20261008092605 -> 2.0261008092605e+13）。
+            # 这里必须在本地复现同样的语义，否则该回归在 CI 里静默通过。
+            if value is None:
+                raise RenderError(f"{origin} 取值为空，无法 {stage}()（键名可能写错）")
+            value = float(value) if stage == "float64" else int(float(value))
         elif stage.startswith("default"):
             fallback = stage.split(None, 1)[1].strip() if len(stage.split(None, 1)) > 1 else ""
             if value in (None, "", False):
@@ -86,12 +94,40 @@ def apply_pipe(value, pipe: str, origin: str = ""):
     return value
 
 
+def go_kind(value) -> str:
+    """把 Python 值映射成 Go 反射的 Kind 名（模板里 kindIs 的语义）。
+
+    注意 bool 必须在 int 之前判断：Python 的 bool 是 int 的子类，
+    否则 true/false 会被判成 "int"。
+    """
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float64"
+    if isinstance(value, dict):
+        return "map"
+    if isinstance(value, (list, tuple)):
+        return "slice"
+    if value is None:
+        return "invalid"
+    return type(value).__name__
+
+
 def eval_expr(expr: str, scope: dict):
     """求值单个动作表达式（不含 if/else/end）。"""
     expr = expr.strip()
     if expr.startswith("if ") or expr in ("else", "end"):
         raise RenderError(f"eval_expr 不应收到控制流: {expr}")
     try:
+        # kindIs "string" .Values.x —— deployment.yaml 用它区分「数字形态的
+        # 镜像 tag（需 int64 归一化）」与「字符串形态（原样下发）」。
+        m = re.fullmatch(r'kindIs\s+"([A-Za-z0-9_]+)"\s+(.+)', expr)
+        if m:
+            return go_kind(eval_expr(m.group(2), scope)) == m.group(1)
         if "|" in expr:
             head, _, pipe = expr.partition("|")
             return apply_pipe(eval_expr(head, scope), pipe, origin=expr)
@@ -418,6 +454,40 @@ def main() -> int:
         print(f"    {'OK  ' if ok else 'FAIL'}: configMap 下发 SQLITE_PATH（落在 db 挂载目录内）")
         if not ok:
             errors.append("[A] configMap.yaml 缺少 SQLITE_PATH 或取值不在 /home/data/db/ 下")
+
+    # ── 形态 D：镜像 tag 的两种值形态都必须渲染正确 ──
+    # 事故：平台把 tag 以**数字**形态注入 —— Helm 3 加载 values 会做 YAML->JSON
+    # 往返，纯数字被解析成 float64，Go 模板按 %v 渲染大浮点数即科学计数法。
+    # 现象极具误导性：私有仓里 tag 是正确的 20261008092605，部署出来却是
+    # 2.0261008092605e+13（k8s 去拉不存在的 tag）。deployment.yaml 用
+    # kindIs 分支兜住：数字走 int64，字符串原样。这里把两种形态都断言一遍，
+    # 并额外覆盖带点版本 —— Sprig 的 int 会把它静默变成 0，故不能用无条件 int。
+    print("\n[5] 镜像 tag 归一化（数字形态不得渲染成科学计数法）")
+    image_re = re.compile(r"(?m)^\s*image:\s*(\S+)\s*$")
+    tag_cases = (
+        ("float64（Helm 加载纯数字 tag 后的形态）", float(20261008092605), "20261008092605"),
+        ("int", 20261008092605, "20261008092605"),
+        ("纯数字字符串（占位符带引号替换后）", "20261008092605", "20261008092605"),
+        ("带点版本字符串", "1.0.0.20250920", "1.0.0.20250920"),
+    )
+    for label, tag, expect in tag_cases:
+        values_d = {k: (dict(v) if isinstance(v, dict) else v) for k, v in values.items()}
+        values_d["images"] = dict(values_d["images"])
+        values_d["images"]["version"] = tag
+        rendered_d, errs_d = render_all(values_d, f"tag:{label}")
+        errors += errs_d
+        images = image_re.findall(rendered_d.get("deployment.yaml", ""))
+        if len(images) != 2:
+            errors.append(f"[5] {label}: 期望 2 处 image 字段（initContainer + 主容器），实际 {len(images)} 处")
+            continue
+        for img in images:
+            if img.endswith(":" + expect) and "e+" not in img:
+                print(f"    OK  : {label} -> {img}")
+            else:
+                errors.append(
+                    f"[5] {label}: 镜像渲染为 {img}（期望以 :{expect} 结尾且不含科学计数法）"
+                    " —— 数字形态必须经 int64 归一化，字符串形态原样下发"
+                )
 
     if errors:
         print(f"\n发现 {len(errors)} 个问题:")

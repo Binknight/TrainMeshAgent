@@ -59,7 +59,12 @@ spec:
               && chmod -R o+r {{ .Values.log.containerDir }}/{{ .Values.app.name }}
               && chmod 750 {{ .Values.workspace.containerPath }}
               && chmod 750 {{ .Values.database.containerPath }}
-          image: {{ .Values.images.repository }}/{{ .Values.app.name }}:{{ .Values.images.version }}
+          # 镜像 tag 必须归一化后再拼接：平台注入的纯数字 tag 进 Helm 会变成
+          # float64，Go 模板按 %v 渲染大浮点数即科学计数法
+          # （20261008092605 -> 2.0261008092605e+13），k8s 会去拉一个不存在的
+          # tag。数字走 int64 转回整数，字符串（1.0.0 / 1.0.0.20250920）原样。
+          # 详见 values.yaml 的 images.version 注释。
+          image: {{ .Values.images.repository }}/{{ .Values.app.name }}:{{ if kindIs "string" .Values.images.version }}{{ .Values.images.version }}{{ else }}{{ .Values.images.version | int64 }}{{ end }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           resources: {}
           securityContext:
@@ -80,7 +85,8 @@ spec:
               mountPath: {{ .Values.database.containerPath }}
       containers:
         - name: {{ .Values.app.name }}
-          image: {{ .Values.images.repository }}/{{ .Values.app.name }}:{{ .Values.images.version }}
+          # tag 归一化同上（数字走 int64，避免渲染成 2.0261008092605e+13）
+          image: {{ .Values.images.repository }}/{{ .Values.app.name }}:{{ if kindIs "string" .Values.images.version }}{{ .Values.images.version }}{{ else }}{{ .Values.images.version | int64 }}{{ end }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           # 配置全部来自 ConfigMap，以进程环境变量下发，会覆盖镜像内 ENV
           # （关键：把 AICM_MCP_WORKSPACE_ROOT 指到挂载点，因此本次改动不需要重新构建镜像）。
