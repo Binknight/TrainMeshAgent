@@ -343,7 +343,7 @@
       .attr("x", moeX).attr("y", moeY)
       .attr("width", moeW).attr("height", moeInnerH)
       .attr("rx", 4 * s).attr("ry", 4 * s)
-      .attr("fill", "#1a1114")
+      .attr("fill", "var(--model-ffn-fill)")
       .attr("stroke", "var(--red)")
       .attr("stroke-width", 1.2 * s)
       .attr("class", "moe-node-rect");
@@ -370,7 +370,7 @@
       .attr("x", routerX).attr("y", routerY)
       .attr("width", routerW).attr("height", routerItemH)
       .attr("rx", 3 * s).attr("ry", 3 * s)
-      .attr("fill", "#1a1528")
+      .attr("fill", "var(--model-router-fill)")
       .attr("stroke", "var(--purple)")
       .attr("stroke-width", 0.8 * s)
       .call(function (r) { if (hoverHelper) hoverHelper(r, 0.8 * s, "moe_router"); });
@@ -389,7 +389,7 @@
       .attr("x", routerX).attr("y", softmaxY)
       .attr("width", routerW).attr("height", routerItemH)
       .attr("rx", 3 * s).attr("ry", 3 * s)
-      .attr("fill", "#1a1528")
+      .attr("fill", "var(--model-router-fill)")
       .attr("stroke", "var(--purple)")
       .attr("stroke-width", 0.8 * s)
       .call(function (r) { if (hoverHelper) hoverHelper(r, 0.8 * s, "moe_router"); });
@@ -445,7 +445,7 @@
         .attr("x", ex).attr("y", expertStartY)
         .attr("width", expertW).attr("height", expertH)
         .attr("rx", 4 * s).attr("ry", 4 * s)
-        .attr("fill", isSelected ? "#1a2030" : "#151018")
+        .attr("fill", isSelected ? "var(--model-expert-sel-fill)" : "var(--model-expert-unsel-fill)")
         .attr("stroke", isSelected ? "var(--cyan)" : "var(--red)")
         .attr("stroke-width", (isSelected ? 1.5 : 0.8) * s)
         .attr("class", isSelected ? "moe-expert-selected" : "moe-expert-unselected");
@@ -511,7 +511,7 @@
         .attr("x", seX).attr("y", seY)
         .attr("width", seW).attr("height", seH)
         .attr("rx", 4 * s).attr("ry", 4 * s)
-        .attr("fill", "#1a2a18")
+        .attr("fill", "var(--model-shared-fill)")
         .attr("stroke", "var(--green)")
         .attr("stroke-width", 1.5 * s)
         .attr("class", "moe-node-rect");
@@ -652,8 +652,8 @@
       g.append("rect")
         .attr("x", cx).attr("y", cy)
         .attr("width", cellW).attr("height", cellH)
-        .attr("fill", isHL ? "var(--cyan)" : "#161c24")
-        .attr("stroke", isHL ? "#ff8f40" : "var(--text-muted)")
+        .attr("fill", isHL ? "var(--cyan)" : "var(--bg-surface)")
+        .attr("stroke", isHL ? "var(--orange)" : "var(--text-muted)")
         .attr("stroke-width", isHL ? 2 : 0.5)
         .attr("stroke-dasharray", isHL ? "3 2" : "none")
         .attr("class", isHL ? "tensor-cell pinned" : "tensor-cell");
@@ -665,7 +665,7 @@
         .attr("font-size", effectiveTp > 16 ? "7px" : "9px")
         .attr("font-family", "var(--font-mono)")
         .attr("font-weight", "600")
-        .attr("fill", isHL ? "#0a0e14" : "var(--text-secondary)")
+        .attr("fill", isHL ? "var(--on-solid-accent)" : "var(--text-secondary)")
         .text(cellIdx + 1);
     }
     // Draw non-highlighted cells first, then highlighted on top
@@ -885,7 +885,7 @@
         .attr("width", sw(D.BOX_W))
         .attr("height", sw(_tfCardH))
         .attr("rx", 6 * scale).attr("ry", 6 * scale)
-        .attr("fill", "#0d131a")
+        .attr("fill", "var(--bg-darker)")
         .attr("stroke", lc)
         .attr("stroke-width", 1 * scale)
         .attr("opacity", 0.3 + _si * 0.25)
@@ -899,7 +899,7 @@
       .attr("width", sw(D.BOX_W))
       .attr("height", sw(_tfCardH))
       .attr("rx", 6 * scale).attr("ry", 6 * scale)
-      .attr("fill", "#0d131a")
+      .attr("fill", "var(--bg-darker)")
       .attr("stroke", lc)
       .attr("stroke-width", 1.5 * scale)
       .attr("class", "moe-stack-card");
@@ -936,20 +936,20 @@
     // ── 1. Embeddings ──
     drawBox(g, sx(D.CX - D.BOX_W / 2), sy(D.Y_EMBED), sw(D.BOX_W), sw(D.H_MD),
       "Position + Word Embeddings & Dropout",
-      "#1a1a10", "var(--yellow)", "var(--yellow)", "moe-embed",
+      "var(--model-embed-fill)", "var(--yellow)", "var(--yellow)", "moe-embed",
       "embeddings", _addMoeHover);
 
     // ── 2. Layer Norm 1 ──
     drawBox(g, sx(D.CX - D.NARROW_W / 2), sy(D.Y_LN1), sw(D.NARROW_W), sw(D.H_SM),
       "Layer Norm",
-      "#111a13", "var(--green)", "var(--green)", "moe-ln",
+      "var(--model-ln-fill)", "var(--green)", "var(--green)", "moe-ln",
       "layer_norm_1", _addMoeHover);
 
     // ── 3. Multi-Head Self-Attention ──
     drawSubBlock(g, sx(D.CX - D.BLOCK_W / 2), sy(D.Y_ATTN), sw(D.BLOCK_W), sw(D.H_ATTN),
       "Multi-Head Self-Attention",
       ["Self Attention", "Linear (h → h)", "Dropout"],
-      "#111922", "var(--cyan)", "var(--cyan)", "#15202b", "var(--cyan)",
+      "var(--model-attn-fill)", "var(--cyan)", "var(--cyan)", "var(--model-attn-sub-fill)", "var(--cyan)",
       "multi_head_attention", _addMoeHover);
 
     // ── 4. Add 1 ──
@@ -961,7 +961,7 @@
     // ── 5. Layer Norm 2 ──
     drawBox(g, sx(D.CX - D.NARROW_W / 2), sy(D.Y_LN2), sw(D.NARROW_W), sw(D.H_SM),
       "Layer Norm",
-      "#111a13", "var(--green)", "var(--green)", "moe-ln",
+      "var(--model-ln-fill)", "var(--green)", "var(--green)", "moe-ln",
       "layer_norm_2", _addMoeHover);
 
     // ── 6. MoE FFN Block ──
@@ -977,13 +977,13 @@
     // ── 8. Final Layer Norm ──
     drawBox(g, sx(D.CX - D.NARROW_W / 2), sy(actualY_LN3), sw(D.NARROW_W), sw(D.H_SM),
       "Final Layer Norm",
-      "#111a13", "var(--green)", "var(--green)", "moe-ln",
+      "var(--model-ln-fill)", "var(--green)", "var(--green)", "moe-ln",
       "final_layer_norm", _addMoeHover);
 
     // ── 9. Output Layer ──
     drawBox(g, sx(D.CX - D.BOX_W / 2), sy(actualY_Output), sw(D.BOX_W), sw(D.H_MD),
       "Output Layer & Loss",
-      "#1a140f", "var(--orange)", "var(--orange)", "moe-output",
+      "var(--model-output-fill)", "var(--orange)", "var(--orange)", "moe-output",
       "output_layer", _addMoeHover);
 
     // ── Main flow arrows ──
@@ -1050,7 +1050,7 @@
         g.append("rect")
           .attr("x", sx(tableX_d)).attr("y", sy(tableY_d))
           .attr("width", sw(tableW_d)).attr("height", sw(HEADER_H))
-          .attr("fill", "#21262d");
+          .attr("fill", "var(--bg-elevated-2)");
 
         // Row backgrounds (highlighted row last)
         for (var pi = 0; pi < ppCount; pi++) {
@@ -1059,7 +1059,7 @@
           g.append("rect")
             .attr("x", sx(tableX_d)).attr("y", sy(ry))
             .attr("width", sw(tableW_d)).attr("height", sw(ROW_H))
-            .attr("fill", pi % 2 === 0 ? "var(--bg-surface)" : "#161b22")
+            .attr("fill", pi % 2 === 0 ? "var(--bg-surface)" : "var(--bg-elevated)")
             .attr("class", "pp-row");
         }
         if (hasPpHL) {
@@ -1070,7 +1070,7 @@
             .attr("width", sw(tableW_d)).attr("height", sw(ROW_H))
             .attr("fill", "var(--cyan)")
             .attr("fill-opacity", 0.2)
-            .attr("stroke", "#ff8f40")
+            .attr("stroke", "var(--orange)")
             .attr("stroke-width", 2 * scale)
             .attr("stroke-dasharray", "3 2")
             .attr("class", "pp-row pinned");
@@ -1178,7 +1178,7 @@
         g.append("rect")
           .attr("x", sx(epTableX_d)).attr("y", sy(epTableY_d))
           .attr("width", sw(epTableW_d)).attr("height", sw(EP_HEADER_H))
-          .attr("fill", "#21262d");
+          .attr("fill", "var(--bg-elevated-2)");
 
         // Row backgrounds (striped)
         for (var epi = 0; epi < epCount; epi++) {
@@ -1186,7 +1186,7 @@
           g.append("rect")
             .attr("x", sx(epTableX_d)).attr("y", sy(ery))
             .attr("width", sw(epTableW_d)).attr("height", sw(EP_ROW_H))
-            .attr("fill", epi % 2 === 0 ? "var(--bg-surface)" : "#161b22")
+            .attr("fill", epi % 2 === 0 ? "var(--bg-surface)" : "var(--bg-elevated)")
             .attr("class", "pp-row");
         }
 

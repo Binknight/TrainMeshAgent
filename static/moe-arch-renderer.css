@@ -31,20 +31,20 @@
 
 /* ── MoE Transformer Stack card ── */
 .moe-stack-card {
-  fill: #111820;
+  fill: var(--model-card-fill);
   stroke: var(--cyan);
   stroke-width: 1.8;
 }
 
 .moe-stack-shadow {
-  fill: #0d131a;
+  fill: var(--bg-darker);
   stroke: var(--cyan);
   stroke-width: 1.2;
 }
 
 /* ── Router elements ── */
 .moe-router-rect {
-  fill: #1a1528;
+  fill: var(--model-router-fill);
   stroke: var(--purple);
   stroke-width: 0.8;
 }

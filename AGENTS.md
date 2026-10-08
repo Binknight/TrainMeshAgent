@@ -136,6 +136,24 @@ DAO 是真正的影响集中点。
 `build.sh` 是把工作区文件直接打进 tar 的，CRLF 会让容器内的 `trap` / 信号名带上 `\r` 而失败。
 本仓库 `core.autocrlf=true`，因此**工作区看到 CRLF 是正常的，但要确认提交进仓库的是 LF**。
 
+### 4.6 前端颜色的单一事实来源是 `static/index.html` 的 token 层
+
+前端有**暗色（默认）/ 浅色**两套配色，由 `<html data-theme="dark|light">` 切换（标题栏
+右上角按钮，选择存 `localStorage["tms-theme"]`；`?theme=light|dark` 可临时覆盖且不落盘）。
+
+- 颜色只允许写在一处：`static/index.html` `<style>` 顶部的 `:root { ... }`（暗色）与
+  `:root[data-theme="light"] { ... }`（浅色，**只覆盖颜色**，不含组件规则）。
+- **组件规则、SVG 表现属性一律用 `var(--token)`，禁止再出现颜色字面量**
+  （`#39bae6` / `rgba(57,186,230,.08)` 等）。半透明写成 `rgba(var(--xxx-rgb), a)`，
+  不要用 `color-mix()`（内网浏览器版本不可控）。
+- **JS 侧同样适用**：`static/topo-renderer.js`、`static/moe-arch-renderer.js`、
+  `static/moe-arch-renderer.css` 里的颜色也必须是变量。CSS 变量运行时解析，
+  所以**切换主题不需要重绘 SVG**；需要按主题重算的非颜色逻辑请监听 `tms:themechange` 事件。
+- 不要把 CSS 变量读成具体色值再缓存进 JS（`getComputedStyle` + 变量），那样切主题就不生效了。
+- **不要用颜色字符串做逻辑判断**（历史写法 `color === "#3fb950"` 决定"是否仿真柱"）——
+  改成显式参数或语义标记，否则换成变量后比较必然失效。
+- 改了前端资源要同步 `static/index.html` 里的 `?v=` 版本号，否则浏览器继续用旧缓存。
+
 ---
 
 ## 5. 已知陷阱（都是实际踩过的）
@@ -155,6 +173,7 @@ DAO 是真正的影响集中点。
 | **chart 里不能有取值为 nil 的模板键** | Sprig 的 `quote(nil)` 返回**空串**（不是 `"None"`），于是 `KEY: {{ .Values.x \| quote }}` 渲染成 `KEY:` → YAML null → k8s 直接拒绝整次发布：`unknown object type "nil"`（2026-09-30 真实事故：平台未登记 `openaiApiKey` 占位符 → 空串 → nil，报在 `Secret.stringData.OPENAI_API_KEY` 上）。规则：**凡可能为空的键一律条件渲染**（`{{- if ... }}` 整行不渲染），不要渲染成空值。当前：`templates/secret.yaml` 已删除，LLM 四个键（`config.openaiBaseUrl` / `openaiModel` / `openaiSslVerify` / `openaiApiKey`）由**平台变量注入**（占位符即变量名，如 `@config.openaiModel@`），在 `configMap.yaml` 里全部条件渲染 —— 变量未登记时该键不下发、回退 `app/config.py` 默认值（API Key 缺失则首次调用报鉴权失败，不卡发布）。`scripts/render_chart.py` 的 `check_no_null_values` 与形态 C（变量全未登记）断言把守这条 |
 | **`NO_PROXY` 含方括号 IPv6 会让 httpx 直接抛异常** | httpx 0.28 解析 `NO_PROXY=...,::1,[::1]` 这类值时，`URLPattern` 会崩在 `InvalidURL: Invalid port: ':1]'`。而 `app/agent/orchestrator.py` 用 `httpx.Client(verify=..., proxy=...)` 构造 OpenAI 客户端 —— 一旦运行环境设了这个值，**首次 LLM 调用即失败**（不是降级，是直接抛）。对策是清掉 `NO_PROXY` 里的 `[::1]` 写法（只留 `127.0.0.1` 与 `::1`），代码侧无法规避 |
 | **前端写死根绝对路径会在子路径部署下全 404** | nginx `location /pfx/ { proxy_pass http://host:38088/; }` 的尾斜杠会把 `/pfx/` 剥掉再转发，所以**后端不需要知道前缀，浏览器必须知道**。`static/index.html` 里 6 处资源引用曾是 `src="/static/..."`、接口曾是 `const API = "/api"`、WS 曾是 `location.host + "/ws/simulation/"` —— 挂到 `/ftbot/equivalent/` 时页面返回 200 但资源/API/WS 全被浏览器打到 nginx **根**上（那里没有本应用 location）→ 白屏 + 控制台 404。现在统一由 `APP_BASE`（按 `location.pathname` 推导）作为**单一事实来源**：资源用相对路径 `static/xxx`，接口 `APP_BASE + "/api"`，WS `location.host + APP_BASE + "/ws/simulation/"`。**新增任何前端请求地址都必须走 `APP_BASE`/相对路径，禁止再写 `/api`、`/static/` 开头的绝对路径**（`topo-renderer.js` 的 6 处 fetch 复用 index.html 的全局 `API`，不要另建常量） |
+| **前端颜色必须走 CSS 变量，不能写死** | 后端只有暗色时无所谓，加了浅色主题后，任何写死的 `#hex` / `rgba(...)` 都不跟随主题，页面上会出现"一块深色留在浅色界面里"。事实来源是 `static/index.html` 的 token 层（见 §4.6）。另注意：**不能用颜色字符串做逻辑判断**（如 `color === "#3fb950"` 判断是否仿真柱），改成变量后比较恒为假；SVG 的 `fill`/`stroke`/`stop-color`/`flood-color` 支持 `var()`，切换主题无需重绘 |
 | **SSE 在 nginx 下要显式关缓冲** | `app/routes/session.py` 的两条 step2 流曾只给 `mimetype` 不带 `X-Accel-Buffering: no`（`app/routes/chat.py` 一直有）。缺这条时 nginx 会缓冲整个响应，逐行推送变成「长时间不动后一次性刷出」。现在两处共用 `session.py` 顶部的 `_SSE_HEADERS`（含 `Cache-Control` / `Connection` / `X-Accel-Buffering`），新增 SSE 端点请复用它 |
 
 ---

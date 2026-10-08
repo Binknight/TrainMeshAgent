@@ -216,6 +216,14 @@ INFO [app.main] Starting equivalent-modeling-service on 0.0.0.0:5000
 
 启动后浏览器打开 **http://localhost:5000**。
 
+前端自带**暗色 / 浅色两套配色**，默认暗色：标题栏右上角的 ☀ / ☾ 按钮切换，选择记在
+`localStorage["tms-theme"]`；想直接看另一套配色可在 URL 上带参数（不落盘）：
+`http://localhost:5000/?theme=light` 或 `?theme=dark`。
+
+配色的唯一事实来源是 `static/index.html` `<style>` 顶部的 token 层（`:root` = 暗色，
+`:root[data-theme="light"]` = 浅色），组件样式一律引用 `var(--token)`，
+详见 `docs/使用指南.md` §13「前端配色与主题」。
+
 验证：
 
 ```bash

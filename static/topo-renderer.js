@@ -240,8 +240,8 @@ var MESH_CARD = {
 
 // PP color palette — three position types: first, middle, last
 // First and last PPs on both sides map to each other; middle PPs map to each other
-var _PP_COLORS = ["#58a6ff", "#ff8f40", "#3fb950"];
-var _PP_COLORS_HOVER = ["#79c0ff", "#ffb366", "#4ae168"];
+var _PP_COLORS = ["var(--mesh-pp-1)", "var(--mesh-pp-2)", "var(--mesh-pp-3)"];
+var _PP_COLORS_HOVER = ["var(--mesh-pp-1-hover)", "var(--mesh-pp-2-hover)", "var(--mesh-pp-3-hover)"];
 
 var meshWidth = 600;
 var meshHeight = 400;
@@ -909,7 +909,7 @@ function _meshBuildView(
     ];
     var bracePath = bracePathParts.join(" ");
     var braceG = parentG.append("g").attr("class", "dp-layer-brace-group");
-    var braceColor = "#58a6ff";
+    var braceColor = "var(--blue)";
     braceG
       .append("path")
       .attr("d", bracePath)
@@ -1173,11 +1173,11 @@ function _meshBuildView(
         .attr("class", rectClass)
         .attr("data-rank", tp.globalRank)
         .attr("data-side", side)
-        .attr("fill", isPinned ? null : "#161b22")
+        .attr("fill", isPinned ? null : "var(--bg-elevated)")
         .style("fill", isPinned ? "url(#" + _currentFilterPrefix + (isOrig ? "pinned-orig-fill" : "pinned-eq-fill") + ")" : null)
         .on("mouseover", function () {
           if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
-          d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
+          d3.select(this).attr("stroke", "var(--text-primary)").attr("stroke-width", 2);
         })
         .on("mouseout", function () {
           if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
@@ -1447,8 +1447,8 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     .attr("gradientUnits", "userSpaceOnUse")
     .attr("x1", x1).attr("y1", y1)
     .attr("x2", x2).attr("y2", y2);
-  linkGrad.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff");
-  linkGrad.append("stop").attr("offset", "100%").attr("stop-color", "#3fb950");
+  linkGrad.append("stop").attr("offset", "0%").attr("stop-color", "var(--blue)");
+  linkGrad.append("stop").attr("offset", "100%").attr("stop-color", "var(--green-solid)");
 
   // Glow filter for particles
   var glowFilter = linkDefs.append("filter")
@@ -1478,12 +1478,12 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   var PARTICLE_R = 4;
   var particleOrig = _linkLineG.append("circle")
     .attr("r", PARTICLE_R)
-    .attr("fill", "#58a6ff")
+    .attr("fill", "var(--blue)")
     .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
     .attr("opacity", 0);
   var particleEq = _linkLineG.append("circle")
     .attr("r", PARTICLE_R)
-    .attr("fill", "#3fb950")
+    .attr("fill", "var(--green-solid)")
     .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
     .attr("opacity", 0);
 
@@ -1554,7 +1554,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   // Card title
   _linkBarCardG.append("text")
     .attr("x", cardX + BAR_CARD_PAD).attr("y", cardY + BAR_CARD_PAD + BAR_CARD_TITLE_FONT)
-    .attr("fill", "#39bae6")
+    .attr("fill", "var(--cyan)")
     .attr("font-weight", "bold")
     .attr("font-size", BAR_CARD_TITLE_FONT + "px")
     .attr("font-family", "var(--font-sans)")
@@ -1576,7 +1576,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
       _simRunG.append("circle")
         .attr("cx", spinnerCX).attr("cy", spinnerCY)
         .attr("r", 10).attr("fill", "none")
-        .attr("stroke", "#39bae6").attr("stroke-width", 2.5)
+        .attr("stroke", "var(--cyan)").attr("stroke-width", 2.5)
         .attr("stroke-dasharray", "16 48")
         .attr("stroke-linecap", "round")
         .attr("opacity", 0.8);
@@ -1584,7 +1584,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
       _simRunG.append("text")
         .attr("x", spinnerCX).attr("y", spinnerCY + 24)
         .attr("text-anchor", "middle")
-        .attr("fill", "#39bae6")
+        .attr("fill", "var(--cyan)")
         .attr("font-weight", "600")
         .attr("font-size", "12px")
         .attr("font-family", "var(--font-sans)")
@@ -1824,7 +1824,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .append("text")
     .attr("x", viewX + pad)
     .attr("y", viewY + pad + titleFont)
-    .attr("fill", "#39bae6")
+    .attr("fill", "var(--cyan)")
     .attr("font-weight", "bold")
     .attr("font-size", titleFont + "px")
     .attr("font-family", "var(--font-sans)")
@@ -1864,7 +1864,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .attr("width", copyBtnSize)
     .attr("height", copyBtnSize)
     .attr("rx", 3)
-    .attr("fill", "rgba(255,255,255,0.06)")
+    .attr("fill", "rgba(var(--hairline-rgb), 0.06)")
     .attr("stroke", "var(--border)")
     .attr("stroke-width", 1);
 
@@ -1882,7 +1882,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .attr("x", -1).attr("y", -3)
     .attr("width", 6).attr("height", 8)
     .attr("rx", 1).attr("ry", 1)
-    .attr("fill", "rgba(255,255,255,0.08)")
+    .attr("fill", "rgba(var(--hairline-rgb), 0.08)")
     .attr("stroke", "var(--text-secondary)")
     .attr("stroke-width", 1.2);
 
@@ -1908,7 +1908,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .attr("width", toggleSize)
     .attr("height", toggleSize)
     .attr("rx", 3)
-    .attr("fill", "rgba(255,255,255,0.06)")
+    .attr("fill", "rgba(var(--hairline-rgb), 0.06)")
     .attr("stroke", "var(--border)")
     .attr("stroke-width", 1);
 
@@ -2034,7 +2034,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .append("text")
     .attr("x", viewX + pad)
     .attr("y", barCardY + pad + titleFont)
-    .attr("fill", "#39bae6")
+    .attr("fill", "var(--cyan)")
     .attr("font-weight", "bold")
     .attr("font-size", titleFont + "px")
     .attr("font-family", "var(--font-sans)")
@@ -2221,8 +2221,8 @@ function _flashCopyFeedback(copyBtnG) {
     .style("position", "absolute")
     .style("left", (bbox.right - svgRect.left + 6) + "px")
     .style("top", (bbox.top - svgRect.top + bbox.height / 2 - 10) + "px")
-    .style("background", "rgba(0,0,0,0.85)")
-    .style("color", "#3fb950")
+    .style("background", "var(--toast-bg)")
+    .style("color", "var(--green-solid)")
     .style("padding", "3px 8px")
     .style("border-radius", "4px")
     .style("font-size", "11px")
@@ -2342,7 +2342,7 @@ var _DETAIL_MAP = {
   pp_comm_mb_per_micro: "pp-comm",
   dp_comm_gb_per_step: "dp-comm",
 };
-var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
+var _DETAIL_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"];
 
 function _rebuildSimWithBars(skipFetch) {
   console.log("[DEBUG] _rebuildSimWithBars | skipFetch:", skipFetch, "| _pinnedSim:", !!window._pinnedSim);
@@ -2637,7 +2637,7 @@ function _drawOneDetailChart(g, cx, cy, cw, ch, detailType, data, title, sideIdx
     .attr("x", cx + cw / 2)
     .attr("y", cy - 2)
     .attr("text-anchor", "middle")
-    .attr("fill", sideIdx === 0 ? "#58a6ff" : "#79c0ff")
+    .attr("fill", sideIdx === 0 ? "var(--blue)" : "var(--blue-light)")
     .attr("font-weight", "600")
     .attr("font-size", "9px")
     .attr("font-family", "var(--font-sans)")
@@ -2729,13 +2729,13 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
     .attr("width", tipW)
     .attr("height", tipH)
     .attr("rx", 4)
-    .attr("fill", "rgba(13,17,23,0.95)")
+    .attr("fill", "rgba(var(--bg-input-rgb), 0.95)")
     .attr("stroke", "var(--border)");
   var tipLabel = tipG.append("text")
     .attr("x", centerX)
     .attr("y", cy + 13)
     .attr("text-anchor", "middle")
-    .attr("fill", "#fff")
+    .attr("fill", "var(--text-primary)")
     .attr("font-size", "9px")
     .attr("font-weight", "600")
     .attr("font-family", "var(--font-sans)");
@@ -2775,7 +2775,7 @@ function _drawDetailBars(g, cx, cy, cw, ch, subs, data, detailType) {
   var barGap = 8;
   var labelW = 52;
   var barMaxW = cw - labelW - pad - 38;
-  var colors = ["#f4a261", "#6abecd", "#8fc93a"];
+  var colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)"];
 
   subs.forEach(function (sub, i) {
     var by = cy + i * (barH + barGap);
@@ -2917,22 +2917,22 @@ function _drawRankBars(data, isSim) {
   if (isSim) {
     // Simulation tab: only show simulation result legends
     if (hasBoth) {
-      drawLegend("#3fb950", "原始仿真");
-      drawLegend("#7ee787", "等效仿真");
+      drawLegend("var(--green-solid)", "原始仿真");
+      drawLegend("var(--green-light)", "等效仿真");
     } else {
-      drawLegend("#3fb950", "仿真结果");
+      drawLegend("var(--green-solid)", "仿真结果");
     }
   } else if (hasBoth) {
-    drawLegend("#58a6ff", "原始估算");
-    drawLegend("#79c0ff", "等效估算");
+    drawLegend("var(--blue)", "原始估算");
+    drawLegend("var(--blue-light)", "等效估算");
     var simPanel = document.getElementById("tab-panel-simulation");
     if (simPanel && simPanel.classList.contains("active")) {
-      drawLegend("#3fb950", "原始仿真");
-      drawLegend("#7ee787", "等效仿真");
+      drawLegend("var(--green-solid)", "原始仿真");
+      drawLegend("var(--green-light)", "等效仿真");
     }
   } else {
-    drawLegend("#58a6ff", "理论估算");
-    if (hasAnyActual) drawLegend("#3fb950", "仿真验证");
+    drawLegend("var(--blue)", "理论估算");
+    if (hasAnyActual) drawLegend("var(--green-solid)", "仿真验证");
   }
   y += 14;
 
@@ -2996,7 +2996,7 @@ function _drawRankBars(data, isSim) {
     var miniGap = hasAnyActual ? 4 : 4;
 
     // Helper to draw a bar with staggered grow animation
-    var drawBar = function (val, color, label) {
+    var drawBar = function (val, color, label, isActual) {
       if (val == null) return;
       var w = scaleFn(val);
       if (w < 2) w = 2;
@@ -3004,7 +3004,6 @@ function _drawRankBars(data, isSim) {
       var g = st.barG.append("g");
       var delay = metricBase + barIdx * animStagger;
       barIdx++;
-      var isActual = color === "#3fb950" || color === "#7ee787";
       var rect = g.append("rect")
         .attr("x", barStartX)
         .attr("y", thisBarY)
@@ -3049,7 +3048,7 @@ function _drawRankBars(data, isSim) {
           .attr("opacity", 1);
         valText.interrupt()
           .transition().duration(100)
-          .attr("fill", "#fff")
+          .attr("fill", "var(--text-primary)")
           .attr("font-weight", "700")
           .attr("font-size", "10px");
       });
@@ -3088,28 +3087,28 @@ function _drawRankBars(data, isSim) {
     if (isSim) {
       // Simulation tab: only show simulation result bars (no theoretical estimates)
       if (hasBoth) {
-        if (origActV != null) barY += drawBar(origActV, "#3fb950", "原始仿");
-        if (eqActV != null) barY += drawBar(eqActV, "#7ee787", "等效仿");
+        if (origActV != null) barY += drawBar(origActV, "var(--green-solid)", "原始仿", true);
+        if (eqActV != null) barY += drawBar(eqActV, "var(--green-light)", "等效仿", true);
       } else {
-        if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
-        if (eqActV != null && !data.orig) barY += drawBar(eqActV, "#3fb950", "仿");
+        if (origActV != null) barY += drawBar(origActV, "var(--green-solid)", "仿", true);
+        if (eqActV != null && !data.orig) barY += drawBar(eqActV, "var(--green-solid)", "仿", true);
       }
     } else if (hasBoth) {
       // Estimate bars first
       if (origEstV != null)
-        barY += drawBar(origEstV, "#58a6ff", "原始估");
-      if (eqEstV != null) barY += drawBar(eqEstV, "#79c0ff", "等效估");
+        barY += drawBar(origEstV, "var(--blue)", "原始估", false);
+      if (eqEstV != null) barY += drawBar(eqEstV, "var(--blue-light)", "等效估", false);
       // Simulation bars
       if (origActV != null)
-        barY += drawBar(origActV, "#3fb950", "原始仿");
-      if (eqActV != null) barY += drawBar(eqActV, "#7ee787", "等效仿");
+        barY += drawBar(origActV, "var(--green-solid)", "原始仿", true);
+      if (eqActV != null) barY += drawBar(eqActV, "var(--green-light)", "等效仿", true);
     } else {
-      if (origEstV != null) barY += drawBar(origEstV, "#58a6ff", "估");
-      if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
+      if (origEstV != null) barY += drawBar(origEstV, "var(--blue)", "估", false);
+      if (origActV != null) barY += drawBar(origActV, "var(--green-solid)", "仿", true);
       if (eqEstV != null && !data.orig)
-        barY += drawBar(eqEstV, "#58a6ff", "估");
+        barY += drawBar(eqEstV, "var(--blue)", "估", false);
       if (eqActV != null && !data.orig)
-        barY += drawBar(eqActV, "#3fb950", "仿");
+        barY += drawBar(eqActV, "var(--green-solid)", "仿", true);
     }
 
     if (barY === y + 2) {
@@ -3432,7 +3431,7 @@ function canvasRebuild(targetSelector) {
         .attr("dx", 0)
         .attr("dy", 3)
         .attr("stdDeviation", 4)
-        .attr("flood-color", "#39bae6")
+        .attr("flood-color", "var(--cyan)")
         .attr("flood-opacity", 0.45);
     }
 
@@ -3449,7 +3448,7 @@ function canvasRebuild(targetSelector) {
       .attr("dx", 0)
       .attr("dy", 4)
       .attr("stdDeviation", 10)
-      .attr("flood-color", "#39bae6")
+      .attr("flood-color", "var(--cyan)")
       .attr("flood-opacity", 0.55);
 
     // Hover glow filter for DP card
@@ -3465,7 +3464,7 @@ function canvasRebuild(targetSelector) {
       .attr("dx", 0)
       .attr("dy", 3)
       .attr("stdDeviation", 8)
-      .attr("flood-color", "#58a6ff")
+      .attr("flood-color", "var(--blue)")
       .attr("flood-opacity", 0.5);
 
     // Hover glow filters for PP cards — one per position-type color
@@ -3499,7 +3498,7 @@ function canvasRebuild(targetSelector) {
       .attr("dx", 0)
       .attr("dy", 2)
       .attr("stdDeviation", 5)
-      .attr("flood-color", "#3fb950")
+      .attr("flood-color", "var(--green-solid)")
       .attr("flood-opacity", 0.7);
 
     // Hover glow filter for tensor grid cells
@@ -3516,15 +3515,15 @@ function canvasRebuild(targetSelector) {
       .attr("id", _currentFilterPrefix + "pinned-orig-fill")
       .attr("x1", "0%").attr("y1", "0%")
       .attr("x2", "100%").attr("y2", "100%");
-    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff").attr("stop-opacity", 0.6);
-    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "#39bae6").attr("stop-opacity", 0.2);
+    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "var(--blue)").attr("stop-opacity", 0.6);
+    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "var(--cyan)").attr("stop-opacity", 0.2);
     // Equivalent side: green gradient
     var pinnedEqFill = defs.append("linearGradient")
       .attr("id", _currentFilterPrefix + "pinned-eq-fill")
       .attr("x1", "0%").attr("y1", "0%")
       .attr("x2", "100%").attr("y2", "100%");
-    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "#3fb950").attr("stop-opacity", 0.6);
-    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "#2ea043").attr("stop-opacity", 0.2);
+    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "var(--green-solid)").attr("stop-opacity", 0.6);
+    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "var(--green-dark)").attr("stop-opacity", 0.2);
 
     defs
       .append("style")
@@ -3533,16 +3532,16 @@ function canvasRebuild(targetSelector) {
         [
           _svgScope + ".model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }",
           _svgScope + ".formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }",
-          _svgScope + ".formula-card-rect:hover { filter: url(#" + _currentFilterPrefix + "formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }",
+          _svgScope + ".formula-card-rect:hover { filter: url(#" + _currentFilterPrefix + "formula-card-glow); stroke: var(--cyan); stroke-width: 1.5; transform: translateY(-2px); }",
           _svgScope + ".formula-card-group text { pointer-events: none; }",
           _svgScope + ".dp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
-          _svgScope + ".dp-card-group:hover .dp-card { filter: url(#" + _currentFilterPrefix + "dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }",
+          _svgScope + ".dp-card-group:hover .dp-card { filter: url(#" + _currentFilterPrefix + "dp-card-glow); stroke: var(--blue-light); stroke-width: 2.5; }",
           _svgScope + ".dp-card-group:hover .dp-shadow { filter: url(#" + _currentFilterPrefix + "dp-card-glow); }",
           _svgScope + ".pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
           _svgScope + ".tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; }",
-          _svgScope + ".tp-rect:hover { filter: url(#" + _currentFilterPrefix + "tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }",
+          _svgScope + ".tp-rect:hover { filter: url(#" + _currentFilterPrefix + "tp-rect-glow); stroke: var(--mesh-pp-3-hover); stroke-width: 1.5; fill: var(--row-hover-green); }",
           _svgScope + ".tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; }",
-          _svgScope + ".tensor-cell:hover { filter: url(#" + _currentFilterPrefix + "tensor-cell-glow); stroke: #ff8f40; stroke-width: 1.2; }",
+          _svgScope + ".tensor-cell:hover { filter: url(#" + _currentFilterPrefix + "tensor-cell-glow); stroke: var(--orange); stroke-width: 1.2; }",
           _svgScope + ".tensor-cell-label { pointer-events: none; }",
         ].join(" "),
       );
@@ -3595,7 +3594,7 @@ function canvasRebuild(targetSelector) {
         .attr("x", _origW / 2)
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
-        .attr("fill", "#58a6ff")
+        .attr("fill", "var(--blue)")
         .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
@@ -3605,7 +3604,7 @@ function canvasRebuild(targetSelector) {
         .attr("x", _origW + _gap + _eqW / 2)
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
-        .attr("fill", "#58a6ff")
+        .attr("fill", "var(--blue)")
         .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
@@ -3799,7 +3798,7 @@ function canvasRebuild(targetSelector) {
         .attr("x", _origW2 / 2)
         .attr("y", _tH2 - 8)
         .attr("text-anchor", "middle")
-        .attr("fill", "#58a6ff")
+        .attr("fill", "var(--blue)")
         .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
@@ -5123,40 +5122,40 @@ function _positionDetailPanel(panel, tooltip) {
 
 var MODEL_COLORS = {
   input_embedding: {
-    fill: "#1a1a10",
-    stroke: "#ffb454",
+    fill: "var(--model-embed-fill)",
+    stroke: "var(--yellow)",
     label: "Embeddings",
-    text: "#ffb454",
+    text: "var(--yellow)",
   },
   layer_norm: {
-    fill: "#111a13",
-    stroke: "#7fd962",
+    fill: "var(--model-ln-fill)",
+    stroke: "var(--green)",
     label: "Layer Norm",
-    text: "#7fd962",
+    text: "var(--green)",
   },
   mha: {
-    fill: "#111922",
-    stroke: "#39bae6",
+    fill: "var(--model-attn-fill)",
+    stroke: "var(--cyan)",
     label: "Multi-Head Attention",
-    text: "#39bae6",
+    text: "var(--cyan)",
   },
-  mha_sub: { fill: "#15202b", stroke: "#39bae6", text: "#7b8ca3" },
+  mha_sub: { fill: "var(--model-attn-sub-fill)", stroke: "var(--cyan)", text: "var(--text-secondary)" },
   ffn: {
-    fill: "#1a1114",
-    stroke: "#f26d78",
+    fill: "var(--model-ffn-fill)",
+    stroke: "var(--red)",
     label: "Feed-Forward Network",
-    text: "#f26d78",
+    text: "var(--red)",
   },
-  ffn_sub: { fill: "#1f1518", stroke: "#f26d78", text: "#7b8ca3" },
-  add: { fill: "#161c24", stroke: "#4a5568", label: "Add", text: "#7b8ca3" },
+  ffn_sub: { fill: "var(--model-ffn-sub-fill)", stroke: "var(--red)", text: "var(--text-secondary)" },
+  add: { fill: "var(--bg-surface)", stroke: "var(--text-muted)", label: "Add", text: "var(--text-secondary)" },
   output: {
-    fill: "#1a140f",
-    stroke: "#ff8f40",
+    fill: "var(--model-output-fill)",
+    stroke: "var(--orange)",
     label: "Output Layer",
-    text: "#ff8f40",
+    text: "var(--orange)",
   },
-  skip: { stroke: "#ff8f40" },
-  transformer_card: { fill: "#111820", stroke: "#39bae6" },
+  skip: { stroke: "var(--orange)" },
+  transformer_card: { fill: "var(--model-card-fill)", stroke: "var(--cyan)" },
 };
 
 // ── Model structure concept tips (from transformer_tip.json) ──
@@ -5782,7 +5781,7 @@ function _renderOneModel(
           "," +
           (midY + D.ARROW_S / 2),
       )
-      .attr("fill", "#3fb950");
+      .attr("fill", "var(--green-solid)");
   }
 
   // ── Helper: dashed line ──
@@ -5820,9 +5819,9 @@ function _renderOneModel(
       .attr("width", D.BOX_W + 4)
       .attr("height", D.H_MD + 4)
       .attr("rx", 6)
-      .attr("fill", "#ff8f40")
+      .attr("fill", "var(--orange)")
       .attr("fill-opacity", 0.12)
-      .attr("stroke", "#ff8f40")
+      .attr("stroke", "var(--orange)")
       .attr("stroke-width", 3)
       .attr("stroke-dasharray", "3 2")
       .attr("class", "pp-row pinned");
@@ -5848,7 +5847,7 @@ function _renderOneModel(
       .attr("width", D.BOX_W)
       .attr("height", tfH)
       .attr("rx", 8)
-      .attr("fill", "#0d131a")
+      .attr("fill", "var(--bg-darker)")
       .attr("stroke", MODEL_COLORS.transformer_card.stroke)
       .attr("stroke-width", 1)
       .attr("opacity", 0.35 + i * 0.25);
@@ -5873,9 +5872,9 @@ function _renderOneModel(
       .attr("width", D.BOX_W + 4)
       .attr("height", tfH + 4)
       .attr("rx", 10)
-      .attr("fill", "#ff8f40")
+      .attr("fill", "var(--orange)")
       .attr("fill-opacity", 0.08)
-      .attr("stroke", "#ff8f40")
+      .attr("stroke", "var(--orange)")
       .attr("stroke-width", 3)
       .attr("stroke-dasharray", "3 2")
       .attr("class", "pp-row pinned");
@@ -6046,9 +6045,9 @@ function _renderOneModel(
       .attr("width", D.BOX_W + 4)
       .attr("height", D.H_MD + 4)
       .attr("rx", 6)
-      .attr("fill", "#ff8f40")
+      .attr("fill", "var(--orange)")
       .attr("fill-opacity", 0.12)
-      .attr("stroke", "#ff8f40")
+      .attr("stroke", "var(--orange)")
       .attr("stroke-width", 3)
       .attr("stroke-dasharray", "3 2")
       .attr("class", "pp-row pinned");
@@ -6183,7 +6182,7 @@ function _renderOneModel(
       .attr("width", cellW)
       .attr("height", cellH)
       .attr("fill", cellFill)
-      .attr("stroke", isHighlighted ? "#ff8f40" : "var(--text-muted)")
+      .attr("stroke", isHighlighted ? "var(--orange)" : "var(--text-muted)")
       .attr("stroke-width", isHighlighted ? 2 : 0.5)
       .attr("stroke-dasharray", isHighlighted ? "3 2" : "none")
       .attr("class", cellClass);
@@ -6258,7 +6257,7 @@ function _renderOneModel(
       .attr("y", mapTableY)
       .attr("width", tableW)
       .attr("height", HEADER_H)
-      .attr("fill", "#21262d");
+      .attr("fill", "var(--bg-elevated-2)");
 
     // Data row backgrounds (highlighted row rendered last to stay on top)
     for (var pi = 0; pi < ppCount; pi++) {
@@ -6269,7 +6268,7 @@ function _renderOneModel(
         .attr("y", rowY)
         .attr("width", tableW)
         .attr("height", ROW_H)
-        .attr("fill", pi % 2 === 0 ? "var(--bg-surface)" : "#161b22")
+        .attr("fill", pi % 2 === 0 ? "var(--bg-surface)" : "var(--bg-elevated)")
         .attr("class", "pp-row");
     }
     if (hasHighlight) {
@@ -6282,7 +6281,7 @@ function _renderOneModel(
         .attr("width", tableW)
         .attr("height", ROW_H)
         .attr("fill", hlRowFill)
-        .attr("stroke", "#ff8f40")
+        .attr("stroke", "var(--orange)")
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "3 2")
         .attr("class", "pp-row pinned");

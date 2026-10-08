@@ -8,39 +8,336 @@
              写死 /static/... 会让浏览器把它打到 nginx 根上（那里没有本应用的 location）而 404。 -->
         <script src="static/marked.min.js"></script>
         <script src="static/d3.v7.min.js"></script>
+        <!-- 主题必须在首次绘制前落定，否则会先闪一下暗色（FOUC）。
+             单一事实来源：<html data-theme="dark|light">，取值持久化在
+             localStorage["tms-theme"]；从未选择过时用 DEFAULT_THEME。 -->
+        <script>
+            (function () {
+                var KEY = "tms-theme";
+                var DEFAULT_THEME = "dark"; // 想跟随系统配色可改成 "auto"
+                var theme = DEFAULT_THEME;
+                try {
+                    var saved = localStorage.getItem(KEY);
+                    if (saved === "light" || saved === "dark") {
+                        theme = saved;
+                    } else if (DEFAULT_THEME === "auto") {
+                        theme = window.matchMedia("(prefers-color-scheme: light)").matches
+                            ? "light"
+                            : "dark";
+                    }
+                } catch (e) {
+                    /* 隐私模式下 localStorage 不可用 → 回落默认主题 */
+                }
+                // URL 覆盖（优先级最高，且不落盘）：?theme=light / ?theme=dark
+                // 用于分享链接与回归验证，不会改掉对方已保存的偏好。
+                try {
+                    var forced = /[?&]theme=(light|dark)/.exec(window.location.search);
+                    if (forced) theme = forced[1];
+                } catch (e) {
+                    /* ignore */
+                }
+                document.documentElement.setAttribute("data-theme", theme);
+                window.__TMS_THEME_KEY = KEY;
+                window.__TMS_DEFAULT_THEME = DEFAULT_THEME;
+            })();
+        </script>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
             href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap"
             rel="stylesheet"
         />
-        <link rel="stylesheet" href="static/moe-arch-renderer.css" />
+        <link rel="stylesheet" href="static/moe-arch-renderer.css?v=20261008" />
         <style>
+            /* ════════════════════════════════════════════════════════════════
+               主题 token —— 颜色的单一事实来源
+               <html data-theme="dark"> 为默认，<html data-theme="light"> 走下方覆盖块。
+               约定：组件规则只允许引用变量，禁止再写死颜色字面量；
+                     新增浅色/暗色差异时只改本层，不动任何组件规则。
+               半透明色统一用 rgba(var(--TOKEN-rgb), a) 组装，因此每个强调色都带 -rgb 通道。
+               ════════════════════════════════════════════════════════════════ */
             :root {
-                --bg-deep: #0a0e14;
-                --bg-panel: #11161d;
-                --bg-surface: #161c24;
+                /* ── 表面 ── */
+                --bg-deep: #0a0e14;         /* 画布底 */
+                --bg-panel: #11161d;        /* 侧栏 / 工具条 */
+                --bg-panel-rgb: 17, 22, 29;
+                --bg-surface: #161c24;      /* 卡片 / 输入框 */
+                --bg-surface-rgb: 22, 28, 36;
                 --bg-hover: #1c2430;
+                --bg-hover-rgb: 28, 36, 48;
                 --bg-input: #0d1117;
+                --bg-input-rgb: 13, 17, 23;
+                --bg-elevated: #161b22;     /* 表头 / 代码块 / 斑马纹 */
+                --bg-elevated-2: #21262d;
+                --bg-darker: #0d131a;       /* 模型结构图堆叠卡片 */
+
+                /* ── 边框 ── */
                 --border: #1e2a36;
                 --border-active: #2d4a5e;
+                --border-strong: #ffffff;   /* 需要最强反馈的边框（勾选框 hover 等） */
+
+                /* ── 文本 ── */
                 --text-primary: #d4dce8;
                 --text-secondary: #7b8ca3;
+                --text-secondary-rgb: 123, 140, 163;
                 --text-muted: #4a5568;
+                --text-muted-rgb: 74, 85, 104;
+                --text-comment: #6e7681;    /* 结果页灰注 */
+                --text-line: #484f58;       /* 结果页网格线 */
+                --text-code: #c9d1d9;       /* 结果页代码 / 表体文字 */
+                --wf-chevron-pending: #8a94a1; /* 工作流待执行节点的虚线描边 */
+
+                /* ── 半透明合成基准 ── */
+                --hairline-rgb: 255, 255, 255; /* 发丝分隔线 / 高光叠加 */
+                --scrim: rgba(0, 0, 0, 0.45);
+                --scrim-strong: rgba(0, 0, 0, 0.6);
+                --overlay: rgba(10, 14, 20, 0.85);
+                --toast-bg: rgba(0, 0, 0, 0.85);
+
+                /* ── 阴影 ── */
+                --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
+                --shadow-panel: 4px 0 20px rgba(0, 0, 0, 0.4);
+                --shadow-panel-left: -4px 0 20px rgba(0, 0, 0, 0.4);
+                --shadow-tip: 0 4px 16px rgba(0, 0, 0, 0.5);
+                --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.5);
+                --shadow-pop: 0 6px 28px rgba(0, 0, 0, 0.55);
+                --shadow-modal: 0 10px 40px rgba(0, 0, 0, 0.55);
+
+                /* ── 聊天气泡内嵌底色 ── */
+                --inset-code-bg: rgba(0, 0, 0, 0.3);
+                --inset-block-bg: rgba(0, 0, 0, 0.35);
+                --inset-th-bg: rgba(0, 0, 0, 0.25);
+                --inset-td-bg: rgba(0, 0, 0, 0.1);
+
+                /* ── 强调色 ── */
                 --cyan: #39bae6;
+                --cyan-rgb: 57, 186, 230;
                 --cyan-dim: #1f5a7a;
                 --teal: #3bceb4;
+                --teal-rgb: 59, 206, 180;
                 --red: #f26d78;
+                --red-rgb: 242, 109, 120;
                 --yellow: #ffb454;
+                --yellow-rgb: 255, 180, 84;
                 --green: #7fd962;
+                --green-rgb: 127, 217, 98;
                 --purple: #baa1ff;
+                --purple-rgb: 186, 161, 255;
                 --orange: #ff8f40;
+                --orange-rgb: 255, 143, 64;
+                --amber: #f59e0b;
+                --amber-rgb: 245, 158, 11;
+                --red-strong: #ef4444;
+                --info-blue: #3b82f6;
+                --info-blue-rgb: 59, 130, 246;
+
+                /* ── 结果页 / 时间线图沿用的旧调色板 ── */
+                --blue: #58a6ff;
+                --blue-rgb: 88, 166, 255;
+                --blue-light: #79c0ff;
+                --green-solid: #3fb950;
+                --green-solid-rgb: 63, 185, 80;
+                --green-light: #7ee787;
+                --green-dark: #2ea043;
+                --red-solid: #f85149;
+                --red-solid-rgb: 248, 81, 73;
+                --row-hover: #162430;       /* tp-rect hover 填充 */
+                --row-hover-green: #1a2e1f;
+
+                /* ── 强调底色上的文字 ── */
+                --on-accent: #ffffff;       /* 半透明强调渐变底色上的文字 */
+                --on-solid-accent: #0a0e14; /* 实心强调色块上的文字 */
+
+                /* ── 图表分类色 ── */
+                --chart-1: #f4a261;
+                --chart-2: #6abecd;
+                --chart-3: #8fc93a;
+                --chart-4: #b39cd0;
+
+                /* ── Mesh：PP 位置配色 ── */
+                --mesh-pp-1: #58a6ff;
+                --mesh-pp-1-hover: #79c0ff;
+                --mesh-pp-2: #ff8f40;
+                --mesh-pp-2-hover: #ffb366;
+                --mesh-pp-3: #3fb950;
+                --mesh-pp-3-hover: #4ae168;
+
+                /* ── 模型结构图配色（topo / moe 两个渲染器共用） ── */
+                --model-embed-fill: #1a1a10;
+                --model-ln-fill: #111a13;
+                --model-attn-fill: #111922;
+                --model-attn-sub-fill: #15202b;
+                --model-ffn-fill: #1a1114;
+                --model-ffn-sub-fill: #1f1518;
+                --model-output-fill: #1a140f;
+                --model-card-fill: #111820;
+                --model-router-fill: #1a1528;
+                --model-expert-sel-fill: #1a2030;
+                --model-expert-unsel-fill: #151018;
+                --model-shared-fill: #1a2a18;
+
+                /* ── 排版 / 动效（与主题无关） ── */
                 --font-mono: "JetBrains Mono", "微软雅黑", "Microsoft YaHei", monospace;
                 --font-sans: "微软雅黑", "Microsoft YaHei", system-ui, sans-serif;
                 --radius: 8px;
                 --radius-sm: 5px;
                 --transition: 180ms ease;
             }
+
+            /* ── 浅色主题：只覆盖 token，组件规则一行都不用改 ── */
+            :root[data-theme="light"] {
+                color-scheme: light;
+
+                --bg-deep: #eef2f7;
+                --bg-panel: #ffffff;
+                --bg-panel-rgb: 255, 255, 255;
+                --bg-surface: #f7f9fc;
+                --bg-surface-rgb: 247, 249, 252;
+                --bg-hover: #e8eef6;
+                --bg-hover-rgb: 232, 238, 246;
+                --bg-input: #ffffff;
+                --bg-input-rgb: 255, 255, 255;
+                --bg-elevated: #eef2f7;
+                --bg-elevated-2: #e4eaf2;
+                --bg-darker: #f2f5f9;
+
+                --border: #d5dee9;
+                --border-active: #9ab3c9;
+                --border-strong: #64748b;
+
+                --text-primary: #16212e;
+                --text-secondary: #4d6076;
+                --text-secondary-rgb: 77, 96, 118;
+                --text-muted: #7c8da1;
+                --text-muted-rgb: 124, 141, 161;
+                --text-comment: #7c8da1;
+                --text-line: #b6c2cf;
+                --text-code: #24313f;
+                --wf-chevron-pending: #8496a8;
+
+                --hairline-rgb: 22, 33, 46;
+                --scrim: rgba(15, 23, 42, 0.32);
+                --scrim-strong: rgba(15, 23, 42, 0.38);
+                --overlay: rgba(226, 232, 240, 0.82);
+                --toast-bg: rgba(255, 255, 255, 0.97);
+
+                --shadow-soft: 0 2px 8px rgba(15, 23, 42, 0.08);
+                --shadow-panel: 4px 0 20px rgba(15, 23, 42, 0.12);
+                --shadow-panel-left: -4px 0 20px rgba(15, 23, 42, 0.12);
+                --shadow-tip: 0 4px 16px rgba(15, 23, 42, 0.12);
+                --shadow-card: 0 8px 32px rgba(15, 23, 42, 0.14);
+                --shadow-pop: 0 6px 28px rgba(15, 23, 42, 0.14);
+                --shadow-modal: 0 10px 40px rgba(15, 23, 42, 0.18);
+
+                --inset-code-bg: rgba(22, 33, 46, 0.07);
+                --inset-block-bg: rgba(22, 33, 46, 0.055);
+                --inset-th-bg: rgba(22, 33, 46, 0.04);
+                --inset-td-bg: rgba(22, 33, 46, 0.018);
+
+                --cyan: #0b7ba3;
+                --cyan-rgb: 11, 123, 163;
+                --cyan-dim: #2f6f8f;
+                --teal: #0a8a72;
+                --teal-rgb: 10, 138, 114;
+                --red: #c83743;
+                --red-rgb: 200, 55, 67;
+                --yellow: #a86a00;
+                --yellow-rgb: 168, 106, 0;
+                --green: #2f8f3f;
+                --green-rgb: 47, 143, 63;
+                --purple: #6b4fd0;
+                --purple-rgb: 107, 79, 208;
+                --orange: #c25a10;
+                --orange-rgb: 194, 90, 16;
+                --amber: #b26a00;
+                --amber-rgb: 178, 106, 0;
+                --red-strong: #dc2626;
+                --info-blue: #2563eb;
+                --info-blue-rgb: 37, 99, 235;
+
+                --blue: #1a6fd4;
+                --blue-rgb: 26, 111, 212;
+                --blue-light: #3f8ae0;
+                --green-solid: #1a7f37;
+                --green-solid-rgb: 26, 127, 55;
+                --green-light: #2ea043;
+                --green-dark: #16752f;
+                --red-solid: #cf222e;
+                --red-solid-rgb: 207, 34, 46;
+                --row-hover: #dbeafe;
+                --row-hover-green: #dcf5e3;
+
+                --on-accent: #08475e;
+                --on-solid-accent: #ffffff;
+
+                --chart-1: #e08b3c;
+                --chart-2: #3d95a8;
+                --chart-3: #6ba32a;
+                --chart-4: #8f6fc4;
+
+                --mesh-pp-1: #1a6fd4;
+                --mesh-pp-1-hover: #3f8ae0;
+                --mesh-pp-2: #c25a10;
+                --mesh-pp-2-hover: #e07b2b;
+                --mesh-pp-3: #1a7f37;
+                --mesh-pp-3-hover: #2ea043;
+
+                --model-embed-fill: #fdf4dc;
+                --model-ln-fill: #e6f7e8;
+                --model-attn-fill: #e4f2fa;
+                --model-attn-sub-fill: #eef7fc;
+                --model-ffn-fill: #fdeceb;
+                --model-ffn-sub-fill: #fdf2f1;
+                --model-output-fill: #fdeee0;
+                --model-card-fill: #f4f8fb;
+                --model-router-fill: #f0ecfb;
+                --model-expert-sel-fill: #e4f0fa;
+                --model-expert-unsel-fill: #fdeceb;
+                --model-shared-fill: #e6f7e8;
+            }
+
+            /* ── 主题切换按钮 ── */
+            .theme-toggle {
+                margin-left: 12px;
+                width: 28px;
+                height: 28px;
+                flex-shrink: 0;
+                padding: 0;
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--border);
+                background: var(--bg-surface);
+                color: var(--text-secondary);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all var(--transition);
+            }
+            .theme-toggle:hover {
+                border-color: var(--cyan-dim);
+                color: var(--cyan);
+                background: rgba(var(--cyan-rgb), 0.1);
+            }
+            .theme-toggle:focus-visible {
+                outline: 2px solid var(--cyan);
+                outline-offset: 1px;
+            }
+            .theme-toggle svg {
+                width: 15px;
+                height: 15px;
+                display: block;
+            }
+            /* 暗色主题显示「太阳」（点击转浅色），浅色主题显示「月亮」 */
+            .theme-toggle .icon-moon {
+                display: none;
+            }
+            :root[data-theme="light"] .theme-toggle .icon-sun {
+                display: none;
+            }
+            :root[data-theme="light"] .theme-toggle .icon-moon {
+                display: block;
+            }
+
 
             * {
                 margin: 0;
@@ -218,7 +515,7 @@
                 text-overflow: ellipsis;
             }
             .history-persist-warn {
-                color: var(--red, #f85149);
+                color: var(--red);
                 font-size: 11px;
                 font-weight: 600;
                 margin-left: 4px;
@@ -250,7 +547,7 @@
             }
             .history-delete:hover {
                 color: var(--red);
-                background: rgba(242, 109, 120, 0.1);
+                background: rgba(var(--red-rgb), 0.1);
             }
             .history-delete svg {
                 width: 14px;
@@ -279,19 +576,19 @@
                 font-weight: 500;
             }
             .badge-running {
-                background: rgba(57, 186, 230, 0.15);
+                background: rgba(var(--cyan-rgb), 0.15);
                 color: var(--cyan);
             }
             .badge-done {
-                background: rgba(127, 217, 98, 0.12);
+                background: rgba(var(--green-rgb), 0.12);
                 color: var(--green);
             }
             .badge-failed {
-                background: rgba(242, 109, 120, 0.12);
+                background: rgba(var(--red-rgb), 0.12);
                 color: var(--red);
             }
             .badge-draft {
-                background: rgba(122, 140, 163, 0.12);
+                background: rgba(var(--text-secondary-rgb), 0.12);
                 color: var(--text-secondary);
             }
             .panel-footer {
@@ -314,7 +611,7 @@
                 font-weight: 500;
             }
             .btn-new:hover {
-                background: rgba(57, 186, 230, 0.08);
+                background: rgba(var(--cyan-rgb), 0.08);
             }
 
             /* ── Center: Canvas ── */
@@ -377,39 +674,39 @@
                 color: var(--teal);
                 background: linear-gradient(
                     135deg,
-                    rgba(59, 206, 180, 0.15),
-                    rgba(59, 206, 180, 0.05)
+                    rgba(var(--teal-rgb), 0.15),
+                    rgba(var(--teal-rgb), 0.05)
                 );
             }
             .btn-sim.sim-retry {
                 cursor: pointer;
-                color: #ffb454;
-                border-color: #ff8f40;
+                color: var(--yellow);
+                border-color: var(--orange);
                 background: linear-gradient(
                     135deg,
-                    rgba(255, 143, 64, 0.2),
-                    rgba(255, 180, 84, 0.08)
+                    rgba(var(--orange-rgb), 0.2),
+                    rgba(var(--yellow-rgb), 0.08)
                 );
-                box-shadow: 0 0 8px rgba(255, 143, 64, 0.15);
+                box-shadow: 0 0 8px rgba(var(--orange-rgb), 0.15);
             }
             .btn-sim:not(:disabled) {
                 cursor: pointer;
-                color: #fff;
+                color: var(--on-accent);
                 border-color: var(--cyan);
                 background: linear-gradient(
                     135deg,
-                    rgba(57, 186, 230, 0.25),
-                    rgba(59, 206, 180, 0.15)
+                    rgba(var(--cyan-rgb), 0.25),
+                    rgba(var(--teal-rgb), 0.15)
                 );
-                box-shadow: 0 0 12px rgba(57, 186, 230, 0.12);
+                box-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.12);
             }
             .btn-sim:not(:disabled):hover {
                 background: linear-gradient(
                     135deg,
-                    rgba(57, 186, 230, 0.4),
-                    rgba(59, 206, 180, 0.25)
+                    rgba(var(--cyan-rgb), 0.4),
+                    rgba(var(--teal-rgb), 0.25)
                 );
-                box-shadow: 0 0 18px rgba(57, 186, 230, 0.25);
+                box-shadow: 0 0 18px rgba(var(--cyan-rgb), 0.25);
             }
             .toggle-btn {
                 font-family: var(--font-mono);
@@ -430,7 +727,7 @@
             .toggle-btn.active {
                 border-color: var(--cyan-dim);
                 color: var(--cyan);
-                background: rgba(57, 186, 230, 0.1);
+                background: rgba(var(--cyan-rgb), 0.1);
             }
 
             /* ── Fullscreen Toggle Button ── */
@@ -451,7 +748,7 @@
             .btn-fullscreen:hover {
                 border-color: var(--cyan-dim);
                 color: var(--cyan);
-                background: rgba(57, 186, 230, 0.08);
+                background: rgba(var(--cyan-rgb), 0.08);
             }
             .btn-fullscreen svg {
                 width: 16px;
@@ -479,7 +776,7 @@
             }
             .main-container.canvas-fullscreen .panel-left.panel-visible {
                 transform: translateX(0);
-                box-shadow: 4px 0 20px rgba(0, 0, 0, 0.4);
+                box-shadow: var(--shadow-panel);
             }
             .main-container.canvas-fullscreen .panel-right {
                 right: 0;
@@ -488,7 +785,7 @@
             }
             .main-container.canvas-fullscreen .panel-right.panel-visible {
                 transform: translateX(0);
-                box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+                box-shadow: var(--shadow-panel-left);
             }
 
             /* ── Edge hover trigger zones (only in fullscreen mode) ── */
@@ -520,8 +817,8 @@
                 height: 72px;
                 background: linear-gradient(
                     180deg,
-                    rgba(22, 28, 36, 0.96) 0%,
-                    rgba(17, 22, 29, 0.98) 100%
+                    rgba(var(--bg-surface-rgb), 0.96) 0%,
+                    rgba(var(--bg-panel-rgb), 0.98) 100%
                 );
                 border: 1.5px solid var(--border);
                 cursor: pointer;
@@ -532,8 +829,8 @@
                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 color: var(--text-secondary);
                 padding: 0;
-                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025),
-                    0 2px 8px rgba(0, 0, 0, 0.3);
+                box-shadow: inset 0 1px 0 rgba(var(--hairline-rgb), 0.025),
+                    var(--shadow-soft);
                 backdrop-filter: blur(6px);
                 -webkit-backdrop-filter: blur(6px);
             }
@@ -563,26 +860,26 @@
             .panel-collapse-handle:hover {
                 background: linear-gradient(
                     180deg,
-                    rgba(28, 36, 48, 0.98) 0%,
-                    rgba(22, 28, 36, 0.98) 100%
+                    rgba(var(--bg-hover-rgb), 0.98) 0%,
+                    rgba(var(--bg-surface-rgb), 0.98) 100%
                 );
                 border-color: var(--cyan);
                 color: var(--cyan);
-                box-shadow: inset 0 1px 0 rgba(57, 186, 230, 0.08),
-                    0 0 24px rgba(57, 186, 230, 0.18),
-                    0 0 6px rgba(57, 186, 230, 0.1);
+                box-shadow: inset 0 1px 0 rgba(var(--cyan-rgb), 0.08),
+                    0 0 24px rgba(var(--cyan-rgb), 0.18),
+                    0 0 6px rgba(var(--cyan-rgb), 0.1);
                 transform: translateY(-50%) scale(1.06);
             }
             .panel-collapse-handle:hover::before {
                 background: var(--cyan);
                 box-shadow: 0 9px 0 var(--cyan),
                     0 -9px 0 var(--cyan);
-                filter: drop-shadow(0 0 3px rgba(57, 186, 230, 0.5));
+                filter: drop-shadow(0 0 3px rgba(var(--cyan-rgb), 0.5));
             }
             .panel-collapse-handle:hover::after {
-                border-color: rgba(57, 186, 230, 0.22);
+                border-color: rgba(var(--cyan-rgb), 0.22);
                 opacity: 1;
-                box-shadow: 0 0 14px rgba(57, 186, 230, 0.06);
+                box-shadow: 0 0 14px rgba(var(--cyan-rgb), 0.06);
             }
             .panel-collapse-handle:active {
                 transform: translateY(-50%) scale(0.97) !important;
@@ -596,7 +893,7 @@
                 flex-shrink: 0;
             }
             .panel-collapse-handle:hover svg {
-                filter: drop-shadow(0 0 4px rgba(57, 186, 230, 0.35));
+                filter: drop-shadow(0 0 4px rgba(var(--cyan-rgb), 0.35));
             }
 
             /* ── Left panel handle (attached to right edge) ── */
@@ -629,8 +926,8 @@
             }
             .panel-left.collapsed .panel-collapse-handle:hover {
                 border-color: var(--cyan);
-                box-shadow: 0 0 24px rgba(57, 186, 230, 0.18),
-                    0 0 6px rgba(57, 186, 230, 0.1);
+                box-shadow: 0 0 24px rgba(var(--cyan-rgb), 0.18),
+                    0 0 6px rgba(var(--cyan-rgb), 0.1);
                 transform: translate(-50%, -50%) scale(1.1);
             }
             .panel-left.collapsed .panel-collapse-handle:active {
@@ -646,8 +943,8 @@
             }
             .panel-right.collapsed .panel-collapse-handle:hover {
                 border-color: var(--cyan);
-                box-shadow: 0 0 24px rgba(57, 186, 230, 0.18),
-                    0 0 6px rgba(57, 186, 230, 0.1);
+                box-shadow: 0 0 24px rgba(var(--cyan-rgb), 0.18),
+                    0 0 6px rgba(var(--cyan-rgb), 0.1);
                 transform: translate(50%, -50%) scale(1.1);
             }
             .panel-right.collapsed .panel-collapse-handle:active {
@@ -781,32 +1078,32 @@
                 transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             }
             .sim-resize-handle:hover {
-                background: rgba(57, 186, 230, 0.04);
+                background: rgba(var(--cyan-rgb), 0.04);
             }
             .sim-resize-handle:hover::before {
                 background: var(--cyan);
-                box-shadow: 0 0 10px rgba(57, 186, 230, 0.3);
+                box-shadow: 0 0 10px rgba(var(--cyan-rgb), 0.3);
                 width: 52px;
             }
             .sim-resize-handle:hover::after {
                 background: var(--cyan);
                 box-shadow: 8px 0 0 var(--cyan),
                     -8px 0 0 var(--cyan);
-                filter: drop-shadow(0 0 3px rgba(57, 186, 230, 0.4));
+                filter: drop-shadow(0 0 3px rgba(var(--cyan-rgb), 0.4));
             }
             .sim-resize-handle.active {
-                background: rgba(57, 186, 230, 0.07);
+                background: rgba(var(--cyan-rgb), 0.07);
             }
             .sim-resize-handle.active::before {
                 background: var(--cyan);
-                box-shadow: 0 0 14px rgba(57, 186, 230, 0.4);
+                box-shadow: 0 0 14px rgba(var(--cyan-rgb), 0.4);
                 width: 60px;
             }
             .sim-resize-handle.active::after {
                 background: var(--cyan);
                 box-shadow: 8px 0 0 var(--cyan),
                     -8px 0 0 var(--cyan);
-                filter: drop-shadow(0 0 4px rgba(57, 186, 230, 0.5));
+                filter: drop-shadow(0 0 4px rgba(var(--cyan-rgb), 0.5));
             }
             .sim-topo-placeholder {
                 display: flex;
@@ -1006,8 +1303,8 @@
                 z-index: 2;
             }
             .result-op-table th {
-                background: #161b22;
-                color: #c9d1d9;
+                background: var(--bg-elevated);
+                color: var(--text-code);
                 font-weight: 600;
                 padding: 7px 10px;
                 text-align: left;
@@ -1019,7 +1316,7 @@
             }
             .result-op-table td {
                 padding: 6px 10px;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+                border-bottom: 1px solid rgba(var(--hairline-rgb), 0.04);
                 color: var(--text-secondary);
                 white-space: nowrap;
                 max-width: 180px;
@@ -1027,7 +1324,7 @@
                 text-overflow: ellipsis;
             }
             .result-op-table tbody tr:hover td {
-                background: rgba(57, 186, 230, 0.04);
+                background: rgba(var(--cyan-rgb), 0.04);
                 color: var(--text-primary);
             }
             .result-op-table .cell-shape {
@@ -1060,19 +1357,19 @@
                 letter-spacing: 0.5px;
             }
             .phase-badge.fwd {
-                background: rgba(57, 186, 230, 0.18);
+                background: rgba(var(--cyan-rgb), 0.18);
                 color: var(--cyan);
             }
             .phase-badge.bwd {
-                background: rgba(59, 206, 180, 0.18);
+                background: rgba(var(--teal-rgb), 0.18);
                 color: var(--teal);
             }
             .phase-badge.opt {
-                background: rgba(255, 180, 84, 0.18);
+                background: rgba(var(--yellow-rgb), 0.18);
                 color: var(--yellow);
             }
             .phase-badge.comm {
-                background: rgba(255, 143, 64, 0.18);
+                background: rgba(var(--orange-rgb), 0.18);
                 color: var(--orange);
             }
 
@@ -1089,7 +1386,7 @@
                 font-size: 10px;
                 color: var(--text-primary);
                 opacity: 0;
-                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+                box-shadow: var(--shadow-tip);
                 white-space: nowrap;
                 transition: opacity 0.12s;
                 max-width: 380px;
@@ -1184,27 +1481,27 @@
             }
             .wf-chevron.pending {
                 fill: var(--bg-surface);
-                stroke: #8a94a1;
+                stroke: var(--wf-chevron-pending);
                 stroke-dasharray: 4 3;
             }
             .wf-chevron.active {
-                fill: rgba(57, 186, 230, 0.08);
+                fill: rgba(var(--cyan-rgb), 0.08);
                 stroke: var(--cyan);
                 stroke-width: 1.8;
-                filter: drop-shadow(0 0 4px rgba(57, 186, 230, 0.3));
+                filter: drop-shadow(0 0 4px rgba(var(--cyan-rgb), 0.3));
                 animation: wf-pulse 2s ease-in-out infinite;
             }
             .wf-chevron.completed {
-                fill: rgba(127, 217, 98, 0.06);
+                fill: rgba(var(--green-rgb), 0.06);
                 stroke: var(--green);
-                filter: drop-shadow(0 0 3px rgba(127, 217, 98, 0.2));
+                filter: drop-shadow(0 0 3px rgba(var(--green-rgb), 0.2));
             }
             .wf-chevron.failed {
-                fill: rgba(242, 109, 120, 0.06);
+                fill: rgba(var(--red-rgb), 0.06);
                 stroke: var(--red);
             }
             .wf-chevron.waiting_input {
-                fill: rgba(255, 180, 84, 0.08);
+                fill: rgba(var(--yellow-rgb), 0.08);
                 stroke: var(--yellow);
                 animation: wf-pulse-yellow 1.5s ease-in-out infinite;
             }
@@ -1251,7 +1548,7 @@
             }
             .ai-toggle input:checked ~ .ai-toggle-label {
                 color: var(--cyan);
-                text-shadow: 0 0 8px rgba(57, 186, 230, 0.5);
+                text-shadow: 0 0 8px rgba(var(--cyan-rgb), 0.5);
             }
             .ai-toggle-slider {
                 position: relative;
@@ -1273,12 +1570,12 @@
                 transition: all 0.25s;
             }
             .ai-toggle input:checked ~ .ai-toggle-slider {
-                background: rgba(57, 186, 230, 0.35);
+                background: rgba(var(--cyan-rgb), 0.35);
             }
             .ai-toggle input:checked ~ .ai-toggle-slider::after {
                 left: 16px;
                 background: var(--cyan);
-                box-shadow: 0 0 6px rgba(57, 186, 230, 0.6);
+                box-shadow: 0 0 6px rgba(var(--cyan-rgb), 0.6);
             }
             /* workflow-svg-wrap removed — replaced by horizontal flow bar */
 
@@ -1321,15 +1618,15 @@
                 padding: 2px 8px;
                 border-radius: 4px;
                 border: 1px solid var(--cyan);
-                background: rgba(57, 186, 230, 0.15);
+                background: rgba(var(--cyan-rgb), 0.15);
                 color: var(--cyan);
                 cursor: pointer;
                 transition: all 0.18s;
                 white-space: nowrap;
             }
             .wf-confirm-btn:hover {
-                background: rgba(57, 186, 230, 0.3);
-                color: #fff;
+                background: rgba(var(--cyan-rgb), 0.3);
+                color: var(--on-accent);
             }
 
             /* ── Parameter Input Overlay ── */
@@ -1339,7 +1636,7 @@
                 left: 0;
                 right: 0;
                 bottom: 0;
-                background: rgba(10, 14, 20, 0.85);
+                background: var(--overlay);
                 z-index: 50;
                 display: flex;
                 align-items: flex-start;
@@ -1362,7 +1659,7 @@
                 border: 1px solid var(--border-active);
                 border-radius: var(--radius);
                 padding: 20px 28px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+                box-shadow: var(--shadow-card);
             }
             .workflow-param-title {
                 font-family: var(--font-mono);
@@ -1406,7 +1703,7 @@
                 width: 6px;
                 height: 6px;
                 border-radius: 50%;
-                background: #f59e0b;
+                background: var(--amber);
                 margin-left: 3px;
                 vertical-align: middle;
                 cursor: help;
@@ -1417,8 +1714,8 @@
                 color: var(--text-secondary);
                 margin-bottom: 10px;
                 padding: 4px 8px;
-                border-left: 2px solid #f59e0b;
-                background: rgba(245, 158, 11, 0.08);
+                border-left: 2px solid var(--amber);
+                background: rgba(var(--amber-rgb), 0.08);
                 border-radius: 2px;
             }
             #wf-orig-model-name {
@@ -1441,9 +1738,9 @@
             }
             .workflow-param-row select:disabled,
             .workflow-param-row input:disabled {
-                background: #161b22;
-                color: #6e7681;
-                border-color: #21262d;
+                background: var(--bg-elevated);
+                color: var(--text-comment);
+                border-color: var(--bg-elevated-2);
                 cursor: not-allowed;
             }
             .workflow-param-row select:focus,
@@ -1481,7 +1778,7 @@
                 top: 1px;
                 width: 5px;
                 height: 10px;
-                border: solid #0a0e14;
+                border: solid var(--on-solid-accent);
                 border-width: 0 2px 2px 0;
                 transform: rotate(45deg);
             }
@@ -1495,7 +1792,7 @@
                 flex-shrink: 0;
             }
             .workflow-param-row input[type="checkbox"]:hover {
-                border-color: #fff;
+                border-color: var(--border-strong);
             }
             .workflow-param-row textarea {
                 flex: 1;
@@ -1539,12 +1836,12 @@
                 padding: 6px 18px;
                 background: linear-gradient(
                     135deg,
-                    rgba(57, 186, 230, 0.25),
-                    rgba(59, 206, 180, 0.15)
+                    rgba(var(--cyan-rgb), 0.25),
+                    rgba(var(--teal-rgb), 0.15)
                 );
                 border: 1px solid var(--cyan);
                 border-radius: 4px;
-                color: #fff;
+                color: var(--on-accent);
                 font-family: var(--font-mono);
                 font-size: 11px;
                 font-weight: 600;
@@ -1554,10 +1851,10 @@
             .btn-wf-submit:hover {
                 background: linear-gradient(
                     135deg,
-                    rgba(57, 186, 230, 0.4),
-                    rgba(59, 206, 180, 0.25)
+                    rgba(var(--cyan-rgb), 0.4),
+                    rgba(var(--teal-rgb), 0.25)
                 );
-                box-shadow: 0 0 12px rgba(57, 186, 230, 0.2);
+                box-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.2);
             }
             .chat-messages {
                 flex: 1;
@@ -1623,7 +1920,7 @@
             .msg-bubble code {
                 font-family: var(--font-mono);
                 font-size: 11px;
-                background: rgba(0, 0, 0, 0.3);
+                background: var(--inset-code-bg);
                 padding: 2px 6px;
                 border-radius: 3px;
             }
@@ -1631,14 +1928,14 @@
                 display: block;
                 margin: 8px 0;
                 padding: 10px 12px;
-                background: rgba(0, 0, 0, 0.35);
+                background: var(--inset-block-bg);
                 border-radius: var(--radius-sm);
                 font-family: var(--font-mono);
                 font-size: 11px;
                 line-height: 1.5;
                 overflow-x: auto;
                 color: var(--teal);
-                border: 1px solid rgba(58, 206, 180, 0.15);
+                border: 1px solid rgba(var(--teal-rgb), 0.15);
             }
 
             /* markdown rendered styles */
@@ -1681,17 +1978,17 @@
                 text-align: left;
             }
             .msg-bubble th {
-                background: rgba(0, 0, 0, 0.25);
+                background: var(--inset-th-bg);
                 font-weight: 600;
                 color: var(--cyan);
             }
             .msg-bubble td {
-                background: rgba(0, 0, 0, 0.1);
+                background: var(--inset-td-bg);
             }
             .msg-bubble pre {
                 margin: 8px 0;
                 padding: 10px 12px;
-                background: rgba(0, 0, 0, 0.35);
+                background: var(--inset-block-bg);
                 border-radius: var(--radius-sm);
                 font-family: var(--font-mono);
                 font-size: 11px;
@@ -1724,10 +2021,10 @@
                 color: var(--cyan);
             }
             .msg-bubble.user {
-                background: rgba(57, 186, 230, 0.13);
-                border: 1px solid rgba(57, 186, 230, 0.25);
+                background: rgba(var(--cyan-rgb), 0.13);
+                border: 1px solid rgba(var(--cyan-rgb), 0.25);
                 border-radius: var(--radius) 4px 4px var(--radius);
-                color: #d0eaf5;
+                color: var(--on-accent);
             }
             .msg-bubble.agent {
                 background: var(--bg-surface);
@@ -1735,28 +2032,28 @@
                 border-radius: 4px var(--radius) var(--radius) 4px;
             }
             .msg-bubble.system {
-                background: rgba(255, 180, 84, 0.06);
-                border: 1px solid rgba(255, 180, 84, 0.12);
+                background: rgba(var(--yellow-rgb), 0.06);
+                border: 1px solid rgba(var(--yellow-rgb), 0.12);
                 font-size: 11px;
                 border-radius: var(--radius);
                 color: var(--text-secondary);
             }
             .msg-bubble.error {
-                background: rgba(242, 109, 120, 0.08);
-                border: 1px solid rgba(242, 109, 120, 0.2);
+                background: rgba(var(--red-rgb), 0.08);
+                border: 1px solid rgba(var(--red-rgb), 0.2);
                 color: var(--red);
                 border-radius: var(--radius);
                 font-size: 12px;
             }
             .msg-bubble.tool {
-                background: rgba(58, 206, 180, 0.05);
-                border: 1px solid rgba(58, 206, 180, 0.18);
+                background: rgba(var(--teal-rgb), 0.05);
+                border: 1px solid rgba(var(--teal-rgb), 0.18);
                 font-family: var(--font-mono);
                 font-size: 11px;
             }
             .msg-bubble.mesh {
-                background: rgba(186, 161, 255, 0.05);
-                border: 1px solid rgba(186, 161, 255, 0.18);
+                background: rgba(var(--purple-rgb), 0.05);
+                border: 1px solid rgba(var(--purple-rgb), 0.18);
                 font-family: var(--font-mono);
                 font-size: 11px;
                 white-space: pre-wrap;
@@ -1764,8 +2061,8 @@
                 overflow-y: auto;
             }
             .msg-bubble.model {
-                background: rgba(63, 188, 239, 0.05);
-                border: 1px solid rgba(63, 188, 239, 0.18);
+                background: rgba(var(--cyan-rgb), 0.05);
+                border: 1px solid rgba(var(--cyan-rgb), 0.18);
                 font-family: var(--font-mono);
                 font-size: 11px;
                 border-left: 3px solid var(--cyan);
@@ -1843,7 +2140,7 @@
                 align-items: center;
                 justify-content: center;
                 transition: all var(--transition);
-                color: var(--bg-deep);
+                color: var(--on-solid-accent);
                 flex-shrink: 0;
             }
             .btn-send:hover {
@@ -1940,12 +2237,12 @@
 
             /* ── D3 Mesh Visualization ── */
             .tp-rect.has-data {
-                stroke: #39bae6;
+                stroke: var(--cyan);
             }
             .tp-rect.has-data:hover {
-                stroke: #39bae6;
+                stroke: var(--cyan);
                 stroke-width: 2;
-                fill: #162430;
+                fill: var(--row-hover);
             }
             /* ── Rank Tooltip ── */
             #rank-tooltip,
@@ -1961,7 +2258,7 @@
                 max-width: 380px;
                 font-family: var(--font-mono);
                 font-size: 11px;
-                box-shadow: 0 6px 28px rgba(0, 0, 0, 0.55);
+                box-shadow: var(--shadow-pop);
                 opacity: 0;
                 transition: opacity 0.15s;
                 line-height: 1.4;
@@ -1988,7 +2285,7 @@
                 max-width: 360px;
                 font-family: var(--font-sans);
                 font-size: 12px;
-                box-shadow: 0 6px 28px rgba(0, 0, 0, 0.55);
+                box-shadow: var(--shadow-pop);
                 opacity: 0;
                 transition: opacity 0.15s;
                 line-height: 1.55;
@@ -2049,7 +2346,7 @@
                 overflow-y: auto;
                 font-family: var(--font-mono);
                 font-size: 11px;
-                box-shadow: 0 6px 28px rgba(0, 0, 0, 0.55);
+                box-shadow: var(--shadow-pop);
                 opacity: 0;
                 transition: opacity 0.15s;
                 line-height: 1.4;
@@ -2088,7 +2385,7 @@
             }
             .tooltip-detail-close:hover {
                 color: var(--red);
-                background: rgba(242, 109, 120, 0.1);
+                background: rgba(var(--red-rgb), 0.1);
             }
             .tooltip-detail-body {
                 padding: 8px 12px 10px;
@@ -2108,7 +2405,7 @@
             .tooltip-detail-table td {
                 text-align: center;
                 padding: 5px 8px;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+                border-bottom: 1px solid rgba(var(--hairline-rgb), 0.03);
                 font-size: 11px;
                 color: var(--text-primary);
             }
@@ -2136,7 +2433,7 @@
             .tooltip-device {
                 margin-left: auto;
                 font-size: 10px;
-                background: rgba(57, 186, 230, 0.15);
+                background: rgba(var(--cyan-rgb), 0.15);
                 color: var(--cyan);
                 padding: 1px 8px;
                 border-radius: 8px;
@@ -2205,7 +2502,7 @@
                 color: var(--text-muted);
                 text-align: center;
                 padding: 4px 0 0;
-                border-top: 1px solid rgba(255, 255, 255, 0.04);
+                border-top: 1px solid rgba(var(--hairline-rgb), 0.04);
                 margin-top: 6px;
             }
             .tp-rect.pinned {
@@ -2214,12 +2511,12 @@
                 stroke-dasharray: 3 2 !important;
             }
             .tensor-cell.pinned {
-                stroke: #ff8f40 !important;
+                stroke: var(--orange) !important;
                 stroke-width: 2 !important;
                 stroke-dasharray: 3 2 !important;
             }
             .pp-row.pinned {
-                stroke: #ff8f40 !important;
+                stroke: var(--orange) !important;
                 stroke-width: 2 !important;
                 stroke-dasharray: 3 2 !important;
             }
@@ -2230,8 +2527,8 @@
                 padding: 6px 0;
                 background: linear-gradient(
                     135deg,
-                    rgba(57, 186, 230, 0.2),
-                    rgba(59, 206, 180, 0.12)
+                    rgba(var(--cyan-rgb), 0.2),
+                    rgba(var(--teal-rgb), 0.12)
                 );
                 border: 1px solid var(--cyan);
                 border-radius: 6px;
@@ -2243,10 +2540,10 @@
             .tooltip-detail-btn:hover {
                 background: linear-gradient(
                     135deg,
-                    rgba(57, 186, 230, 0.35),
-                    rgba(59, 206, 180, 0.2)
+                    rgba(var(--cyan-rgb), 0.35),
+                    rgba(var(--teal-rgb), 0.2)
                 );
-                box-shadow: 0 0 8px rgba(57, 186, 230, 0.2);
+                box-shadow: 0 0 8px rgba(var(--cyan-rgb), 0.2);
             }
 
             /* ── Linked tooltip (two-sided compare mode) ── */
@@ -2263,11 +2560,11 @@
                 letter-spacing: 0.3px;
             }
             .linked-badge.orig {
-                background: rgba(57, 186, 230, 0.18);
+                background: rgba(var(--cyan-rgb), 0.18);
                 color: var(--cyan);
             }
             .linked-badge.eq {
-                background: rgba(59, 206, 180, 0.18);
+                background: rgba(var(--teal-rgb), 0.18);
                 color: var(--teal);
             }
             .tooltip-linked-divider {
@@ -2308,7 +2605,7 @@
             #metric-detail-overlay {
                 position: fixed;
                 inset: 0;
-                background: rgba(0, 0, 0, 0.45);
+                background: var(--scrim);
                 z-index: 3500;
                 display: flex;
                 align-items: center;
@@ -2322,7 +2619,7 @@
                 background: var(--bg-panel);
                 border: 1px solid var(--border-active);
                 border-radius: 10px;
-                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+                box-shadow: var(--shadow-modal);
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
@@ -2355,7 +2652,7 @@
             }
             .metric-detail-close:hover {
                 color: var(--red);
-                background: rgba(242, 109, 120, 0.1);
+                background: rgba(var(--red-rgb), 0.1);
             }
             .metric-detail-body {
                 flex: 1;
@@ -2378,7 +2675,7 @@
             .metric-detail-table td {
                 text-align: center;
                 padding: 6px 10px;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+                border-bottom: 1px solid rgba(var(--hairline-rgb), 0.03);
                 font-size: 12px;
                 color: var(--text-primary);
             }
@@ -2404,33 +2701,33 @@
                 min-height: 200px;
             }
             .dp-shadow {
-                fill: #161b22;
-                stroke: #58a6ff;
+                fill: var(--bg-elevated);
+                stroke: var(--blue);
                 stroke-width: 2;
             }
             .dp-card {
-                fill: #161b22;
-                stroke: #58a6ff;
+                fill: var(--bg-elevated);
+                stroke: var(--blue);
                 stroke-width: 2;
             }
             .dp-header {
-                fill: #21262d;
+                fill: var(--bg-elevated-2);
             }
             .pp-card {
                 fill: var(--bg-deep);
-                stroke: #ff8f40;
+                stroke: var(--orange);
                 stroke-width: 1;
             }
             .pp-header {
-                fill: #ff8f40;
+                fill: var(--orange);
             }
             .tp-rect {
-                fill: #161b22;
-                stroke: #3fb950;
+                fill: var(--bg-elevated);
+                stroke: var(--green-solid);
                 stroke-width: 1;
             }
             .tp-label {
-                fill: #3fb950;
+                fill: var(--green-solid);
                 font-family: var(--font-sans);
             }
             .rank-label {
@@ -2439,26 +2736,26 @@
                 font-weight: 500;
             }
             .pp-label {
-                fill: var(--bg-deep);
+                fill: var(--on-solid-accent);
                 font-family: var(--font-sans);
                 font-weight: bold;
             }
             .arrow-line {
-                stroke: #484f58;
+                stroke: var(--text-line);
                 stroke-width: 1;
                 stroke-dasharray: 3, 3;
                 fill: none;
             }
             .arrow-head {
-                fill: #484f58;
+                fill: var(--text-line);
             }
             .info-text {
                 fill: var(--text-secondary);
                 font-family: var(--font-sans);
             }
             .pp-ellipsis {
-                fill: #161b22;
-                stroke: #ff8f40;
+                fill: var(--bg-elevated);
+                stroke: var(--orange);
                 stroke-width: 1;
             }
             .pp-ellipsis-text {
@@ -2468,16 +2765,16 @@
                 font-weight: bold;
             }
             .pp-ellipsis-dots {
-                fill: #6e7681;
+                fill: var(--text-comment);
                 font-size: 11px;
                 font-family: var(--font-sans);
             }
             #mesh-dp-select {
                 width: 120px;
                 min-width: 120px;
-                background: #0d1117;
-                color: #58a6ff;
-                border: 1px solid #58a6ff;
+                background: var(--bg-input);
+                color: var(--blue);
+                border: 1px solid var(--blue);
                 border-radius: 4px;
                 padding: 3px 8px;
                 font-size: 14px;
@@ -2485,14 +2782,14 @@
                 cursor: pointer;
             }
             .dp-select-wrap {
-                background: #0d1117;
-                border: 2px solid #58a6ff;
+                background: var(--bg-input);
+                border: 2px solid var(--blue);
                 border-radius: 4px;
                 box-sizing: border-box;
             }
             .dp-select {
                 background: transparent;
-                color: #58a6ff;
+                color: var(--blue);
                 border: none;
                 font-family: var(--font-sans);
                 cursor: pointer;
@@ -2502,8 +2799,8 @@
                 outline: none;
             }
             .dp-select option {
-                background: #161c24;
-                color: #c9d1d9;
+                background: var(--bg-surface);
+                color: var(--text-code);
             }
             .formula-card-rect {
                 fill: var(--bg-surface);
@@ -2524,7 +2821,7 @@
                 font-family: var(--font-sans);
             }
             .formula-toggle:hover rect {
-                fill: rgba(255, 255, 255, 0.12);
+                fill: rgba(var(--hairline-rgb), 0.12);
                 stroke: var(--text-muted);
             }
             .rank-bar-chart-group rect {
@@ -2567,16 +2864,16 @@
                 font-size: 32px;
                 line-height: 1;
             }
-            .result-verdict-icon.pass { color: #3fb950; }
-            .result-verdict-icon.fail { color: #f85149; }
+            .result-verdict-icon.pass { color: var(--green-solid); }
+            .result-verdict-icon.fail { color: var(--red-solid); }
             .result-verdict-text h2 {
                 margin: 0 0 4px;
                 font-size: 15px;
                 font-weight: 600;
                 font-family: var(--font-sans);
             }
-            .result-verdict-text h2.pass { color: #3fb950; }
-            .result-verdict-text h2.fail { color: #f85149; }
+            .result-verdict-text h2.pass { color: var(--green-solid); }
+            .result-verdict-text h2.fail { color: var(--red-solid); }
             .result-verdict-meta {
                 display: flex;
                 gap: 16px;
@@ -2629,8 +2926,8 @@
                 border-radius: 7px;
                 transition: width 0.4s ease;
             }
-            .result-diff-bar-fill.pass { background: rgba(63, 185, 80, 0.6); }
-            .result-diff-bar-fill.fail { background: rgba(248, 81, 73, 0.6); }
+            .result-diff-bar-fill.pass { background: rgba(var(--green-solid-rgb), 0.6); }
+            .result-diff-bar-fill.fail { background: rgba(var(--red-solid-rgb), 0.6); }
             .result-diff-tolerance-line {
                 position: absolute;
                 top: 0;
@@ -2656,8 +2953,8 @@
                 font-weight: 600;
                 text-align: right;
             }
-            .result-diff-pct.pass { color: #3fb950; }
-            .result-diff-pct.fail { color: #f85149; }
+            .result-diff-pct.pass { color: var(--green-solid); }
+            .result-diff-pct.fail { color: var(--red-solid); }
             .result-diff-badge {
                 width: 16px;
                 flex-shrink: 0;
@@ -2704,7 +3001,7 @@
                 border-bottom: 1px solid var(--border);
             }
             .result-config-table tr:last-child td { border-bottom: none; }
-            .result-config-table td.val-orig { color: #58a6ff; }
+            .result-config-table td.val-orig { color: var(--blue); }
             .result-config-table td.val-eq { color: var(--teal); }
             .result-config-table td.val-highlight {
                 font-weight: 600;
@@ -2784,21 +3081,21 @@
                 transform: translateY(0);
             }
             .btn-script-orig {
-                background: rgba(88, 166, 255, 0.12);
-                color: #58a6ff;
-                border-color: rgba(88, 166, 255, 0.3);
+                background: rgba(var(--blue-rgb), 0.12);
+                color: var(--blue);
+                border-color: rgba(var(--blue-rgb), 0.3);
             }
             .btn-script-orig:hover {
-                background: rgba(88, 166, 255, 0.2);
-                border-color: #58a6ff;
+                background: rgba(var(--blue-rgb), 0.2);
+                border-color: var(--blue);
             }
             .btn-script-eq {
-                background: rgba(57, 211, 175, 0.12);
+                background: rgba(var(--teal-rgb), 0.12);
                 color: var(--teal);
-                border-color: rgba(57, 211, 175, 0.3);
+                border-color: rgba(var(--teal-rgb), 0.3);
             }
             .btn-script-eq:hover {
-                background: rgba(57, 211, 175, 0.2);
+                background: rgba(var(--teal-rgb), 0.2);
                 border-color: var(--teal);
             }
 
@@ -2816,6 +3113,40 @@
                 <span class="status-indicator"></span>
                 <span id="status-text">idle</span>
             </span>
+            <button
+                class="theme-toggle"
+                id="theme-toggle"
+                type="button"
+                title="切换到浅色主题"
+                aria-label="切换到浅色主题"
+            >
+                <svg
+                    class="icon-sun"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    aria-hidden="true"
+                >
+                    <circle cx="12" cy="12" r="4.2"></circle>
+                    <path
+                        d="M12 2.4v2.2M12 19.4v2.2M2.4 12h2.2M19.4 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"
+                    ></path>
+                </svg>
+                <svg
+                    class="icon-moon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M20.3 14.6A8.6 8.6 0 1 1 9.4 3.7a6.9 6.9 0 0 0 10.9 10.9z"></path>
+                </svg>
+            </button>
         </div>
 
         <!-- Main 3-panel -->
@@ -2921,7 +3252,7 @@
                                     <input id="wf-orig-pp" type="number" value="8" min="1" max="128" onchange="updateEquivalentModelL()" />
                                 </div>
                                 <div class="workflow-param-row moe-param" id="wf-orig-ep-row" style="display:none">
-                                    <label>EP (专家并行)<span class="equiv-mark" title="等效保持：EP_eq = EP (不缩减)"></span> <span style="color:#ef4444">*</span></label>
+                                    <label>EP (专家并行)<span class="equiv-mark" title="等效保持：EP_eq = EP (不缩减)"></span> <span style="color:var(--red-strong)">*</span></label>
                                     <input id="wf-orig-ep" type="number" value="" min="1" max="256" placeholder="必填" />
                                 </div>
                                 <div class="workflow-param-section">原始模型参数</div>
@@ -4296,14 +4627,14 @@
                 var overlay = document.createElement("div");
                 overlay.className = "modal-overlay";
                 overlay.style.cssText =
-                    "position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+                    "position:fixed;inset:0;background:var(--scrim-strong);z-index:1000;display:flex;align-items:center;justify-content:center";
                 overlay.innerHTML =
-                    '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px 24px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.4)">' +
+                    '<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:20px 24px;max-width:380px;width:90%;box-shadow:var(--shadow-card)">' +
                     '<div style="font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:8px">\u{1F52C} 仿真任务失败</div>' +
                     '<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">MCP Server 连接失败或任务执行异常。<br/>请检查 Server 状态后重试。</div>' +
                     '<div style="display:flex;gap:10px;justify-content:flex-end">' +
                     '<button id="sim-retry-cancel" style="padding:6px 16px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text-primary);cursor:pointer;font-size:12px">取消</button>' +
-                    '<button id="sim-retry-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:var(--cyan);color:#000;cursor:pointer;font-size:12px;font-weight:600">重试仿真</button>' +
+                    '<button id="sim-retry-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:var(--cyan);color:var(--on-solid-accent);cursor:pointer;font-size:12px;font-weight:600">重试仿真</button>' +
                     "</div></div>";
                 document.body.appendChild(overlay);
 
@@ -4765,7 +5096,7 @@
                     var epInput = document.getElementById("wf-orig-ep");
                     var epVal = (epInput.value || "").trim();
                     if (!epVal || isNaN(parseInt(epVal)) || parseInt(epVal) < 1) {
-                        epInput.style.borderColor = "#ef4444";
+                        epInput.style.borderColor = "var(--red-strong)";
                         epInput.style.borderWidth = "2px";
                         epInput.style.outline = "none";
                         epInput.focus();
@@ -6640,7 +6971,7 @@
                     if (si % 2 === 0) {
                         g.append("rect").attr("x", 0).attr("y", si * rowH)
                             .attr("width", plotW).attr("height", rowH)
-                            .attr("fill", "rgba(255,255,255,0.015)");
+                            .attr("fill", "rgba(var(--hairline-rgb), 0.015)");
                     }
                 });
 
@@ -6649,7 +6980,7 @@
                     var gx = (i / nTicks) * plotW;
                     g.append("line").attr("x1", gx).attr("x2", gx)
                         .attr("y1", 0).attr("y2", stages.length * rowH)
-                        .attr("stroke", "#1e2a36")
+                        .attr("stroke", "var(--border)")
                         .attr("stroke-width", i % 5 === 0 ? 0.6 : 0.3);
                 }
 
@@ -6657,7 +6988,7 @@
                     var tv = (totalUs * i) / nTicks;
                     g.append("text").attr("x", (i / nTicks) * plotW)
                         .attr("y", stages.length * rowH + 16)
-                        .attr("text-anchor", "middle").attr("fill", "#4a5568")
+                        .attr("text-anchor", "middle").attr("fill", "var(--text-muted)")
                         .attr("font-size", "9px")
                         .attr("font-family", "var(--font-mono)")
                         .text(formatUs(tv));
@@ -6665,7 +6996,7 @@
 
                 stages.forEach(function (s, si) {
                     g.append("text").attr("x", -8).attr("y", si * rowH + rowH / 2 + 4)
-                        .attr("text-anchor", "end").attr("fill", "#7b8ca3")
+                        .attr("text-anchor", "end").attr("fill", "var(--text-secondary)")
                         .attr("font-size", "9px")
                         .attr("font-family", "var(--font-mono)").text(s);
                 });
@@ -6680,7 +7011,7 @@
                         .attr("width", 10).attr("height", 10)
                         .attr("fill", TYPE_COLORS[ct]).attr("rx", 2);
                     svg.append("text").attr("x", lx + 14).attr("y", legY)
-                        .attr("fill", "#7b8ca3").attr("font-size", "9px")
+                        .attr("fill", "var(--text-secondary)").attr("font-size", "9px")
                         .attr("font-family", "var(--font-mono)")
                         .text(TYPE_LABELS[ct]);
                 });
@@ -6704,7 +7035,7 @@
                 var rw = Math.max(2, (op.duration / ctx.totalUs) * ctx.plotW);
                 var ry = si * ctx.rowH + 3;
                 var rh = ctx.rowH - 6;
-                var color = TYPE_COLORS[op.comm_type] || "#7b8ca3";
+                var color = TYPE_COLORS[op.comm_type] || "var(--text-secondary)";
                 var label = TYPE_LABELS[op.comm_type] || op.comm_type;
 
                 var rect = ctx.g.append("rect")
@@ -6748,14 +7079,15 @@
                 if (!container) return;
                 var tbody = container.querySelector("tbody");
                 if (!tbody) return;
-                var ctColor = TYPE_COLORS[op.comm_type] || "#7b8ca3";
+                var ctColor = TYPE_COLORS[op.comm_type] || "var(--text-secondary)";
+                var ctBg = TYPE_BG[op.comm_type] || "rgba(var(--text-secondary-rgb), 0.13)";
                 var ctLabel = TYPE_LABELS[op.comm_type] || op.comm_type;
                 var tr = document.createElement("tr");
                 tr.innerHTML =
-                    '<td style="color:#c9d1d9">' + op.operator_name + "</td>" +
-                    '<td><span class="phase-badge" style="background:' + ctColor + "22;color:" + ctColor + '">' + ctLabel + "</span></td>" +
+                    '<td style="color:var(--text-code)">' + op.operator_name + "</td>" +
+                    '<td><span class="phase-badge" style="background:' + ctBg + ";color:" + ctColor + '">' + ctLabel + "</span></td>" +
                     '<td class="cell-stage">' + op.stage + "</td>" +
-                    '<td style="color:#baa1ff">' + (op.comm_group || "—") + "</td>" +
+                    '<td style="color:var(--purple)">' + (op.comm_group || "—") + "</td>" +
                     '<td style="text-align:center">' + (op.comm_group_size != null ? op.comm_group_size : "—") + "</td>" +
                     '<td class="cell-shape">' + (op.data_shape || (op.msg_size != null ? formatBytes(op.msg_size) : "—")) + "</td>" +
                     '<td style="text-align:center">' + (op.data_type || "—") + "</td>" +
@@ -6817,7 +7149,7 @@
                             var labels = { tp: "TP 通信", pp: "PP 通信", dp: "DP 通信" };
                             var tr = document.createElement("tr");
                             tr.innerHTML =
-                                '<td style="color:#baa1ff">' + (labels[ct] || ct) + '</td>' +
+                                '<td style="color:var(--purple)">' + (labels[ct] || ct) + '</td>' +
                                 '<td style="text-align:right;color:var(--text-primary)">' + (d.comm_count != null ? d.comm_count : "—") + '</td>' +
                                 '<td style="text-align:right;color:var(--text-primary)">' + (d.comm_cards != null ? d.comm_cards : "—") + '</td>' +
                                 '<td style="text-align:right;color:var(--text-primary)">' + (d.comm_size_per_time_gb != null ? d.comm_size_per_time_gb.toFixed(4) : "—") + '</td>' +
@@ -6968,10 +7300,17 @@
                 return us.toFixed(1) + " μs";
             }
             var TYPE_COLORS = {
-                computation: "#39bae6", all_reduce: "#ff8f40",
-                all_gather: "#baa1ff", reduce_scatter: "#ffb454",
-                broadcast: "#7fd962", send: "#f26d78", recv: "#f26d78",
-                barrier: "#4a5568",
+                computation: "var(--cyan)", all_reduce: "var(--orange)",
+                all_gather: "var(--purple)", reduce_scatter: "var(--yellow)",
+                broadcast: "var(--green)", send: "var(--red)", recv: "var(--red)",
+                barrier: "var(--text-muted)",
+            };
+            // badge 底色：CSS 变量不能直接拼 8 位 hex，这里用 -rgb 通道组 rgba
+            var TYPE_BG = {
+                computation: "rgba(var(--cyan-rgb), 0.13)", all_reduce: "rgba(var(--orange-rgb), 0.13)",
+                all_gather: "rgba(var(--purple-rgb), 0.13)", reduce_scatter: "rgba(var(--yellow-rgb), 0.13)",
+                broadcast: "rgba(var(--green-rgb), 0.13)", send: "rgba(var(--red-rgb), 0.13)",
+                recv: "rgba(var(--red-rgb), 0.13)", barrier: "rgba(var(--text-muted-rgb), 0.13)",
             };
             var TYPE_LABELS = {
                 computation: "Compute", all_reduce: "AllReduce",
@@ -7113,7 +7452,7 @@
                 }
 
                 // 1c. DP exclusion note — DP 是缩减维度，通信量天然不等效，不纳入判定
-                html += '<div style="margin-top:12px;padding:10px 14px;border-left:3px solid #3b82f6;background:rgba(59,130,246,0.10);border-radius:4px;font-size:12px;line-height:1.6;color:var(--text-muted)">';
+                html += '<div style="margin-top:12px;padding:10px 14px;border-left:3px solid var(--info-blue);background:rgba(var(--info-blue-rgb),0.1);border-radius:4px;font-size:12px;line-height:1.6;color:var(--text-muted)">';
                 html += '<div style="font-weight:700;color:var(--text-muted);margin-bottom:4px">DP 通信（不纳入判定）</div>';
                 html += '等效组网通过缩减 DP 维度压缩集群规模（DP_eq = max(DP_orig/4, 1)），DP all-reduce 通信量天然随 DP 组规模变化，属预期不等效，不计入等效判定。当前差异 <strong style="color:var(--text-muted)">' + (cr.dp_comm_diff_pct || 0).toFixed(2) + '%</strong>（仅供参考）。判定仅依据 FLOPs / HBM / TP 通信 / PP 通信 四维。';
                 html += '</div>';
@@ -7329,9 +7668,9 @@
 
                 // Frozen header
                 var headerHtml = '<div class="sim-results-header">';
-                headerHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px">';
-                headerHtml += '<div><span style="color:#58a6ff;font-weight:600;font-size:12px">原始组网</span>';
-                headerHtml += '<span style="color:#58a6ff;font-weight:600;font-size:12px;margin-left:8px">Rank #' + (origInfo?origInfo.globalRank:"—") + ' · TP' + (origInfo?origInfo.tpIdx:"—") + ' PP' + (origInfo?origInfo.ppIdx:"—") + ' DP' + (origInfo?origInfo.dpIdx:"—") + '</span></div>';
+                headerHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px">';
+                headerHtml += '<div><span style="color:var(--blue);font-weight:600;font-size:12px">原始组网</span>';
+                headerHtml += '<span style="color:var(--blue);font-weight:600;font-size:12px;margin-left:8px">Rank #' + (origInfo?origInfo.globalRank:"—") + ' · TP' + (origInfo?origInfo.tpIdx:"—") + ' PP' + (origInfo?origInfo.ppIdx:"—") + ' DP' + (origInfo?origInfo.dpIdx:"—") + '</span></div>';
                 headerHtml += '<span style="color:var(--text-primary);font-weight:600;font-size:12px">↔ 对比</span>';
                 headerHtml += '<div style="text-align:right"><span style="color:var(--teal);font-weight:600;font-size:12px">等效组网</span>';
                 headerHtml += '<span style="color:var(--teal);font-weight:600;font-size:12px;margin-left:8px">Rank #' + (eqInfo?eqInfo.globalRank:"—") + ' · TP' + (eqInfo?eqInfo.tpIdx:"—") + ' PP' + (eqInfo?eqInfo.ppIdx:"—") + ' DP' + (eqInfo?eqInfo.dpIdx:"—") + '</span></div>';
@@ -7349,9 +7688,9 @@
                     bodyHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
                     var chartStyle;
                     if (sec.id === "opspec") {
-                        chartStyle = 'min-height:100px;max-height:360px;overflow:auto;padding:0;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
+                        chartStyle = 'min-height:100px;max-height:360px;overflow:auto;padding:0;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px';
                     } else {
-                        chartStyle = 'min-height:100px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px';
+                        chartStyle = 'min-height:100px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px';
                     }
                     bodyHtml += '<div class="result-chart" id="orig-' + sec.id + '" style="' + chartStyle + '"></div>';
                     bodyHtml += '<div class="result-chart" id="eq-' + sec.id + '" style="' + chartStyle + '"></div>';
@@ -7799,9 +8138,73 @@
                 loadModelCatalogDropdown();
                 document.getElementById("chat-input").focus();
             })();
+            // ══════ 主题切换（暗色 / 浅色） ══════
+            // 约定：主题只存在 <html data-theme> 上；颜色一律由 CSS 变量解析，
+            // 因此切换主题不需要重绘 SVG —— 变量变化即时生效。
+            // 需要额外响应的模块监听 window 的 "tms:themechange" 事件即可。
+            (function () {
+                var KEY = window.__TMS_THEME_KEY || "tms-theme";
+                var btn = document.getElementById("theme-toggle");
+                if (!btn) return;
+
+                function currentTheme() {
+                    return document.documentElement.getAttribute("data-theme") === "light"
+                        ? "light"
+                        : "dark";
+                }
+
+                function syncButton(theme) {
+                    var title = "切换到" + (theme === "light" ? "暗色" : "浅色") + "主题";
+                    btn.setAttribute("title", title);
+                    btn.setAttribute("aria-label", title);
+                    btn.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
+                }
+
+                function applyTheme(theme, persist) {
+                    document.documentElement.setAttribute("data-theme", theme);
+                    if (persist) {
+                        try {
+                            localStorage.setItem(KEY, theme);
+                        } catch (e) {
+                            /* 无法持久化不影响本次切换 */
+                        }
+                    }
+                    syncButton(theme);
+                    try {
+                        window.dispatchEvent(
+                            new CustomEvent("tms:themechange", { detail: { theme: theme } }),
+                        );
+                    } catch (e) {
+                        /* 老浏览器没有 CustomEvent 构造函数时静默跳过 */
+                    }
+                }
+
+                btn.addEventListener("click", function () {
+                    applyTheme(currentTheme() === "light" ? "dark" : "light", true);
+                });
+
+                // 仅当默认主题为 "auto" 且用户从未手动选择过时，跟随系统配色变化
+                if (window.__TMS_DEFAULT_THEME === "auto" && window.matchMedia) {
+                    var mq = window.matchMedia("(prefers-color-scheme: light)");
+                    var onChange = function (ev) {
+                        var saved = null;
+                        try {
+                            saved = localStorage.getItem(KEY);
+                        } catch (e) {
+                            /* ignore */
+                        }
+                        if (saved === "light" || saved === "dark") return;
+                        applyTheme(ev.matches ? "light" : "dark", false);
+                    };
+                    if (mq.addEventListener) mq.addEventListener("change", onChange);
+                    else if (mq.addListener) mq.addListener(onChange);
+                }
+
+                syncButton(currentTheme());
+            })();
         </script>
-        <script src="static/moe-arch-renderer.js?v=20260709b"></script>
-        <script src="static/topo-renderer.js?v=20260506"></script>
+        <script src="static/moe-arch-renderer.js?v=20261008"></script>
+        <script src="static/topo-renderer.js?v=20261008"></script>
         <script src="static/sim-data-stream.js?v=20260506"></script>
     </body>
 </html>
