@@ -5575,6 +5575,12 @@
                     meshModelEq = {};
                     _pendingMeshList = [];
                     _pendingModelList = [];
+                    // 公式卡状态也必须跟着清掉：残留的 true 会让 canvasRebuild 在等效组网
+                    // 到达之前就走「两段布局」，等效模型拿不到几何量（曾因此产生 NaN
+                    // 坐标报错）。本会话确实有公式行时，下面的
+                    // syncWorkflowFromSession() 会再把它打开。
+                    _formulaCardReady = false;
+                    window._pendingFormulaLines = [];
 
                     // Restore training model data first (synchronous), so canvasRebuild sees them
                     if (data.original_training_model) {
@@ -8569,7 +8575,7 @@
             })();
         </script>
         <script src="static/moe-arch-renderer.js?v=20261008"></script>
-        <script src="static/topo-renderer.js?v=20261008"></script>
+        <script src="static/topo-renderer.js?v=20261009"></script>
         <script src="static/sim-data-stream.js?v=20260506"></script>
     </body>
 </html>

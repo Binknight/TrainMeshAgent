@@ -3288,6 +3288,72 @@ function meshRebuild(targetSelector) {
   canvasRebuild(targetSelector);
 }
 
+// ── Model-section layout geometry ──
+/* @testable-model-layout:start */
+// 计算「原始模型 / 等效模型」两块模型区的 x 与宽度。
+//
+// 不变量：只要 hasBothModels 为真（两侧模型都会被渲染），返回的四个值必须全部是
+// 有限数。历史 bug 就出在这条不变量上 —— 老代码按「拓扑布局模式」分支赋值，
+// 只有三栏模式与「两侧组网都在」两个分支才给 modelX0Eq / modelAreaWEq 赋值，而
+// hasBothModels 只看模型数据、不看组网数据。会话恢复时模型先到（同步恢复）、
+// 等效组网后到（await 第二个 loadMeshData），中间态落进没有等价值的单栏分支，
+// undefined 一路算成 NaN，d3 在 attr() 阶段报
+// "<text> attribute x: Expected length, NaN" 与 "translate(NaN,…)"，
+// 并把整块等效模型图丢掉（只剩控制台报错，界面上表现为"等效模型不见了"）。
+function _modelLayoutGeom(o) {
+  var meshWidth = o.meshWidth;
+  var topoLayout = o.topoLayout;
+  var meshOriginal = o.meshOriginal;
+  var meshEquivalent = o.meshEquivalent;
+  var hasBothModels = o.hasBothModels;
+  var calcDims = o.calcDims;
+
+  // 三栏模式：模型区对齐拓扑列，用近乎整列的宽度
+  if (topoLayout && topoLayout.mode === "three") {
+    var moW3 = topoLayout.origW;
+    var meW3 = topoLayout.eqW;
+    return {
+      x0: 8,
+      areaW: moW3 - 16,
+      x0Eq: moW3 + topoLayout.gap + 8,
+      areaWEq: meW3 - 16,
+    };
+  }
+
+  // 左右分栏：两侧模型都要画（与组网数据解耦），或两侧组网都在（单模型时也要
+  // 按原来的比例留出右半区）。缺一侧组网时拿不到 dpW 权重，退化为均分。
+  var splitByTopo = !!(meshOriginal && meshEquivalent);
+  if (hasBothModels || splitByTopo) {
+    var gap = 24;
+    var availW = meshWidth - gap;
+    var share = 0.5;
+    if (splitByTopo && typeof calcDims === "function") {
+      var dO = calcDims(meshOriginal.tp, meshOriginal.pp);
+      var dE = calcDims(meshEquivalent.tp, meshEquivalent.pp);
+      var dpSum = dO.dpW + dE.dpW;
+      if (dpSum > 0) share = dO.dpW / dpSum;
+      share = Math.max(0.45, Math.min(0.6, share));
+    }
+    var moW = availW * share;
+    var meW = availW * (1 - share);
+    return {
+      x0: 8,
+      areaW: moW - 16,
+      x0Eq: moW + gap + 8,
+      areaWEq: meW - 16,
+    };
+  }
+
+  // 两段模式：只有原始模型，用拓扑宽带
+  if (topoLayout && topoLayout.mode === "two") {
+    return { x0: 8, areaW: topoLayout.origW - 16, x0Eq: null, areaWEq: null };
+  }
+
+  // 单模型：占满整幅宽度
+  return { x0: 16, areaW: meshWidth - 32, x0Eq: null, areaWEq: null };
+}
+/* @testable-model-layout:end */
+
 // ── Public API ──
 
 function canvasRebuild(targetSelector) {
@@ -3893,43 +3959,9 @@ function canvasRebuild(targetSelector) {
     var modelTopY = topoH + sectionGap;
 
     // ── Calculate model layout aligned to DP card ──
-    var modelX0, modelAreaW;
-    var modelX0Eq, modelAreaWEq;
-    if (_topoLayout && _topoLayout.mode === "three") {
-      // Three-part: align models to topology columns, use nearly full column width
-      var _moW3 = _topoLayout.origW;
-      var _meW3 = _topoLayout.eqW;
-      modelAreaW = _moW3 - 16;
-      modelX0 = 8;
-      modelAreaWEq = _meW3 - 16;
-      modelX0Eq =
-        _moW3 + _topoLayout.gap + 8;
-    } else if (_topoLayout && _topoLayout.mode === "two") {
-      // Two-part: only original model, use full topology width
-      var _moW2 = _topoLayout.origW;
-      modelAreaW = _moW2 - 16;
-      modelX0 = 8;
-    } else if (meshOriginal && meshEquivalent) {
-      var _mgap = 24;
-      var _mavailW = meshWidth - _mgap;
-      var _mdO = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
-      var _mdE = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
-      var _mshare = _mdO.dpW / (_mdO.dpW + _mdE.dpW);
-      _mshare = Math.max(0.45, Math.min(0.6, _mshare));
-      var _moW = _mavailW * _mshare;
-      var _meW = _mavailW * (1 - _mshare);
-      modelAreaW = _moW - 16;
-      modelX0 = 8;
-      modelAreaWEq = _meW - 16;
-      modelX0Eq = _moW + _mgap + 8;
-    } else if (hasTopo) {
-      modelAreaW = meshWidth - 32;
-      modelX0 = 16;
-    } else {
-      modelAreaW = meshWidth - 32;
-      modelX0 = 16;
-    }
-
+    // hasBothModels 决定「等效模型是否被渲染」，几何量则必须与组网布局模式解耦：
+    // 凡是会渲染两侧模型的状态，都要拿到有限的 modelX0Eq / modelAreaWEq
+    // （详见 _modelLayoutGeom 的不变量说明）。
     var hasBothModels = !!(
       modelOriginal &&
       modelOriginal.layers &&
@@ -3938,6 +3970,18 @@ function canvasRebuild(targetSelector) {
       modelEquivalent.layers &&
       modelEquivalent.layers.length
     );
+    var _modelGeom = _modelLayoutGeom({
+      meshWidth: meshWidth,
+      topoLayout: _topoLayout,
+      meshOriginal: meshOriginal,
+      meshEquivalent: meshEquivalent,
+      hasBothModels: hasBothModels,
+      calcDims: _meshCalcDims,
+    });
+    var modelX0 = _modelGeom.x0;
+    var modelAreaW = _modelGeom.areaW;
+    var modelX0Eq = _modelGeom.x0Eq;
+    var modelAreaWEq = _modelGeom.areaWEq;
 
     // ── Resolve topology TP/PP for tensor grid and TP/PP highlight ──
     var origTp = meshOriginal ? meshOriginal.tp : 0;
@@ -5570,6 +5614,19 @@ function _renderOneModel(
   var comp = model.computed || {};
   var numLayers = cfg.num_layers || 1;
   var D = _TM_DESIGN;
+
+  // ── Guard: layout geometry must be finite ──
+  // NaN 流进 d3 的 attr() 只会得到 "Expected length/number, NaN"，而且整块模型图
+  // 会被浏览器丢弃（症状是"图不见了 + 控制台报错"，很难反推到布局计算）。
+  // 宁可少画一块并留下可定位的告警，也不要把非法坐标交给 d3。
+  if (!isFinite(x0) || !isFinite(topY) || !isFinite(areaW) || areaW <= 0) {
+    console.warn("[topo] _renderOneModel skipped: invalid layout", {
+      x0: x0,
+      topY: topY,
+      areaW: areaW,
+    });
+    return;
+  }
 
   // ── Scale to fit allocated width (use forced scale when comparing two models side-by-side) ──
   var scale =
