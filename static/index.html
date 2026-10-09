@@ -41,12 +41,10 @@
                 window.__TMS_DEFAULT_THEME = DEFAULT_THEME;
             })();
         </script>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link
-            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap"
-            rel="stylesheet"
-        />
+        <!-- 不引入任何外链样式表/字体：内网部署的 CSP 是 style-src *.huawei.com 'unsafe-inline'，
+             fonts.googleapis.com 既被 CSP 拦掉、本身也不可达，控制台会报
+             "Loading the stylesheet ... violates the following Content Security Policy directive"。
+             等宽字体只保留 local() 声明（见下方 @font-face），零网络请求。 -->
         <link rel="stylesheet" href="static/moe-arch-renderer.css?v=20261008" />
         <style>
             /* ════════════════════════════════════════════════════════════════
@@ -56,6 +54,15 @@
                      新增浅色/暗色差异时只改本层，不动任何组件规则。
                半透明色统一用 rgba(var(--TOKEN-rgb), a) 组装，因此每个强调色都带 -rgb 通道。
                ════════════════════════════════════════════════════════════════ */
+            /* 等宽字体（JetBrains Mono）：刻意只用 local() 源 —— 不下载、不受 CSP 约束，
+               本机装了就用它，没装则整族加载失败，由 --font-mono 的回退栈接手。
+               不要改成 url(...) 或换回 fonts.googleapis.com：内网会被 CSP 拦掉。 */
+            @font-face {
+                font-family: "JetBrains Mono";
+                font-style: normal;
+                src: local("JetBrains Mono"), local("JetBrainsMono-Regular"),
+                     local("JetBrainsMono-Medium"), local("JetBrainsMono-SemiBold");
+            }
             :root {
                 /* ── 表面 ── */
                 --bg-deep: #0a0e14;         /* 画布底 */
@@ -177,7 +184,11 @@
                 --model-shared-fill: #1a2a18;
 
                 /* ── 排版 / 动效（与主题无关） ── */
-                --font-mono: "JetBrains Mono", "微软雅黑", "Microsoft YaHei", monospace;
+                /* 等宽栈里 Latin 等宽字体必须排在中文之前：没有 webfont 时，
+                   "微软雅黑" 自带拉丁字形，若排在前面会把数字/rank/公式渲染成比例字体。 */
+                --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+                    Consolas, "Liberation Mono", "DejaVu Sans Mono", "Courier New",
+                    "微软雅黑", "Microsoft YaHei", monospace;
                 --font-sans: "微软雅黑", "Microsoft YaHei", system-ui, sans-serif;
                 --radius: 8px;
                 --radius-sm: 5px;

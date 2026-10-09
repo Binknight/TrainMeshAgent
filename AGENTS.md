@@ -154,6 +154,10 @@ DAO 是真正的影响集中点。
 - **不要用颜色字符串做逻辑判断**（历史写法 `color === "#3fb950"` 决定"是否仿真柱"）——
   改成显式参数或语义标记，否则换成变量后比较必然失效。
 - 改了前端资源要同步 `static/index.html` 里的 `?v=` 版本号，否则浏览器继续用旧缓存。
+- **禁止引用外链资源**（字体 / CSS / JS / 图片）。平台下发的 CSP 只放 `*.huawei.com`，
+  外链样式表会被拦（控制台 `violates the following Content Security Policy directive`），
+  内网本身也访问不到。依赖一律 vendored 进 `static/`（`d3.v7.min.js`、`marked.min.js` 已是），
+  字体走 `local()` 的 `@font-face`（见 `--font-mono` 上方的说明）。
 
 ---
 
@@ -177,6 +181,8 @@ DAO 是真正的影响集中点。
 | **前端颜色必须走 CSS 变量，不能写死** | 后端只有暗色时无所谓，加了浅色主题后，任何写死的 `#hex` / `rgba(...)` 都不跟随主题，页面上会出现"一块深色留在浅色界面里"。事实来源是 `static/index.html` 的 token 层（见 §4.6）。另注意：**不能用颜色字符串做逻辑判断**（如 `color === "#3fb950"` 判断是否仿真柱），改成变量后比较恒为假；SVG 的 `fill`/`stroke`/`stop-color`/`flood-color` 支持 `var()`，切换主题无需重绘 |
 | **SSE 在 nginx 下要显式关缓冲** | `app/routes/session.py` 的两条 step2 流曾只给 `mimetype` 不带 `X-Accel-Buffering: no`（`app/routes/chat.py` 一直有）。缺这条时 nginx 会缓冲整个响应，逐行推送变成「长时间不动后一次性刷出」。现在两处共用 `session.py` 顶部的 `_SSE_HEADERS`（含 `Cache-Control` / `Connection` / `X-Accel-Buffering`），新增 SSE 端点请复用它 |
 | **仿真完成状态不能只靠前端驱动** | `session.step` 曾只在 `run_simulation()` 里推进，而那次调用依赖「前端收到 WebSocket `complete` 后再补打一次 `run-simulation`」。页面刷新会掐断 WebSocket（MCP 侧任务仍在跑，任务记录在 MCP Server 内存里），于是会话永久停在 `simulating`、前端一直显示"仿真验证中"。现在 `GET /topology` 与 `GET /simulation` 会先调 `_fallback_reconcile_simulation()` 兜底判定，并且这两个端点必须回传 `original_task_id` / `equivalent_task_id`（前端刷新后靠它重建 WS 订阅）。**新增任何"读会话状态"的端点时，不要绕过这段兜底**，也不要让 `*_task_id` 只留在 DB 里 |
+| **模型区几何量必须与组网布局模式解耦** | `canvasRebuild()` 里「是否渲染等效模型」看的是 `hasBothModels`（只有模型数据），而模型区 x/宽度曾是按**拓扑布局模式**分支赋值的 —— 只有三栏模式与「两侧组网都在」才给 `modelX0Eq` / `modelAreaWEq` 赋值。`restoreSession()` 先同步恢复两侧模型、再逐个 `await loadMeshData()`，中间态（两个模型 + 一个组网）于是拿到 `undefined`，`undefined + NaN` 一路算成 `NaN`，d3 报 `<text> attribute x: Expected length, "NaN"` 与 `translate(NaN,457) scale(N…`，并把整块等效模型图丢掉（界面表现只是"等效模型不见了"）。现在几何量由纯函数 `_modelLayoutGeom()`（`static/topo-renderer.js`，带 `@testable-model-layout` 标记）统一给出，不变量是 **`hasBothModels` 为真 ⇒ 四个几何量全是有限正数**；`_renderOneModel()` 另有非有限坐标守卫。改这段布局请跑 `python tests/test_topo_model_layout.py`。另注意 `restoreSession()` 必须清 `_formulaCardReady`（残留的 `true` 会提前走两段布局） |
+| **前端外链资源在部署环境必被 CSP 拦掉** | 平台下发的 CSP 是 `style-src *.huawei.com 'unsafe-inline'`。`<head>` 里曾 `preconnect` + 引 `https://fonts.googleapis.com/css2?family=JetBrains+Mono…`，经域名 + nginx 访问时浏览器报 `Loading the stylesheet '…' violates the following Content Security Policy directive: "style-src *.huawei.com 'unsafe-inline'"` 并直接拦掉（该域名在内网本身也不可达），也就是说 JetBrains Mono **从来没有真正生效过**，只是白留一条控制台报错。现在外链已删除，等宽字体只保留 `local()` 源的 `@font-face`（零网络请求，本机装了就用），并且 `--font-mono` 把 Latin 等宽字体排在中文之前 —— 否则 webfont 缺席时数字/rank/公式会被"微软雅黑"渲染成比例字体。同源脚本/样式能加载，说明白名单覆盖本站域名；**新增字体/CSS/JS/图片前先确认平台 CSP，默认按"不许外链"处理，依赖一律 vendored 进 `static/`** |
 
 ---
 
@@ -196,6 +202,7 @@ python tests/test_moe_mcp_contract.py          # PASS  MoE 脚本生成/参数�
 python tests/test_moe_agent_plumbing.py        # PASS  MoE 在 Agent 侧的透传与脚本解析契约
 python tests/test_check_workspace.py          # PASS（Windows 上 SKIP mountinfo 检查）
 python tests/test_simulation_reconcile.py     # PASS  刷新后仿真会话状态自愈（见 §5 陷阱表）
+python tests/test_topo_model_layout.py        # PASS  模型区几何量不变量（无 NaN 坐标；需 node，缺 node 则 SKIP）
 
 # 当前基线为失败（exit 1）
 python tests/test_estimate_equivalence.py
