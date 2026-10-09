@@ -36,6 +36,4 @@ docker/chart.tgz
 tests/
 docs/
 UI/
-BACKLOG.md
 test.md
-moe-equivalent-params.html

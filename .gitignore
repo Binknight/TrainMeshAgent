@@ -22,6 +22,10 @@ app/models/.model_cache/
 # (mcp_server/config.py derives workspace_root via parents[1] = repo root)
 /workspace/
 
+# 已移除的开发期文档资源（防再次入库）
+BACKLOG.md
+moe-equivalent-params.html
+
 # 打包产物
 *.tgz
 chart.tgz
