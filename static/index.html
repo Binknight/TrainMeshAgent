@@ -1521,6 +1521,89 @@
                 transition: width 0.4s ease;
             }
 
+            /* ── 仿真任务进度气泡 ──
+               每次触发仿真验证只在 Agent 交互区落两条常驻消息（原始组网 / 等效组网），
+               仿真进度在气泡内部原地更新，不再「一帧进度 = 一条新消息」。
+               颜色一律取 token（详见文件顶部 :root），不写颜色字面量。 */
+            .sim-task {
+                min-width: 240px;
+            }
+            .sim-task-head {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--text-primary);
+            }
+            .sim-task-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                flex-shrink: 0;
+                background: var(--cyan);
+                animation: pulse-dot 0.8s ease-in-out infinite;
+            }
+            .sim-task-pct {
+                margin-left: auto;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--cyan);
+            }
+            .sim-task-track {
+                margin: 7px 0 5px;
+                height: 4px;
+                border-radius: 2px;
+                overflow: hidden;
+                background: var(--border);
+            }
+            .sim-task-fill {
+                width: 0;
+                height: 100%;
+                border-radius: 2px;
+                background: var(--cyan);
+                transition: width 0.4s ease;
+            }
+            .sim-task-status {
+                font-family: var(--font-mono);
+                font-size: 10px;
+                color: var(--text-muted);
+            }
+            /* 提交中 / 进度不可用：不画具体百分比，用带色底轨表示"不确定"
+               （fill 归零，避免从满格往回缩的动画） */
+            .sim-task.pending .sim-task-track {
+                background: rgba(var(--amber-rgb), 0.3);
+            }
+            .sim-task.pending .sim-task-dot,
+            .sim-task.finishing .sim-task-dot {
+                background: var(--amber);
+            }
+            .sim-task.pending .sim-task-pct,
+            .sim-task.finishing .sim-task-pct {
+                color: var(--amber);
+            }
+            .sim-task.finishing .sim-task-fill {
+                background: var(--amber);
+            }
+            .sim-task.done .sim-task-dot,
+            .sim-task.failed .sim-task-dot {
+                display: none;
+            }
+            .sim-task.done .sim-task-pct,
+            .sim-task.done .sim-task-status {
+                color: var(--teal);
+            }
+            .sim-task.done .sim-task-fill {
+                background: var(--teal);
+            }
+            .sim-task.failed .sim-task-pct,
+            .sim-task.failed .sim-task-status {
+                color: var(--red);
+            }
+            .sim-task.failed .sim-task-fill {
+                background: var(--red);
+            }
+
             /* ── AI Mode Toggle ── */
             .ai-toggle {
                 display: flex;
@@ -4807,10 +4890,13 @@
                     window._simCompleted = false;
                     _comparisonReport = null;
                     setStatus("仿真验证中");
-                    // Resume WebSocket connection for real-time status
+                    // Resume WebSocket connection for real-time status（气泡按 task_id 懒重建）
                     var taskIds = [sessionData.original_task_id, sessionData.equivalent_task_id].filter(Boolean);
                     if (taskIds.length > 0) {
-                        _connectSimWebSocket(taskIds);
+                        _connectSimWebSocket(
+                            taskIds,
+                            _simSideMap(sessionData.original_task_id, sessionData.equivalent_task_id),
+                        );
                     } else {
                         _pollSimulationResults();
                     }
@@ -7788,7 +7874,9 @@
                 if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
                 setStatus("仿真验证中");
                 updateWorkflowNode("simulation", "active");
-                addMessage("system", "📊 开始仿真任务...");
+                // 本次触发只落两条常驻气泡（原始组网 / 等效组网），进度在气泡内原地更新。
+                // 这里不再 addMessage「开始仿真任务」——提交/进度/完成都由这两条气泡承载。
+                _beginSimTaskBubbles();
 
                 // Cancel any running result streams from previous simulation
                 _cancelActiveSimStreams();
@@ -7820,6 +7908,7 @@
                             var errBody = await resp.json();
                             if (errBody.error) errMsg = "仿真任务失败: " + errBody.error;
                         } catch (_) {}
+                        _finishSimTaskBubbles("failed", "提交失败");
                         addMessage("error", errMsg);
                         updateWorkflowNode("simulation", "failed");
                         btn.textContent = "重试仿真";
@@ -7834,6 +7923,9 @@
 
                     var data = await resp.json();
                     var results = data.results || {};
+
+                    // 把提交阶段的两条气泡绑到本次的 task_id 上
+                    _bindSimTaskBubbles(data.original_task_id, data.equivalent_task_id);
 
                     // Populate per-card metric maps (used by meshRebuild)
                     if (results.original && results.original.cards) {
@@ -7859,6 +7951,7 @@
                         window._simCompleted = true;
                         _comparisonReport = results.comparison;
                         updateWorkflowNode("simulation", "completed");
+                        _finishSimTaskBubbles("completed");
                         if (results.comparison.is_equivalent === false) {
                             updateWorkflowNode("comparison", "failed");
                             addMessage("system", "⚠️ 仿真完成，等效性对比存在差异，请检查");
@@ -7873,11 +7966,18 @@
                         window._simCompleted = false;
                         updateWorkflowNode("simulation", "active");
                         updateWorkflowNode("comparison", "pending");
-                        addMessage("system", "📊 仿真任务已提交 MCP Server，等待仿真完成...");
                         setStatus("仿真验证中");
-                        // Connect WebSocket for real-time status
+                        // Connect WebSocket for real-time status — 进度写进上面那两条气泡
                         var taskIds = [data.original_task_id, data.equivalent_task_id].filter(Boolean);
-                        _connectSimWebSocket(taskIds);
+                        if (taskIds.length > 0) {
+                            _connectSimWebSocket(
+                                taskIds,
+                                _simSideMap(data.original_task_id, data.equivalent_task_id),
+                            );
+                        } else {
+                            _noteAllSimTaskBubbles("未拿到 task_id，改用轮询等待…");
+                            _pollSimulationResults();
+                        }
                     }
                     checkSimReady();
                     requestAnimationFrame(function () {
@@ -7888,6 +7988,7 @@
                     _simStarted = false;
                     window._simStarted = false;
                     setStatus("验证失败");
+                    _finishSimTaskBubbles("failed", "提交失败");
                     addMessage("error", "仿真任务失败: " + (e.message || "MCP Server 不可用"));
                     updateWorkflowNode("simulation", "failed");
                     btn.textContent = "重试仿真";
@@ -7933,9 +8034,218 @@
                 }
             });
 
-            function _connectSimWebSocket(taskIds) {
+            // ── 仿真任务进度气泡 ──
+            // 设计约定（改这里之前先读）：
+            //   1. 每次触发仿真只产生两条常驻消息（原始组网 / 等效组网），进度在气泡内原地更新；
+            //      「一帧 status = 一条新消息」是历史写法，会造成每秒 2 条的刷屏。
+            //   2. 进度帧只存在于 DOM，**不落库**（后端只在开始/提交/终态失败时写 session.history），
+            //      所以这里不做任何持久化恢复：刷新后气泡由 _connectSimWebSocket 重新懒创建。
+            //   3. MCP 的 progress 是「每次被查询 +1%、封顶 90」，只有子进程退出才置 100
+            //      （mcp_server/services/simulation_runner.py:refresh_task_status），
+            //      因此 ≥90% 一律显示"收尾中…"，避免看起来卡死在 90%。
+            var _simTaskBubbles = {};    // task_id -> 气泡 entry（仅本次触发的一对）
+            var _pendingSimBubbles = {}; // side -> 尚未拿到 task_id 的气泡（提交阶段）
+
+            var _SIM_SIDE_LABEL = { original: "原始组网", equivalent: "等效组网" };
+
+            var _SIM_STATUS_TEXT = {
+                submitted: "已提交，等待调度…",
+                running: "运行中",
+                unavailable: "任务查询不到（重试中）",
+                unknown: "任务状态未知（重试中）",
+                poll_error: "状态查询失败（重试中）",
+            };
+
+            // task_id -> side 的映射，用于给气泡起「原始组网 / 等效组网」标题
+            function _simSideMap(origTaskId, eqTaskId) {
+                var m = {};
+                if (origTaskId) m[origTaskId] = "original";
+                if (eqTaskId) m[eqTaskId] = "equivalent";
+                return m;
+            }
+
+            // 只在用户本来就贴着底部时才自动滚动，否则原地更新会把正在翻看的
+            // 历史消息一直顶走（每秒 2 次更新，这个体验问题很突出）。
+            function _simChatNearBottom() {
+                var c = document.getElementById("chat-messages");
+                if (!c) return true;
+                return c.scrollHeight - c.scrollTop - c.clientHeight < 60;
+            }
+
+            function _createSimTaskBubble(side, taskId) {
+                var container = document.getElementById("chat-messages");
+                if (!container) return null;
+                var stick = _simChatNearBottom();
+                var group = document.createElement("div");
+                group.className = "msg-group left fade-in";
+                group.innerHTML =
+                    '<span class="msg-label system">系统</span>' +
+                    '<div class="msg-bubble system sim-task pending">' +
+                    '<div class="sim-task-head">' +
+                    '<span class="sim-task-dot"></span>' +
+                    '<span class="sim-task-title">' +
+                    (_SIM_SIDE_LABEL[side] || "仿真任务") + " 仿真</span>" +
+                    '<span class="sim-task-pct">0%</span>' +
+                    "</div>" +
+                    '<div class="sim-task-track"><div class="sim-task-fill"></div></div>' +
+                    '<div class="sim-task-status">提交中…</div>' +
+                    "</div>";
+                container.appendChild(group);
+                if (stick) container.scrollTop = container.scrollHeight;
+                var entry = {
+                    group: group,
+                    bubble: group.querySelector(".sim-task"),
+                    pctEl: group.querySelector(".sim-task-pct"),
+                    fillEl: group.querySelector(".sim-task-fill"),
+                    statusEl: group.querySelector(".sim-task-status"),
+                    lastPct: null,
+                    lastKey: "",
+                };
+                if (taskId) _simTaskBubbles[taskId] = entry;
+                return entry;
+            }
+
+            // 原地渲染：只改宽度和文字，不重建节点、不走 markdown。返回后不再产生新消息。
+            function _renderSimTaskProgress(entry, progress, status) {
+                if (!entry || !entry.bubble) return;
+                status = status || "";
+
+                var done = status === "completed";
+                var failed = status === "failed" || status === "error";
+                var degraded = (status === "unavailable" || status === "unknown" ||
+                                status === "poll_error");
+
+                var pct = (typeof progress === "number" && progress >= 0)
+                    ? Math.round(Math.min(progress, 100)) : null;
+                if (degraded && (pct === null || pct <= 0)) {
+                    pct = entry.lastPct;      // 降级帧不要把手上的进度打回 0
+                } else if (pct !== null) {
+                    entry.lastPct = pct;
+                }
+                if (done) { pct = 100; entry.lastPct = 100; }
+
+                var key = String(pct) + "|" + status;
+                if (entry.lastKey === key) return;   // 同一状态重复帧不写 DOM
+                entry.lastKey = key;
+
+                var finishing = !done && !failed && pct !== null && pct >= 90;
+                entry.bubble.classList.toggle("done", done);
+                entry.bubble.classList.toggle("failed", failed);
+                entry.bubble.classList.toggle("pending", !done && !failed && pct === null);
+                entry.bubble.classList.toggle("finishing", finishing);
+
+                entry.pctEl.textContent = (pct === null) ? (failed ? "—" : "…") : (pct + "%");
+                entry.fillEl.style.width = (pct === null) ? "0%" : (pct + "%");
+
+                if (done) entry.statusEl.textContent = "已完成";
+                else if (failed) entry.statusEl.textContent = "失败";
+                else if (finishing) entry.statusEl.textContent = "收尾中…";
+                else entry.statusEl.textContent = _SIM_STATUS_TEXT[status] || "运行中";
+            }
+
+            // 只覆盖状态文字（断线/中止等旁注）
+            function _noteSimTaskBubble(entry, text) {
+                if (!entry || !entry.statusEl) return;
+                entry.statusEl.textContent = text;
+                entry.lastKey = "";   // 文字被覆盖过，允许后续帧继续刷新
+            }
+
+            function _simTaskBubbleAlive(entry) {
+                return !!(entry && entry.group && document.body.contains(entry.group));
+            }
+
+            // 取（必要时重建）某个 task 的气泡。节点被 applyWorkflowModeUI 清空过就重建。
+            function _simTaskEntry(taskId, side) {
+                var entry = _simTaskBubbles[taskId];
+                if (entry && !_simTaskBubbleAlive(entry)) {
+                    delete _simTaskBubbles[taskId];
+                    entry = null;
+                }
+                if (!entry) entry = _createSimTaskBubble(side, taskId);
+                return entry;
+            }
+
+            function _upsertSimTaskMessage(taskId, side, progress, status) {
+                if (!taskId) return;
+                var stick = _simChatNearBottom();
+                var entry = _simTaskEntry(taskId, side);
+                _renderSimTaskProgress(entry, progress, status);
+                var c = document.getElementById("chat-messages");
+                if (stick && c) c.scrollTop = c.scrollHeight;
+            }
+
+            // 本次触发的两条气泡一起收尾（含还没绑定 task_id 的提交阶段气泡）
+            function _finishSimTaskBubbles(status, noteText) {
+                function sweep(entry) {
+                    if (!_simTaskBubbleAlive(entry)) return;
+                    _renderSimTaskProgress(entry, status === "completed" ? 100 : null, status);
+                    if (noteText) _noteSimTaskBubble(entry, noteText);
+                }
+                for (var tid in _simTaskBubbles) {
+                    if (Object.prototype.hasOwnProperty.call(_simTaskBubbles, tid)) {
+                        sweep(_simTaskBubbles[tid]);
+                    }
+                }
+                for (var side in _pendingSimBubbles) {
+                    if (Object.prototype.hasOwnProperty.call(_pendingSimBubbles, side)) {
+                        sweep(_pendingSimBubbles[side]);
+                    }
+                }
+            }
+
+            function _noteAllSimTaskBubbles(text) {
+                for (var tid in _simTaskBubbles) {
+                    if (!Object.prototype.hasOwnProperty.call(_simTaskBubbles, tid)) continue;
+                    if (_simTaskBubbleAlive(_simTaskBubbles[tid])) {
+                        _noteSimTaskBubble(_simTaskBubbles[tid], text);
+                    }
+                }
+                for (var side in _pendingSimBubbles) {
+                    if (!Object.prototype.hasOwnProperty.call(_pendingSimBubbles, side)) continue;
+                    if (_simTaskBubbleAlive(_pendingSimBubbles[side])) {
+                        _noteSimTaskBubble(_pendingSimBubbles[side], text);
+                    }
+                }
+            }
+
+            // 触发仿真：先落两条"提交中"气泡，拿到 task_id 后再绑定（见 _bindSimTaskBubbles）。
+            // 上一对气泡从这里起不再被引用，冻结在终态，符合"每次触发只出现两条"。
+            function _beginSimTaskBubbles() {
+                _simTaskBubbles = {};
+                _pendingSimBubbles = {
+                    original: _createSimTaskBubble("original", null),
+                    equivalent: _createSimTaskBubble("equivalent", null),
+                };
+            }
+
+            function _bindSimTaskBubbles(origTaskId, eqTaskId) {
+                var pairs = [["original", origTaskId], ["equivalent", eqTaskId]];
+                for (var i = 0; i < pairs.length; i++) {
+                    var side = pairs[i][0], tid = pairs[i][1];
+                    var entry = _pendingSimBubbles[side];
+                    _pendingSimBubbles[side] = null;
+                    if (!_simTaskBubbleAlive(entry)) continue;
+                    if (tid) {
+                        _simTaskBubbles[tid] = entry;
+                        entry.lastKey = "";   // 让首帧进度必然落一次
+                    } else {
+                        _renderSimTaskProgress(entry, null, "failed");
+                        _noteSimTaskBubble(entry, "未提交（后端未返回 task_id）");
+                    }
+                }
+            }
+
+            function _connectSimWebSocket(taskIds, sideMap) {
                 // Close any existing connection + poller
                 _closeSimSocket();
+
+                // 刷新/断线重连路径下聊天区是重建的，气泡可能还不存在 —— 按 task_id 补齐
+                var sides = sideMap || {};
+                (taskIds || []).forEach(function (tid) {
+                    if (tid && !_simTaskBubbles[tid]) {
+                        _simTaskBubbles[tid] = _createSimTaskBubble(sides[tid], tid);
+                    }
+                });
 
                 var wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + APP_BASE + "/ws/simulation/" + sessionId;
                 var ws = new WebSocket(wsUrl);
@@ -7957,17 +8267,17 @@
                     } catch (e) { return; }
 
                     if (msg.type === "status") {
-                        if (msg.progress != null) {
-                            addMessage("system", "📊 [" + msg.task_id.slice(-8) + "] 进度: " + msg.progress + "% — " + (msg.status || ""));
-                        }
+                        // 原地更新对应的任务气泡（不再每帧新增消息）
+                        _upsertSimTaskMessage(msg.task_id, sides[msg.task_id], msg.progress, msg.status);
                     } else if (msg.type === "complete") {
                         completedTasks[msg.task_id] = true;
-                        addMessage("system", "✅ [" + msg.task_id.slice(-8) + "] 仿真完成");
+                        _upsertSimTaskMessage(msg.task_id, sides[msg.task_id], 100, "completed");
                         // When all tasks complete, fetch comparison + card data
                         if (Object.keys(completedTasks).length >= totalTasks) {
                             _onSimulationAllComplete();
                         }
                     } else if (msg.type === "error") {
+                        _upsertSimTaskMessage(msg.task_id, sides[msg.task_id], null, "failed");
                         addMessage("error", "❌ [" + (msg.task_id || "").slice(-8) + "] 仿真失败: " + (msg.message || ""));
                         _simWs = null;
                         ws.close();
@@ -7982,7 +8292,7 @@
                     _simWs = null;
                     // If connection closed before all tasks completed, fall back to HTTP polling
                     if (!_simCompleted && !_simFailed && Object.keys(completedTasks).length < totalTasks) {
-                        addMessage("system", "⚠️ WebSocket 连接断开，切换为轮询模式...");
+                        _noteAllSimTaskBubbles("连接断开，改用轮询等待…");
                         _pollSimulationResults();
                     }
                 };
@@ -7992,7 +8302,7 @@
                     _simWs = null;
                     // Fall back to HTTP polling if not already completed/failed
                     if (!_simCompleted && !_simFailed && Object.keys(completedTasks).length < totalTasks) {
-                        addMessage("system", "⚠️ WebSocket 连接异常，切换为轮询模式...");
+                        _noteAllSimTaskBubbles("连接异常，改用轮询等待…");
                         _pollSimulationResults();
                     }
                 };
@@ -8014,6 +8324,7 @@
                         _comparisonReport = results.comparison || null;
                         setStatus("验证完成");
                         updateWorkflowNode("simulation", "completed");
+                        _finishSimTaskBubbles("completed");
                         if (results.comparison) {
                             if (results.comparison.is_equivalent === false) {
                                 updateWorkflowNode("comparison", "failed");
@@ -8053,6 +8364,8 @@
                 _comparisonReport = null;
                 setStatus("验证失败");
                 updateWorkflowNode("simulation", "failed");
+                // 本次触发的两条气泡一起落到失败态（整次验证已中止）
+                _finishSimTaskBubbles("failed");
                 addMessage("error", "仿真任务失败: " + (message || "未知错误"));
                 checkSimReady();
             }

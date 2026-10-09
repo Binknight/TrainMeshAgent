@@ -443,6 +443,30 @@ class MCPClient:
 
 空闲时（无订阅）`ws.receive(timeout=30)` 每 30s 超时一次并回发 heartbeat。
 
+**前端消费（2026-10 调整）**：`status` 帧不再「一帧一条消息」，而是写进两条常驻气泡。
+
+```
+每次触发仿真（startSimulation）
+  ├─ 先落两条常驻气泡：原始组网 / 等效组网（状态"提交中…"）
+  ├─ 拿到 run-simulation 响应的 *_task_id 后把气泡绑到对应 task_id
+  ├─ 每个 status 帧 → _upsertSimTaskMessage：只改进度条宽度与文字
+  │    （同 (progress, status) 重复帧直接 return，零 DOM 写入）
+  ├─ progress = -1（poll_error）/ unavailable / unknown → 不显示负值，
+  │    降级帧不把手上的进度打回 0
+  ├─ progress >= 90 且未到终态 → 显示"收尾中…"
+  │    （MCP 的 progress 是"每次被查询 +1%、封顶 90"，只有子进程退出才置 100，
+  │      见 mcp_server/services/simulation_runner.py:refresh_task_status）
+  ├─ complete / error → 就地改成终态，不额外发消息
+  └─ WS 断开/异常 → 状态文字改成"连接断开，改用轮询等待…"，同样不新增消息
+
+刷新后：聊天区被重建，气泡由 _connectSimWebSocket 按 task_id 懒重建
+```
+
+> 修复前的缺陷：`ws.onmessage` 对每个 status 帧都 `addMessage` 一条
+> 「📊 [xxx] 进度: n% — running」，2 个任务 × 1s 轮询 = 每秒 2 条新消息，
+> 一次验证累积几百条，把 Agent 交互区刷没。注意这些进度帧本来就**不落库**
+> （后端只在终态写 `session.history`），所以改成常驻气泡不影响刷新语义。
+
 **刷新/断线语义**（2026-10 修复）：
 
 ```

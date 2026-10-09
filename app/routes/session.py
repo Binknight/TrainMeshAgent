@@ -720,7 +720,9 @@ def run_simulation(session_id: str):
     logger.info(f"[run_simulation] session={session_id}, step={session.step}, "
                 f"orig_task={session.original_task_id}, eq_task={session.equivalent_task_id}, "
                 f"is_retry={is_retry}")
-    session.history.append({"role": "system", "content": "📊 开始仿真任务..."})
+    # 注意：这里不再往 session.history 写「📊 开始仿真任务...」之类的提示。
+    # 本次验证的过程展示由前端两条常驻进度气泡承担（static/index.html 的 _simTaskBubbles），
+    # 写进 history 只会在刷新后与气泡重复（而且本函数会被提交/完成两次调用，写入即重复两遍）。
     results = {}
 
     try:
@@ -759,11 +761,10 @@ def run_simulation(session_id: str):
             results["equivalent"] = eq_sim.model_dump()
 
         # ── Comparison ──（判定条件与「刷新后自愈」路径共用同一份实现）
+        # 未出报告说明任务还在跑：不写 history（过程展示交给前端进度气泡，见上）
         report = _build_and_store_comparison(session)
         if report:
             results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
-        else:
-            session.history.append({"role": "system", "content": "📊 仿真任务已提交，任务ID: " + str(session.original_task_id or "")})
 
     except Exception as exc:
         logger.error(f"[run_simulation] Failed: {exc}")
