@@ -25,6 +25,8 @@ app/models/.model_cache/
 # 已移除的开发期文档资源（防再次入库）
 BACKLOG.md
 moe-equivalent-params.html
+# test.md 名字太通用，只锚定仓库根，避免误伤将来的 docs/test.md 之类
+/test.md
 
 # 打包产物
 *.tgz
