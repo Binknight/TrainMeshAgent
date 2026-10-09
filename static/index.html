@@ -1526,7 +1526,7 @@
                仿真进度在气泡内部原地更新，不再「一帧进度 = 一条新消息」。
                颜色一律取 token（详见文件顶部 :root），不写颜色字面量。 */
             .sim-task {
-                min-width: 240px;
+                min-width: 260px;
             }
             .sim-task-head {
                 display: flex;
@@ -8048,6 +8048,15 @@
 
             var _SIM_SIDE_LABEL = { original: "原始组网", equivalent: "等效组网" };
 
+            // 气泡名称：进行中「原始组网 仿真流量验证中」，终态把"中"换成 完成/失败
+            // （气泡下方还有一行状态文字，这里只在终态改词，避免"验证中 + 已完成"自相矛盾）
+            function _simTaskTitle(side, status) {
+                var who = _SIM_SIDE_LABEL[side] || "仿真任务";
+                if (status === "completed") return who + " 仿真流量验证完成";
+                if (status === "failed" || status === "error") return who + " 仿真流量验证失败";
+                return who + " 仿真流量验证中";
+            }
+
             var _SIM_STATUS_TEXT = {
                 submitted: "已提交，等待调度…",
                 running: "运行中",
@@ -8084,7 +8093,7 @@
                     '<div class="sim-task-head">' +
                     '<span class="sim-task-dot"></span>' +
                     '<span class="sim-task-title">' +
-                    (_SIM_SIDE_LABEL[side] || "仿真任务") + " 仿真</span>" +
+                    _simTaskTitle(side, "") + "</span>" +
                     '<span class="sim-task-pct">0%</span>' +
                     "</div>" +
                     '<div class="sim-task-track"><div class="sim-task-fill"></div></div>' +
@@ -8094,7 +8103,9 @@
                 if (stick) container.scrollTop = container.scrollHeight;
                 var entry = {
                     group: group,
+                    side: side,
                     bubble: group.querySelector(".sim-task"),
+                    titleEl: group.querySelector(".sim-task-title"),
                     pctEl: group.querySelector(".sim-task-pct"),
                     fillEl: group.querySelector(".sim-task-fill"),
                     statusEl: group.querySelector(".sim-task-status"),
@@ -8136,6 +8147,7 @@
 
                 entry.pctEl.textContent = (pct === null) ? (failed ? "—" : "…") : (pct + "%");
                 entry.fillEl.style.width = (pct === null) ? "0%" : (pct + "%");
+                if (entry.titleEl) entry.titleEl.textContent = _simTaskTitle(entry.side, status);
 
                 if (done) entry.statusEl.textContent = "已完成";
                 else if (failed) entry.statusEl.textContent = "失败";
