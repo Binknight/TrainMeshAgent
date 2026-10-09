@@ -238,7 +238,7 @@ PG 分支的 `SCHEMA_SQL` 与 SQLite 分支的 DDL 是**两份手写 DDL**，天
 | `AGENTS.md` | §2 架构图、§3 常用命令、§4.4 容器约束、§5 陷阱表：PG 相关约束改为 SQLite 约束 |
 | `README.md` | 架构图 `psycopg2 → PostgreSQL` 改为 `sqlite3 / psycopg2`；环境变量表 |
 | `docs/使用指南.md` | 依赖表、`DATABASE_URL`/`SQLITE_PATH` 配置表、持久化契约、排障表、目录树 |
-| `docs/数据库内嵌化改造说明.md` | 顶部加「已被 `docs/PG迁移SQLite改造计划.md` 取代」的指向说明，**不删除**（历史决策记录） |
+| `docs/数据库内嵌化改造说明.md` | 顶部加「已被 `docs/PostgreSQL迁移SQLite改造计划.md` 取代」的指向说明，**不删除**（历史决策记录） |
 | `.env.example` | 两个后端形态 |
 | 全仓库 | 搜索悬空引用（上次删 `CLAUDE.md` 留下目录树悬空条目的教训） |
 

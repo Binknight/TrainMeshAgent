@@ -1051,7 +1051,7 @@ def _parse_script_params(script_content: str) -> dict[str, dict[str, str]]:
     Tolerant of bash variable assignments (``KEY=value`` / ``export KEY=value``) and
     CLI flags (``--key value`` / ``--key=value``). Full-line comments are skipped so
     example values in comments do not shadow real ones. Missing keys are omitted; the
-    frontend renders '—' for absent fields. See docs/mcp-server-spec.md §11.
+    frontend renders '—' for absent fields. See docs/仿真系统MCP-Server需求规格.md §11.
     """
     out: dict[str, dict[str, str]] = {"topology": {}, "model": {}, "training": {}}
     if not script_content:

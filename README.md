@@ -4,7 +4,7 @@ AI 训练组网仿真测试 Agent：以 Web 服务形式对接测试人员，用
 
 - **需求来源**：`docs/需求规格.md`
 - **使用指南（工作流 / API / 数据模型 / 排障）**：`docs/使用指南.md`
-- **设计文档**：`docs/mcp-server-spec.md`、`docs/frontend-agent-interaction.md`
+- **设计文档**：`docs/仿真系统MCP-Server需求规格.md`、`docs/前端与Agent交互逻辑分析.md`
 
 ---
 
@@ -34,7 +34,7 @@ AI 训练组网仿真测试 Agent：以 Web 服务形式对接测试人员，用
 
 > **数据库是双后端的**：默认走 SQLite；把 `DATABASE_URL` 设成 `postgresql://...`
 > 即切换到 PostgreSQL（逃生门，代码同一份）。切换机制与取舍见
-> `docs/PG迁移SQLite改造计划.md`。
+> `docs/PostgreSQL迁移SQLite改造计划.md`。
 
 ---
 
@@ -165,7 +165,7 @@ psql -U postgres -c "CREATE DATABASE equivalent_modeling_service;"
 
 > **注意**：容器镜像里**已不装 PostgreSQL 服务端**，逃生门只能连**外部** PG。
 > 本机 PG 与容器 PG 的数据文件、`pg_dump` 产物**跨主版本不可直接复用**。
-> 详见 `docs/使用指南.md` §3.2 与 `docs/PG迁移SQLite改造计划.md`。
+> 详见 `docs/使用指南.md` §3.2 与 `docs/PostgreSQL迁移SQLite改造计划.md`。
 
 ### 3.2 MCP 仿真 Server
 
@@ -357,7 +357,7 @@ docker run -d --name equivalent-modeling-service \
 > 若迁移失败（缺表/缺列），`init_db()` 会抛 `RuntimeError` 导致 Flask 进程退出；
 > entrypoint 的 `wait -n` 随即回收整个容器 —— **不会**以半可用状态继续运行。
 
-构建流程、持久化契约与运维须知见 **`docs/PG迁移SQLite改造计划.md`**；
+构建流程、持久化契约与运维须知见 **`docs/PostgreSQL迁移SQLite改造计划.md`**；
 上一版「内嵌 PostgreSQL」形态的实现细节见 **`docs/数据库内嵌化改造说明.md`**（已被本次改造取代，仅作历史参考）。
 
 ### 7.2 反向代理 / 子路径前缀（如 nginx `/ftbot/equivalent/`）

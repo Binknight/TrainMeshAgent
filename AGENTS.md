@@ -60,7 +60,7 @@ ADMIN_DSN=postgresql://postgres:<pw>@127.0.0.1:5432/postgres \
 数据库默认是 **SQLite**，不需要任何外部服务，因此 `python -m app.main` 直接可跑
 （数据文件默认落在 `SQLITE_PATH`，本地开发可指到 `.tmp/` 下）。
 
-数据库选型与迁移细节见 `docs/PG迁移SQLite改造计划.md`；部署与镜像细节见 `README.md`。
+数据库选型与迁移细节见 `docs/PostgreSQL迁移SQLite改造计划.md`；部署与镜像细节见 `README.md`。
 
 ---
 
@@ -226,7 +226,7 @@ python tests/test_mcp_server_e2e.py           # 需 MCP Server :9000
    **改了任一套 DDL（`SCHEMA_SQL` 或 `SCHEMA_SQLITE_SQL`）必须同步改另一套** ——
    `verify_static.py` 的 D1 断言会比对两套的「表→列」映射，漏改会直接让它失败。
 4. **改 Dockerfile / 部署契约时同步更新**：`charts/values.yaml`、`.env.example`、
-   `README.md`、`docs/使用指南.md`、`docs/PG迁移SQLite改造计划.md` —— 这几处与代码存在
+   `README.md`、`docs/使用指南.md`、`docs/PostgreSQL迁移SQLite改造计划.md` —— 这几处与代码存在
    跨文件契约，历史上多次因"只改一处"产生不一致。
 5. **提交前检查是否有失效引用**：删除文件后，全仓库搜索该文件名（曾出现删了
    `CLAUDE.md` 但 `docs/使用指南.md` 的目录树仍列着它）。
