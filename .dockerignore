@@ -33,7 +33,6 @@ deployPackages.*
 docker/chart.tgz
 
 # ---- 开发期/文档资源 ----
-mock/
 tests/
 docs/
 UI/

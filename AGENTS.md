@@ -263,5 +263,3 @@ python tests/test_mcp_server_e2e.py           # 需 MCP Server :9000
 | `docs/` | 需求规格、使用指南、设计文档、改造说明 |
 | `tests/` | 独立测试脚本（非 pytest，见 §6） |
 | `static/` | 前端单页应用（`index.html` + 拓扑渲染 + 仿真数据流） |
-| `mock/` | 仿真侧 mock 实现（不入镜像，见 `.dockerignore`） |
-| `tmp/` | 设计稿与临时资源（**已在 `.gitignore` 中，勿依赖**） |

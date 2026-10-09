@@ -50,9 +50,6 @@
 | 技能 | `app/skills/training-mesh-profiler-skill/__init__.py` | 仿真性能分析 Skill |
 | 通信 | `app/mcp/client.py` | MCP JSON-RPC 客户端（仿真系统通信） |
 | 配置 | `app/config.py` | 环境变量配置（OpenAI / MCP / Flask / 护栏参数） |
-| 模拟 | `mock/train.py` | GPT-2 分布式训练脚本（仿真被测对象） |
-| 模拟 | `mock/model.py` | GPT 模型定义 |
-| 模拟 | `mock/bench.py` | 性能基准测试脚本 |
 
 ---
 

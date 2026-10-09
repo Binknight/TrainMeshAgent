@@ -7,6 +7,9 @@ __pycache__/
 UI/
 .claude/
 .tmp/
+# 仓库根 tmp/：历史设计稿目录已移除，保留忽略以防临时文件再次入库
+# （注意：此前 `tmp/` 是入库 tracked 的，被忽略的一直是上面的 `.tmp/`）
+/tmp/
 
 # model_catalog resolver cache (fetched config.json)
 app/models/.model_cache/
