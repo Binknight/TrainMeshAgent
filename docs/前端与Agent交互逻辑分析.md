@@ -430,15 +430,40 @@ class MCPClient:
 
 ```
 客户端订阅:  {"type": "subscribe", "task_ids": ["task_orig", "task_eq"]}
-服务端循环:
-  ├─ 每 1s 轮询 MCP get_task_status()
-  ├─ 推送 status 事件 (含进度)
-  ├─ 推送 log 事件 (含日志行)
-  ├─ 状态为 completed → 推送 complete 事件 (含结果)
-  ├─ 状态为 failed    → 推送 error 事件
-  ├─ 超时 300s       → 推送 error (timeout)
-  └─ 心跳 (120s 无消息时)
+服务端循环（app/routes/simulation.py:_poll_simulation_tasks）:
+  ├─ 每轮先发 heartbeat（SIM_POLL_INTERVAL，默认 1s）——保活并作为轮询节拍
+  ├─ 并行轮询 MCP report_status，推送 status 事件 (含进度)
+  ├─ 同步 sync_logs 增量日志，推送 log 事件
+  ├─ 状态为 completed → 调 get_result，推送 complete 事件
+  ├─ 状态为 failed/error → 推送 error 事件
+  ├─ 状态为 unavailable/unknown 连续 30 轮 → 判定任务已从 MCP 丢失
+  │   （MCP Server 重启后内存任务表清空），会话落 failed 并推送 error
+  └─ 所有任务到终态 → 退出循环
 ```
+
+空闲时（无订阅）`ws.receive(timeout=30)` 每 30s 超时一次并回发 heartbeat。
+
+**刷新/断线语义**（2026-10 修复）：
+
+```
+刷新页面
+  ├─ 前端 pagehide → ws.close(1000)；后端下一次 send 立即失败 → 轮询线程退出
+  ├─ MCP 侧任务不受影响（任务记录在 MCP Server 内存，与浏览器连接无关），继续跑到完成
+  └─ 重新加载后 restoreSession → GET /topology
+       ├─ 该端点先做 _fallback_reconcile_simulation 兜底判定：
+       │    两个任务都 completed → 补齐卡片指标 + 建对比 + 落库（step=completed）
+       │    任一 failed/error      → step=failed
+       │    仍在跑 / MCP 不可达    → 不改动，等下次请求
+       └─ 响应带 original_task_id / equivalent_task_id
+            → step 仍为 simulating 时前端用它们重建 WS 订阅（拿到 complete 后
+              再补打一次 run-simulation 落库）
+            → 否则退化为 5s HTTP 轮询（改判定 step，而不是只看 comparison_report）
+```
+
+> 修复前的缺陷：`/topology` 不返回 `*_task_id`，前端续订分支永远拿不到 taskIds；
+> 而推进 `step` 的唯一主动路径是「前端收到 WebSocket complete 后补打
+> `run-simulation`」，于是刷新后会话永久停在 `simulating`、前端一直显示
+> "仿真验证中"（MCP 侧其实早已跑完）。
 
 ---
 

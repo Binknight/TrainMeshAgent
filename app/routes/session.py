@@ -199,9 +199,19 @@ def get_topology(session_id: str):
     if not session:
         return {"error": "session not found"}, 404
 
+    # 刷新页面后前端只会走 REST 路径（WebSocket 已断），这里做一次兜底判定，
+    # 让「任务其实已跑完但会话仍停在 simulating」的会话当场收敛，前端一次请求
+    # 就能恢复出最新状态，而不必等 5s 轮询或再点一次仿真。
+    _fallback_reconcile_simulation(session)
+
     return jsonify({
         "session_id": session_id,
         "server_boot_id": SERVER_BOOT_ID,
+        # task_id 必须回传：前端刷新后要靠它重建 WebSocket 订阅。此前只存在于
+        # DB 里，接口不带，导致前端 `syncWorkflowFromSession` 里的续订分支
+        # 永远拿不到 taskIds，直接退化成 HTTP 轮询（且轮询判定条件也不满足）。
+        "original_task_id": session.original_task_id,
+        "equivalent_task_id": session.equivalent_task_id,
         "original_topology": _topo_with_model(
             session.original_topology, session.original_training_model,
             seq_len=session.original_seq_len,
@@ -251,13 +261,21 @@ def save_formula_lines(session_id: str):
 
 @session_bp.route("/<session_id>/simulation", methods=["GET"])
 def get_simulation(session_id: str):
-    """Get simulation results for a session."""
+    """Get simulation results for a session.
+
+    这也是前端在 WebSocket 不可用时的 5s HTTP 轮询端点，因此必须自带兜底
+    判定：否则「任务已跑完、没人落库」的会话会在这里被无限轮询成"进行中"。
+    """
     session = session_manager.get_session(session_id)
     if not session:
         return {"error": "session not found"}, 404
 
+    _fallback_reconcile_simulation(session)
+
     return jsonify({
         "session_id": session_id,
+        "original_task_id": session.original_task_id,
+        "equivalent_task_id": session.equivalent_task_id,
         "original_simulation": session.original_simulation.model_dump() if session.original_simulation else None,
         "equivalent_simulation": session.equivalent_simulation.model_dump() if session.equivalent_simulation else None,
         "comparison_report": session.comparison_report.model_dump() if session.comparison_report else None,
@@ -382,74 +400,207 @@ def _run_simulation_for_topology(topo, training_model, task_id_in: str | None, l
 
     # Try to get card metrics from MCP (may be empty if simulation not yet complete)
     try:
-        card_details = mcp_client.get_card_details(task_id)
-        logger.info(f"[run_simulation] card_detail for {label} (task_id={task_id}): "
-                    f"type={type(card_details).__name__}, len={len(card_details) if hasattr(card_details, '__len__') else 'N/A'}, "
-                    f"truthy={bool(card_details)}, raw_keys={list(card_details[0].keys()) if card_details else 'EMPTY'}")
-        if card_details:
-            # ── Enrich hbm_model_gb from hbm_detail (weights + gradients + optimizer) ──
-            # Fetch hbm_detail for each rank in parallel; fall back to hbm_gb if unavailable
-            hbm_model_map: dict[int, float] = {}
-            try:
-                def _fetch_hbm_model(rank: int) -> tuple[int, float | None]:
-                    detail = mcp_client.get_hbm_detail(task_id, rank)
-                    w = float(detail.get("weights_gb", 0))
-                    g = float(detail.get("gradients_gb", 0))
-                    o = float(detail.get("optimizer_gb", 0))
-                    model_gb = w + g + o
-                    return rank, model_gb if model_gb > 0 else None
-
-                with ThreadPoolExecutor(max_workers=min(16, len(card_details))) as pool:
-                    futures = {
-                        pool.submit(_fetch_hbm_model, d.get("global_rank", 0)): d.get("global_rank", 0)
-                        for d in card_details
-                    }
-                    for fut in as_completed(futures):
-                        rank, model_gb = fut.result()
-                        if model_gb is not None:
-                            hbm_model_map[rank] = model_gb
-                logger.info(f"[run_simulation] hbm_model_gb enrichment for {label}: "
-                            f"got {len(hbm_model_map)}/{len(card_details)} ranks from hbm_detail")
-            except Exception as exc:
-                logger.warning(f"[run_simulation] hbm_model_gb enrichment failed for {label}: {exc}")
-
-            cards = []
-            for detail in card_details:
-                rank = detail.get("global_rank", 0)
-                hbm_model_gb = hbm_model_map.get(rank, detail.get("hbm_gb", 0))
-                cards.append(CardMetrics(
-                    card_id=detail.get("card_id", ""),
-                    global_rank=rank,
-                    flops_per_card=detail.get("flops_per_card", 0),
-                    hbm_gb=detail.get("hbm_gb", 0),
-                    hbm_model_gb=hbm_model_gb,
-                    tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
-                    pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
-                    dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
-                    ep_comm_gb_per_step=detail.get("ep_comm_gb_per_step", 0),
-                ))
-            # Log first card as sample
-            if cards:
-                c0 = cards[0]
-                logger.info(f"[run_simulation] card_detail for {label}: {len(cards)} cards. "
-                            f"sample[0]: flops={c0.flops_per_card}, hbm={c0.hbm_gb}, "
-                            f"hbm_model={c0.hbm_model_gb}, "
-                            f"tp={c0.tp_comm_gb_per_micro}, pp={c0.pp_comm_mb_per_micro}, "
-                            f"dp={c0.dp_comm_gb_per_step}, ep={c0.ep_comm_gb_per_step}")
-            device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
-            result = SimulationResult(
-                topology_name=topo.name,
-                device_type=device_type,
-                total_nodes=topo.dp_size * topo.tp_size * topo.pp_size,
-                cards=cards,
-            )
-            return task_id, result
-        else:
-            logger.warning(f"[run_simulation] card_detail for {label}: falsy result (empty list or None), skipping")
+        result = _build_simulation_result(
+            topo, training_model, task_id, label,
+            seq_len=seq_len, batch_size=batch_size, model_name=model_name,
+            d_ffn=d_ffn, micro_batch_size=micro_batch_size,
+            vocab_size=vocab_size, ep=ep,
+        )
     except Exception as exc:
         logger.warning(f"[run_simulation] MCP card_detail failed for {label}: {exc}", exc_info=True)
+        result = None
 
-    return task_id, None
+    return task_id, result
+
+
+def _build_simulation_result(topo, training_model, task_id: str, label: str,
+                             sim_params: dict | None = None, seq_len=None,
+                             batch_size=None, model_name=None, d_ffn=None,
+                             micro_batch_size=None, vocab_size=None, ep=None):
+    """从 MCP `card_detail` 组装 `SimulationResult`；结果尚未就绪时返回 None。
+
+    原先内联在 `_run_simulation_for_topology()` 里。抽出来是因为「提交任务」与
+    「刷新后自愈」两条路径必须共用同一套取数与富化规则（HBM 富化、MoE 的 ep
+    通信量等都在其中），各写一份迟早会漂移。
+    """
+    card_details = mcp_client.get_card_details(task_id)
+    logger.info(f"[build_sim_result] card_detail for {label} (task_id={task_id}): "
+                f"type={type(card_details).__name__}, len={len(card_details) if hasattr(card_details, '__len__') else 'N/A'}, "
+                f"truthy={bool(card_details)}, raw_keys={list(card_details[0].keys()) if card_details else 'EMPTY'}")
+    if not card_details:
+        logger.warning(f"[build_sim_result] card_detail for {label}: falsy result (empty list or None), skipping")
+        return None
+
+    # ── Enrich hbm_model_gb from hbm_detail (weights + gradients + optimizer) ──
+    # Fetch hbm_detail for each rank in parallel; fall back to hbm_gb if unavailable
+    hbm_model_map: dict[int, float] = {}
+    try:
+        def _fetch_hbm_model(rank: int) -> tuple[int, float | None]:
+            detail = mcp_client.get_hbm_detail(task_id, rank)
+            w = float(detail.get("weights_gb", 0))
+            g = float(detail.get("gradients_gb", 0))
+            o = float(detail.get("optimizer_gb", 0))
+            model_gb = w + g + o
+            return rank, model_gb if model_gb > 0 else None
+
+        with ThreadPoolExecutor(max_workers=min(16, len(card_details))) as pool:
+            futures = {
+                pool.submit(_fetch_hbm_model, d.get("global_rank", 0)): d.get("global_rank", 0)
+                for d in card_details
+            }
+            for fut in as_completed(futures):
+                rank, model_gb = fut.result()
+                if model_gb is not None:
+                    hbm_model_map[rank] = model_gb
+        logger.info(f"[build_sim_result] hbm_model_gb enrichment for {label}: "
+                    f"got {len(hbm_model_map)}/{len(card_details)} ranks from hbm_detail")
+    except Exception as exc:
+        logger.warning(f"[build_sim_result] hbm_model_gb enrichment failed for {label}: {exc}")
+
+    cards = []
+    for detail in card_details:
+        rank = detail.get("global_rank", 0)
+        hbm_model_gb = hbm_model_map.get(rank, detail.get("hbm_gb", 0))
+        cards.append(CardMetrics(
+            card_id=detail.get("card_id", ""),
+            global_rank=rank,
+            flops_per_card=detail.get("flops_per_card", 0),
+            hbm_gb=detail.get("hbm_gb", 0),
+            hbm_model_gb=hbm_model_gb,
+            tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
+            pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
+            dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
+            ep_comm_gb_per_step=detail.get("ep_comm_gb_per_step", 0),
+        ))
+    # Log first card as sample
+    if cards:
+        c0 = cards[0]
+        logger.info(f"[build_sim_result] card_detail for {label}: {len(cards)} cards. "
+                    f"sample[0]: flops={c0.flops_per_card}, hbm={c0.hbm_gb}, "
+                    f"hbm_model={c0.hbm_model_gb}, "
+                    f"tp={c0.tp_comm_gb_per_micro}, pp={c0.pp_comm_mb_per_micro}, "
+                    f"dp={c0.dp_comm_gb_per_step}, ep={c0.ep_comm_gb_per_step}")
+    device_type = topo.device_type if isinstance(topo.device_type, DeviceType) else DeviceType(topo.device_type.value)
+    return SimulationResult(
+        topology_name=topo.name,
+        device_type=device_type,
+        total_nodes=topo.dp_size * topo.tp_size * topo.pp_size,
+        cards=cards,
+    )
+
+
+def _build_and_store_comparison(session) -> ComparisonReport | None:
+    """两个组网的仿真结果都齐了就建对比报告并推进 session.step。
+
+    返回 `ComparisonReport`；只要有一侧缺结果就返回 `None` 并把 step 置为
+    `simulating`。原本这段逻辑内联在 `run_simulation()` 里，抽出来是为了让
+    "刷新后自愈"路径（`_fallback_reconcile_simulation`）复用同一套判定，
+    避免两处各写一份完成条件。
+    """
+    if not (session.original_simulation and session.equivalent_simulation):
+        session.step = "simulating"
+        return None
+
+    orig_topo = session.original_topology
+    eq_topo = session.equivalent_topology
+    orig_dp = orig_topo.dp_size if orig_topo else 1
+    orig_tp = orig_topo.tp_size if orig_topo else 1
+    orig_pp = orig_topo.pp_size if orig_topo else 1
+    eq_dp = eq_topo.dp_size if eq_topo else orig_dp
+    eq_tp = eq_topo.tp_size if eq_topo else orig_tp
+    eq_pp = eq_topo.pp_size if eq_topo else orig_pp
+
+    report = _build_comparison(
+        session.original_simulation, session.equivalent_simulation,
+        orig_dp, orig_tp, orig_pp, eq_dp, eq_tp, eq_pp,
+    )
+    session.comparison_report = report
+    session.step = "completed"
+    if report.is_equivalent:
+        session.history.append({"role": "system", "content": "✅ 仿真验证已通过，等效性对比一致"})
+    else:
+        session.history.append({"role": "system", "content": "⚠️ 仿真完成，等效性对比存在差异，请检查"})
+    return report
+
+
+def _fallback_reconcile_simulation(session) -> dict:
+    """刷新/断线后的自愈：任务其实已跑完，但没有任何人把结果落库时补上。
+
+    背景：`run_simulation()` 只在两种情况下推进 `session.step` —— 提交时就拿到
+    了 card_detail（极快完成），或者前端收到 WebSocket 的 `complete` 事件后**再
+    补打一次** run-simulation。页面刷新会掐断 WebSocket，于是这条唯一的推进链
+    就断了：MCP 侧任务早已 completed，会话却永远停在 `simulating`，前端也一直
+    显示"仿真验证中"。
+
+    这里让 REST 读取路径具备兜底判定能力：只要还有 task_id 且会话未处于终态，
+    就向 MCP 查一次真实状态；两个任务都完成就地补齐结果并落库，有任务失败则
+    落到 `failed`。MCP 不可达或还在跑时不做任何修改（保持现状，下次再试）。
+
+    只在 step == "simulating" 时触发，因此稳态（completed/failed）下零额外开销。
+    """
+    if session.step != "simulating":
+        return {}
+
+    task_ids = [tid for tid in (session.original_task_id, session.equivalent_task_id) if tid]
+    if not task_ids:
+        # 没有 task_id 说明任务从未真正下发到 MCP，无从判定，保持现状
+        return {}
+
+    # report_status 是幂等的查询（不推进 MCP 侧状态机），失败时返回 unavailable
+    statuses = {tid: mcp_client.get_task_status(tid) for tid in set(task_ids)}
+
+    failed = [
+        (tid, st.get("message") or st.get("status"))
+        for tid, st in statuses.items()
+        if (st or {}).get("status") in ("failed", "error")
+    ]
+    if failed:
+        session.step = "failed"
+        tid, msg = failed[0]
+        session.history.append({
+            "role": "system",
+            "content": f"❌ 仿真任务失败: {msg}（task={tid}）",
+        })
+        session_manager.save_session(session)
+        logger.warning(f"[reconcile] session={session.session_id} marked failed: {failed}")
+        return {}
+
+    # 尚有任务未完成（running/submitted）或 MCP 不可达（unavailable）→ 保持现状
+    if any((st or {}).get("status") != "completed" for st in statuses.values()):
+        return {}
+
+    # ── 两个任务都已完成：复用提交时的同一套取数逻辑补齐结果 ──
+    original, equivalent = session.original_topology, session.equivalent_topology
+
+    for role, topo, task_id, model in (
+        ("original", original, session.original_task_id, session.original_training_model),
+        ("equivalent", equivalent, session.equivalent_task_id, session.equivalent_training_model),
+    ):
+        if not topo or not task_id or getattr(session, f"{role}_simulation", None):
+            continue
+        result = _build_simulation_result(
+            topo, model, task_id, role,
+            seq_len=getattr(session, f"{role}_seq_len", None),
+            batch_size=getattr(session, f"{role}_batch_size", None),
+            # 等效组网沿用原始组网的 model_name（与 run_simulation 的传参保持一致）
+            model_name=session.original_model_name,
+            d_ffn=getattr(session, f"{role}_dff", None),
+            micro_batch_size=getattr(session, f"{role}_micro_batch", None),
+            vocab_size=session.original_vocab_size,
+            ep=getattr(session, f"{role}_ep", None),
+        )
+        if result:
+            setattr(session, f"{role}_simulation", result)
+
+    report = _build_and_store_comparison(session)
+    if not report:
+        # 任务 completed 但结果读不到（结果目录缺失/损坏）→ 下次轮询继续尝试
+        logger.warning(f"[reconcile] session={session.session_id}: MCP 报 completed 但结果尚不可读")
+        return {}
+
+    session_manager.save_session(session)
+    logger.info(f"[reconcile] session={session.session_id} 已从 MCP 补齐仿真结果并完成对比")
+    return {"original_simulation": session.original_simulation, "equivalent_simulation": session.equivalent_simulation}
 
 
 def _build_comparison(original: SimulationResult, equivalent: SimulationResult, orig_dp: int, orig_tp: int, orig_pp: int, eq_dp: int, eq_tp: int, eq_pp: int) -> ComparisonReport:
@@ -607,27 +758,11 @@ def run_simulation(session_id: str):
             session.equivalent_simulation = eq_sim
             results["equivalent"] = eq_sim.model_dump()
 
-        # ── Comparison ──
-        report = None
-        if session.original_simulation and session.equivalent_simulation:
-            orig_topo = session.original_topology
-            eq_topo = session.equivalent_topology
-            orig_dp = orig_topo.dp_size if orig_topo else 1
-            orig_tp = orig_topo.tp_size if orig_topo else 1
-            orig_pp = orig_topo.pp_size if orig_topo else 1
-            eq_dp = eq_topo.dp_size if eq_topo else orig_dp
-            eq_tp = eq_topo.tp_size if eq_topo else orig_tp
-            eq_pp = eq_topo.pp_size if eq_topo else orig_pp
-            report = _build_comparison(session.original_simulation, session.equivalent_simulation, orig_dp, orig_tp, orig_pp, eq_dp, eq_tp, eq_pp)
-            session.comparison_report = report
-            session.step = "completed"
+        # ── Comparison ──（判定条件与「刷新后自愈」路径共用同一份实现）
+        report = _build_and_store_comparison(session)
+        if report:
             results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
-            if report.is_equivalent:
-                session.history.append({"role": "system", "content": "✅ 仿真验证已通过，等效性对比一致"})
-            else:
-                session.history.append({"role": "system", "content": "⚠️ 仿真完成，等效性对比存在差异，请检查"})
         else:
-            session.step = "simulating"
             session.history.append({"role": "system", "content": "📊 仿真任务已提交，任务ID: " + str(session.original_task_id or "")})
 
     except Exception as exc:

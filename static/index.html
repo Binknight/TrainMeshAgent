@@ -7906,16 +7906,46 @@
             var _simStarted = false;
             window._simStarted = false;
 
-            function _connectSimWebSocket(taskIds) {
-                // Close any existing connection
-                if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
+            function _stopSimPolling() {
+                // Stop the HTTP fallback poller. Without this, a single WS drop
+                // leaves a 5s setTimeout chain alive forever (and a second drop
+                // stacks another chain on top of it).
                 if (_simPollTimer) { clearTimeout(_simPollTimer); _simPollTimer = null; }
+            }
+
+            function _closeSimSocket() {
+                _stopSimPolling();
+                if (_simWs) {
+                    var ws = _simWs;
+                    _simWs = null;
+                    try { ws.close(1000); } catch (e) {}
+                }
+            }
+
+            // Page is going away (refresh/close/navigate): drop the socket explicitly so
+            // the backend's polling loop sees the close and exits immediately instead of
+            // waiting for its next send to fail.
+            window.addEventListener("pagehide", function () {
+                _stopSimPolling();
+                if (_simWs) {
+                    try { _simWs.close(1000); } catch (e) {}
+                    _simWs = null;
+                }
+            });
+
+            function _connectSimWebSocket(taskIds) {
+                // Close any existing connection + poller
+                _closeSimSocket();
 
                 var wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + APP_BASE + "/ws/simulation/" + sessionId;
                 var ws = new WebSocket(wsUrl);
                 _simWs = ws;
                 var completedTasks = {};
                 var totalTasks = taskIds.length;
+
+                // Guard so a stale socket's onclose/onerror can't start a second
+                // poller after we already reconnected (or already finished).
+                function _isCurrent() { return _simWs === ws; }
 
                 ws.onopen = function () {
                     ws.send(JSON.stringify({ type: "subscribe", task_ids: taskIds }));
@@ -7948,7 +7978,8 @@
                 };
 
                 ws.onclose = function () {
-                    if (_simWs === ws) _simWs = null;
+                    if (!_isCurrent()) return;
+                    _simWs = null;
                     // If connection closed before all tasks completed, fall back to HTTP polling
                     if (!_simCompleted && !_simFailed && Object.keys(completedTasks).length < totalTasks) {
                         addMessage("system", "⚠️ WebSocket 连接断开，切换为轮询模式...");
@@ -7957,7 +7988,8 @@
                 };
 
                 ws.onerror = function () {
-                    if (_simWs === ws) _simWs = null;
+                    if (!_isCurrent()) return;
+                    _simWs = null;
                     // Fall back to HTTP polling if not already completed/failed
                     if (!_simCompleted && !_simFailed && Object.keys(completedTasks).length < totalTasks) {
                         addMessage("system", "⚠️ WebSocket 连接异常，切换为轮询模式...");
@@ -7967,7 +7999,7 @@
             }
 
             function _onSimulationAllComplete() {
-                if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
+                _closeSimSocket();
                 // Re-call run-simulation: backend finds existing task_ids, skips execute_task,
                 // calls card_detail to fetch real MCP results, builds comparison, persists to DB.
                 fetch(API + "/session/" + sessionId + "/run-simulation", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
@@ -8014,7 +8046,7 @@
             }
 
             function _onSimulationFailed(message) {
-                if (_simWs) { try { _simWs.close(); } catch (e) {} _simWs = null; }
+                _closeSimSocket();
                 _simFailed = true;
                 _simCompleted = false;
                 window._simCompleted = false;
@@ -8034,9 +8066,17 @@
                     if (_simCompleted || _simFailed) return;
                     try {
                         var resp = await fetch(API + "/session/" + sessionId + "/simulation");
-                        if (!resp.ok) { _pollSimulationResults(); return; }
+                        if (!resp.ok) {
+                            // Session gone (deleted / server restarted) — stop polling
+                            if (resp.status === 404) { _simPollTimer = null; return; }
+                            _pollSimulationResults();
+                            return;
+                        }
                         var data = await resp.json();
-                        if (data.comparison_report) {
+                        // Backend reconciles a stuck "simulating" session here: once MCP
+                        // reports the tasks as completed it fills in the results and the
+                        // comparison report server-side, so status becomes "completed".
+                        if (data.comparison_report || data.step === "completed") {
                             _simPollTimer = null;
                             _onSimulationAllComplete();
                             return;

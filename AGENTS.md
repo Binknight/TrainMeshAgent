@@ -176,6 +176,7 @@ DAO 是真正的影响集中点。
 | **前端写死根绝对路径会在子路径部署下全 404** | nginx `location /pfx/ { proxy_pass http://host:38088/; }` 的尾斜杠会把 `/pfx/` 剥掉再转发，所以**后端不需要知道前缀，浏览器必须知道**。`static/index.html` 里 6 处资源引用曾是 `src="/static/..."`、接口曾是 `const API = "/api"`、WS 曾是 `location.host + "/ws/simulation/"` —— 挂到 `/ftbot/equivalent/` 时页面返回 200 但资源/API/WS 全被浏览器打到 nginx **根**上（那里没有本应用 location）→ 白屏 + 控制台 404。现在统一由 `APP_BASE`（按 `location.pathname` 推导）作为**单一事实来源**：资源用相对路径 `static/xxx`，接口 `APP_BASE + "/api"`，WS `location.host + APP_BASE + "/ws/simulation/"`。**新增任何前端请求地址都必须走 `APP_BASE`/相对路径，禁止再写 `/api`、`/static/` 开头的绝对路径**（`topo-renderer.js` 的 6 处 fetch 复用 index.html 的全局 `API`，不要另建常量） |
 | **前端颜色必须走 CSS 变量，不能写死** | 后端只有暗色时无所谓，加了浅色主题后，任何写死的 `#hex` / `rgba(...)` 都不跟随主题，页面上会出现"一块深色留在浅色界面里"。事实来源是 `static/index.html` 的 token 层（见 §4.6）。另注意：**不能用颜色字符串做逻辑判断**（如 `color === "#3fb950"` 判断是否仿真柱），改成变量后比较恒为假；SVG 的 `fill`/`stroke`/`stop-color`/`flood-color` 支持 `var()`，切换主题无需重绘 |
 | **SSE 在 nginx 下要显式关缓冲** | `app/routes/session.py` 的两条 step2 流曾只给 `mimetype` 不带 `X-Accel-Buffering: no`（`app/routes/chat.py` 一直有）。缺这条时 nginx 会缓冲整个响应，逐行推送变成「长时间不动后一次性刷出」。现在两处共用 `session.py` 顶部的 `_SSE_HEADERS`（含 `Cache-Control` / `Connection` / `X-Accel-Buffering`），新增 SSE 端点请复用它 |
+| **仿真完成状态不能只靠前端驱动** | `session.step` 曾只在 `run_simulation()` 里推进，而那次调用依赖「前端收到 WebSocket `complete` 后再补打一次 `run-simulation`」。页面刷新会掐断 WebSocket（MCP 侧任务仍在跑，任务记录在 MCP Server 内存里），于是会话永久停在 `simulating`、前端一直显示"仿真验证中"。现在 `GET /topology` 与 `GET /simulation` 会先调 `_fallback_reconcile_simulation()` 兜底判定，并且这两个端点必须回传 `original_task_id` / `equivalent_task_id`（前端刷新后靠它重建 WS 订阅）。**新增任何"读会话状态"的端点时，不要绕过这段兜底**，也不要让 `*_task_id` 只留在 DB 里 |
 
 ---
 
@@ -194,6 +195,7 @@ python tests/test_mcp_server_rank_layout.py   # PASS  MCP Server rank 分解契�
 python tests/test_moe_mcp_contract.py          # PASS  MoE 脚本生成/参数校验/EP 数据返回契约
 python tests/test_moe_agent_plumbing.py        # PASS  MoE 在 Agent 侧的透传与脚本解析契约
 python tests/test_check_workspace.py          # PASS（Windows 上 SKIP mountinfo 检查）
+python tests/test_simulation_reconcile.py     # PASS  刷新后仿真会话状态自愈（见 §5 陷阱表）
 
 # 当前基线为失败（exit 1）
 python tests/test_estimate_equivalence.py

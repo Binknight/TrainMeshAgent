@@ -43,10 +43,21 @@ class MCPClient:
                 timeout=30
             )
             resp.raise_for_status()
-            return resp.json().get("result", {})
+            result = resp.json().get("result", {})
         except requests.RequestException as e:
             logger.warning(f"MCP call '{tool_name}' failed: {e}")
             return {"error": str(e), "status": "unavailable"}
+        except ValueError as e:
+            # Non-JSON body (proxy error page / truncated response) — same handling
+            logger.warning(f"MCP call '{tool_name}' returned invalid JSON: {e}")
+            return {"error": str(e), "status": "unavailable"}
+
+        # JSON-RPC 层错误（如任务不存在）必须显式带出，否则下游会把响应体当作
+        # 正常结果读，从而把「查不到任务」误判成「任务还在跑」。
+        if isinstance(result, dict) and result.get("error") and result.get("status") != "unavailable":
+            logger.warning(f"MCP call '{tool_name}' returned error: {result.get('error')}")
+            return {"error": result.get("error"), "status": "unavailable"}
+        return result
 
     def execute_task(self, topology_data: dict, params: dict | None = None) -> str:
         """Execute a simulation task on the MCP server. Returns task_id."""
