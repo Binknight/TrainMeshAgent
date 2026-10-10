@@ -532,6 +532,48 @@
                 margin-left: 4px;
                 cursor: help;
             }
+            .history-item-model {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                min-width: 0;
+                margin-bottom: 4px;
+                font-size: 11px;
+                color: var(--text-secondary);
+            }
+            .history-item-model-tag {
+                flex-shrink: 0;
+                font-family: var(--font-mono);
+                font-size: 9px;
+                line-height: 1;
+                padding: 2px 6px;
+                border-radius: 8px;
+                color: var(--cyan);
+                background: rgba(var(--cyan-rgb), 0.12);
+            }
+            .history-item-model-name {
+                min-width: 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .history-item-model-type {
+                flex-shrink: 0;
+                font-family: var(--font-mono);
+                font-size: 9px;
+                line-height: 1;
+                padding: 2px 6px;
+                border-radius: 8px;
+                font-weight: 500;
+            }
+            .history-item-model-type.type-dense {
+                color: var(--text-secondary);
+                background: rgba(var(--text-secondary-rgb), 0.12);
+            }
+            .history-item-model-type.type-moe {
+                color: var(--purple);
+                background: rgba(var(--purple-rgb), 0.12);
+            }
             .history-delete {
                 position: absolute;
                 right: 8px;
@@ -5441,6 +5483,13 @@
                 return Math.floor(hours / 24) + " 天前";
             }
 
+            function histEsc(s) {
+                return String(s)
+                    .replace(/&/g, "&amp;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/</g, "&lt;");
+            }
+
             async function renderHistory() {
                 const list = document.getElementById("history-list");
                 try {
@@ -5461,6 +5510,24 @@
                     .map(function (h) {
                         var badge = statusBadge(h.step);
                         var isActive = h.session_id === sessionId;
+                        // 版本偏差防御：后端进程旧于本前端时，summaries 不含
+                        // model_type（undefined）。此时宁可不显示类型标签，
+                        // 也不能默认成 Dense —— 否则 MoE 会话会被误标。
+                        var mType = h.model_type;
+                        if (mType !== "sparse" && mType !== "dense") {
+                            mType = "";
+                        }
+                        var typeTag = "";
+                        var typeNote = "";
+                        if (mType === "sparse") {
+                            typeTag =
+                                '<span class="history-item-model-type type-moe">MoE</span>';
+                            typeNote = "（MoE 稀疏）";
+                        } else if (mType === "dense") {
+                            typeTag =
+                                '<span class="history-item-model-type type-dense">Dense</span>';
+                            typeNote = "（Dense 稠密）";
+                        }
                         return (
                             '<div class="history-item ' +
                             (isActive ? "active" : "") +
@@ -5478,6 +5545,16 @@
                                   '">⚠ 数据保存失败</span>'
                                 : "") +
                             "</div>" +
+                            (h.model_name
+                                ? '<div class="history-item-model" title="模型名称：' +
+                                  histEsc(h.model_name) +
+                                  typeNote +
+                                  '"><span class="history-item-model-tag">模型</span><span class="history-item-model-name">' +
+                                  histEsc(h.model_name) +
+                                  "</span>" +
+                                  typeTag +
+                                  "</div>"
+                                : "") +
                             '<div class="history-item-meta">' +
                             "<span>" +
                             timeAgo(h.updated_at) +

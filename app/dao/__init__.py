@@ -100,7 +100,9 @@ def get_session_summaries() -> list[dict[str, Any]]:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT s.id, s.step, s.created_at, s.updated_at,
-                       o.name AS orig_name, e.name AS eq_name
+                       o.name AS orig_name, e.name AS eq_name,
+                       o.model_name AS orig_model, e.model_name AS eq_model,
+                       o.model_type AS orig_type, e.model_type AS eq_type
                 FROM sessions s
                 LEFT JOIN topology_params o ON o.session_id = s.id AND o.role = 'original'
                 LEFT JOIN topology_params e ON e.session_id = s.id AND e.role = 'equivalent'
@@ -119,10 +121,23 @@ def get_session_summaries() -> list[dict[str, Any]]:
             title = eq_name
         else:
             title = "新建任务"
+        # 模型名称/类型：优先取原始组网；等效侧由 save_session 统一加 "_eq" 后缀
+        # （见 app/agent/session.py），仅作兜底时展示、并去掉该内部标记。
+        # model_type 与 model_name 取同一侧的行；旧库行可能为 NULL，按列默认值
+        # 归一为 dense（MoE 列上线之前的会话均为稠密模型）。
+        if r[6]:
+            model_name, model_type = r[6], r[8]
+        else:
+            model_name, model_type = r[7], r[9]
+        if model_name and model_name.endswith("_eq"):
+            model_name = model_name[:-3]
+        model_type = (model_type or "dense") if model_name else None
         result.append({
             "session_id": r[0],
             "title": title,
             "step": r[1],
+            "model_name": model_name,
+            "model_type": model_type,
             "created_at": _iso(r[2]),
             "updated_at": _iso(r[3]),
         })
