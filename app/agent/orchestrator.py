@@ -21,6 +21,7 @@ from openai import OpenAI
 from app.agent.guardrails import validate_input_params
 from app.config import config
 from app.mcp.client import mcp_client
+from app.rank_layout import pp_rank_of
 from app.models.model_catalog import resolve_model_config
 from app.models.schemas import (
     AgentEvent,
@@ -38,7 +39,7 @@ from app.skills.registry import registry
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """你是 TrainMesh Agent，一个专为 AI 训练组网仿真测试设计的智能助手。
+SYSTEM_PROMPT = """你是 equivalent-modeling-service，一个专为 AI 训练组网仿真测试设计的智能助手。
 
 你的职责：
 1. 帮助测试人员输入原始组网参数（设备类型 A2/A3/A5、DP/TP/PP、模型参数）
@@ -49,7 +50,7 @@ SYSTEM_PROMPT = """你是 TrainMesh Agent，一个专为 AI 训练组网仿真�
 6. 对比原始组网和等效组网的仿真结果，判断等效性
 
 分阶段工作流程：
-- Step 1 (等效参数设定): 用户在交互区提及大模型名称时，先调用 auto_fill_model_params 获取该模型的架构参数(L/H/A/dff/V)并推送前端自动填充表单(仅支持稠密模型；稀疏/MoE模型会返回不支持提示) → 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
+- Step 1 (等效参数设定): 用户在交互区提及大模型名称时，先调用 auto_fill_model_params 获取该模型的架构参数(L/H/A/dff/V)并推送前端自动填充表单(同时支持稠密模型和稀疏/MoE模型；MoE模型会额外填充专家数、Top-K、MoE层数、EP等专用参数) → 接收参数 → 护栏校验(后端静默) → 生成原始组网 → 生成原始模型结构 → 前端渲染
 - Step 2 (等效计算推导): 用户确认 → 逐条推送等效策略/指标/公式 → 生成等效组网 → 生成等效模型结构 → 前端渲染
 - Step 3 (等效仿真验证): 用户确认 → 下发仿真 → 切换到仿真验证tab
 - Step 4 (等效方案输出): 自动对比 → 输出等效性结论
@@ -176,11 +177,12 @@ _UTILITY_TOOLS = [
         "function": {
             "name": "auto_fill_model_params",
             "description": (
-                "当用户在交互区输入或提及大模型名称时调用：从 HuggingFace/ModelScope 官方 config.json 获取该稠密模型的架构参数"
+                "当用户在交互区输入或提及大模型名称时调用：从内置模型目录 / HuggingFace / ModelScope 官方 config.json 获取该模型的架构参数"
                 "(层数L、隐藏维度H、注意力头数A、FFN维度dff、词表V)，推送到前端自动填充 Step1 表单。"
                 "传入完整仓库 ID 效果最佳(如 Qwen/Qwen2.5-7B、meta-llama/Llama-2-7b-hf)；"
-                "也支持裸名(如 Qwen3-32B、DeepSeek-V4-Pro)，会自动搜索 HuggingFace 匹配官方仓库。"
-                "当前仅支持稠密模型，稀疏/MoE 模型会返回不支持提示。"
+                "也支持裸名(如 Qwen3-32B、DeepSeek-R1)，会自动搜索 HuggingFace 匹配官方仓库。"
+                "稠密与稀疏/MoE 模型均支持：MoE 模型会额外返回专家数、Top-K、MoE 层数与层分布、"
+                "共享专家、专家内部 TP 与 EP 等专用参数。"
                 "注意：该工具只填充模型架构参数；设备类型、DP/TP/PP、序列长度S、批次B 等组网与运行参数仍由用户设定。"
             ),
             "parameters": {
@@ -294,13 +296,15 @@ def _execute_utility_tool(
             }
         orig_topo = session.original_topology
         eq_topo = session.equivalent_topology
+        orig_dp = orig_topo.dp_size if orig_topo else 1
         orig_tp = orig_topo.tp_size if orig_topo else 1
         orig_pp = orig_topo.pp_size if orig_topo else 1
+        eq_dp = eq_topo.dp_size if eq_topo else orig_dp
         eq_tp = eq_topo.tp_size if eq_topo else orig_tp
         eq_pp = eq_topo.pp_size if eq_topo else orig_pp
         report = _build_comparison_report(
             session.original_simulation, session.equivalent_simulation,
-            orig_tp, orig_pp, eq_tp, eq_pp,
+            orig_dp, orig_tp, orig_pp, eq_dp, eq_tp, eq_pp,
         )
         session.comparison_report = report
         session.step = "completed"
@@ -310,6 +314,11 @@ def _execute_utility_tool(
         section = arguments.get("section", "")
         line = arguments.get("line", "")
         section_done = arguments.get("section_done", False)
+        # Accumulate on session so _persist_session saves them to DB
+        if session.formula_lines is None:
+            session.formula_lines = []
+        if line:  # skip section_done events (empty line)
+            session.formula_lines.append({"section": section, "line": line})
         return {
             "_event_type": "equiv_formula_line",
             "section": section,
@@ -330,19 +339,12 @@ def _execute_utility_tool(
                     "(建议使用完整仓库 ID 如 Qwen/Qwen2.5-7B)或联系管理员添加"
                 ),
             }
-        if cfg.get("model_type") == "sparse":
-            return {
-                "_event_type": "model_params_fill",
-                "found": False,
-                "model_name": model_name,
-                "model_type": "sparse",
-                "message": f"模型 {model_name} 是稀疏(MoE)模型，当前仅支持稠密模型",
-            }
-        return {
+        # ── Unified response for both dense and sparse/MoE models ──
+        result = {
             "_event_type": "model_params_fill",
             "found": True,
             "model_name": cfg.get("model_name", model_name),
-            "model_type": "dense",
+            "model_type": cfg.get("model_type", "dense"),
             "L": cfg["num_layers"],
             "H": cfg["d_model"],
             "A": cfg["num_heads"],
@@ -357,7 +359,18 @@ def _execute_utility_tool(
             "global_batch_size": cfg.get("global_batch_size"),
             "micro_batch_size": cfg.get("micro_batch_size"),
             "device_type": cfg.get("device_type"),
+            # ── MoE-specific fields (None for dense models) ──
+            "num_experts": cfg.get("num_experts"),
+            "moe_router_topk": cfg.get("moe_router_topk"),
+            "num_moe_layers": cfg.get("num_moe_layers"),
+            "moe_ffn_hidden_size": cfg.get("moe_ffn_hidden_size"),
+            "moe_layer_freq": cfg.get("moe_layer_freq"),
+            "has_shared_expert": cfg.get("has_shared_expert"),
+            "shared_expert_intermediate_size": cfg.get("shared_expert_intermediate_size"),
+            "expert_tensor_parallel_size": cfg.get("expert_tensor_parallel_size"),
+            "ep": cfg.get("ep"),
         }
+        return result
 
     return {"error": f"Unknown utility tool: {tool_name}"}
 
@@ -442,6 +455,12 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             "layer_types": [l.type for l in data.layers],
             "layers": [l.model_dump() for l in data.layers],
             "output_layer": data.output_layer.model_dump(),
+            # Runtime params live outside the model config, so they must be carried
+            # explicitly — the frontend needs them for POST /api/session/estimate.
+            "seq_len": getattr(session, f"{role}_seq_len", None) or getattr(session, "original_seq_len", None),
+            "batch_size": getattr(session, f"{role}_batch_size", None) or getattr(session, "original_batch_size", None),
+            "micro_batch_size": getattr(session, f"{role}_micro_batch", None) or getattr(session, "original_micro_batch", None),
+            "vocab_size": getattr(session, f"{role}_vocab_size", None) or getattr(session, "original_vocab_size", None),
             "_role": role,
             "session_id": session.session_id,
             "_type": "training_model_summary",
@@ -449,19 +468,19 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
     return data.model_dump() if hasattr(data, "model_dump") else data
 
 
-def _pp_stage_avg(cards: list[CardMetrics], tp: int, pp: int) -> dict:
+def _pp_stage_avg(cards: list[CardMetrics], dp: int, tp: int, pp: int) -> dict:
     """Compute average pp_comm_mb_per_micro for first, middle, last PP stages.
 
-    Rank layout (from training-mesh-gen-skill):
-      pp_rank = (global_rank % (tp * pp)) // tp
+    Rank layout (from training-mesh-gen-skill / app.rank_layout) is TP-DP-PP,
+    calibrated to the simulation system:
+      pp_rank = global_rank // (tp * dp)
 
     Returns {"first", "middle", "last"} — values are float averages, or 0.0 if
     the stage doesn't exist (e.g. no middle stage when pp <= 2).
     """
     groups: dict[str, list[float]] = {"first": [], "middle": [], "last": []}
-    stride = tp * pp
     for c in cards:
-        pp_rank = (c.global_rank % stride) // tp
+        pp_rank = pp_rank_of(c.global_rank, dp, tp)
         if pp_rank == 0:
             groups["first"].append(c.pp_comm_mb_per_micro)
         if pp > 1 and pp_rank == pp - 1:
@@ -476,7 +495,8 @@ def _pp_stage_avg(cards: list[CardMetrics], tp: int, pp: int) -> dict:
 
 def _build_comparison_report(
     original: SimulationResult, equivalent: SimulationResult,
-    orig_tp: int, orig_pp: int, eq_tp: int, eq_pp: int,
+    orig_dp: int, orig_tp: int, orig_pp: int,
+    eq_dp: int, eq_tp: int, eq_pp: int,
 ) -> ComparisonReport:
     eps = 1e-9
 
@@ -501,8 +521,8 @@ def _build_comparison_report(
     dp_comm_diff = _diff_pct(odp, edp)
 
     # ── Per-stage PP communication comparison ──
-    orig_pp_stage = _pp_stage_avg(original.cards, orig_tp, orig_pp)
-    eq_pp_stage = _pp_stage_avg(equivalent.cards, eq_tp, eq_pp)
+    orig_pp_stage = _pp_stage_avg(original.cards, orig_dp, orig_tp, orig_pp)
+    eq_pp_stage = _pp_stage_avg(equivalent.cards, eq_dp, eq_tp, eq_pp)
 
     # Determine which stages exist in BOTH topologies
     stages_compared: list[str] = []
@@ -775,10 +795,19 @@ async def agent_stream(
                     f"对比分析完成: {result.get('details', {}).get('conclusion', '')}"
                 )
             elif tool_name == "auto_fill_model_params":
-                if result.get("found") and result.get("model_type") == "dense":
+                if result.get("found"):
+                    model_type_label = "MoE(稀疏)" if result.get("model_type") == "sparse" else "稠密"
+                    moe_extra = ""
+                    if result.get("model_type") == "sparse":
+                        moe_extra = (
+                            f", Experts={result.get('num_experts')}"
+                            f", Top-K={result.get('moe_router_topk')}"
+                            f", MoE层={result.get('num_moe_layers')}"
+                        )
                     result_msg = (
-                        f"已获取模型 {result.get('model_name')} 架构参数"
-                        f"(L={result.get('L')}, H={result.get('H')}, A={result.get('A')})并填充表单"
+                        f"已获取{model_type_label}模型 {result.get('model_name')} 架构参数"
+                        f"(L={result.get('L')}, H={result.get('H')}, A={result.get('A')}"
+                        f"{moe_extra})并填充表单"
                     )
                 else:
                     result_msg = result.get("message", "模型参数获取失败")
@@ -858,6 +887,21 @@ async def agent_stream(
                 if training_model:
                     profiler_args["num_layers"] = training_model.config.num_layers
                     profiler_args["hidden_dim"] = training_model.config.d_model
+                    # ── Pass MoE params from training model config ──
+                    if training_model.config.model_type == "sparse":
+                        profiler_args["model_type"] = "sparse"
+                        if training_model.config.num_moe_layers is not None:
+                            profiler_args["num_moe_layers"] = training_model.config.num_moe_layers
+                        if training_model.config.num_experts is not None:
+                            profiler_args["num_experts"] = training_model.config.num_experts
+                        if training_model.config.moe_router_topk is not None:
+                            profiler_args["moe_router_topk"] = training_model.config.moe_router_topk
+                        if training_model.config.moe_ffn_hidden_size is not None:
+                            profiler_args["moe_ffn_hidden_size"] = training_model.config.moe_ffn_hidden_size
+                        if training_model.config.has_shared_expert:
+                            profiler_args["has_shared_expert"] = True
+                        if training_model.config.expert_tensor_parallel_size is not None:
+                            profiler_args["expert_tensor_parallel_size"] = training_model.config.expert_tensor_parallel_size
                 # Pass vocab_size from session step1 metadata for edge PP HBM/FLOPs calculation
                 vocab_size = getattr(session, "original_vocab_size", None)
                 if vocab_size is not None:

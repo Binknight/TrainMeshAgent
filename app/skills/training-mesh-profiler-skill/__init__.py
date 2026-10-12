@@ -10,6 +10,7 @@ from app.models.schemas import (
     SimulationResult,
 )
 from app.skills.base import BaseSkill, SkillContext, SkillResult
+from app.rank_layout import pp_rank_of
 
 # ── Reference model parameters per device type ──
 _MODEL_CONFIG = {
@@ -144,6 +145,38 @@ class MeshProfilerSkill(BaseSkill):
                             "type": "integer",
                             "description": f"微批次大小 b，默认 {_MICRO_BATCH}",
                         },
+                        "model_type": {
+                            "type": "string",
+                            "description": "模型类型: 'dense' 或 'sparse', 默认从 session 推断",
+                        },
+                        "ep": {
+                            "type": "integer",
+                            "description": "MoE: 专家并行度 (Expert Parallel)",
+                        },
+                        "num_experts": {
+                            "type": "integer",
+                            "description": "MoE: 每层专家数",
+                        },
+                        "moe_router_topk": {
+                            "type": "integer",
+                            "description": "MoE: Top-K 激活专家数",
+                        },
+                        "num_moe_layers": {
+                            "type": "integer",
+                            "description": "MoE: MoE 层数",
+                        },
+                        "moe_ffn_hidden_size": {
+                            "type": "integer",
+                            "description": "MoE: 专家 FFN 隐藏维度",
+                        },
+                        "has_shared_expert": {
+                            "type": "boolean",
+                            "description": "MoE: 是否有共享专家",
+                        },
+                        "expert_tensor_parallel_size": {
+                            "type": "integer",
+                            "description": "MoE: 专家内部 TP 大小",
+                        },
                     },
                     "required": [
                         "topology_name",
@@ -206,6 +239,7 @@ class MeshProfilerSkill(BaseSkill):
                         tp_comm_gb_per_micro=detail.get("tp_comm_gb_per_micro", 0),
                         pp_comm_mb_per_micro=detail.get("pp_comm_mb_per_micro", 0),
                         dp_comm_gb_per_step=detail.get("dp_comm_gb_per_step", 0),
+                        ep_comm_gb_per_step=detail.get("ep_comm_gb_per_step", 0),
                     )
                 )
 
@@ -246,18 +280,77 @@ class MeshProfilerSkill(BaseSkill):
                 or (training_model.config.vocab_size if training_model and hasattr(training_model.config, "vocab_size") else None)
                 or _DEFAULT_VOCAB_SIZE
             )
+            # ── MoE model detection ──
+            model_type = (
+                arguments.get("model_type")
+                or (training_model.config.model_type if training_model else None)
+                or "dense"
+            )
+            # ── MoE parameters from arguments or session or training_model ──
+            ep = arguments.get("ep") or (getattr(session, "original_ep", None) if session else None)
+            num_experts = arguments.get("num_experts") or (
+                getattr(session, "original_num_experts", None) if session else None
+            ) or (training_model.config.num_experts if training_model and training_model.config.model_type == "sparse" else None)
+            moe_topk = arguments.get("moe_router_topk") or (
+                getattr(session, "original_moe_topk", None) if session else None
+            ) or (training_model.config.moe_router_topk if training_model and training_model.config.model_type == "sparse" else None)
+            n_moe_layers = arguments.get("num_moe_layers") or (
+                getattr(session, "equivalent_num_moe_layers", None) if session and "等效" in arguments.get("topology_name", "") else None
+            ) or (
+                getattr(session, "original_num_moe_layers", None) if session else None
+            ) or (training_model.config.num_moe_layers if training_model and training_model.config.model_type == "sparse" else None)
+            moe_fexp = arguments.get("moe_ffn_hidden_size") or (
+                getattr(session, "original_moe_ffn_hidden_size", None) if session else None
+            ) or (training_model.config.moe_ffn_hidden_size if training_model and training_model.config.model_type == "sparse" else None)
+            has_shared = arguments.get("has_shared_expert") or (
+                getattr(session, "original_has_shared_expert", None) if session else False
+            ) or (training_model.config.has_shared_expert if training_model and training_model.config.model_type == "sparse" else False)
+            expert_tp = arguments.get("expert_tensor_parallel_size") or (
+                getattr(session, "original_expert_tensor_parallel_size", None) if session else 1
+            ) or (training_model.config.expert_tensor_parallel_size if training_model and training_model.config.model_type == "sparse" else 1)
 
-            flops_mid = _estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
-            flops_edge = _estimate_flops_first_last(L, H, S, B, dff_val, dp, tp, pp, V)
-            hbm_mid = _estimate_hbm_gb(L, H, dff_val, tp, pp)
-            hbm_edge = _estimate_hbm_gb_first_last(L, H, dff_val, tp, pp, V)
+            if model_type == "sparse" and num_experts and n_moe_layers:
+                # ── MoE estimation ──
+                from .moe_estimator import compute_moe_flops, calculate_moe_hbm
+
+                ep_val = ep or dp
+                topk_val = moe_topk or 1
+                n_dense = L - n_moe_layers
+                fexp = moe_fexp or dff_val
+                n_shared = n_moe_layers if has_shared else 0
+
+                flops_mid = compute_moe_flops(
+                    micro_batch_size=b_micro, seq_len=S,
+                    num_layers=L, hidden_size=H,
+                    tensor_parallel=tp, num_moe_layers=n_moe_layers,
+                    expert_ffn_hidden_size=fexp,
+                    expert_parallel=ep_val, topk=topk_val,
+                    num_shared_expert_layers=n_shared,
+                    pipeline_parallel=pp,
+                )
+                hbm_bytes = calculate_moe_hbm(
+                    num_dense_layers=n_dense, num_moe_layers=n_moe_layers,
+                    pipeline_parallel=pp, hidden_size=H,
+                    ffn_hidden_size=dff_val, tensor_parallel=tp,
+                    expert_ffn_hidden_size=fexp,
+                    num_experts=num_experts, expert_parallel=ep_val,
+                    vocab_size=V, expert_tensor_parallel=expert_tp or 1,
+                )
+                hbm_mid = hbm_bytes / 1e9
+                flops_edge = flops_mid
+                hbm_edge = hbm_mid
+            else:
+                flops_mid = _estimate_flops(L, H, S, B, dff_val, dp, tp, pp)
+                flops_edge = _estimate_flops_first_last(L, H, S, B, dff_val, dp, tp, pp, V)
+                hbm_mid = _estimate_hbm_gb(L, H, dff_val, tp, pp)
+                hbm_edge = _estimate_hbm_gb_first_last(L, H, dff_val, tp, pp, V)
             dp_comm = _estimate_dp_comm_gb(L, H, dff_val, dp, tp, pp)
             tp_comm = _estimate_tp_comm_gb(L, H, S, b_micro, pp)
             pp_comm = _estimate_pp_comm_mb(H, S, b_micro)
             for rank in range(total_nodes):
-                # 与前端 meshBuildData 一致：global_rank = dp*(tp*pp)+pp*tp+tp
-                # 故 pp_idx = (rank // tp) % pp（TP 最低位）；旧用 rank%pp 会与前端 PP 分组错位
-                pp_rank = (rank // tp) % pp
+                # Rank layout = TP-DP-PP（与仿真系统一致）：
+                # global_rank = pp*(tp*dp) + dp*tp + tp，故 pp_idx = rank // (tp * dp)
+                pp_rank = pp_rank_of(rank, dp, tp)
                 is_edge = pp > 1 and (pp_rank == 0 or pp_rank == pp - 1)
                 flops = flops_edge if is_edge else flops_mid
                 hbm = hbm_edge if is_edge else hbm_mid

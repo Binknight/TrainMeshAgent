@@ -27,7 +27,7 @@ class SkillResult:
 
 class BaseSkill(ABC):
     """
-    Abstract base for all TrainMesh Agent skills.
+    Abstract base for all equivalent-modeling-service skills.
 
     Each skill is a directory containing:
       SKILL.md  — YAML frontmatter (name, description) + markdown instructions

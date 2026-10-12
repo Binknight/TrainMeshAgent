@@ -16,7 +16,11 @@ from app.dao import (
     seed_model_catalog_builtin,
     upsert_model_catalog,
 )
-from app.models.model_catalog import MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS, resolve_model_config
+from app.models.model_catalog import (
+    MINDSPEED_DENSE_MODELS, MEGATRON_DENSE_MODELS,
+    MINDSPEED_MOE_MODELS, MEGATRON_MOE_MODELS,
+    resolve_model_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +71,7 @@ def upsert():
             "num_key_value_heads": data.get("num_key_value_heads"),
             "_source": data.get("source") or "manual",
             "reference": data.get("reference"),
+            "ep": data.get("ep"),
         }
     except (TypeError, ValueError) as e:
         return {"error": f"架构字段必须为整数: {e}"}, 400
@@ -93,8 +98,14 @@ def reseed():
     """Re-seed the model catalog (idempotent upsert)."""
     count1 = seed_model_catalog_builtin(MINDSPEED_DENSE_MODELS)
     count2 = seed_model_catalog_builtin(MEGATRON_DENSE_MODELS)
-    logger.info(f"[model_catalog_api] re-seeded {count1} mindspeed + {count2} megatron models")
-    return jsonify({"mindspeed": count1, "megatron": count2, "total": count1 + count2})
+    count3 = seed_model_catalog_builtin(MINDSPEED_MOE_MODELS)
+    count4 = seed_model_catalog_builtin(MEGATRON_MOE_MODELS)
+    logger.info(f"[model_catalog_api] re-seeded {count1} mindspeed dense + {count2} megatron dense + {count3} mindspeed moe + {count4} megatron moe models")
+    return jsonify({
+        "mindspeed_dense": count1, "megatron_dense": count2,
+        "mindspeed_moe": count3, "megatron_moe": count4,
+        "total": count1 + count2 + count3 + count4,
+    })
 
 
 @model_catalog_bp.route("/fetch", methods=["POST"])
@@ -112,6 +123,4 @@ def fetch_remote():
     resolved = resolve_model_config(model_name)
     if not resolved:
         return {"error": f"未找到模型 {model_name} 的配置"}, 404
-    if resolved.get("model_type") == "sparse":
-        return {"error": f"模型 {model_name} 是稀疏(MoE)模型，当前仅支持稠密模型"}, 422
     return jsonify(get_model_catalog_entry(model_name)), 201

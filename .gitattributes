@@ -1,0 +1,13 @@
+# 强制关键文件的 LF 行尾。
+#
+# 背景：Windows 开发机若 core.autocrlf=true，工作区文件会被转成 CRLF。
+# 而 build.sh 是把工作区文件直接打进 TrainMeshAgent.tgz 的，CRLF 的脚本进容器后
+# 会让 trap / 信号名 / 变量赋值全部带上 \r 而失败（如 SIGINT\r 无法识别）。
+# Dockerfile 的 RUN 续行同理。
+#
+# 只约束这几类文件，不动其余文件的既有行为。
+.gitattributes  text eol=lf
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf
+*.dockerignore  text eol=lf

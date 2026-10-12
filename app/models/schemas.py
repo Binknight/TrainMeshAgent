@@ -16,6 +16,7 @@ class TopologyParams(BaseModel):
     dp: int = Field(ge=1, le=1024, description="数据并行度 (Data Parallel)")
     tp: int = Field(ge=1, le=32, description="张量并行度 (Tensor Parallel)")
     pp: int = Field(ge=1, le=128, description="流水线并行度 (Pipeline Parallel)")
+    ep: int | None = Field(default=None, ge=1, le=256, description="专家并行度 (Expert Parallel, MoE only)")
     seq_len: int | None = Field(default=None, description="序列长度 S")
     batch_size: int | None = Field(default=None, description="批次大小 B")
     model_name: str | None = Field(default=None, description="模型名称")
@@ -64,6 +65,9 @@ class CardMetrics(BaseModel):
     tp_comm_gb_per_micro: float = Field(description="TP通信量 (GB/micro)")
     pp_comm_mb_per_micro: float = Field(description="PP通信量 (MB/micro)")
     dp_comm_gb_per_step: float = Field(description="DP通信量 (GB/step)")
+    ep_comm_gb_per_step: float = Field(
+        default=0.0, description="EP通信量 (GB/step)，MoE 任务专属；dense 任务为 0"
+    )
 
 
 class SimulationResult(BaseModel):
@@ -170,12 +174,15 @@ class AgentEvent(BaseModel):
 
 class ModelSubLayer(BaseModel):
     """A sub-layer within a transformer block."""
-    type: str = Field(description="Sub-layer type: multi_head_attention, layer_norm, feed_forward_network")
+    type: str = Field(description="Sub-layer type: multi_head_attention, layer_norm, feed_forward_network, moe_feed_forward_network")
     proj: list[str] | None = Field(default=None, description="Projection matrices, e.g. ['Q','K','V']")
     heads: int | None = Field(default=None, description="Number of attention heads")
     d_head: int | None = Field(default=None, description="Dimension per head")
     activation: str | None = Field(default=None, description="Activation function, e.g. GELU")
     d_ffn: int | None = Field(default=None, description="FFN hidden dimension")
+    # ── MoE fields (set only for moe_feed_forward_network sub-layers) ──
+    num_experts: int | None = Field(default=None, description="MoE: number of experts for this MoE layer")
+    has_shared_expert: bool = Field(default=False, description="MoE: whether a shared expert is present")
 
 
 class TransformerBlock(BaseModel):
@@ -205,6 +212,23 @@ class TrainingModelConfig(BaseModel):
     num_heads: int = Field(ge=1, description="Number of attention heads")
     d_ffn: int = Field(ge=1, description="FFN hidden dimension")
     vocab_size: int = Field(default=32000, description="Vocabulary size")
+    # ── MoE fields (None for dense models) ──
+    model_type: str = Field(default="dense", description="'dense' or 'sparse'")
+    num_experts: int | None = Field(default=None, description="MoE: number of experts per MoE layer")
+    moe_router_topk: int | None = Field(default=None, description="MoE: top-k activated experts per token")
+    num_moe_layers: int | None = Field(default=None, description="MoE: number of layers that use MoE")
+    moe_ffn_hidden_size: int | None = Field(default=None, description="MoE: expert FFN hidden dimension")
+    num_dense_layers: int | None = Field(default=None, description="MoE: number of non-MoE (dense) layers")
+    moe_layer_freq: str | int | None = Field(
+        default=None,
+        description=(
+            "MoE: layer distribution pattern (e.g. '[0]*3+[1]*58', '([0,1]*24)', -1); "
+            "None = MCP derives it from num_moe_layers"
+        ),
+    )
+    has_shared_expert: bool = Field(default=False, description="MoE: whether a shared expert is present")
+    shared_expert_intermediate_size: int | None = Field(default=None, description="MoE: shared expert FFN hidden dim")
+    expert_tensor_parallel_size: int | None = Field(default=1, description="MoE: tensor parallelism within each expert")
 
 
 class TrainingModelComputed(BaseModel):
@@ -282,3 +306,18 @@ class SessionState(BaseModel):
     equivalent_dff: int | None = None
     original_micro_batch: int | None = None
     equivalent_micro_batch: int | None = None
+    # ── MoE session fields ──
+    original_model_type: str | None = None  # "dense" or "sparse"
+    original_ep: int | None = None
+    original_num_experts: int | None = None
+    original_moe_topk: int | None = None
+    original_num_moe_layers: int | None = None
+    original_moe_ffn_hidden_size: int | None = None
+    original_has_shared_expert: bool = False
+    original_shared_expert_intermediate_size: int | None = None
+    original_expert_tensor_parallel_size: int | None = None
+    equivalent_ep: int | None = None
+    equivalent_num_moe_layers: int | None = None
+    equivalent_num_experts: int | None = None
+    # ── Formula lines for equivalent calc derivation card ──
+    formula_lines: list[dict[str, Any]] | None = None

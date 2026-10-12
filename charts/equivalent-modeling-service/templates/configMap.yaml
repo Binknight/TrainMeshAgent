@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.app.name }}-configmap
+data:
+  # ── Flask（业务侧：SSE 对话流 + WebSocket 仿真状态） ──
+  FLASK_HOST: {{ .Values.config.flaskHost | quote }}
+  FLASK_PORT: {{ .Values.config.flaskPort | quote }}
+  FLASK_DEBUG: {{ .Values.config.flaskDebug | quote }}
+  FLASK_USE_RELOADER: {{ .Values.config.flaskUseReloader | quote }}
+  SIM_POLL_INTERVAL: {{ .Values.config.simPollInterval | quote }}
+  MCP_SERVER_URL: {{ .Values.config.mcpServerUrl | quote }}
+
+  # ── MCP 仿真 Server ──
+  AICM_MCP_HOST: {{ .Values.config.mcpHost | quote }}
+  AICM_MCP_PORT: {{ .Values.config.mcpPort | quote }}
+  AICM_MCP_SIM_TOOL_HOME: {{ .Values.config.simToolHome | quote }}
+  AICM_MCP_CONDA_ENV: {{ .Values.config.condaEnv | quote }}
+  # 与 deployment 中 sim-workspace 的 mountPath 同源，避免两处写歪
+  AICM_MCP_WORKSPACE_ROOT: {{ .Values.workspace.containerPath | quote }}
+
+  # ── 数据库（默认 SQLite）──
+  # 数据文件路径与 database.containerPath 的挂载点同源，避免两处写歪
+  # （SQLITE_PATH 的父目录必须落在容器内挂载目录里，否则库会落进镜像层）。
+  SQLITE_PATH: {{ .Values.config.sqlitePath | quote }}
+
+  # ── LLM（四个键都是平台变量注入，未登记时**整行不渲染**）──
+  # 平台侧变量名必须完全一致：config.openaiBaseUrl / config.openaiModel /
+  # config.openaiSslVerify / config.openaiApiKey（见 values.yaml 的 LLM 段说明）。
+  #
+  # 这四个键**必须条件渲染**，不是风格问题：占位符未登记时值为空串，而 Sprig 的
+  # `quote(nil)` 返回空串，模板会只剩 `OPENAI_XXX:`（YAML null），k8s 随即以
+  # unknown object type "nil" 拒绝整次发布 —— 2026-09-30 的真实事故就是这么发生的。
+  # 空值必须表现为「键不存在」：
+  #   - baseUrl / model / sslVerify 缺失 → app/config.py 的默认值生效；
+  #   - openaiApiKey 缺失 → 首次 LLM 调用报鉴权失败（不会卡发布）。
+  {{- if .Values.config.openaiBaseUrl }}
+  OPENAI_BASE_URL: {{ .Values.config.openaiBaseUrl | quote }}
+  {{- end }}
+  {{- if .Values.config.openaiModel }}
+  OPENAI_MODEL: {{ .Values.config.openaiModel | quote }}
+  {{- end }}
+  {{- if .Values.config.openaiSslVerify }}
+  OPENAI_SSL_VERIFY: {{ .Values.config.openaiSslVerify | quote }}
+  {{- end }}
+  {{- if .Values.config.openaiApiKey }}
+  OPENAI_API_KEY: {{ .Values.config.openaiApiKey | quote }}
+  {{- end }}
+
+  # 数据库逃生门（可选）：取消注释 values.yaml 的 config.databaseUrl 才下发；
+  # 不填时完全沿用镜像内 ENV 的 DATABASE_URL（空串 = SQLite）。
+  {{- if .Values.config.databaseUrl }}
+  DATABASE_URL: {{ .Values.config.databaseUrl | quote }}
+  {{- end }}
+
+  # 出网代理（可选）：EXTERNAL_PROXY 由 app/config.py 读取（回退 LLM_PROXY）。
+  {{- if .Values.config.externalProxy }}
+  EXTERNAL_PROXY: {{ .Values.config.externalProxy | quote }}
+  {{- end }}

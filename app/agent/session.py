@@ -4,6 +4,7 @@ import threading
 import logging
 from typing import Optional
 from app.models.schemas import SessionState
+from app.rank_layout import decompose
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +75,46 @@ class SessionManager:
         return state
 
     def save_session(self, session: SessionState) -> None:
-        """Persist the full session state to PostgreSQL."""
+        """Persist the full session state to PostgreSQL.
+
+        Each table persists independently — one failure (e.g. a DB schema
+        mismatch) is logged and recorded in _persist_failures instead of
+        aborting the remaining tables. Failures are surfaced to the history
+        panel via get_persist_failure(), so missing data no longer silently
+        degrades to fallback titles like "新建任务"."""
+        sid = session.session_id
         try:
-            _persist_session(session)
+            if _persist_session(session):
+                _persist_failures.pop(sid, None)
         except Exception as e:
-            logger.error(f"[session] Failed to save session {session.session_id}: {e}")
+            # Safety net — per-table errors are caught inside _persist_session.
+            _persist_failures[sid] = f"unexpected: {e}"
+            logger.error(f"[session] Failed to save session {sid}: {e}")
 
 
 session_manager = SessionManager()
+
+# session_id -> last persist error. Written by _safe_persist on failure and
+# cleared by save_session when every table persisted cleanly.
+_persist_failures: dict[str, str] = {}
+
+
+def _safe_persist(session_id: str, label: str, fn) -> bool:
+    """Run one persist step in isolation so a single table failure doesn't
+    block persisting the remaining tables. Returns True on success."""
+    try:
+        fn()
+        return True
+    except Exception as e:
+        msg = f"{label}: {e}"
+        _persist_failures[session_id] = msg
+        logger.error(f"[session] Failed to save session {session_id}: {msg}")
+        return False
+
+
+def get_persist_failure(session_id: str) -> str | None:
+    """Return the last persistence error for a session, if any."""
+    return _persist_failures.get(session_id)
 
 
 def _persist_new_session(session_id: str) -> None:
@@ -92,21 +125,34 @@ def _persist_new_session(session_id: str) -> None:
         logger.error(f"[session] Failed to create session in DB: {e}")
 
 
-def _persist_session(session: SessionState) -> None:
+def _persist_session(session: SessionState) -> bool:
+    """Persist every table independently; returns True when all succeed.
+
+    Previously any failure (e.g. topology_params missing a column on an
+    old DB schema) aborted the whole chain, so session step, simulation
+    results and comparison reports were silently lost too — and the history
+    panel fell back to "新建任务" titles with no visible error."""
     from app.dao import (
         update_session_step, save_topology_params, save_simulation_params,
         save_simulation_result, save_comparison_report, delete_messages, save_message,
+        save_formula_lines,
     )
 
     sid = session.session_id
+    ok = True
 
-    update_session_step(sid, session.step, session.original_task_id, session.equivalent_task_id)
+    ok &= _safe_persist(
+        sid, "session_step",
+        lambda: update_session_step(sid, session.step, session.original_task_id, session.equivalent_task_id),
+    )
 
     for role in ("original", "equivalent"):
-        topo = getattr(session, f"{role}_topology", None)
-        model = getattr(session, f"{role}_training_model", None)
-        params_obj = getattr(session, f"{role}_params", None)
-        if topo or model or params_obj:
+        def _persist_topology(r=role):
+            topo = getattr(session, f"{r}_topology", None)
+            model = getattr(session, f"{r}_training_model", None)
+            params_obj = getattr(session, f"{r}_params", None)
+            if not (topo or model or params_obj):
+                return
             import importlib
             _profiler = importlib.import_module("app.skills.training-mesh-profiler-skill")
             params: dict = {}
@@ -122,7 +168,7 @@ def _persist_session(session: SessionState) -> None:
             elif params_obj:
                 dev = params_obj.device_type.value if hasattr(params_obj.device_type, 'value') else str(params_obj.device_type)
                 params.update({
-                    "name": "原始组网" if role == "original" else "等效组网",
+                    "name": "原始组网" if r == "original" else "等效组网",
                     "device_type": dev,
                     "dp_size": params_obj.dp,
                     "tp_size": params_obj.tp,
@@ -130,28 +176,48 @@ def _persist_session(session: SessionState) -> None:
                     "total_nodes": params_obj.dp * params_obj.tp * params_obj.pp,
                 })
             if model and hasattr(model, "config"):
+                cfg = model.config
                 params.update({
-                    "num_layers": model.config.num_layers,
-                    "hidden_dim": model.config.d_model,
-                    "num_heads": model.config.num_heads,
-                    "d_ffn": model.config.d_ffn,
+                    "num_layers": cfg.num_layers,
+                    "hidden_dim": cfg.d_model,
+                    "num_heads": cfg.num_heads,
+                    "d_ffn": cfg.d_ffn,
+                    # ── MoE fields (None for dense models) ──
+                    "model_type": cfg.model_type,
+                    "num_experts": cfg.num_experts,
+                    "moe_router_topk": cfg.moe_router_topk,
+                    "num_moe_layers": cfg.num_moe_layers,
+                    "moe_ffn_hidden_size": cfg.moe_ffn_hidden_size,
+                    "has_shared_expert": cfg.has_shared_expert,
+                    "expert_tensor_parallel_size": cfg.expert_tensor_parallel_size,
                 })
-                step1_model_name = getattr(session, f"{role}_model_name", None)
+                step1_model_name = getattr(session, f"{r}_model_name", None)
                 params.setdefault("model_name", step1_model_name or model.model_name or model.type)
+                # ── EP from session state (not in TrainingModelConfig) ──
+                step1_ep = getattr(session, f"{r}_ep", None)
+                if step1_ep is not None:
+                    params.setdefault("ep", step1_ep)
             else:
-                step1_model_name = getattr(session, f"{role}_model_name", None)
+                step1_model_name = getattr(session, f"{r}_model_name", None)
                 if step1_model_name:
                     params.setdefault("model_name", step1_model_name)
-            step1_seq_len = getattr(session, f"{role}_seq_len", None)
-            step1_batch_size = getattr(session, f"{role}_batch_size", None)
-            step1_dff = getattr(session, f"{role}_dff", None)
-            step1_vocab_size = getattr(session, f"{role}_vocab_size", None)
+                # ── EP from session state (persists even without model) ──
+                step1_ep = getattr(session, f"{r}_ep", None)
+                if step1_ep is not None:
+                    params.setdefault("ep", step1_ep)
+            step1_seq_len = getattr(session, f"{r}_seq_len", None)
+            step1_batch_size = getattr(session, f"{r}_batch_size", None)
+            step1_dff = getattr(session, f"{r}_dff", None)
+            step1_vocab_size = getattr(session, f"{r}_vocab_size", None)
+            step1_micro_batch = getattr(session, f"{r}_micro_batch", None)
             params.setdefault("seq_len", step1_seq_len or _profiler._SEQ_LEN)
             params.setdefault("batch_size", step1_batch_size or _profiler._TOTAL_BATCH)
             params.setdefault("d_ffn", step1_dff or 14336)
             if step1_vocab_size is not None:
                 params.setdefault("vocab_size", step1_vocab_size)
-            if role == "equivalent":
+            if step1_micro_batch is not None:
+                params.setdefault("micro_batch_size", step1_micro_batch)
+            if r == "equivalent":
                 orig_model = getattr(session, "original_training_model", None)
                 base_name = (
                     getattr(session, "original_model_name", None)
@@ -161,31 +227,48 @@ def _persist_session(session: SessionState) -> None:
                 if base_name:
                     params["model_name"] = base_name + "_eq"
             if params:
-                save_topology_params(sid, role, params)
+                save_topology_params(sid, r, params)
+
+        ok &= _safe_persist(sid, f"topology_params:{role}", _persist_topology)
 
     for role in ("original", "equivalent"):
         sim = getattr(session, f"{role}_simulation", None)
         if sim:
-            save_simulation_result(sid, role, sim.model_dump())
+            ok &= _safe_persist(
+                sid, f"simulation_result:{role}",
+                lambda s=sim, r=role: save_simulation_result(sid, r, s.model_dump()),
+            )
 
     if session.simulation_params:
         d = session.simulation_params.model_dump()
-        save_simulation_params(sid, "original", d)
-        save_simulation_params(sid, "equivalent", d)
+        ok &= _safe_persist(sid, "simulation_params:original", lambda: save_simulation_params(sid, "original", d))
+        ok &= _safe_persist(sid, "simulation_params:equivalent", lambda: save_simulation_params(sid, "equivalent", d))
 
     if session.comparison_report:
-        from app.dao import get_simulation_result
-        orig_sim = get_simulation_result(sid, "original")
-        eq_sim = get_simulation_result(sid, "equivalent")
-        orig_id = orig_sim["id"] if orig_sim else None
-        eq_id = eq_sim["id"] if eq_sim else None
-        save_comparison_report(sid, orig_id, eq_id, session.comparison_report.model_dump())
+        def _persist_comparison():
+            from app.dao import get_simulation_result
+            orig_sim = get_simulation_result(sid, "original")
+            eq_sim = get_simulation_result(sid, "equivalent")
+            orig_id = orig_sim["id"] if orig_sim else None
+            eq_id = eq_sim["id"] if eq_sim else None
+            save_comparison_report(sid, orig_id, eq_id, session.comparison_report.model_dump())
+
+        ok &= _safe_persist(sid, "comparison_report", _persist_comparison)
 
     if session.history:
-        delete_messages(sid)
-        for i, msg in enumerate(session.history):
-            content = json.dumps(msg, ensure_ascii=False)
-            save_message(sid, i, msg.get("role", "unknown"), content)
+        def _persist_messages():
+            delete_messages(sid)
+            for i, msg in enumerate(session.history):
+                content = json.dumps(msg, ensure_ascii=False)
+                save_message(sid, i, msg.get("role", "unknown"), content)
+
+        ok &= _safe_persist(sid, "conversation_messages", _persist_messages)
+
+    if session.formula_lines:
+        ok &= _safe_persist(sid, "formula_lines", lambda: save_formula_lines(sid, session.formula_lines))
+
+    # Note: &= (not `and`) so every table is still attempted after a failure.
+    return bool(ok)
 
 
 def _load_session(session_id: str) -> Optional[SessionState]:
@@ -201,6 +284,7 @@ def _load_session(session_id: str) -> Optional[SessionState]:
         state.step = summary.get("step", "idle")
         state.original_task_id = summary.get("original_task_id")
         state.equivalent_task_id = summary.get("equivalent_task_id")
+        state.formula_lines = summary.get("formula_lines")
 
         for role in ("original", "equivalent"):
             tp = get_topology_params(session_id, role)
@@ -212,14 +296,10 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                 total_nodes = tp.get("total_nodes", dp_size * tp_size * pp_size)
                 # Rebuild nodes from dp/tp/pp (deterministic, no need to persist separately)
                 nodes = []
-                ranks_per_dp = tp_size * pp_size
                 for g in range(total_nodes):
-                    dp_rank = g // ranks_per_dp
-                    remainder = g % ranks_per_dp
-                    # 与前端 meshBuildData 一致：TP 最低位、PP 居中
-                    # global_rank = dp*(tp*pp) + pp*tp + tp
-                    pp_rank = remainder // tp_size
-                    tp_rank = remainder % tp_size
+                    # Rank layout = TP-DP-PP, calibrated to the simulation system:
+                    # global_rank = pp*(tp*dp) + dp*tp + tp  (see app.rank_layout)
+                    dp_rank, tp_rank, pp_rank = decompose(g, dp_size, tp_size, pp_size)
                     nodes.append(MeshNode(
                         id=f"node_{g}",
                         device_type=device_type,
@@ -245,17 +325,33 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                     dp=tp.get("dp_size", 1),
                     tp=tp.get("tp_size", 1),
                     pp=tp.get("pp_size", 1),
+                    ep=tp.get("ep"),
                 ))
 
                 if tp.get("num_layers"):
                     d_model = tp.get("hidden_dim", 4096)
                     num_heads = tp.get("num_heads", 32)
                     d_ffn = tp.get("d_ffn", 11008)
+                    # ── MoE fields (None for dense models) ──
+                    model_type = tp.get("model_type", "dense")
+                    num_experts = tp.get("num_experts")
+                    moe_router_topk = tp.get("moe_router_topk")
+                    num_moe_layers = tp.get("num_moe_layers")
+                    moe_ffn_hidden_size = tp.get("moe_ffn_hidden_size")
+                    has_shared_expert = tp.get("has_shared_expert", False)
+                    expert_tp = tp.get("expert_tensor_parallel_size", 1)
                     config = TrainingModelConfig(
                         num_layers=tp.get("num_layers", 32),
                         d_model=d_model,
                         num_heads=num_heads,
                         d_ffn=d_ffn,
+                        model_type=model_type,
+                        num_experts=num_experts,
+                        moe_router_topk=moe_router_topk,
+                        num_moe_layers=num_moe_layers,
+                        moe_ffn_hidden_size=moe_ffn_hidden_size,
+                        has_shared_expert=has_shared_expert,
+                        expert_tensor_parallel_size=expert_tp,
                     )
                     d_head = d_model // num_heads
                     computed = TrainingModelComputed(
@@ -266,6 +362,10 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                     _model_gen = importlib.import_module("app.skills.training-model-gen-skill")
                     layers = _model_gen._build_layers(
                         config.num_layers, num_heads, d_head, d_ffn, "GELU",
+                        num_experts=num_experts,
+                        moe_ffn_hidden_size=moe_ffn_hidden_size,
+                        num_moe_layers=num_moe_layers,
+                        has_shared_expert=has_shared_expert,
                     )
                     model_attr = f"{role}_training_model"
                     setattr(state, model_attr, TrainingModel(
@@ -275,6 +375,36 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                         computed=computed,
                         layers=layers,
                     ))
+
+        # Restore session-level runtime fields from topology_params (survive server restart)
+        orig_tp = get_topology_params(session_id, "original")
+        if orig_tp:
+            state.original_seq_len = orig_tp.get("seq_len")
+            state.original_batch_size = orig_tp.get("batch_size")
+            state.original_micro_batch = orig_tp.get("micro_batch_size")
+            state.original_dff = orig_tp.get("d_ffn")
+            state.original_vocab_size = orig_tp.get("vocab_size")
+            state.original_model_name = orig_tp.get("model_name")
+            # ── MoE session-level fields ──
+            state.original_model_type = orig_tp.get("model_type", "dense")
+            state.original_ep = orig_tp.get("ep")
+            state.original_num_experts = orig_tp.get("num_experts")
+            state.original_moe_topk = orig_tp.get("moe_router_topk")
+            state.original_num_moe_layers = orig_tp.get("num_moe_layers")
+            state.original_moe_ffn_hidden_size = orig_tp.get("moe_ffn_hidden_size")
+            state.original_has_shared_expert = orig_tp.get("has_shared_expert")
+            state.original_expert_tensor_parallel_size = orig_tp.get("expert_tensor_parallel_size")
+
+        eq_tp = get_topology_params(session_id, "equivalent")
+        if eq_tp:
+            state.equivalent_seq_len = eq_tp.get("seq_len")
+            state.equivalent_batch_size = eq_tp.get("batch_size")
+            state.equivalent_micro_batch = eq_tp.get("micro_batch_size")
+            state.equivalent_dff = eq_tp.get("d_ffn")
+            # ── MoE session-level fields ──
+            state.equivalent_ep = eq_tp.get("ep")
+            state.equivalent_num_moe_layers = eq_tp.get("num_moe_layers")
+            state.equivalent_num_experts = eq_tp.get("num_experts")
 
         for role in ("original", "equivalent"):
             sr = get_simulation_result(session_id, role)

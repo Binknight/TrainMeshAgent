@@ -74,6 +74,14 @@ async function fetchEstimates(
   batchSize,
   microBatch,
   vocabSize,
+  modelType,
+  ep,
+  numExperts,
+  moeRouterTopk,
+  numMoeLayers,
+  moeFfnHiddenSize,
+  hasSharedExpert,
+  expertTpSize,
 ) {
   // ── Cancel any previous in-flight request for the same side ──
   var oldCtrl = _estimateFetchAbort[side];
@@ -97,6 +105,20 @@ async function fetchEstimates(
       tp: tp,
       pp: pp,
     };
+    var _missing = [];
+    if (numLayers == null) _missing.push("num_layers");
+    if (hiddenDim == null) _missing.push("hidden_dim");
+    if (dFfn == null) _missing.push("d_ffn");
+    if (seqLen == null) _missing.push("seq_len");
+    if (batchSize == null) _missing.push("total_batch");
+    if (microBatch == null) _missing.push("micro_batch");
+    if (vocabSize == null) _missing.push("vocab_size");
+    if (_missing.length) {
+      console.warn(
+        "[estimate] " + side + ": missing " + _missing.join(", ") +
+        " → backend defaults will be used",
+      );
+    }
     if (numLayers != null) body.num_layers = numLayers;
     if (hiddenDim != null) body.hidden_dim = hiddenDim;
     if (dFfn != null) body.d_ffn = dFfn;
@@ -104,6 +126,14 @@ async function fetchEstimates(
     if (batchSize != null) body.total_batch = batchSize;
     if (microBatch != null) body.micro_batch = microBatch;
     if (vocabSize != null) body.vocab_size = vocabSize;
+    if (modelType != null) body.model_type = modelType;
+    if (ep != null) body.ep = ep;
+    if (numExperts != null) body.num_experts = numExperts;
+    if (moeRouterTopk != null) body.moe_router_topk = moeRouterTopk;
+    if (numMoeLayers != null) body.num_moe_layers = numMoeLayers;
+    if (moeFfnHiddenSize != null) body.moe_ffn_hidden_size = moeFfnHiddenSize;
+    if (hasSharedExpert != null) body.has_shared_expert = hasSharedExpert;
+    if (expertTpSize != null) body.expert_tensor_parallel_size = expertTpSize;
 
     var resp = await fetch(API + "/session/estimate", {
       method: "POST",
@@ -210,8 +240,8 @@ var MESH_CARD = {
 
 // PP color palette — three position types: first, middle, last
 // First and last PPs on both sides map to each other; middle PPs map to each other
-var _PP_COLORS = ["#58a6ff", "#ff8f40", "#3fb950"];
-var _PP_COLORS_HOVER = ["#79c0ff", "#ffb366", "#4ae168"];
+var _PP_COLORS = ["var(--mesh-pp-1)", "var(--mesh-pp-2)", "var(--mesh-pp-3)"];
+var _PP_COLORS_HOVER = ["var(--mesh-pp-1-hover)", "var(--mesh-pp-2-hover)", "var(--mesh-pp-3-hover)"];
 
 var meshWidth = 600;
 var meshHeight = 400;
@@ -249,9 +279,25 @@ function meshBuildDisplayList(ppList) {
   return result;
 }
 
+// ── Canonical rank layout: TP-DP-PP (calibrated to the simulation system) ──
+// A global rank is composed as:
+//   globalRank = ppIdx * (tp * dp) + dpIdx * tp + tpIdx
+// i.e. TP is the innermost (fastest-varying) dimension, then DP, then PP.
+// Any place that maps between a global rank and its (dp, tp, pp) position must
+// use these two helpers so the mesh labels agree with the simulation ranks.
+function meshRankOf(tp, dp, ppIdx, dpIdx, tpIdx) {
+  return ppIdx * (tp * dp) + dpIdx * tp + tpIdx;
+}
+
+function meshDecomposeRank(globalRank, tp, dp) {
+  return {
+    tpIdx: globalRank % tp,
+    dpIdx: Math.floor(globalRank / tp) % dp,
+    ppIdx: Math.floor(globalRank / (tp * dp)),
+  };
+}
+
 function meshBuildData(tp, pp, dpCount, activeDp) {
-  var ranksPerDp = pp * tp;
-  var dpBase = activeDp * ranksPerDp;
   return {
     config: { tpCount: tp, ppCount: pp, dpCount: dpCount, activeDp: activeDp },
     dp: {
@@ -266,7 +312,7 @@ function meshBuildData(tp, pp, dpCount, activeDp) {
         id: pi,
         label: "PP" + pi,
         tps: d3.range(tp).map(function (ti) {
-          var gr = dpBase + pi * tp + ti;
+          var gr = meshRankOf(tp, dpCount, pi, activeDp, ti);
           return {
             id: ti,
             label: "TP" + ti,
@@ -298,14 +344,15 @@ function _mapRankToOtherSide(side, globalRank) {
   if (!srcTopo || !dstTopo) return null;
 
   var srcTp = srcTopo.tp,
-    srcPp = srcTopo.pp;
-  var srcRanksPerDp = srcTp * srcPp;
+    srcPp = srcTopo.pp,
+    srcDp = srcTopo.dp;
 
-  // Extract structural position (PP index, TP index) regardless of DP copy
-  var rankInDp = globalRank % srcRanksPerDp;
-  if (rankInDp < 0) rankInDp += srcRanksPerDp;
-  var srcPpIdx = Math.floor(rankInDp / srcTp);
-  var tpIdx = rankInDp % srcTp;
+  // Extract the structural position (PP / DP / TP index) from the rank, using
+  // the canonical TP-DP-PP layout (see meshDecomposeRank).
+  if (globalRank < 0) globalRank += srcTp * srcDp * srcPp;
+  var srcPos = meshDecomposeRank(globalRank, srcTp, srcDp);
+  var srcPpIdx = srcPos.ppIdx;
+  var tpIdx = srcPos.tpIdx;
 
   var dstTp = dstTopo.tp,
     dstPp = dstTopo.pp;
@@ -321,10 +368,8 @@ function _mapRankToOtherSide(side, globalRank) {
   var dstTpIdx = Math.min(tpIdx, dstTp - 1);
 
   // Map result using round-robin DP: source DP → target DP via modulo
-  var srcDp = Math.floor(globalRank / srcRanksPerDp);
-  var dstDp = srcDp % dstTopo.dp;
-  var dstRanksPerDp = dstTp * dstPp;
-  return dstDp * dstRanksPerDp + dstPpIdx * dstTp + dstTpIdx;
+  var dstDp = srcPos.dpIdx % dstTopo.dp;
+  return meshRankOf(dstTp, dstTopo.dp, dstPpIdx, dstDp, dstTpIdx);
 }
 
 function _getRoundRobinDp(srcDp, dstDpCount) {
@@ -864,7 +909,7 @@ function _meshBuildView(
     ];
     var bracePath = bracePathParts.join(" ");
     var braceG = parentG.append("g").attr("class", "dp-layer-brace-group");
-    var braceColor = "#58a6ff";
+    var braceColor = "var(--blue)";
     braceG
       .append("path")
       .attr("d", bracePath)
@@ -1128,11 +1173,11 @@ function _meshBuildView(
         .attr("class", rectClass)
         .attr("data-rank", tp.globalRank)
         .attr("data-side", side)
-        .attr("fill", isPinned ? null : "#161b22")
+        .attr("fill", isPinned ? null : "var(--bg-elevated)")
         .style("fill", isPinned ? "url(#" + _currentFilterPrefix + (isOrig ? "pinned-orig-fill" : "pinned-eq-fill") + ")" : null)
         .on("mouseover", function () {
           if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
-          d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
+          d3.select(this).attr("stroke", "var(--text-primary)").attr("stroke-width", 2);
         })
         .on("mouseout", function () {
           if (isSimCanvas ? _simPinnedRank : meshPinnedRank) return;
@@ -1216,7 +1261,6 @@ function _meshBuildView(
               }
               if (typeof window._onSimRankPinned === "function") window._onSimRankPinned();
             } else {
-              _centerPanelState.formulasCollapsed = true;
               canvasRebuild("#canvas-section");
               _updateCenterBarChart(globalRank, side);
             }
@@ -1403,8 +1447,8 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
     .attr("gradientUnits", "userSpaceOnUse")
     .attr("x1", x1).attr("y1", y1)
     .attr("x2", x2).attr("y2", y2);
-  linkGrad.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff");
-  linkGrad.append("stop").attr("offset", "100%").attr("stop-color", "#3fb950");
+  linkGrad.append("stop").attr("offset", "0%").attr("stop-color", "var(--blue)");
+  linkGrad.append("stop").attr("offset", "100%").attr("stop-color", "var(--green-solid)");
 
   // Glow filter for particles
   var glowFilter = linkDefs.append("filter")
@@ -1434,12 +1478,12 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   var PARTICLE_R = 4;
   var particleOrig = _linkLineG.append("circle")
     .attr("r", PARTICLE_R)
-    .attr("fill", "#58a6ff")
+    .attr("fill", "var(--blue)")
     .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
     .attr("opacity", 0);
   var particleEq = _linkLineG.append("circle")
     .attr("r", PARTICLE_R)
-    .attr("fill", "#3fb950")
+    .attr("fill", "var(--green-solid)")
     .attr("filter", "url(#" + _currentFilterPrefix + "link-particle-glow)")
     .attr("opacity", 0);
 
@@ -1510,7 +1554,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
   // Card title
   _linkBarCardG.append("text")
     .attr("x", cardX + BAR_CARD_PAD).attr("y", cardY + BAR_CARD_PAD + BAR_CARD_TITLE_FONT)
-    .attr("fill", "#39bae6")
+    .attr("fill", "var(--cyan)")
     .attr("font-weight", "bold")
     .attr("font-size", BAR_CARD_TITLE_FONT + "px")
     .attr("font-family", "var(--font-sans)")
@@ -1532,7 +1576,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
       _simRunG.append("circle")
         .attr("cx", spinnerCX).attr("cy", spinnerCY)
         .attr("r", 10).attr("fill", "none")
-        .attr("stroke", "#39bae6").attr("stroke-width", 2.5)
+        .attr("stroke", "var(--cyan)").attr("stroke-width", 2.5)
         .attr("stroke-dasharray", "16 48")
         .attr("stroke-linecap", "round")
         .attr("opacity", 0.8);
@@ -1540,7 +1584,7 @@ function _drawPinnedLink(zoomLayer, svg, isSimCanvas) {
       _simRunG.append("text")
         .attr("x", spinnerCX).attr("y", spinnerCY + 24)
         .attr("text-anchor", "middle")
-        .attr("fill", "#39bae6")
+        .attr("fill", "var(--cyan)")
         .attr("font-weight", "600")
         .attr("font-size", "12px")
         .attr("font-family", "var(--font-sans)")
@@ -1691,7 +1735,9 @@ function _meshNpuTotal(entry) {
 }
 
 function _meshUpdateRanks(parentG, tp, pp, oldDp, newDp) {
-  var delta = (newDp - oldDp) * pp * tp;
+  // Canonical layout strides DP by `tp` (PP is the outermost dimension, so it
+  // does not shift when only the DP slice changes).
+  var delta = (newDp - oldDp) * tp;
   if (delta === 0) return;
   parentG.selectAll(".tp-rect").each(function () {
     var currentRank = parseInt(this.getAttribute("data-rank"));
@@ -1778,11 +1824,67 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .append("text")
     .attr("x", viewX + pad)
     .attr("y", viewY + pad + titleFont)
-    .attr("fill", "#39bae6")
+    .attr("fill", "var(--cyan)")
     .attr("font-weight", "bold")
     .attr("font-size", titleFont + "px")
     .attr("font-family", "var(--font-sans)")
     .text("\u{1F4D0} 等效计算推导");
+
+  // Copy button
+  var copyBtnSize = 16;
+  var copyCX = viewX + viewW - pad - toggleSize - 6 - copyBtnSize / 2;
+  var copyCY = viewY + pad + titleFont / 2;
+
+  var copyBtnG = formulaCardG
+    .append("g")
+    .attr("class", "formula-copy-btn")
+    .attr("transform", "translate(" + copyCX + "," + copyCY + ")")
+    .style("cursor", "pointer")
+    .on("click", function () {
+      var lines = window._pendingFormulaLines || [];
+      var text = lines.map(function (l) { return l.line; }).join("\n");
+      if (!text) return;
+
+      // Use Clipboard API with fallback
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          _flashCopyFeedback(copyBtnG);
+        }).catch(function () {
+          _fallbackCopy(text, copyBtnG);
+        });
+      } else {
+        _fallbackCopy(text, copyBtnG);
+      }
+    });
+
+  copyBtnG
+    .append("rect")
+    .attr("x", -copyBtnSize / 2)
+    .attr("y", -copyBtnSize / 2)
+    .attr("width", copyBtnSize)
+    .attr("height", copyBtnSize)
+    .attr("rx", 3)
+    .attr("fill", "rgba(var(--hairline-rgb), 0.06)")
+    .attr("stroke", "var(--border)")
+    .attr("stroke-width", 1);
+
+  // Copy icon: two overlapping rounded rects
+  copyBtnG
+    .append("rect")
+    .attr("x", -3.5).attr("y", -5)
+    .attr("width", 6).attr("height", 8)
+    .attr("rx", 1).attr("ry", 1)
+    .attr("fill", "none")
+    .attr("stroke", "var(--text-secondary)")
+    .attr("stroke-width", 1.2);
+  copyBtnG
+    .append("rect")
+    .attr("x", -1).attr("y", -3)
+    .attr("width", 6).attr("height", 8)
+    .attr("rx", 1).attr("ry", 1)
+    .attr("fill", "rgba(var(--hairline-rgb), 0.08)")
+    .attr("stroke", "var(--text-secondary)")
+    .attr("stroke-width", 1.2);
 
   // Toggle
   var toggleCX = viewX + viewW - pad - toggleSize / 2;
@@ -1806,7 +1908,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .attr("width", toggleSize)
     .attr("height", toggleSize)
     .attr("rx", 3)
-    .attr("fill", "rgba(255,255,255,0.06)")
+    .attr("fill", "rgba(var(--hairline-rgb), 0.06)")
     .attr("stroke", "var(--border)")
     .attr("stroke-width", 1);
 
@@ -1932,7 +2034,7 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .append("text")
     .attr("x", viewX + pad)
     .attr("y", barCardY + pad + titleFont)
-    .attr("fill", "#39bae6")
+    .attr("fill", "var(--cyan)")
     .attr("font-weight", "bold")
     .attr("font-size", titleFont + "px")
     .attr("font-family", "var(--font-sans)")
@@ -2018,27 +2120,18 @@ function _updateFormulaCollapse() {
   var st = _centerPanelState;
   if (!st.formulaG) return;
 
-  var pad = 14;
-  var totalBottom = st.cardY + st._totalAvailableH;
-  var effFormulaH, newBarCardY, newBarH;
+  // Floating bar card from _drawPinnedLink lives at the link midpoint with its
+  // own coordinate system — formula collapse must not touch it.
+  var isFloatingBarCard = st.barCardG && st.barCardG === _linkBarCardG;
 
   if (st.formulasCollapsed) {
-    // Collapse: hide formulas, shrink formula card, show bar card
+    // Collapse: hide formulas, shrink formula card
     st.formulaG.attr("display", "none");
     st.toggleChev.text("▶");
     st.formulaCardRect.attr("height", st.headerH);
-    if (st.barCardVisible && st.rankData) {
-      st.barCardG.attr("display", null);
-    }
-
-    effFormulaH = st.headerH;
-    newBarCardY = st.cardY + effFormulaH + st.cardGap;
   } else {
-    // Expand: show formulas, restore formula card, hide bar card
-    if (st.barCardG) st.barCardG.attr("display", "none");
+    // Expand: show formulas, restore formula card
     st.formulaCardRect.attr("height", st.formulaCardFullH);
-    effFormulaH = st.formulaCardFullH;
-    newBarCardY = st.cardY + effFormulaH + st.cardGap;
 
     // Pre-set opacity 0 to avoid flash before animation
     if (st._formulaTexts && st._formulaTexts.length > 0) {
@@ -2050,6 +2143,23 @@ function _updateFormulaCollapse() {
     if (st._formulaTexts && st._formulaTexts.length > 0) {
       st._formulaTexts.forEach(function (t) { t.interrupt().attr("opacity", 1); });
     }
+  }
+
+  // ── Bar card manipulation (only valid for center-panel bar card, not floating) ──
+  if (isFloatingBarCard) return;
+
+  var pad = 14;
+  var totalBottom = st.cardY + st._totalAvailableH;
+  var effFormulaH = st.formulasCollapsed ? st.headerH : st.formulaCardFullH;
+  var newBarCardY = st.cardY + effFormulaH + st.cardGap;
+  var newBarH;
+
+  if (st.formulasCollapsed) {
+    if (st.barCardVisible && st.rankData) {
+      st.barCardG.attr("display", null);
+    }
+  } else {
+    if (st.barCardG) st.barCardG.attr("display", "none");
   }
 
   // Determine bar card height
@@ -2095,6 +2205,54 @@ function _updateFormulaCollapse() {
   if (st.barCardVisible && st.rankData && st.formulasCollapsed) {
     _drawRankBars(st.rankData);
   }
+}
+
+// ── Formula card copy-to-clipboard helpers ──
+
+function _flashCopyFeedback(copyBtnG) {
+  // Show a brief "已复制" tooltip near the copy button
+  var rectEl = copyBtnG.select("rect").node();
+  if (!rectEl) return;
+  var bbox = rectEl.getBoundingClientRect();
+  var svgEl = rectEl.closest("svg");
+  if (!svgEl) return;
+  var svgRect = svgEl.getBoundingClientRect();
+  var tip = d3.select(svgEl.parentNode).append("div")
+    .style("position", "absolute")
+    .style("left", (bbox.right - svgRect.left + 6) + "px")
+    .style("top", (bbox.top - svgRect.top + bbox.height / 2 - 10) + "px")
+    .style("background", "var(--toast-bg)")
+    .style("color", "var(--green-solid)")
+    .style("padding", "3px 8px")
+    .style("border-radius", "4px")
+    .style("font-size", "11px")
+    .style("font-family", "var(--font-sans), sans-serif")
+    .style("pointer-events", "none")
+    .style("z-index", "99999")
+    .style("white-space", "nowrap")
+    .style("opacity", 0)
+    .text("已复制 ✓");
+  tip.transition().duration(200).style("opacity", 1);
+  setTimeout(function () {
+    tip.transition().duration(400).style("opacity", 0).remove();
+  }, 1200);
+}
+
+function _fallbackCopy(text, copyBtnG) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand("copy");
+    _flashCopyFeedback(copyBtnG);
+  } catch (e) {
+    console.warn("Copy failed:", e);
+  }
+  document.body.removeChild(ta);
 }
 
 function _centerPanelBarRecalc() {
@@ -2184,7 +2342,7 @@ var _DETAIL_MAP = {
   pp_comm_mb_per_micro: "pp-comm",
   dp_comm_gb_per_step: "dp-comm",
 };
-var _DETAIL_COLORS = ["#f4a261", "#6abecd", "#8fc93a", "#b39cd0"];
+var _DETAIL_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"];
 
 function _rebuildSimWithBars(skipFetch) {
   console.log("[DEBUG] _rebuildSimWithBars | skipFetch:", skipFetch, "| _pinnedSim:", !!window._pinnedSim);
@@ -2479,7 +2637,7 @@ function _drawOneDetailChart(g, cx, cy, cw, ch, detailType, data, title, sideIdx
     .attr("x", cx + cw / 2)
     .attr("y", cy - 2)
     .attr("text-anchor", "middle")
-    .attr("fill", sideIdx === 0 ? "#58a6ff" : "#79c0ff")
+    .attr("fill", sideIdx === 0 ? "var(--blue)" : "var(--blue-light)")
     .attr("font-weight", "600")
     .attr("font-size", "9px")
     .attr("font-family", "var(--font-sans)")
@@ -2571,13 +2729,13 @@ function _drawPieChart(g, cx, cy, cw, ch, subs, data, detailType) {
     .attr("width", tipW)
     .attr("height", tipH)
     .attr("rx", 4)
-    .attr("fill", "rgba(13,17,23,0.95)")
+    .attr("fill", "rgba(var(--bg-input-rgb), 0.95)")
     .attr("stroke", "var(--border)");
   var tipLabel = tipG.append("text")
     .attr("x", centerX)
     .attr("y", cy + 13)
     .attr("text-anchor", "middle")
-    .attr("fill", "#fff")
+    .attr("fill", "var(--text-primary)")
     .attr("font-size", "9px")
     .attr("font-weight", "600")
     .attr("font-family", "var(--font-sans)");
@@ -2617,7 +2775,7 @@ function _drawDetailBars(g, cx, cy, cw, ch, subs, data, detailType) {
   var barGap = 8;
   var labelW = 52;
   var barMaxW = cw - labelW - pad - 38;
-  var colors = ["#f4a261", "#6abecd", "#8fc93a"];
+  var colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)"];
 
   subs.forEach(function (sub, i) {
     var by = cy + i * (barH + barGap);
@@ -2759,22 +2917,22 @@ function _drawRankBars(data, isSim) {
   if (isSim) {
     // Simulation tab: only show simulation result legends
     if (hasBoth) {
-      drawLegend("#3fb950", "原始仿真");
-      drawLegend("#7ee787", "等效仿真");
+      drawLegend("var(--green-solid)", "原始仿真");
+      drawLegend("var(--green-light)", "等效仿真");
     } else {
-      drawLegend("#3fb950", "仿真结果");
+      drawLegend("var(--green-solid)", "仿真结果");
     }
   } else if (hasBoth) {
-    drawLegend("#58a6ff", "原始估算");
-    drawLegend("#79c0ff", "等效估算");
+    drawLegend("var(--blue)", "原始估算");
+    drawLegend("var(--blue-light)", "等效估算");
     var simPanel = document.getElementById("tab-panel-simulation");
     if (simPanel && simPanel.classList.contains("active")) {
-      drawLegend("#3fb950", "原始仿真");
-      drawLegend("#7ee787", "等效仿真");
+      drawLegend("var(--green-solid)", "原始仿真");
+      drawLegend("var(--green-light)", "等效仿真");
     }
   } else {
-    drawLegend("#58a6ff", "理论估算");
-    if (hasAnyActual) drawLegend("#3fb950", "仿真验证");
+    drawLegend("var(--blue)", "理论估算");
+    if (hasAnyActual) drawLegend("var(--green-solid)", "仿真验证");
   }
   y += 14;
 
@@ -2838,7 +2996,7 @@ function _drawRankBars(data, isSim) {
     var miniGap = hasAnyActual ? 4 : 4;
 
     // Helper to draw a bar with staggered grow animation
-    var drawBar = function (val, color, label) {
+    var drawBar = function (val, color, label, isActual) {
       if (val == null) return;
       var w = scaleFn(val);
       if (w < 2) w = 2;
@@ -2846,7 +3004,6 @@ function _drawRankBars(data, isSim) {
       var g = st.barG.append("g");
       var delay = metricBase + barIdx * animStagger;
       barIdx++;
-      var isActual = color === "#3fb950" || color === "#7ee787";
       var rect = g.append("rect")
         .attr("x", barStartX)
         .attr("y", thisBarY)
@@ -2891,7 +3048,7 @@ function _drawRankBars(data, isSim) {
           .attr("opacity", 1);
         valText.interrupt()
           .transition().duration(100)
-          .attr("fill", "#fff")
+          .attr("fill", "var(--text-primary)")
           .attr("font-weight", "700")
           .attr("font-size", "10px");
       });
@@ -2930,28 +3087,28 @@ function _drawRankBars(data, isSim) {
     if (isSim) {
       // Simulation tab: only show simulation result bars (no theoretical estimates)
       if (hasBoth) {
-        if (origActV != null) barY += drawBar(origActV, "#3fb950", "原始仿");
-        if (eqActV != null) barY += drawBar(eqActV, "#7ee787", "等效仿");
+        if (origActV != null) barY += drawBar(origActV, "var(--green-solid)", "原始仿", true);
+        if (eqActV != null) barY += drawBar(eqActV, "var(--green-light)", "等效仿", true);
       } else {
-        if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
-        if (eqActV != null && !data.orig) barY += drawBar(eqActV, "#3fb950", "仿");
+        if (origActV != null) barY += drawBar(origActV, "var(--green-solid)", "仿", true);
+        if (eqActV != null && !data.orig) barY += drawBar(eqActV, "var(--green-solid)", "仿", true);
       }
     } else if (hasBoth) {
       // Estimate bars first
       if (origEstV != null)
-        barY += drawBar(origEstV, "#58a6ff", "原始估");
-      if (eqEstV != null) barY += drawBar(eqEstV, "#79c0ff", "等效估");
+        barY += drawBar(origEstV, "var(--blue)", "原始估", false);
+      if (eqEstV != null) barY += drawBar(eqEstV, "var(--blue-light)", "等效估", false);
       // Simulation bars
       if (origActV != null)
-        barY += drawBar(origActV, "#3fb950", "原始仿");
-      if (eqActV != null) barY += drawBar(eqActV, "#7ee787", "等效仿");
+        barY += drawBar(origActV, "var(--green-solid)", "原始仿", true);
+      if (eqActV != null) barY += drawBar(eqActV, "var(--green-light)", "等效仿", true);
     } else {
-      if (origEstV != null) barY += drawBar(origEstV, "#58a6ff", "估");
-      if (origActV != null) barY += drawBar(origActV, "#3fb950", "仿");
+      if (origEstV != null) barY += drawBar(origEstV, "var(--blue)", "估", false);
+      if (origActV != null) barY += drawBar(origActV, "var(--green-solid)", "仿", true);
       if (eqEstV != null && !data.orig)
-        barY += drawBar(eqEstV, "#58a6ff", "估");
+        barY += drawBar(eqEstV, "var(--blue)", "估", false);
       if (eqActV != null && !data.orig)
-        barY += drawBar(eqActV, "#3fb950", "仿");
+        barY += drawBar(eqActV, "var(--green-solid)", "仿", true);
     }
 
     if (barY === y + 2) {
@@ -3131,6 +3288,72 @@ function meshRebuild(targetSelector) {
   canvasRebuild(targetSelector);
 }
 
+// ── Model-section layout geometry ──
+/* @testable-model-layout:start */
+// 计算「原始模型 / 等效模型」两块模型区的 x 与宽度。
+//
+// 不变量：只要 hasBothModels 为真（两侧模型都会被渲染），返回的四个值必须全部是
+// 有限数。历史 bug 就出在这条不变量上 —— 老代码按「拓扑布局模式」分支赋值，
+// 只有三栏模式与「两侧组网都在」两个分支才给 modelX0Eq / modelAreaWEq 赋值，而
+// hasBothModels 只看模型数据、不看组网数据。会话恢复时模型先到（同步恢复）、
+// 等效组网后到（await 第二个 loadMeshData），中间态落进没有等价值的单栏分支，
+// undefined 一路算成 NaN，d3 在 attr() 阶段报
+// "<text> attribute x: Expected length, NaN" 与 "translate(NaN,…)"，
+// 并把整块等效模型图丢掉（只剩控制台报错，界面上表现为"等效模型不见了"）。
+function _modelLayoutGeom(o) {
+  var meshWidth = o.meshWidth;
+  var topoLayout = o.topoLayout;
+  var meshOriginal = o.meshOriginal;
+  var meshEquivalent = o.meshEquivalent;
+  var hasBothModels = o.hasBothModels;
+  var calcDims = o.calcDims;
+
+  // 三栏模式：模型区对齐拓扑列，用近乎整列的宽度
+  if (topoLayout && topoLayout.mode === "three") {
+    var moW3 = topoLayout.origW;
+    var meW3 = topoLayout.eqW;
+    return {
+      x0: 8,
+      areaW: moW3 - 16,
+      x0Eq: moW3 + topoLayout.gap + 8,
+      areaWEq: meW3 - 16,
+    };
+  }
+
+  // 左右分栏：两侧模型都要画（与组网数据解耦），或两侧组网都在（单模型时也要
+  // 按原来的比例留出右半区）。缺一侧组网时拿不到 dpW 权重，退化为均分。
+  var splitByTopo = !!(meshOriginal && meshEquivalent);
+  if (hasBothModels || splitByTopo) {
+    var gap = 24;
+    var availW = meshWidth - gap;
+    var share = 0.5;
+    if (splitByTopo && typeof calcDims === "function") {
+      var dO = calcDims(meshOriginal.tp, meshOriginal.pp);
+      var dE = calcDims(meshEquivalent.tp, meshEquivalent.pp);
+      var dpSum = dO.dpW + dE.dpW;
+      if (dpSum > 0) share = dO.dpW / dpSum;
+      share = Math.max(0.45, Math.min(0.6, share));
+    }
+    var moW = availW * share;
+    var meW = availW * (1 - share);
+    return {
+      x0: 8,
+      areaW: moW - 16,
+      x0Eq: moW + gap + 8,
+      areaWEq: meW - 16,
+    };
+  }
+
+  // 两段模式：只有原始模型，用拓扑宽带
+  if (topoLayout && topoLayout.mode === "two") {
+    return { x0: 8, areaW: topoLayout.origW - 16, x0Eq: null, areaWEq: null };
+  }
+
+  // 单模型：占满整幅宽度
+  return { x0: 16, areaW: meshWidth - 32, x0Eq: null, areaWEq: null };
+}
+/* @testable-model-layout:end */
+
 // ── Public API ──
 
 function canvasRebuild(targetSelector) {
@@ -3196,7 +3419,21 @@ function canvasRebuild(targetSelector) {
     }
   }
 
-  var modelH = hasModel ? 520 : 0;
+  var modelH = 0;
+  if (hasModel) {
+    var _refModel = modelOriginal || modelEquivalent;
+    var _isMoE = _refModel && _refModel.config && _refModel.config.model_type === "sparse";
+    if (_isMoE && typeof calcMoeArchHeight === "function") {
+      var _ppForHeight = Math.max(
+        (meshOriginal && meshOriginal.pp) || 0,
+        (meshEquivalent && meshEquivalent.pp) || 0
+      );
+      var _epForHeight = meshModelOrig.ep || meshModelEq.ep || 0;
+      modelH = calcMoeArchHeight(_refModel.config, meshWidth, _ppForHeight, _epForHeight);
+    } else {
+      modelH = 520;
+    }
+  }
   var sectionGap = hasTopo && hasModel ? 6 : 0;
   var totalH = topoH + sectionGap + modelH;
   // Simulation mode: ensure viewBox is tall enough for the rank detail card
@@ -3260,7 +3497,7 @@ function canvasRebuild(targetSelector) {
         .attr("dx", 0)
         .attr("dy", 3)
         .attr("stdDeviation", 4)
-        .attr("flood-color", "#39bae6")
+        .attr("flood-color", "var(--cyan)")
         .attr("flood-opacity", 0.45);
     }
 
@@ -3277,7 +3514,7 @@ function canvasRebuild(targetSelector) {
       .attr("dx", 0)
       .attr("dy", 4)
       .attr("stdDeviation", 10)
-      .attr("flood-color", "#39bae6")
+      .attr("flood-color", "var(--cyan)")
       .attr("flood-opacity", 0.55);
 
     // Hover glow filter for DP card
@@ -3293,7 +3530,7 @@ function canvasRebuild(targetSelector) {
       .attr("dx", 0)
       .attr("dy", 3)
       .attr("stdDeviation", 8)
-      .attr("flood-color", "#58a6ff")
+      .attr("flood-color", "var(--blue)")
       .attr("flood-opacity", 0.5);
 
     // Hover glow filters for PP cards — one per position-type color
@@ -3327,7 +3564,7 @@ function canvasRebuild(targetSelector) {
       .attr("dx", 0)
       .attr("dy", 2)
       .attr("stdDeviation", 5)
-      .attr("flood-color", "#3fb950")
+      .attr("flood-color", "var(--green-solid)")
       .attr("flood-opacity", 0.7);
 
     // Hover glow filter for tensor grid cells
@@ -3344,15 +3581,15 @@ function canvasRebuild(targetSelector) {
       .attr("id", _currentFilterPrefix + "pinned-orig-fill")
       .attr("x1", "0%").attr("y1", "0%")
       .attr("x2", "100%").attr("y2", "100%");
-    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "#58a6ff").attr("stop-opacity", 0.6);
-    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "#39bae6").attr("stop-opacity", 0.2);
+    pinnedOrigFill.append("stop").attr("offset", "0%").attr("stop-color", "var(--blue)").attr("stop-opacity", 0.6);
+    pinnedOrigFill.append("stop").attr("offset", "100%").attr("stop-color", "var(--cyan)").attr("stop-opacity", 0.2);
     // Equivalent side: green gradient
     var pinnedEqFill = defs.append("linearGradient")
       .attr("id", _currentFilterPrefix + "pinned-eq-fill")
       .attr("x1", "0%").attr("y1", "0%")
       .attr("x2", "100%").attr("y2", "100%");
-    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "#3fb950").attr("stop-opacity", 0.6);
-    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "#2ea043").attr("stop-opacity", 0.2);
+    pinnedEqFill.append("stop").attr("offset", "0%").attr("stop-color", "var(--green-solid)").attr("stop-opacity", 0.6);
+    pinnedEqFill.append("stop").attr("offset", "100%").attr("stop-color", "var(--green-dark)").attr("stop-opacity", 0.2);
 
     defs
       .append("style")
@@ -3361,16 +3598,16 @@ function canvasRebuild(targetSelector) {
         [
           _svgScope + ".model-node { cursor: pointer; transition: stroke-width 0.2s ease, filter 0.2s ease; }",
           _svgScope + ".formula-card-rect { cursor: default; transition: filter 0.3s ease, stroke 0.3s ease, transform 0.3s ease; }",
-          _svgScope + ".formula-card-rect:hover { filter: url(#" + _currentFilterPrefix + "formula-card-glow); stroke: #39bae6; stroke-width: 1.5; transform: translateY(-2px); }",
+          _svgScope + ".formula-card-rect:hover { filter: url(#" + _currentFilterPrefix + "formula-card-glow); stroke: var(--cyan); stroke-width: 1.5; transform: translateY(-2px); }",
           _svgScope + ".formula-card-group text { pointer-events: none; }",
           _svgScope + ".dp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
-          _svgScope + ".dp-card-group:hover .dp-card { filter: url(#" + _currentFilterPrefix + "dp-card-glow); stroke: #79c0ff; stroke-width: 2.5; }",
+          _svgScope + ".dp-card-group:hover .dp-card { filter: url(#" + _currentFilterPrefix + "dp-card-glow); stroke: var(--blue-light); stroke-width: 2.5; }",
           _svgScope + ".dp-card-group:hover .dp-shadow { filter: url(#" + _currentFilterPrefix + "dp-card-glow); }",
           _svgScope + ".pp-card { transition: filter 0.3s ease, stroke 0.3s ease; }",
           _svgScope + ".tp-rect { transition: filter 0.2s ease, stroke 0.2s ease, fill 0.2s ease; }",
-          _svgScope + ".tp-rect:hover { filter: url(#" + _currentFilterPrefix + "tp-rect-glow); stroke: #4ae168; stroke-width: 1.5; fill: #1a2e1f; }",
+          _svgScope + ".tp-rect:hover { filter: url(#" + _currentFilterPrefix + "tp-rect-glow); stroke: var(--mesh-pp-3-hover); stroke-width: 1.5; fill: var(--row-hover-green); }",
           _svgScope + ".tensor-cell { transition: filter 0.2s ease, stroke 0.2s ease; }",
-          _svgScope + ".tensor-cell:hover { filter: url(#" + _currentFilterPrefix + "tensor-cell-glow); stroke: #ff8f40; stroke-width: 1.2; }",
+          _svgScope + ".tensor-cell:hover { filter: url(#" + _currentFilterPrefix + "tensor-cell-glow); stroke: var(--orange); stroke-width: 1.2; }",
           _svgScope + ".tensor-cell-label { pointer-events: none; }",
         ].join(" "),
       );
@@ -3423,7 +3660,7 @@ function canvasRebuild(targetSelector) {
         .attr("x", _origW / 2)
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
-        .attr("fill", "#58a6ff")
+        .attr("fill", "var(--blue)")
         .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
@@ -3433,7 +3670,7 @@ function canvasRebuild(targetSelector) {
         .attr("x", _origW + _gap + _eqW / 2)
         .attr("y", _tH - 8)
         .attr("text-anchor", "middle")
-        .attr("fill", "#58a6ff")
+        .attr("fill", "var(--blue)")
         .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
@@ -3627,7 +3864,7 @@ function canvasRebuild(targetSelector) {
         .attr("x", _origW2 / 2)
         .attr("y", _tH2 - 8)
         .attr("text-anchor", "middle")
-        .attr("fill", "#58a6ff")
+        .attr("fill", "var(--blue)")
         .attr("font-family", "var(--font-sans)")
         .attr("font-size", "13px")
         .attr("font-weight", "bold")
@@ -3722,43 +3959,9 @@ function canvasRebuild(targetSelector) {
     var modelTopY = topoH + sectionGap;
 
     // ── Calculate model layout aligned to DP card ──
-    var modelX0, modelAreaW;
-    var modelX0Eq, modelAreaWEq;
-    if (_topoLayout && _topoLayout.mode === "three") {
-      // Three-part: align models to topology columns, use nearly full column width
-      var _moW3 = _topoLayout.origW;
-      var _meW3 = _topoLayout.eqW;
-      modelAreaW = _moW3 - 16;
-      modelX0 = 8;
-      modelAreaWEq = _meW3 - 16;
-      modelX0Eq =
-        _moW3 + _topoLayout.gap + 8;
-    } else if (_topoLayout && _topoLayout.mode === "two") {
-      // Two-part: only original model, use full topology width
-      var _moW2 = _topoLayout.origW;
-      modelAreaW = _moW2 - 16;
-      modelX0 = 8;
-    } else if (meshOriginal && meshEquivalent) {
-      var _mgap = 24;
-      var _mavailW = meshWidth - _mgap;
-      var _mdO = _meshCalcDims(meshOriginal.tp, meshOriginal.pp);
-      var _mdE = _meshCalcDims(meshEquivalent.tp, meshEquivalent.pp);
-      var _mshare = _mdO.dpW / (_mdO.dpW + _mdE.dpW);
-      _mshare = Math.max(0.45, Math.min(0.6, _mshare));
-      var _moW = _mavailW * _mshare;
-      var _meW = _mavailW * (1 - _mshare);
-      modelAreaW = _moW - 16;
-      modelX0 = 8;
-      modelAreaWEq = _meW - 16;
-      modelX0Eq = _moW + _mgap + 8;
-    } else if (hasTopo) {
-      modelAreaW = meshWidth - 32;
-      modelX0 = 16;
-    } else {
-      modelAreaW = meshWidth - 32;
-      modelX0 = 16;
-    }
-
+    // hasBothModels 决定「等效模型是否被渲染」，几何量则必须与组网布局模式解耦：
+    // 凡是会渲染两侧模型的状态，都要拿到有限的 modelX0Eq / modelAreaWEq
+    // （详见 _modelLayoutGeom 的不变量说明）。
     var hasBothModels = !!(
       modelOriginal &&
       modelOriginal.layers &&
@@ -3767,12 +3970,26 @@ function canvasRebuild(targetSelector) {
       modelEquivalent.layers &&
       modelEquivalent.layers.length
     );
+    var _modelGeom = _modelLayoutGeom({
+      meshWidth: meshWidth,
+      topoLayout: _topoLayout,
+      meshOriginal: meshOriginal,
+      meshEquivalent: meshEquivalent,
+      hasBothModels: hasBothModels,
+      calcDims: _meshCalcDims,
+    });
+    var modelX0 = _modelGeom.x0;
+    var modelAreaW = _modelGeom.areaW;
+    var modelX0Eq = _modelGeom.x0Eq;
+    var modelAreaWEq = _modelGeom.areaWEq;
 
     // ── Resolve topology TP/PP for tensor grid and TP/PP highlight ──
     var origTp = meshOriginal ? meshOriginal.tp : 0;
     var origPp = meshOriginal ? meshOriginal.pp : 0;
     var eqTp = meshEquivalent ? meshEquivalent.tp : 0;
     var eqPp = meshEquivalent ? meshEquivalent.pp : 0;
+    var origEp = meshModelOrig.ep || 0;
+    var eqEp = meshModelEq.ep || 0;
     var highlightOrigTp = null,
       highlightOrigPp = null;
     var highlightEqTp = null,
@@ -3845,42 +4062,82 @@ function canvasRebuild(targetSelector) {
         .attr("font-weight", 600)
         .text("等效模型");
 
-      var sharedScale = Math.min(
-        Math.min(1, (modelAreaW - 16) / _TM_DESIGN.W),
-        Math.min(1, (modelAreaWEq - 16) / _TM_DESIGN.W),
-      );
-      _renderOneModel(
-        zoomLayer,
-        modelOriginal,
-        modelX0,
-        modelTopY + 44,
-        modelAreaW,
-        false,
-        sharedScale,
-        null,
-        "var(--cyan)",
-        origTp,
-        origPp,
-        highlightOrigTp,
-        highlightOrigPp,
-        highlightOrigInputOutput,
-      );
-      _renderOneModel(
-        zoomLayer,
-        modelEquivalent,
-        modelX0Eq,
-        modelTopY + 44,
-        modelAreaWEq,
-        false,
-        sharedScale,
-        null,
-        "var(--teal)",
-        eqTp,
-        eqPp,
-        highlightEqTp,
-        highlightEqPp,
-        highlightEqInputOutput,
-      );
+      var _isSparseOrig = modelOriginal && modelOriginal.config && modelOriginal.config.model_type === "sparse";
+      var _isSparseEq = modelEquivalent && modelEquivalent.config && modelEquivalent.config.model_type === "sparse";
+
+      if (_isSparseOrig || _isSparseEq) {
+        var _moeScale = Math.min(
+          Math.min(1, (modelAreaW - 16) / (window.MOE_DESIGN ? window.MOE_DESIGN.W : 520)),
+          Math.min(1, (modelAreaWEq - 16) / (window.MOE_DESIGN ? window.MOE_DESIGN.W : 520)),
+        );
+        if (_isSparseOrig && typeof renderMoeArchitecture === "function") {
+          renderMoeArchitecture(zoomLayer, modelOriginal, {
+            x: modelX0, y: modelTopY + 44, areaW: modelAreaW,
+            scale: _moeScale, labelColor: "var(--cyan)",
+            tpCount: origTp, ppCount: origPp, epCount: origEp,
+            highlightTpIdx: highlightOrigTp, highlightPpIdx: highlightOrigPp,
+            highlightInputOutput: highlightOrigInputOutput,
+            filterPrefix: _currentFilterPrefix,
+            isEquivalent: false,
+          });
+        } else {
+          _renderOneModel(zoomLayer, modelOriginal, modelX0, modelTopY + 44, modelAreaW,
+            false, _moeScale, null, "var(--cyan)",
+            origTp, origPp, highlightOrigTp, highlightOrigPp, highlightOrigInputOutput);
+        }
+        if (_isSparseEq && typeof renderMoeArchitecture === "function") {
+          renderMoeArchitecture(zoomLayer, modelEquivalent, {
+            x: modelX0Eq, y: modelTopY + 44, areaW: modelAreaWEq,
+            scale: _moeScale, labelColor: "var(--teal)",
+            tpCount: eqTp, ppCount: eqPp, epCount: eqEp,
+            highlightTpIdx: highlightEqTp, highlightPpIdx: highlightEqPp,
+            highlightInputOutput: highlightEqInputOutput,
+            filterPrefix: _currentFilterPrefix,
+            isEquivalent: true,
+          });
+        } else {
+          _renderOneModel(zoomLayer, modelEquivalent, modelX0Eq, modelTopY + 44, modelAreaWEq,
+            false, _moeScale, null, "var(--teal)",
+            eqTp, eqPp, highlightEqTp, highlightEqPp, highlightEqInputOutput);
+        }
+      } else {
+        var sharedScale = Math.min(
+          Math.min(1, (modelAreaW - 16) / _TM_DESIGN.W),
+          Math.min(1, (modelAreaWEq - 16) / _TM_DESIGN.W),
+        );
+        _renderOneModel(
+          zoomLayer,
+          modelOriginal,
+          modelX0,
+          modelTopY + 44,
+          modelAreaW,
+          false,
+          sharedScale,
+          null,
+          "var(--cyan)",
+          origTp,
+          origPp,
+          highlightOrigTp,
+          highlightOrigPp,
+          highlightOrigInputOutput,
+        );
+        _renderOneModel(
+          zoomLayer,
+          modelEquivalent,
+          modelX0Eq,
+          modelTopY + 44,
+          modelAreaWEq,
+          false,
+          sharedScale,
+          null,
+          "var(--teal)",
+          eqTp,
+          eqPp,
+          highlightEqTp,
+          highlightEqPp,
+          highlightEqInputOutput,
+        );
+      }
     } else {
       var singleTp =
         meshOriginal || meshEquivalent
@@ -3890,6 +4147,7 @@ function canvasRebuild(targetSelector) {
         meshOriginal || meshEquivalent
           ? (meshOriginal || meshEquivalent).pp
           : 0;
+      var singleEp = meshModelOrig.ep || meshModelEq.ep || 0;
       var singleHlTp = null,
         singleHlPp = null;
       if (meshPinnedTpInfo) {
@@ -3907,22 +4165,35 @@ function canvasRebuild(targetSelector) {
         .attr("font-family", "var(--font-sans)")
         .attr("font-weight", 600)
         .text("原始模型");
-      _renderOneModel(
-        zoomLayer,
-        model,
-        modelX0,
-        modelTopY + 44,
-        modelAreaW,
-        false,
-        null,
-        null,
-        "var(--cyan)",
-        singleTp,
-        singlePp,
-        singleHlTp,
-        singleHlPp,
-        singleHlInputOutput,
-      );
+      var _isSingleSparse = model && model.config && model.config.model_type === "sparse";
+      if (_isSingleSparse && typeof renderMoeArchitecture === "function") {
+        renderMoeArchitecture(zoomLayer, model, {
+          x: modelX0, y: modelTopY + 44, areaW: modelAreaW,
+          scale: null, labelColor: "var(--cyan)",
+          tpCount: singleTp, ppCount: singlePp, epCount: singleEp,
+          highlightTpIdx: singleHlTp, highlightPpIdx: singleHlPp,
+          highlightInputOutput: singleHlInputOutput,
+          filterPrefix: _currentFilterPrefix,
+          isEquivalent: false,
+        });
+      } else {
+        _renderOneModel(
+          zoomLayer,
+          model,
+          modelX0,
+          modelTopY + 44,
+          modelAreaW,
+          false,
+          null,
+          null,
+          "var(--cyan)",
+          singleTp,
+          singlePp,
+          singleHlTp,
+          singleHlPp,
+          singleHlInputOutput,
+        );
+      }
     }
   }
 
@@ -3964,6 +4235,16 @@ async function loadMeshData(topoData) {
         d_ffn: topoData.d_ffn,
         seq_len: topoData.seq_len,
         batch_size: topoData.batch_size,
+        micro_batch_size: topoData.micro_batch_size,
+        vocab_size: topoData.vocab_size,
+        model_type: topoData.model_type,
+        ep: topoData.ep,
+        num_experts: topoData.num_experts,
+        moe_router_topk: topoData.moe_router_topk,
+        num_moe_layers: topoData.num_moe_layers,
+        moe_ffn_hidden_size: topoData.moe_ffn_hidden_size,
+        has_shared_expert: topoData.has_shared_expert,
+        expert_tensor_parallel_size: topoData.expert_tensor_parallel_size,
       };
     } else {
       meshModelEq = {
@@ -3972,6 +4253,16 @@ async function loadMeshData(topoData) {
         d_ffn: topoData.d_ffn,
         seq_len: topoData.seq_len,
         batch_size: topoData.batch_size,
+        micro_batch_size: topoData.micro_batch_size,
+        vocab_size: topoData.vocab_size,
+        model_type: topoData.model_type,
+        ep: topoData.ep,
+        num_experts: topoData.num_experts,
+        moe_router_topk: topoData.moe_router_topk,
+        num_moe_layers: topoData.num_moe_layers,
+        moe_ffn_hidden_size: topoData.moe_ffn_hidden_size,
+        has_shared_expert: topoData.has_shared_expert,
+        expert_tensor_parallel_size: topoData.expert_tensor_parallel_size,
       };
     }
   }
@@ -4023,6 +4314,48 @@ async function loadMeshData(topoData) {
     topoData.vocab_size != null
       ? topoData.vocab_size
       : (modelSide && modelSide.config ? modelSide.config.vocab_size : null);
+  // ── MoE params ──
+  var modelType =
+    topoData.model_type != null
+      ? topoData.model_type
+      : (meshModel && meshModel.model_type) ||
+        (modelSide && modelSide.config ? modelSide.config.model_type : null);
+  var ep =
+    topoData.ep != null
+      ? topoData.ep
+      : (meshModel && meshModel.ep) != null
+        ? meshModel.ep
+        : (modelSide && modelSide.config ? modelSide.config.ep : null);
+  var numExperts =
+    topoData.num_experts != null
+      ? topoData.num_experts
+      : (meshModel && meshModel.num_experts) ||
+        (modelSide && modelSide.config ? modelSide.config.num_experts : null);
+  var moeRouterTopk =
+    topoData.moe_router_topk != null
+      ? topoData.moe_router_topk
+      : (meshModel && meshModel.moe_router_topk) ||
+        (modelSide && modelSide.config ? modelSide.config.moe_router_topk : null);
+  var numMoeLayers =
+    topoData.num_moe_layers != null
+      ? topoData.num_moe_layers
+      : (meshModel && meshModel.num_moe_layers) ||
+        (modelSide && modelSide.config ? modelSide.config.num_moe_layers : null);
+  var moeFfnHiddenSize =
+    topoData.moe_ffn_hidden_size != null
+      ? topoData.moe_ffn_hidden_size
+      : (meshModel && meshModel.moe_ffn_hidden_size) ||
+        (modelSide && modelSide.config ? modelSide.config.moe_ffn_hidden_size : null);
+  var hasSharedExpert =
+    topoData.has_shared_expert != null
+      ? topoData.has_shared_expert
+      : (meshModel && meshModel.has_shared_expert) ||
+        (modelSide && modelSide.config ? modelSide.config.has_shared_expert : null);
+  var expertTpSize =
+    topoData.expert_tensor_parallel_size != null
+      ? topoData.expert_tensor_parallel_size
+      : (meshModel && meshModel.expert_tensor_parallel_size) ||
+        (modelSide && modelSide.config ? modelSide.config.expert_tensor_parallel_size : null);
 
   var hasModelParams = numLayers != null;
   var alreadyInFlight = _estimateInFlight[side];
@@ -4043,12 +4376,24 @@ async function loadMeshData(topoData) {
         batchSize,
         microBatch,
         vocabSize,
+        modelType,
+        ep,
+        numExperts,
+        moeRouterTopk,
+        numMoeLayers,
+        moeFfnHiddenSize,
+        hasSharedExpert,
+        expertTpSize,
       );
       if (isOrig) {
         meshEstimateOrig = estimates;
       } else {
         meshEstimateEq = estimates;
       }
+      // Rebuild canvas now that async estimate data has arrived.
+      // The caller's immediate canvasRebuild() fired before the await resolved,
+      // so this ensures the bar chart / tooltip picks up the correct metrics.
+      canvasRebuild();
     } catch (e) {
       // If aborted by a newer request, don't clear the estimates — the newer request will fill them
       if (e.name === "AbortError") {
@@ -4063,8 +4408,6 @@ async function loadMeshData(topoData) {
       }
     }
   }
-
-  // canvasRebuild is called by the caller after loadMeshData completes
 }
 
 // ── canvasRecenter: fit content to viewport center ──
@@ -4823,40 +5166,40 @@ function _positionDetailPanel(panel, tooltip) {
 
 var MODEL_COLORS = {
   input_embedding: {
-    fill: "#1a1a10",
-    stroke: "#ffb454",
+    fill: "var(--model-embed-fill)",
+    stroke: "var(--yellow)",
     label: "Embeddings",
-    text: "#ffb454",
+    text: "var(--yellow)",
   },
   layer_norm: {
-    fill: "#111a13",
-    stroke: "#7fd962",
+    fill: "var(--model-ln-fill)",
+    stroke: "var(--green)",
     label: "Layer Norm",
-    text: "#7fd962",
+    text: "var(--green)",
   },
   mha: {
-    fill: "#111922",
-    stroke: "#39bae6",
+    fill: "var(--model-attn-fill)",
+    stroke: "var(--cyan)",
     label: "Multi-Head Attention",
-    text: "#39bae6",
+    text: "var(--cyan)",
   },
-  mha_sub: { fill: "#15202b", stroke: "#39bae6", text: "#7b8ca3" },
+  mha_sub: { fill: "var(--model-attn-sub-fill)", stroke: "var(--cyan)", text: "var(--text-secondary)" },
   ffn: {
-    fill: "#1a1114",
-    stroke: "#f26d78",
+    fill: "var(--model-ffn-fill)",
+    stroke: "var(--red)",
     label: "Feed-Forward Network",
-    text: "#f26d78",
+    text: "var(--red)",
   },
-  ffn_sub: { fill: "#1f1518", stroke: "#f26d78", text: "#7b8ca3" },
-  add: { fill: "#161c24", stroke: "#4a5568", label: "Add", text: "#7b8ca3" },
+  ffn_sub: { fill: "var(--model-ffn-sub-fill)", stroke: "var(--red)", text: "var(--text-secondary)" },
+  add: { fill: "var(--bg-surface)", stroke: "var(--text-muted)", label: "Add", text: "var(--text-secondary)" },
   output: {
-    fill: "#1a140f",
-    stroke: "#ff8f40",
+    fill: "var(--model-output-fill)",
+    stroke: "var(--orange)",
     label: "Output Layer",
-    text: "#ff8f40",
+    text: "var(--orange)",
   },
-  skip: { stroke: "#ff8f40" },
-  transformer_card: { fill: "#111820", stroke: "#39bae6" },
+  skip: { stroke: "var(--orange)" },
+  transformer_card: { fill: "var(--model-card-fill)", stroke: "var(--cyan)" },
 };
 
 // ── Model structure concept tips (from transformer_tip.json) ──
@@ -5016,38 +5359,169 @@ function loadModelData(modelData, role) {
   if (role === "original") {
     modelOriginal = entry;
     if (modelData.config) {
-      meshModelOrig = {
+      var prevOrig = meshModelOrig || {};
+      var newOrig = {
         num_layers: modelData.config.num_layers || modelData.layers_count,
         hidden_dim: modelData.config.d_model,
         d_ffn: modelData.config.d_ffn,
         seq_len: modelData.seq_len,
         batch_size: modelData.batch_size,
         micro_batch_size: modelData.micro_batch_size,
+        vocab_size: modelData.config.vocab_size,
+        model_type: modelData.config.model_type,
+        ep: modelData.ep,  // topology-level param injected by backend
+        num_experts: modelData.config.num_experts,
+        moe_router_topk: modelData.config.moe_router_topk,
+        num_moe_layers: modelData.config.num_moe_layers,
+        moe_ffn_hidden_size: modelData.config.moe_ffn_hidden_size,
+        has_shared_expert: modelData.config.has_shared_expert,
+        expert_tensor_parallel_size: modelData.config.expert_tensor_parallel_size,
       };
+      // Mirror of the equivalent-side null-fill: keep topology-derived runtime
+      // params (seq_len / batch_size / micro_batch_size / vocab_size) that this
+      // payload may omit, otherwise /session/estimate silently uses its defaults.
+      for (var ko in prevOrig) {
+        if (prevOrig.hasOwnProperty(ko) && newOrig[ko] == null) {
+          newOrig[ko] = prevOrig[ko];
+        }
+      }
+      meshModelOrig = newOrig;
     }
     // If mesh already loaded, re-fetch estimates with correct model params
     if (meshOriginal) _refetchMeshEstimate("orig");
   } else {
     modelEquivalent = entry;
     if (modelData.config) {
-      meshModelEq = {
+      var prevEq = meshModelEq || {};
+      var newEq = {
         num_layers: modelData.config.num_layers || modelData.layers_count,
         hidden_dim: modelData.config.d_model,
         d_ffn: modelData.config.d_ffn,
         seq_len: modelData.seq_len,
         batch_size: modelData.batch_size,
         micro_batch_size: modelData.micro_batch_size,
+        vocab_size: modelData.config.vocab_size,
+        model_type: modelData.config.model_type,
+        ep: modelData.ep,  // topology-level param injected by backend
+        num_experts: modelData.config.num_experts,
+        moe_router_topk: modelData.config.moe_router_topk,
+        num_moe_layers: modelData.config.num_moe_layers,
+        moe_ffn_hidden_size: modelData.config.moe_ffn_hidden_size,
+        has_shared_expert: modelData.config.has_shared_expert,
+        expert_tensor_parallel_size: modelData.config.expert_tensor_parallel_size,
       };
+      // Preserve topology-derived params that the model payload may omit
+      // (e.g. micro_batch_size / vocab_size). _refetchMeshEstimate and
+      // _forceRefreshEstimates read meshModelEq, and a missing field makes
+      // /session/estimate silently fall back to backend defaults — which
+      // caused rank bar chart values to diverge from the equivalent-calc
+      // derivation card until a page refresh re-loaded the topology JSON.
+      for (var k in prevEq) {
+        if (prevEq.hasOwnProperty(k) && newEq[k] == null) {
+          newEq[k] = prevEq[k];
+        }
+      }
+      meshModelEq = newEq;
     }
     if (meshEquivalent) _refetchMeshEstimate("eq");
   }
   if (typeof checkSimReady === "function") checkSimReady();
 }
 
+// Params required for an estimate that matches the session state. When any of
+// them is missing, POST /api/session/estimate silently substitutes backend
+// defaults (_TOTAL_BATCH=32, _MICRO_BATCH=4, _DEFAULT_VOCAB_SIZE=32000), so a
+// re-fetch must never overwrite good estimates with such values.
+function _missingEstimateParams(model) {
+  return ["hidden_dim", "batch_size", "micro_batch_size", "vocab_size"].filter(
+    function (k) { return !model || model[k] == null; },
+  );
+}
+
+// ── Force refresh estimates via direct API call ──
+// Bypasses the internal async estimate pipeline (which may have stale
+// or incomplete data due to loadMeshData / loadModelData race conditions).
+// Called after step3 equivalent modeling completes to guarantee correct
+// rank bar chart metrics without a full page reload.
+async function _forceRefreshEstimates() {
+  var sides = [];
+  if (meshOriginal && meshModelOrig && meshModelOrig.num_layers != null) {
+    sides.push({ side: "orig", mesh: meshOriginal, model: meshModelOrig });
+  }
+  if (meshEquivalent && meshModelEq && meshModelEq.num_layers != null) {
+    sides.push({ side: "eq", mesh: meshEquivalent, model: meshModelEq });
+  }
+  for (var i = 0; i < sides.length; i++) {
+    var s = sides[i];
+    var missing = _missingEstimateParams(s.model);
+    if (missing.length) {
+      console.warn(
+        "[forceRefreshEstimates] skip " + s.side + " — missing " + missing.join(", "),
+      );
+      continue;
+    }
+    try {
+      var body = {
+        device_type: s.mesh.device_type || s.mesh.deviceType,
+        total_nodes: s.mesh.total_nodes,
+        dp: s.mesh.dp || s.mesh.dp_size,
+        tp: s.mesh.tp || s.mesh.tp_size,
+        pp: s.mesh.pp || s.mesh.pp_size,
+        num_layers: s.model.num_layers,
+        hidden_dim: s.model.hidden_dim,
+        d_ffn: s.model.d_ffn,
+      };
+      if (s.model.seq_len != null) body.seq_len = s.model.seq_len;
+      if (s.model.batch_size != null) body.total_batch = s.model.batch_size;
+      if (s.model.micro_batch_size != null) body.micro_batch = s.model.micro_batch_size;
+      if (s.model.vocab_size != null) body.vocab_size = s.model.vocab_size;
+      if (s.model.model_type != null) body.model_type = s.model.model_type;
+      if (s.model.ep != null) body.ep = s.model.ep;
+      if (s.model.num_experts != null) body.num_experts = s.model.num_experts;
+      if (s.model.moe_router_topk != null) body.moe_router_topk = s.model.moe_router_topk;
+      if (s.model.num_moe_layers != null) body.num_moe_layers = s.model.num_moe_layers;
+      if (s.model.moe_ffn_hidden_size != null) body.moe_ffn_hidden_size = s.model.moe_ffn_hidden_size;
+      if (s.model.has_shared_expert != null) body.has_shared_expert = s.model.has_shared_expert;
+      if (s.model.expert_tensor_parallel_size != null) body.expert_tensor_parallel_size = s.model.expert_tensor_parallel_size;
+
+      var resp = await fetch(API + "/session/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error("Estimate API returned " + resp.status);
+      var data = await resp.json();
+      var est = {};
+      data.cards.forEach(function (c) {
+        est[c.global_rank] = c;
+      });
+      if (s.side === "orig") {
+        meshEstimateOrig = est;
+      } else {
+        meshEstimateEq = est;
+      }
+      console.log("[forceRefreshEstimates]", s.side, "→", Object.keys(est).length, "cards");
+    } catch (e) {
+      console.warn("[forceRefreshEstimates] failed for", s.side, ":", e);
+    }
+  }
+}
+
 async function _refetchMeshEstimate(side) {
   var mesh = side === "orig" ? meshOriginal : meshEquivalent;
   var model = side === "orig" ? meshModelOrig : meshModelEq;
   if (!mesh || !model || model.num_layers == null) return;
+  var missing = _missingEstimateParams(model);
+  if (missing.length) {
+    console.warn(
+      "[estimate] skip re-fetch for " + side + " — missing " + missing.join(", ") +
+      " (backend defaults would not match the session)",
+    );
+    return;
+  }
+  // fetchEstimates automatically aborts any stale in-flight request for
+  // this side via AbortController, so we can safely call it again without
+  // guarding on _estimateInFlight.
   try {
     var estimates = await fetchEstimates(
       mesh.device_type,
@@ -5063,6 +5537,14 @@ async function _refetchMeshEstimate(side) {
       model.batch_size,
       model.micro_batch_size,
       model.vocab_size,
+      model.model_type,
+      model.ep,
+      model.num_experts,
+      model.moe_router_topk,
+      model.num_moe_layers,
+      model.moe_ffn_hidden_size,
+      model.has_shared_expert,
+      model.expert_tensor_parallel_size,
     );
     if (side === "orig") {
       meshEstimateOrig = estimates;
@@ -5132,6 +5614,19 @@ function _renderOneModel(
   var comp = model.computed || {};
   var numLayers = cfg.num_layers || 1;
   var D = _TM_DESIGN;
+
+  // ── Guard: layout geometry must be finite ──
+  // NaN 流进 d3 的 attr() 只会得到 "Expected length/number, NaN"，而且整块模型图
+  // 会被浏览器丢弃（症状是"图不见了 + 控制台报错"，很难反推到布局计算）。
+  // 宁可少画一块并留下可定位的告警，也不要把非法坐标交给 d3。
+  if (!isFinite(x0) || !isFinite(topY) || !isFinite(areaW) || areaW <= 0) {
+    console.warn("[topo] _renderOneModel skipped: invalid layout", {
+      x0: x0,
+      topY: topY,
+      areaW: areaW,
+    });
+    return;
+  }
 
   // ── Scale to fit allocated width (use forced scale when comparing two models side-by-side) ──
   var scale =
@@ -5343,7 +5838,7 @@ function _renderOneModel(
           "," +
           (midY + D.ARROW_S / 2),
       )
-      .attr("fill", "#3fb950");
+      .attr("fill", "var(--green-solid)");
   }
 
   // ── Helper: dashed line ──
@@ -5381,9 +5876,9 @@ function _renderOneModel(
       .attr("width", D.BOX_W + 4)
       .attr("height", D.H_MD + 4)
       .attr("rx", 6)
-      .attr("fill", "#ff8f40")
+      .attr("fill", "var(--orange)")
       .attr("fill-opacity", 0.12)
-      .attr("stroke", "#ff8f40")
+      .attr("stroke", "var(--orange)")
       .attr("stroke-width", 3)
       .attr("stroke-dasharray", "3 2")
       .attr("class", "pp-row pinned");
@@ -5409,7 +5904,7 @@ function _renderOneModel(
       .attr("width", D.BOX_W)
       .attr("height", tfH)
       .attr("rx", 8)
-      .attr("fill", "#0d131a")
+      .attr("fill", "var(--bg-darker)")
       .attr("stroke", MODEL_COLORS.transformer_card.stroke)
       .attr("stroke-width", 1)
       .attr("opacity", 0.35 + i * 0.25);
@@ -5434,9 +5929,9 @@ function _renderOneModel(
       .attr("width", D.BOX_W + 4)
       .attr("height", tfH + 4)
       .attr("rx", 10)
-      .attr("fill", "#ff8f40")
+      .attr("fill", "var(--orange)")
       .attr("fill-opacity", 0.08)
-      .attr("stroke", "#ff8f40")
+      .attr("stroke", "var(--orange)")
       .attr("stroke-width", 3)
       .attr("stroke-dasharray", "3 2")
       .attr("class", "pp-row pinned");
@@ -5607,9 +6102,9 @@ function _renderOneModel(
       .attr("width", D.BOX_W + 4)
       .attr("height", D.H_MD + 4)
       .attr("rx", 6)
-      .attr("fill", "#ff8f40")
+      .attr("fill", "var(--orange)")
       .attr("fill-opacity", 0.12)
-      .attr("stroke", "#ff8f40")
+      .attr("stroke", "var(--orange)")
       .attr("stroke-width", 3)
       .attr("stroke-dasharray", "3 2")
       .attr("class", "pp-row pinned");
@@ -5744,7 +6239,7 @@ function _renderOneModel(
       .attr("width", cellW)
       .attr("height", cellH)
       .attr("fill", cellFill)
-      .attr("stroke", isHighlighted ? "#ff8f40" : "var(--text-muted)")
+      .attr("stroke", isHighlighted ? "var(--orange)" : "var(--text-muted)")
       .attr("stroke-width", isHighlighted ? 2 : 0.5)
       .attr("stroke-dasharray", isHighlighted ? "3 2" : "none")
       .attr("class", cellClass);
@@ -5796,6 +6291,7 @@ function _renderOneModel(
 
   if (ppCount && cfg.num_layers) {
     var layersPerPp = Math.floor(cfg.num_layers / ppCount);
+    var remainder = cfg.num_layers % ppCount;
     var COL_PP = 50,
       COL_RANGE = 74;
     var ROW_H = 14,
@@ -5818,7 +6314,7 @@ function _renderOneModel(
       .attr("y", mapTableY)
       .attr("width", tableW)
       .attr("height", HEADER_H)
-      .attr("fill", "#21262d");
+      .attr("fill", "var(--bg-elevated-2)");
 
     // Data row backgrounds (highlighted row rendered last to stay on top)
     for (var pi = 0; pi < ppCount; pi++) {
@@ -5829,7 +6325,7 @@ function _renderOneModel(
         .attr("y", rowY)
         .attr("width", tableW)
         .attr("height", ROW_H)
-        .attr("fill", pi % 2 === 0 ? "var(--bg-surface)" : "#161b22")
+        .attr("fill", pi % 2 === 0 ? "var(--bg-surface)" : "var(--bg-elevated)")
         .attr("class", "pp-row");
     }
     if (hasHighlight) {
@@ -5842,7 +6338,7 @@ function _renderOneModel(
         .attr("width", tableW)
         .attr("height", ROW_H)
         .attr("fill", hlRowFill)
-        .attr("stroke", "#ff8f40")
+        .attr("stroke", "var(--orange)")
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "3 2")
         .attr("class", "pp-row pinned");
@@ -5906,8 +6402,9 @@ function _renderOneModel(
     // ── Data row text ──
     for (var pi2 = 0; pi2 < ppCount; pi2++) {
       var rowY2 = mapTableY + HEADER_H + pi2 * ROW_H;
-      var layerStart2 = pi2 * layersPerPp;
-      var layerEnd2 = layerStart2 + layersPerPp - 1;
+      // Distribute remainder layers: first `remainder` PPs get one extra layer
+      var layerStart2 = pi2 * layersPerPp + Math.min(pi2, remainder);
+      var layerEnd2 = layerStart2 + layersPerPp + (pi2 < remainder ? 1 : 0) - 1;
 
       var rowTextY = rowY2 + 10;
       sg.append("text")
