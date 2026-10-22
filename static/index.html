@@ -120,6 +120,10 @@
                 --cyan: #39bae6;
                 --cyan-rgb: 57, 186, 230;
                 --cyan-dim: #1f5a7a;
+                --brand: #39bae6;
+                --brand-line: #2d4a5e;
+                --brand-bg: #1f5a7a;
+                --brand-soft: #39bae67a;
                 --teal: #3bceb4;
                 --teal-rgb: 59, 206, 180;
                 --red: #f26d78;
@@ -248,6 +252,10 @@
                 --cyan: #0b7ba3;
                 --cyan-rgb: 11, 123, 163;
                 --cyan-dim: #2f6f8f;
+                --brand: #2774ed;
+                --brand-line: #c9dcfa;
+                --brand-bg: #edf4ff;
+                --brand-soft: #2774ed7a;
                 --teal: #0a8a72;
                 --teal-rgb: 10, 138, 114;
                 --red: #c83743;
@@ -400,12 +408,15 @@
                 width: 8px;
                 height: 8px;
                 border-radius: 2.5px;
-                background: var(--cyan);
+                background: var(--brand);
                 display: block;
             }
             .tb-logo i:nth-child(2),
             .tb-logo i:nth-child(4) {
-                background: rgba(var(--cyan-rgb), 0.48);
+                background: var(--brand-line);
+            }
+            .tb-logo i:nth-child(3) {
+                background: var(--brand-soft);
             }
             .titlebar-status {
                 margin-left: auto;
@@ -482,11 +493,23 @@
             }
             .panel-header .count {
                 margin-left: auto;
-                background: var(--bg-surface);
-                padding: 2px 8px;
-                border-radius: 10px;
-                font-size: 10px;
-                color: var(--text-secondary);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 20px;
+                height: 18px;
+                padding: 0 8px;
+                border-radius: 9px;
+                border: 1px solid var(--brand-line);
+                background: var(--brand-bg);
+                color: var(--brand);
+                font-family: var(--font-mono);
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1;
+                letter-spacing: 0.5px;
+                white-space: nowrap;
+                flex: 0 0 auto;
             }
             .history-list {
                 flex: 1;
