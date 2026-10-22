@@ -370,37 +370,42 @@
 
             /* ── Title Bar ── */
             .titlebar {
-                height: 42px;
+                height: 64px;
                 background: var(--bg-panel);
                 border-bottom: 1px solid var(--border);
                 display: flex;
                 align-items: center;
-                padding: 0 20px;
-                gap: 10px;
+                padding: 0 24px;
+                gap: 12px;
                 user-select: none;
                 flex-shrink: 0;
             }
             .titlebar-logo {
-                font-family: var(--font-mono);
-                font-weight: 600;
-                font-size: 13px;
-                color: var(--cyan);
-                letter-spacing: 0.5px;
+                font-family: var(--font-sans);
+                font-weight: 700;
+                font-size: 16px;
+                color: var(--text-primary);
+                letter-spacing: 0.2px;
+                white-space: nowrap;
             }
-            .titlebar-dot {
-                width: 8px;
-                height: 8px;
-                border-radius: 50%;
+            /* ── 统一品牌 logo（2×2 蓝方块，与算子/Agent 工作台一致） ── */
+            .tb-logo {
+                display: grid;
+                grid-template-columns: repeat(2, 8px);
+                grid-template-rows: repeat(2, 8px);
+                gap: 3px;
                 flex-shrink: 0;
             }
-            .titlebar-dot.cyan {
+            .tb-logo i {
+                width: 8px;
+                height: 8px;
+                border-radius: 2.5px;
                 background: var(--cyan);
+                display: block;
             }
-            .titlebar-dot.teal {
-                background: var(--teal);
-            }
-            .titlebar-dot.amber {
-                background: var(--yellow);
+            .tb-logo i:nth-child(2),
+            .tb-logo i:nth-child(4) {
+                background: rgba(var(--cyan-rgb), 0.48);
             }
             .titlebar-status {
                 margin-left: auto;
@@ -3241,9 +3246,7 @@
     <body>
         <!-- Title Bar -->
         <div class="titlebar">
-            <span class="titlebar-dot cyan"></span>
-            <span class="titlebar-dot teal"></span>
-            <span class="titlebar-dot amber"></span>
+            <span class="tb-logo" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
             <span class="titlebar-logo">TRAINMESH / agent</span>
             <span class="titlebar-status">
                 <span class="status-indicator"></span>
