@@ -1524,6 +1524,171 @@
                 display: none;
             }
 
+            /* ── 空画布开始引导（新建任务后的两个开始入口） ──
+               只在画布无任何组网/模型数据时出现；任一入口开始后自动隐藏，
+               下次新建任务重新出现。颜色一律走 token，不写字面量。 */
+            .start-guide {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 20;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                pointer-events: none; /* 卡片之外的点击继续落到画布上 */
+                animation: start-guide-in 0.24s ease;
+            }
+            @keyframes start-guide-in {
+                from {
+                    opacity: 0;
+                    transform: translateY(6px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            .start-guide-card {
+                pointer-events: auto;
+                position: relative;
+                width: 100%;
+                max-width: 620px;
+                max-height: 100%;
+                overflow-y: auto;
+                padding: 22px 24px 16px;
+                border: 1px solid var(--border-active);
+                border-radius: var(--radius);
+                background: var(--bg-panel);
+                box-shadow: var(--shadow-card);
+            }
+            .start-guide-close {
+                position: absolute;
+                top: 10px;
+                right: 12px;
+                width: 24px;
+                height: 24px;
+                padding: 0;
+                border: none;
+                border-radius: var(--radius-sm);
+                background: transparent;
+                color: var(--text-muted);
+                font-size: 18px;
+                line-height: 1;
+                cursor: pointer;
+                transition: color var(--transition), background var(--transition);
+            }
+            .start-guide-close:hover {
+                color: var(--text-primary);
+                background: var(--bg-hover);
+            }
+            .start-guide-eyebrow {
+                font-family: var(--font-mono);
+                font-size: 10px;
+                letter-spacing: 1.5px;
+                color: var(--cyan);
+            }
+            .start-guide-title {
+                margin-top: 6px;
+                font-size: 17px;
+                font-weight: 600;
+                color: var(--text-primary);
+                overflow-wrap: anywhere;
+            }
+            .start-guide-options {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-top: 16px;
+            }
+            .start-guide-option {
+                flex: 1 1 230px;
+                min-width: 0;
+                display: flex;
+                align-items: flex-start;
+                gap: 10px;
+                padding: 13px 14px;
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                background: var(--bg-surface);
+                color: var(--text-primary);
+                font-family: var(--font-sans);
+                text-align: left;
+                cursor: pointer;
+                transition: border-color var(--transition),
+                    background var(--transition), transform var(--transition);
+            }
+            .start-guide-option:hover {
+                border-color: var(--cyan);
+                background: var(--bg-hover);
+                transform: translateY(-1px);
+            }
+            .start-guide-icon {
+                flex: 0 1 30px;
+                width: 30px;
+                height: 30px;
+                min-width: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: var(--radius-sm);
+                background: rgba(var(--cyan-rgb), 0.12);
+                font-size: 16px;
+                overflow: hidden;
+            }
+            .start-guide-icon.chat {
+                background: rgba(var(--teal-rgb), 0.12);
+            }
+            .start-guide-text {
+                flex: 1 1 0;
+                display: flex;
+                flex-direction: column;
+                gap: 3px;
+                min-width: 0;
+            }
+            .start-guide-option-title {
+                font-size: 13px;
+                font-weight: 600;
+                overflow-wrap: anywhere;
+            }
+            .start-guide-option-desc {
+                font-size: 11px;
+                line-height: 1.5;
+                color: var(--text-secondary);
+                overflow-wrap: anywhere;
+            }
+            .start-guide-arrow {
+                flex: 0 1 auto;
+                min-width: 0;
+                overflow: hidden;
+                align-self: center;
+                margin-left: auto;
+                color: var(--text-muted);
+                font-size: 15px;
+                transition: color var(--transition), transform var(--transition);
+            }
+            .start-guide-option:hover .start-guide-arrow {
+                color: var(--cyan);
+                transform: translateX(2px);
+            }
+            /* 点「从右侧交互区开始」时输入区的一次性高亮 */
+            .chat-input-area.guide-attention {
+                animation: guide-attention 1.2s ease;
+            }
+            @keyframes guide-attention {
+                0% {
+                    background: transparent;
+                }
+                30% {
+                    background: rgba(var(--cyan-rgb), 0.1);
+                }
+                100% {
+                    background: transparent;
+                }
+            }
+
             /* ── Right Panel: Workflow + Chat ── */
             .panel-right {
                 width: 440px;
@@ -3652,6 +3817,71 @@
                             <p>组网拓扑画布</p>
                             <span>通过 Agent 生成组网后在此可视化</span>
                         </div>
+                        <!-- 新建任务后的开始引导：两个等价的开始入口 -->
+                        <div
+                            class="start-guide"
+                            id="start-guide"
+                            style="display: none"
+                        >
+                            <div class="start-guide-card">
+                                <button
+                                    class="start-guide-close"
+                                    id="start-guide-close"
+                                    title="关闭引导"
+                                    onclick="hideStartGuide()"
+                                >
+                                    &times;
+                                </button>
+                                <div class="start-guide-eyebrow">
+                                    新建任务引导
+                                </div>
+                                <div class="start-guide-title">
+                                    选择一种开始方式
+                                </div>
+                                <div class="start-guide-options">
+                                    <button
+                                        class="start-guide-option"
+                                        onclick="startGuideFromStep1()"
+                                    >
+                                        <span
+                                            class="start-guide-icon step1"
+                                            >📝</span
+                                        >
+                                        <span class="start-guide-text">
+                                            <span
+                                                class="start-guide-option-title"
+                                                >从「步骤条 Step 1」开始</span
+                                            >
+                                            <span
+                                                class="start-guide-option-desc"
+                                                >点击顶部步骤条第 1 步，或直接点这里打开参数表单，手动填写原始组网与模型参数</span
+                                            >
+                                        </span>
+                                        <span class="start-guide-arrow">→</span>
+                                    </button>
+                                    <button
+                                        class="start-guide-option"
+                                        onclick="startGuideFromChat()"
+                                    >
+                                        <span
+                                            class="start-guide-icon chat"
+                                            >💬</span
+                                        >
+                                        <span class="start-guide-text">
+                                            <span
+                                                class="start-guide-option-title"
+                                                >从右侧「Agent 交互」开始</span
+                                            >
+                                            <span
+                                                class="start-guide-option-desc"
+                                                >在右侧对话框描述模型与组网需求（如 Qwen2.5-72B），由 Agent 推导参数并推进步骤</span
+                                            >
+                                        </span>
+                                        <span class="start-guide-arrow">→</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!-- Tab: 等效仿真验证 -->
@@ -3972,6 +4202,84 @@
                 closeSimParams();
                 resetWorkflowFormFields();
                 renderWorkflow();
+            }
+
+            // ═══════════════════════════════════════════
+            // Empty-canvas Start Guide
+            //   「+ 新任务」（以及首次进入 / 恢复出空会话）后画布没有任何内容时
+            //   展示两个开始入口：顶部步骤条 Step 1，或右侧 Agent 交互区。
+            //   任一入口开始后自动隐藏，下次新建任务重新出现。
+            // ═══════════════════════════════════════════
+
+            function _canvasHasData() {
+                // mesh*/model* 由本文件之后的 topo-renderer.js 用 var 声明（挂 window），
+                // 首次加载时 init() 会在它执行前就调用引导 —— 必须走 window.*，
+                // 直接引用裸标识符会抛 ReferenceError（拓扑脚本尚未加载）。
+                return !!(
+                    window.meshOriginal ||
+                    window.meshEquivalent ||
+                    window.modelOriginal ||
+                    window.modelEquivalent
+                );
+            }
+
+            function showStartGuide() {
+                var guide = document.getElementById("start-guide");
+                if (!guide) return;
+                // 只有画布确实为空时才引导：恢复出的会话可能已经带数据
+                if (_canvasHasData()) {
+                    guide.style.display = "none";
+                    return;
+                }
+                var placeholder = document.getElementById(
+                    "canvas-placeholder",
+                );
+                if (placeholder) placeholder.classList.add("hidden");
+                guide.style.display = "flex";
+            }
+
+            function hideStartGuide() {
+                var guide = document.getElementById("start-guide");
+                if (guide) guide.style.display = "none";
+                // 引导关闭时画布仍是空的，把「等待组网数据」占位图还原回来
+                if (!_canvasHasData()) {
+                    var placeholder = document.getElementById(
+                        "canvas-placeholder",
+                    );
+                    if (placeholder) placeholder.classList.remove("hidden");
+                }
+            }
+
+            function startGuideFromStep1() {
+                hideStartGuide();
+                // 与直接点击顶部步骤条 Step 1 走同一条路径
+                openWorkflowParams();
+            }
+
+            function startGuideFromChat() {
+                hideStartGuide();
+                // AI 关闭（系统日志模式）时输入框不可用，先切回 Agent 交互
+                if (workflowMode === "api") {
+                    var toggle = document.getElementById(
+                        "ai-mode-toggle-flow",
+                    );
+                    if (toggle) toggle.checked = true;
+                    toggleWorkflowMode();
+                }
+                // 全屏画布 / 右侧栏折叠时，先把交互区还原出来
+                if (_canvasFullscreen) toggleCanvasFullscreen();
+                if (_rightPanelCollapsed) toggleRightPanel();
+                var input = document.getElementById("chat-input");
+                if (!input) return;
+                input.focus();
+                // 输入区闪一下，明确「从这里开始」
+                var area = document.querySelector(".chat-input-area");
+                if (area) {
+                    area.classList.add("guide-attention");
+                    setTimeout(function () {
+                        area.classList.remove("guide-attention");
+                    }, 1200);
+                }
             }
 
             function resetWorkflowFormFields() {
@@ -4576,6 +4884,20 @@
                     var isCompleted = state === "completed";
                     var isActive = state === "active";
 
+                    // One <g> per step wrapping path + dot + label. The click
+                    // handler must live on this group, NOT on the <path>: the
+                    // <text>/<circle> are painted above the path, so a click on
+                    // the label hits the text element and bubbles through the
+                    // group — it never reaches the sibling path. Binding to the
+                    // path used to leave the label (and the dot) a dead zone.
+                    var stepG = g
+                        .append("g")
+                        .attr("class", "wf-step")
+                        .style(
+                            "cursor",
+                            step.disabled ? "not-allowed" : "pointer",
+                        );
+
                     // Build chevron SVG path
                     var path;
                     if (i === 0) {
@@ -4614,14 +4936,14 @@
                             " Z";
                     }
 
-                    var chevron = g
+                    stepG
                         .append("path")
                         .attr("d", path)
                         .attr("transform", "translate(" + x + ", 0)")
                         .attr("class", "wf-chevron " + state);
 
                     // Status dot
-                    g.append("circle")
+                    stepG.append("circle")
                         .attr(
                             "cx",
                             x +
@@ -4642,7 +4964,7 @@
                     var label = step.icon + " " + step.label;
                     if (step.disabled) label = step.label + " (暂未开放)";
 
-                    g.append("text")
+                    stepG.append("text")
                         .attr("x", textX)
                         .attr("y", stepH / 2 + 5)
                         .attr("text-anchor", "middle")
@@ -4667,7 +4989,7 @@
 
                     // Completed checkmark
                     if (isCompleted) {
-                        g.append("text")
+                        stepG.append("text")
                             .attr("x", x + stepW - 2)
                             .attr("y", 16)
                             .attr("text-anchor", "end")
@@ -4676,13 +4998,13 @@
                             .text("✓");
                     }
 
-                    // Click handler
+                    // Click handler — on the whole step group, so the label
+                    // text and the status dot are clickable too (see the
+                    // comment where stepG is created).
                     if (!step.disabled) {
-                        chevron
-                            .style("cursor", "pointer")
-                            .on("click", function () {
-                                handleWorkflowNodeClick(step);
-                            });
+                        stepG.on("click", function () {
+                            handleWorkflowNodeClick(step);
+                        });
                     }
 
                     if (isCompleted) progressTotal++;
@@ -5235,6 +5557,8 @@
             }
 
             function openWorkflowParams() {
+                // 用户已从 Step 1 / 引导入口开始，收起空画布引导
+                hideStartGuide();
                 var overlay = document.getElementById("workflow-param-overlay");
                 if (overlay) overlay.style.display = "flex";
                 document.getElementById("wf-equiv-tp").value = document.getElementById("wf-orig-tp").value;
@@ -5652,6 +5976,9 @@
                     }
                     const data = await resp.json();
 
+                    // 引导只在空画布出现，恢复会话时先收起
+                    hideStartGuide();
+
                     // Detect server restart: if boot id changed, discard old session
                     const saved = JSON.parse(
                         localStorage.getItem("mesh_session") || "{}",
@@ -5758,6 +6085,8 @@
                         document.getElementById("canvas-label").textContent = "等待组网数据...";
                         document.getElementById("chat-messages").innerHTML =
                             '<div class="msg-group fade-in"><span class="msg-label agent">equivalent-modeling-service</span><div class="msg-bubble agent">新任务已创建。输入组网参数开始。</div></div>';
+                        // 恢复出的是空会话 —— 与新建任务一样给出开始引导
+                        showStartGuide();
                     }
 
                     // Restore chat message for topology summaries
@@ -5882,6 +6211,8 @@
                 checkSimReady();
                 initWorkflow();
                 renderHistory();
+                // 新建任务后画布是空的，给出两个开始入口
+                showStartGuide();
             }
 
             // ── Chat rendering ──
@@ -5969,6 +6300,9 @@
                     text || document.getElementById("chat-input").value.trim();
                 if (!input || isStreaming) return;
                 if (!text) document.getElementById("chat-input").value = "";
+
+                // 用户已从右侧交互区开始，收起空画布引导
+                hideStartGuide();
 
                 isStreaming = true;
                 document.getElementById("btn-send").disabled = true;
@@ -6420,6 +6754,8 @@
             }
 
             function switchCanvasTab(tabName) {
+                // 引导只针对「等效建模分析」的空画布，切到其他页签即收起
+                if (tabName !== "modeling") hideStartGuide();
                 // Persist active tab across refreshes
                 try { sessionStorage.setItem("activeCanvasTab", tabName); } catch (e) {}
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
@@ -8622,6 +8958,8 @@
                 initWorkflow();
                 loadModelCatalogDropdown();
                 document.getElementById("chat-input").focus();
+                // 首次进入（无历史会话）同样是空画布
+                showStartGuide();
             })();
             // ══════ 主题切换（暗色 / 浅色） ══════
             // 约定：主题只存在 <html data-theme> 上；颜色一律由 CSS 变量解析，
