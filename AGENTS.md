@@ -183,6 +183,7 @@ DAO 是真正的影响集中点。
 | **仿真完成状态不能只靠前端驱动** | `session.step` 曾只在 `run_simulation()` 里推进，而那次调用依赖「前端收到 WebSocket `complete` 后再补打一次 `run-simulation`」。页面刷新会掐断 WebSocket（MCP 侧任务仍在跑，任务记录在 MCP Server 内存里），于是会话永久停在 `simulating`、前端一直显示"仿真验证中"。现在 `GET /topology` 与 `GET /simulation` 会先调 `_fallback_reconcile_simulation()` 兜底判定，并且这两个端点必须回传 `original_task_id` / `equivalent_task_id`（前端刷新后靠它重建 WS 订阅）。**新增任何"读会话状态"的端点时，不要绕过这段兜底**，也不要让 `*_task_id` 只留在 DB 里 |
 | **模型区几何量必须与组网布局模式解耦** | `canvasRebuild()` 里「是否渲染等效模型」看的是 `hasBothModels`（只有模型数据），而模型区 x/宽度曾是按**拓扑布局模式**分支赋值的 —— 只有三栏模式与「两侧组网都在」才给 `modelX0Eq` / `modelAreaWEq` 赋值。`restoreSession()` 先同步恢复两侧模型、再逐个 `await loadMeshData()`，中间态（两个模型 + 一个组网）于是拿到 `undefined`，`undefined + NaN` 一路算成 `NaN`，d3 报 `<text> attribute x: Expected length, "NaN"` 与 `translate(NaN,457) scale(N…`，并把整块等效模型图丢掉（界面表现只是"等效模型不见了"）。现在几何量由纯函数 `_modelLayoutGeom()`（`static/topo-renderer.js`，带 `@testable-model-layout` 标记）统一给出，不变量是 **`hasBothModels` 为真 ⇒ 四个几何量全是有限正数**；`_renderOneModel()` 另有非有限坐标守卫。改这段布局请跑 `python tests/test_topo_model_layout.py`。另注意 `restoreSession()` 必须清 `_formulaCardReady`（残留的 `true` 会提前走两段布局） |
 | **前端外链资源在部署环境必被 CSP 拦掉** | 平台下发的 CSP 是 `style-src *.huawei.com 'unsafe-inline'`。`<head>` 里曾 `preconnect` + 引 `https://fonts.googleapis.com/css2?family=JetBrains+Mono…`，经域名 + nginx 访问时浏览器报 `Loading the stylesheet '…' violates the following Content Security Policy directive: "style-src *.huawei.com 'unsafe-inline'"` 并直接拦掉（该域名在内网本身也不可达），也就是说 JetBrains Mono **从来没有真正生效过**，只是白留一条控制台报错。现在外链已删除，等宽字体只保留 `local()` 源的 `@font-face`（零网络请求，本机装了就用），并且 `--font-mono` 把 Latin 等宽字体排在中文之前 —— 否则 webfont 缺席时数字/rank/公式会被"微软雅黑"渲染成比例字体。同源脚本/样式能加载，说明白名单覆盖本站域名；**新增字体/CSS/JS/图片前先确认平台 CSP，默认按"不许外链"处理，依赖一律 vendored 进 `static/`** |
+| **「单卡极限等效」只是 UI 占位，未实现参数推导** | Step 1 表单的等效策略下拉里 `single_card_extreme`（单卡极限等效）没有实现，真实生效的只有 `min_equiv`（最小集群等效）。**不能让它静默回落到 min_equiv** —— 用户选了极限等效却拿到最小集群等效的结果（2026-11-09 用户实测报告）。入口校验有两处且必须保持一致：前端 `static/index.html` 的 `IMPLEMENTED_EQUIV_STRATEGIES`（`onEquivStrategyChange()` 即时红框 + 行内提示，`submitWorkflowParams()` 提交时拦截且不建会话/不推进节点）与后端 `app/routes/session.py` 的同名常量（`workflow_step1` 先校验、返回 400 `strategy_not_implemented`）。实现新策略时同步改这两处并跑 `python tests/test_equiv_strategy_guard.py` |
 
 ---
 
@@ -203,6 +204,7 @@ python tests/test_moe_agent_plumbing.py        # PASS  MoE 在 Agent 侧的透�
 python tests/test_check_workspace.py          # PASS（Windows 上 SKIP mountinfo 检查）
 python tests/test_simulation_reconcile.py     # PASS  刷新后仿真会话状态自愈（见 §5 陷阱表）
 python tests/test_topo_model_layout.py        # PASS  模型区几何量不变量（无 NaN 坐标；需 node，缺 node 则 SKIP）
+python tests/test_equiv_strategy_guard.py     # PASS  未实现等效策略的入口拦截（单卡极限等效 → 400）
 
 # 当前基线为失败（exit 1）
 python tests/test_estimate_equivalence.py

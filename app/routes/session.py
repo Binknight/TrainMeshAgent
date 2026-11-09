@@ -44,6 +44,17 @@ _SSE_HEADERS = {
     "X-Accel-Buffering": "no",
 }
 
+# ── 等效策略 ──
+# 目前只实现了「最小集群等效」(min_equiv)。「单卡极限等效」(single_card_extreme)
+# 只有 UI 占位，参数推导尚未实现 —— 必须在入口处显式拒绝，不能静默回落
+# min_equiv（否则用户选了单卡极限等效却拿到最小集群等效的结果）。
+# 前端 static/index.html 的 IMPLEMENTED_EQUIV_STRATEGIES 与本集合保持一致。
+IMPLEMENTED_EQUIV_STRATEGIES = {"min_equiv"}
+EQUIV_STRATEGY_LABELS = {
+    "min_equiv": "最小集群等效",
+    "single_card_extreme": "单卡极限等效",
+}
+
 
 @session_bp.route("", methods=["POST"])
 def create_session():
@@ -1275,6 +1286,15 @@ def workflow_step1(session_id: str):
     dff = data.get("dff", 14336)
     vocab_size = data.get("vocab_size", 32000)
     strategy = data.get("strategy", "min_equiv")
+    # 等效策略校验：未实现的策略直接拒绝，避免静默按 min_equiv 执行
+    if strategy not in IMPLEMENTED_EQUIV_STRATEGIES:
+        return {
+            "error": "strategy_not_implemented",
+            "message": (
+                f"等效策略「{EQUIV_STRATEGY_LABELS.get(strategy, strategy)}」暂不支持，"
+                "请选择「最小集群等效」后再提交"
+            ),
+        }, 400
     # ── MoE parameters (None for dense models) ──
     ep = data.get("ep")
     num_experts = data.get("num_experts")
@@ -1473,7 +1493,7 @@ def workflow_step2_stream(session_id: str):
     vocab_val = model_meta.get("vocab_size", 32000)
     L_orig = model_meta.get("L_orig", eq_L)  # fallback to eq_L if not stored
     strategy = model_meta.get("strategy", "min_equiv")
-    strategy_label = "最小集群等效" if strategy == "min_equiv" else ("单卡极限等效" if strategy == "single_card_extreme" else strategy)
+    strategy_label = EQUIV_STRATEGY_LABELS.get(strategy, strategy)
     # ── MoE params ──
     model_type = model_meta.get("model_type", "dense")
     ep = model_meta.get("ep")

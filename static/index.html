@@ -1958,9 +1958,11 @@
                 color: var(--on-accent);
             }
 
-            /* ── Parameter Input Overlay ── */
+            /* ── Parameter Input Overlay ──
+               固定定位覆盖整个视口；卡片高度夹在视口内（超高时卡片内部滚动），
+               底部操作栏 sticky 常驻，窄屏/矮窗口也不会出现「下半截被遮住」。 */
             .workflow-param-overlay {
-                position: absolute;
+                position: fixed;
                 top: 0;
                 left: 0;
                 right: 0;
@@ -1968,27 +1970,37 @@
                 background: var(--overlay);
                 z-index: 50;
                 display: flex;
-                align-items: flex-start;
+                align-items: center;
                 justify-content: center;
-                padding-top: 120px;
+                padding: 16px;
+                overflow-y: auto;
             }
+            /* 宽屏两列（原始组网 / 原始模型），窄屏自动回落单列 */
             .wf-param-columns {
                 display: grid;
-                grid-template-columns: 1fr;
-                gap: 20px;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px 28px;
             }
             .wf-param-col {
                 min-width: 0;
             }
             .workflow-param-card {
-                width: 680px;
-                max-height: 90vh;
+                width: min(1040px, calc(100vw - 32px));
+                max-height: calc(100vh - 32px);
                 overflow-y: auto;
                 background: var(--bg-panel);
                 border: 1px solid var(--border-active);
                 border-radius: var(--radius);
-                padding: 20px 28px;
+                padding: 20px 28px 0;
                 box-shadow: var(--shadow-card);
+            }
+            @media (max-width: 1100px) {
+                .wf-param-columns {
+                    grid-template-columns: 1fr;
+                }
+                .workflow-param-card {
+                    width: min(760px, calc(100vw - 32px));
+                }
             }
             .workflow-param-title {
                 font-family: var(--font-mono);
@@ -2026,6 +2038,15 @@
                 color: var(--text-secondary);
                 min-width: 70px;
                 flex-shrink: 0;
+            }
+            /* 表单字段级校验错误（如未实现的等效策略） */
+            .wf-field-error {
+                margin: -4px 0 10px;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                line-height: 1.5;
+                color: var(--red-strong);
+                text-align: right;
             }
             .equiv-mark {
                 display: inline-block;
@@ -2141,9 +2162,15 @@
                 max-width: calc(100% - 20px);
             }
             .workflow-param-actions {
+                position: sticky;
+                bottom: 0;
+                z-index: 2;
                 display: flex;
                 gap: 8px;
-                margin-top: 16px;
+                margin: 16px -28px 0;
+                padding: 12px 28px;
+                background: var(--bg-panel);
+                border-top: 1px solid var(--border);
                 justify-content: flex-end;
             }
             .btn-wf-cancel {
@@ -3549,9 +3576,9 @@
                             <label>模型类型</label>
                             <span id="wf-moe-type-badge" style="font-family:var(--font-mono);font-size:12px;color:var(--cyan);padding:2px 8px;border:1px solid var(--cyan);border-radius:4px"></span>
                         </div>
+                        <div class="equiv-legend">⬤ 参与等效缩减的参数</div>
                         <div class="wf-param-columns">
                             <div class="wf-param-col">
-                                <div class="equiv-legend">⬤ 参与等效缩减的参数</div>
                                 <div class="workflow-param-section">
                                     原始组网参数
                                 </div>
@@ -3582,6 +3609,8 @@
                                     <label>EP (专家并行)<span class="equiv-mark" title="等效保持：EP_eq = EP (不缩减)"></span> <span style="color:var(--red-strong)">*</span></label>
                                     <input id="wf-orig-ep" type="number" value="" min="1" max="256" placeholder="必填" />
                                 </div>
+                            </div>
+                            <div class="wf-param-col">
                                 <div class="workflow-param-section">原始模型参数</div>
                                 <div class="workflow-param-row">
                                     <label>L (层数)<span class="equiv-mark" title="等效缩减：L_eq = (L/PP) × PP_eq"></span></label>
@@ -3644,25 +3673,28 @@
                                     <input id="wf-orig-moe-expert-tp" type="number" value="1" min="1" />
                                 </div>
                                 <input type="hidden" id="wf-orig-model-type" value="dense" />
-                                <div class="workflow-param-section" style="margin-top: 16px">默认等效策略</div>
-                                <div class="workflow-param-row">
-                                    <label>策略</label>
-                                    <select id="wf-equiv-strategy">
-                                        <option value="single_card_extreme">单卡极限等效</option>
-                                        <option value="min_equiv" selected>最小集群等效</option>
-                                    </select>
-                                </div>
-                                <input type="hidden" id="wf-equiv-device" value="A3" />
-                                <input type="hidden" id="wf-equiv-dp" value="2" />
-                                <input type="hidden" id="wf-equiv-tp" value="16" />
-                                <input type="hidden" id="wf-equiv-pp" value="3" />
-                                <input type="hidden" id="wf-equiv-model-l" value="24" />
-                                <input type="hidden" id="wf-equiv-model-h" value="4096" />
-                                <input type="hidden" id="wf-equiv-model-a" value="32" />
-                                <input type="hidden" id="wf-equiv-model-s" value="2048" />
-                                <input type="hidden" id="wf-equiv-model-b" value="32" />
                             </div>
                         </div>
+                        <div class="workflow-param-section" style="margin-top: 16px">默认等效策略</div>
+                        <div class="workflow-param-row">
+                            <label>策略</label>
+                            <select id="wf-equiv-strategy" onchange="onEquivStrategyChange()">
+                                <option value="single_card_extreme">单卡极限等效</option>
+                                <option value="min_equiv" selected>最小集群等效</option>
+                            </select>
+                        </div>
+                        <div class="wf-field-error" id="wf-strategy-error" style="display: none">
+                            「单卡极限等效」暂不支持。
+                        </div>
+                        <input type="hidden" id="wf-equiv-device" value="A3" />
+                        <input type="hidden" id="wf-equiv-dp" value="2" />
+                        <input type="hidden" id="wf-equiv-tp" value="16" />
+                        <input type="hidden" id="wf-equiv-pp" value="3" />
+                        <input type="hidden" id="wf-equiv-model-l" value="24" />
+                        <input type="hidden" id="wf-equiv-model-h" value="4096" />
+                        <input type="hidden" id="wf-equiv-model-a" value="32" />
+                        <input type="hidden" id="wf-equiv-model-s" value="2048" />
+                        <input type="hidden" id="wf-equiv-model-b" value="32" />
                         <div class="workflow-param-actions">
                             <button class="btn-wf-cancel" onclick="closeWorkflowParams()">取消</button>
                             <button class="btn-wf-submit" onclick="submitWorkflowParams()">确认提交</button>
@@ -4311,6 +4343,7 @@
                 if (el) el.value = "4";
                 el = document.getElementById("wf-equiv-strategy");
                 if (el) el.value = "min_equiv";
+                _paintEquivStrategyState(false);
                 _showModelRef(null);
             }
 
@@ -5563,6 +5596,8 @@
                 if (overlay) overlay.style.display = "flex";
                 document.getElementById("wf-equiv-tp").value = document.getElementById("wf-orig-tp").value;
                 updateEquivalentModelL();
+                // 恢复上次未清理的校验态（例如上次选了未实现的策略）
+                _paintEquivStrategyState(false);
             }
 
             function closeWorkflowParams() {
@@ -5570,8 +5605,42 @@
                 if (overlay) overlay.style.display = "none";
             }
 
+            // ═══════════════════════════════════════════
+            // 等效策略校验
+            //   目前只实现了「最小集群等效」(min_equiv)。
+            //   「单卡极限等效」(single_card_extreme) 只有 UI 占位，尚未实现参数
+            //   推导 —— 必须在提交时显式拦截，不能静默按 min_equiv 执行，
+            //   否则用户选了单卡极限等效却拿到最小集群等效的结果。
+            //   后端 app/routes/session.py 的 IMPLEMENTED_EQUIV_STRATEGIES
+            //   与本集合保持一致（API 层同样会拒绝）。
+            // ═══════════════════════════════════════════
+
+            var IMPLEMENTED_EQUIV_STRATEGIES = { min_equiv: true };
+
+            function _isEquivStrategyImplemented(value) {
+                return !!IMPLEMENTED_EQUIV_STRATEGIES[value];
+            }
+
+            // 按当前选择刷新校验态（红框 + 行内错误提示）；submitted=true 时聚焦该字段
+            function _paintEquivStrategyState(submitted) {
+                var sel = document.getElementById("wf-equiv-strategy");
+                var err = document.getElementById("wf-strategy-error");
+                if (!sel) return true;
+                var ok = _isEquivStrategyImplemented(sel.value);
+                sel.style.borderColor = ok ? "" : "var(--red-strong)";
+                sel.style.borderWidth = ok ? "" : "2px";
+                if (err) err.style.display = ok ? "none" : "block";
+                if (!ok && submitted) sel.focus();
+                return ok;
+            }
+
+            // select 的 onchange：选了未实现的策略立刻提示，不用等到提交
+            function onEquivStrategyChange() {
+                _paintEquivStrategyState(false);
+            }
+
             async function submitWorkflowParams() {
-                await ensureSession();
+                // ── 先做参数校验：不通过时不创建会话、不关闭表单、不推进工作流 ──
                 var origModelName =
                     document.getElementById("wf-orig-model-name").value;
                 // Require model name — guardrail does not validate it
@@ -5595,6 +5664,24 @@
                     epInput.style.borderColor = "";
                     epInput.style.borderWidth = "";
                 }
+                // ── 等效策略：单卡极限等效尚未实现，显式拦截 ──
+                if (!_paintEquivStrategyState(true)) {
+                    var strategySel = document.getElementById(
+                        "wf-equiv-strategy",
+                    );
+                    var strategyLabel =
+                        strategySel &&
+                        strategySel.options[strategySel.selectedIndex]
+                            ? strategySel.options[strategySel.selectedIndex]
+                                  .text
+                            : "该策略";
+                    alert(
+                        "「" +
+                            strategyLabel +
+                            "」暂不支持，请选择「最小集群等效」后再提交",
+                    );
+                    return;
+                }
                 var origDevice =
                     document.getElementById("wf-orig-device").value;
                 var origDp = document.getElementById("wf-orig-dp").value;
@@ -5610,6 +5697,8 @@
                 var origVocab = document.getElementById("wf-orig-model-vocab").value;
                 var strategy =
                     document.getElementById("wf-equiv-strategy").value;
+                // 校验通过后才建会话 / 关闭表单 / 推进工作流节点
+                await ensureSession();
                 closeWorkflowParams();
                 updateWorkflowNode("params", "completed");
                 updateWorkflowNode("equiv_calc", "active");
