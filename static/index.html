@@ -4912,7 +4912,33 @@
                 }
             }
 
+            // ── Step 2（等效计算推导）前端状态 ──
+            // 后端已原子化：POST /workflow/step2 一次算完并落库（公式行 + 等效组网/模型，
+            // 毫秒级），SSE 只是「回放已落库公式行」的纯展示流。
+            // 因此前端必须把「发起时的会话」快照下来：用户在看动画时切到别的任务，旧任务
+            // 的迟到事件/完成回调一律不得写到当前任务上（历史 bug：A 的完成动作打到 B，
+            // 导致 A 永远卡在 Step2、B 的公式行/节点状态被污染）。
+            var _step2Streams = {}; // sid -> EventSource（切任务时关闭；数据已在后端落库）
+
+            function _closeStep2Stream(sid) {
+                var es = _step2Streams[sid];
+                if (es) {
+                    try { es.close(); } catch (e) {}
+                    delete _step2Streams[sid];
+                }
+            }
+
+            function _closeAllStep2Streams() {
+                Object.keys(_step2Streams).forEach(function (sid) {
+                    try { _step2Streams[sid].close(); } catch (e) {}
+                });
+                _step2Streams = {};
+            }
+
             async function submitStep2() {
+                var sid = sessionId; // 快照：本次推导只属于发起时的任务
+                if (!sid) return;
+                var isCurrent = function () { return sessionId === sid; };
                 setStatus("等效建模中");
                 addMessage("system", "📡 [API] 开始等效计算...");
                 updateWorkflowNode("equiv_calc_sub1", "active");
@@ -4921,9 +4947,9 @@
                 canvasRebuild();
                 if (typeof canvasRecenter === "function") canvasRecenter();
                 try {
-                    // trigger backend computation
+                    // 后端原子计算 + 落库（毫秒级；公式行动画随后由 SSE 回放）
                     var triggerResp = await fetch(
-                        API + "/session/" + sessionId + "/workflow/step2",
+                        API + "/session/" + sid + "/workflow/step2",
                         {
                             method: "POST",
                         },
@@ -4931,65 +4957,96 @@
                     if (!triggerResp.ok) {
                         var triggerErr = {};
                         try { triggerErr = await triggerResp.json(); } catch (_) {}
+                        if (triggerResp.status === 409) {
+                            // 同会话还有长操作（对话/仿真提交等）：这是「稍后重试」而非失败
+                            if (isCurrent()) {
+                                setStatus("idle");
+                                addMessage("system", "⏳ 该任务正在执行其他操作，请稍后重试");
+                                updateWorkflowNode("equiv_calc", "active");
+                            }
+                            return;
+                        }
                         throw new Error(
                             triggerErr.message || triggerErr.error ||
                             "Step2 触发失败 (" + triggerResp.status + ")",
                         );
                     }
-                    // connect SSE stream for line-by-line loading
+                    if (!isCurrent()) return; // 期间已切任务：结果已落库，回到该任务时从会话恢复
+
+                    // connect SSE stream for line-by-line loading（纯回放，无写、无锁）
                     var url =
                         API +
                         "/session/" +
-                        sessionId +
+                        sid +
                         "/workflow/step2/stream";
+                    _closeStep2Stream(sid);
                     var eventSource = new EventSource(url);
+                    _step2Streams[sid] = eventSource;
                     var step2Done = false;
+                    var _dropStep2Stream = function () {
+                        eventSource.close();
+                        if (_step2Streams[sid] === eventSource) delete _step2Streams[sid];
+                    };
                     eventSource.onmessage = function (e) {
                         try {
                             var event = JSON.parse(e.data);
+                            if (!isCurrent()) {
+                                // 迟到的旧任务流：不再驱动当前任务 UI（数据已在后端落库）
+                                if (event.type === "done" || event.type === "error") {
+                                    _dropStep2Stream();
+                                }
+                                return;
+                            }
                             handleWorkflowEvent(event);
                             if (event.type === "done") {
                                 step2Done = true;
-                                eventSource.close();
-                                // Step2 now includes equivalent mesh+model generation (formerly step3)
+                                _dropStep2Stream();
+                                // Step2 已包含等效组网+模型生成（后端原子完成），这里取
+                                // 带运行时参数的渲染载荷；延迟 1.5s 保持原有渲染节奏
                                 setTimeout(function () {
-                                    _submitStep2GenerateMesh();
+                                    if (sessionId === sid) {
+                                        _submitStep2GenerateMesh(sid);
+                                    }
                                 }, 1500);
                             }
                             if (event.type === "error") {
-                                // Step2 流式生成失败/被并发保护拦截（409 转成 SSE error）：
-                                // 必须把后端 message 显示出来，否则用户只看到连接关闭。
+                                // 回放阶段只可能是数据错误（如老会话缺 EP），按失败展示
                                 setStatus("error");
                                 addMessage("error", event.message || "等效计算失败");
                                 updateWorkflowNode("equiv_calc", "failed");
-                                eventSource.close();
+                                _dropStep2Stream();
                             }
                         } catch (parseErr) {
                             console.warn("Step2 SSE parse error:", parseErr);
                         }
                     };
                     eventSource.onerror = function () {
-                        eventSource.close();
-                        if (!step2Done) {
-                            setStatus("error");
-                            addMessage("error", "等效计算 SSE 连接中断");
+                        _dropStep2Stream();
+                        if (!step2Done && isCurrent()) {
+                            // 回放流中断不影响数据（后端已落库），不标失败
+                            setStatus("idle");
+                            addMessage("system", "⚠ 等效计算动画中断（结果已保存，刷新或重新进入任务可查看）");
                         }
                     };
                 } catch (e) {
-                    setStatus("error");
-                    addMessage("error", "Step 2 失败: " + e.message);
-                    updateWorkflowNode("equiv_calc", "failed");
+                    if (isCurrent()) {
+                        setStatus("error");
+                        addMessage("error", "Step 2 失败: " + e.message);
+                        updateWorkflowNode("equiv_calc", "failed");
+                    }
                 }
             }
 
-            async function _submitStep2GenerateMesh() {
-                console.log("[DEBUG] _submitStep2GenerateMesh called");
+            async function _submitStep2GenerateMesh(sid) {
+                sid = sid || sessionId;
+                if (!sid || sessionId !== sid) return; // 已切任务：数据已落库，等会话恢复即可
+                console.log("[DEBUG] _submitStep2GenerateMesh called", sid);
                 setStatus("等效建模中");
                 addMessage("system", "📡 [API] 生成等效组网与模型结构...");
                 updateWorkflowNode("equiv_gen", "active");
                 try {
                     var resp = await fetch(
-                        API + "/session/" + sessionId + "/workflow/step3",
+                        API + "/session/" + sid + "/workflow/step3",
                         {
                             method: "POST",
                         },
@@ -5006,6 +5063,7 @@
                         );
                     }
                     var data = await resp.json();
+                    if (sessionId !== sid) return; // 请求期间切了任务
                     console.log(
                         "[DEBUG] step2 mesh-gen data:",
                         Object.keys(data),
@@ -5028,6 +5086,7 @@
                         if (typeof canvasRecenter === "function")
                             canvasRecenter();
                         await renderThenSleep(800);
+                        if (sessionId !== sid) return;
                     }
                     if (data.equivalent_model) {
                         console.log("[DEBUG] dispatching model_json for equivalent");
@@ -5039,12 +5098,14 @@
                         if (typeof canvasRecenter === "function")
                             canvasRecenter();
                         await renderThenSleep(800);
+                        if (sessionId !== sid) return;
                     }
                     // Force-fetch estimates for BOTH sides via direct API
                     // call, bypassing the internal async pipeline which may
                     // have stale or incomplete data for the equivalent side.
                     console.log("[DEBUG] force-refreshing estimates via API");
                     await _forceRefreshEstimates();
+                    if (sessionId !== sid) return;
                     canvasRebuild();
                     if (typeof canvasRecenter === "function") canvasRecenter();
 
@@ -5054,6 +5115,7 @@
                         data: { stage: "step2" },
                     });
                 } catch (e) {
+                    if (sessionId !== sid) return;
                     console.error("[DEBUG] step2 mesh-gen error:", e);
                     setStatus("error");
                     addMessage("error", "Step 2 等效生成失败: " + e.message);
@@ -5101,23 +5163,9 @@
                             };
                             var stepId = stepMap[event.section];
                             if (stepId) updateWorkflowNode(stepId, "completed");
-                            // Persist formula lines on last section so refresh doesn't lose them
-                            if (
-                                event.section === "formula" &&
-                                sessionId &&
-                                window._pendingFormulaLines &&
-                                window._pendingFormulaLines.length
-                            ) {
-                                try {
-                                    fetch(API + "/session/" + sessionId + "/formula-lines", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ lines: window._pendingFormulaLines }),
-                                    });
-                                } catch (e) {
-                                    console.error("[formula-lines] POST failed:", e);
-                                }
-                            }
+                            // 公式行由后端在 POST /workflow/step2 里原子落库，前端不再补写。
+                            // （旧写法用全局 sessionId 兜底 POST，切任务后会把 A 的公式行
+                            //  写进 B 的会话，是 2026-11-09 两任务串台 bug 的一部分。）
                         }
                         break;
                     case "done":
@@ -9456,8 +9504,11 @@
             // 切换会话（+新任务 / 选历史会话）时调用：彻底断开上一会话的仿真进度链路。
             // 不清理的话，旧会话 WebSocket 的迟到帧会走 _simTaskEntry()，在**新会话的
             // 聊天区重建旧任务的进度气泡**（真实环境 bug：仿真中新建任务会看到旧进度条）。
+            // 同时关闭上一会话的 Step2 公式回放流：Step2 已由后端原子落库，回放流只是
+            // 动画，断掉不丢数据；不关的话旧流事件会继续驱动新会话的公式卡/节点状态。
             function _resetSimulationUiForSessionSwitch() {
                 _closeSimSocket();
+                _closeAllStep2Streams();
                 _simTaskBubbles = {};
                 _pendingSimBubbles = {};
                 _simCompleted = false;
@@ -10089,7 +10140,7 @@
             })();
         </script>
         <script src="static/moe-arch-renderer.js?v=20261008"></script>
-        <script src="static/topo-renderer.js?v=20261009"></script>
+        <script src="static/topo-renderer.js?v=20261109"></script>
         <script src="static/sim-data-stream.js?v=20260506"></script>
     </body>
 </html>

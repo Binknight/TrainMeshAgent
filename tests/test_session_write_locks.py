@@ -9,7 +9,9 @@
      且不会产生副作用；
   2. 长操作结束后名额会释放（不会永久卡 busy）；
   3. 短写（仿真参数、公式行）走 session_lock 串行，两个并发写都成功且都落库；
-  4. Step2 流式接口在 busy 时返回 SSE error 事件（前端可展示原因）；
+  4. Step2 原子化：POST /workflow/step2 一次算完并落库（公式行 + 等效组网/模型 +
+     step=equiv_generated）；GET /workflow/step2/stream 退化为纯回放，不占长操作
+     名额、busy 时也能回放；两个任务可同时回放且互不污染（2026-11-09 两任务串台修复）；
   5. 删除会话在长操作进行中返回 409，结束后可以正常删除。
 
 不依赖真实 MCP/仿真：临时 SQLite + Flask test client + monkeypatch MCP 客户端。
@@ -230,29 +232,89 @@ def main() -> int:
     finally:
         session_manager.end_exclusive(sid4)
 
-    # ── 5. 长操作占用中：Step2 SSE 返回 error 事件 ──
-    print("\n[5] 长操作占用中：Step2 流返回 SSE error（带原因）")
+    # ── 5. Step2 原子化：POST 仍互斥；stream 退化为纯回放（无锁/无写） ──
+    print("\n[5] Step2 原子化：busy 时 POST 409；stream 纯回放不再 409")
     sid5 = _new_session_with_topologies(client)
+    session5 = session_manager.get_session(sid5)
+    # 公式行由 POST step2 原子落库；这里塞两条短行让回放瞬间完成（避免 22s 动画）
+    session5.formula_lines = [
+        {"section": "strategy", "line": "line-1"},
+        {"section": "formula", "line": "line-2"},
+    ]
     session_manager.try_begin_exclusive(sid5)
     try:
+        r = client.post(f"/api/session/{sid5}/workflow/step2")
+        body = r.get_json() or {}
+        check(
+            "busy 时 POST step2 返回 409 task_busy",
+            r.status_code == 409 and body.get("error") == "task_busy",
+            f"HTTP {r.status_code} {body}",
+        )
         r = client.get(f"/api/session/{sid5}/workflow/step2/stream")
         text = r.get_data(as_text=True)
-        step2_msg = ""
-        try:
-            payload = text.strip().split("data: ", 1)[1]
-            step2_msg = (json.loads(payload) or {}).get("message", "")
-        except Exception:
-            pass
         check(
-            "Step2 流返回 error 事件且含操作提示",
-            r.status_code == 200
-            and '"type": "error"' in text
-            and "正在执行其他操作" in step2_msg,
-            f"{text[:160]} parsed={step2_msg!r}",
+            "busy 时 stream 仍 200 回放（不占长操作名额）",
+            r.status_code == 200 and '"type": "error"' not in text,
+            f"HTTP {r.status_code} {text[:160]}",
         )
+        check(
+            "回放内容来自已落库公式行",
+            '"line-1"' in text and '"line-2"' in text,
+            text[:200],
+        )
+        check("回放带 done 事件", '"type": "done"' in text, text[-160:])
     finally:
         session_manager.end_exclusive(sid5)
     check("结束后名额释放", session_manager.is_exclusive_busy(sid5) is False)
+
+    # ── 5b. 两个任务同时回放：各回放各的公式行，互不污染 ──
+    print("\n[5b] 两个任务同时 Step2 回放：互不污染（2026-11-09 串台回归）")
+    sid5b_1 = _new_session_with_topologies(client)
+    sid5b_2 = _new_session_with_topologies(client)
+    for tag, sidx in (("task-A", sid5b_1), ("task-B", sid5b_2)):
+        sx = session_manager.get_session(sidx)
+        sx.formula_lines = [
+            {"section": "strategy", "line": tag + "-strategy"},
+            {"section": "formula", "line": tag + "-formula"},
+        ]
+    replay = {}
+
+    def replay_stream(sidx):
+        replay[sidx] = app.test_client().get(
+            f"/api/session/{sidx}/workflow/step2/stream"
+        ).get_data(as_text=True)
+
+    threads = [
+        threading.Thread(target=replay_stream, args=(sid5b_1,)),
+        threading.Thread(target=replay_stream, args=(sid5b_2,)),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    text_a, text_b = replay[sid5b_1], replay[sid5b_2]
+    check("A 回放只含 A 的公式行", "task-A-strategy" in text_a and "task-B-strategy" not in text_a, text_a[:200])
+    check("B 回放只含 B 的公式行", "task-B-strategy" in text_b and "task-A-strategy" not in text_b, text_b[:200])
+    check("两侧都带 done 事件", text_a.count('"type": "done"') == 1 and text_b.count('"type": "done"') == 1)
+
+    # ── 5c. POST step2 原子完成：等效组网/模型/公式行一次落库 ──
+    print("\n[5c] POST step2 原子完成：等效组网/模型/公式行一次落库")
+    sid5c = _new_session(client)
+    r = client.post(f"/api/session/{sid5c}/workflow/step1", json=_BASE_PARAMS)
+    check("step1 200", r.status_code == 200, f"HTTP {r.status_code}")
+    r = client.post(f"/api/session/{sid5c}/workflow/step2")
+    check("step2 200", r.status_code == 200, f"HTTP {r.status_code} {r.get_json()}")
+    s5c = session_manager.get_session(sid5c)
+    check("step=equiv_generated（不再停在中转态）", getattr(s5c, "step", None) == "equiv_generated", str(getattr(s5c, "step", None)))
+    check("等效组网已生成", s5c.equivalent_topology is not None)
+    check("等效模型已生成", s5c.equivalent_training_model is not None)
+    check(
+        "公式行已落库",
+        len(getattr(s5c, "formula_lines", None) or []) > 30,
+        str(len(getattr(s5c, "formula_lines", None) or [])),
+    )
+    r = client.post(f"/api/session/{sid5c}/workflow/step2")
+    check("重复 POST step2 幂等（仍 200）", r.status_code == 200, f"HTTP {r.status_code}")
 
     # ── 6. 长操作占用中：删除会话 409；释放后可删 ──
     print("\n[6] 长操作占用中：DELETE 409；释放后可删除")

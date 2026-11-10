@@ -2145,6 +2145,12 @@ function _updateFormulaCollapse() {
     }
   }
 
+  // 折叠/展开改变了公式卡高度，画布高度跟着自适应（否则展开后内容被 viewBox 裁掉）
+  var _svgElCollapse = document.querySelector("#canvas-section svg");
+  if (_svgElCollapse && typeof _syncCanvasHeightToContent === "function") {
+    _syncCanvasHeightToContent(_svgElCollapse, 0);
+  }
+
   // ── Bar card manipulation (only valid for center-panel bar card, not floating) ──
   if (isFloatingBarCard) return;
 
@@ -4199,7 +4205,54 @@ function canvasRebuild(targetSelector) {
 
   _renderState.width = meshWidth;
   _renderState.height = topoH;
+  // 画布高度自愈：公式卡高度会随公式行数增长，稠密模型图的真实高度也可能大于估算的
+  // modelH —— 只按估算值设置 viewBox 会把内容从底部裁掉（表现为「画布下方一大块
+  // 空白、模型/公式卡被横线截断」）。渲染完成后按实际内容包围盒补高 viewBox（只补不缩）。
+  if (!isSim) _syncCanvasHeightToContent(svg.node(), totalH);
 }
+
+// @testable-canvas-height
+// 把画布 viewBox 高度补到能装下实际内容：baseTotalH 为布局估算高度（下限，避免内容
+// 少时画布被压扁），实际内容高度取 zoom-layer 的内容包围盒。返回最终高度（便于测试）。
+function _syncCanvasHeightToContent(svgEl, baseTotalH) {
+  if (!svgEl) return 0;
+  var base = Number(baseTotalH);
+  if (!isFinite(base) || base <= 0) {
+    base = parseFloat(svgEl.getAttribute("data-base-h") || "");
+  }
+  if (!isFinite(base) || base <= 0) return 0;
+  svgEl.setAttribute("data-base-h", String(base));
+
+  var vb = (svgEl.getAttribute("viewBox") || "").split(/\s+/);
+  if (vb.length !== 4) return 0;
+  var vbW = parseFloat(vb[2]);
+  var vbH = parseFloat(vb[3]);
+  if (!isFinite(vbW) || !isFinite(vbH)) return 0;
+
+  var needed = base;
+  var zoomLayer = svgEl.querySelector("g.zoom-layer");
+  if (zoomLayer) {
+    var bbox = null;
+    try {
+      bbox = zoomLayer.getBBox();
+    } catch (e) {
+      bbox = null;
+    }
+    if (bbox && isFinite(bbox.y) && isFinite(bbox.height)) {
+      var contentBottom = Math.ceil(bbox.y + bbox.height) + 16;
+      if (contentBottom > needed) needed = contentBottom;
+    }
+  }
+  needed = Math.ceil(needed);
+  if (Math.abs(needed - vbH) >= 1) {
+    svgEl.setAttribute("viewBox", "0 0 " + vbW + " " + needed);
+    if (typeof _renderState !== "undefined" && _renderState) {
+      _renderState.height = needed;
+    }
+  }
+  return needed;
+}
+/* @testable-canvas-height:end */
 
 async function loadMeshData(topoData) {
   var tp = topoData.tp_size || topoData.tp || 4;
@@ -4588,6 +4641,11 @@ function _typewriterTick() {
     if (_formulaCardRect && !_formulaCardRect.empty()) {
       var newH = _formulaLineY + _formulaCardPad;
       _formulaCardRect.attr("height", newH);
+      // 卡片长高后同步补高画布，否则文字会超出 viewBox 被裁掉
+      var _svgElForCard = document.querySelector("#canvas-section svg");
+      if (_svgElForCard && typeof _syncCanvasHeightToContent === "function") {
+        _syncCanvasHeightToContent(_svgElForCard, 0);
+      }
     }
 
     // Recenter once per completed line
@@ -4696,6 +4754,12 @@ function _replayFormulaLines() {
     st._formulaTexts = formulaTexts;
     st.formulaCardFullH = newFullH;
   }
+
+  // 回放（刷新/切任务恢复）会一次性把卡片撑到全高，画布高度必须跟着补高
+  var _svgElForReplay = document.querySelector("#canvas-section svg");
+  if (_svgElForReplay && typeof _syncCanvasHeightToContent === "function") {
+    _syncCanvasHeightToContent(_svgElForReplay, 0);
+  }
 }
 
 // ── Attach to window for inline onclick / onchange handlers ──
@@ -4706,6 +4770,7 @@ window.canvasRebuild = canvasRebuild;
 window.canvasRecenter = canvasRecenter;
 window._appendFormulaLine = _appendFormulaLine;
 window._replayFormulaLines = _replayFormulaLines;
+window._syncCanvasHeightToContent = _syncCanvasHeightToContent;
 window.meshSwitchDp = meshSwitchDp;
 window.meshSwitchDpOrig = meshSwitchDpOrig;
 window.meshSwitchDpEq = meshSwitchDpEq;

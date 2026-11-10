@@ -1,27 +1,35 @@
 """
 Model-section layout regression test (static/topo-renderer.js).
 
-`_modelLayoutGeom()` decides the x/width of the two model cards drawn under the
-topology. The invariant it must never break:
+Two invariants are locked here:
 
-    hasBothModels == true  =>  x0 / areaW / x0Eq / areaWEq 全是有限数
+A. `_modelLayoutGeom()` decides the x/width of the two model cards drawn under the
+   topology. The invariant it must never break:
 
-That invariant used to hold only "by accident": the geometry was assigned per
-*topology* layout mode, so only the three-part branch and the "both meshes
-present" branch produced the equivalent side. But whether the equivalent model
-is *rendered* depends on `hasBothModels`, which looks at the model payloads
-only. On session restore the models arrive synchronously while the topologies
-arrive one awaited `loadMeshData()` at a time, so the in-between rebuild had
-both models and a single mesh => `modelX0Eq`/`modelAreaWEq` were `undefined`,
-`undefined + NaN` became NaN and d3 reported
+       hasBothModels == true  =>  x0 / areaW / x0Eq / areaWEq 全是有限数
 
-    <text> attribute x: Expected length, "NaN"
-    <g> attribute transform: Expected number, "translate(NaN,457) scale(N…"
+   That invariant used to hold only "by accident": the geometry was assigned per
+   *topology* layout mode, so only the three-part branch and the "both meshes
+   present" branch produced the equivalent side. But whether the equivalent model
+   is *rendered* depends on `hasBothModels`, which looks at the model payloads
+   only. On session restore the models arrive synchronously while the topologies
+   arrive one awaited `loadMeshData()` at a time, so the in-between rebuild had
+   both models and a single mesh => `modelX0Eq`/`modelAreaWEq` were `undefined`,
+   `undefined + NaN` became NaN and d3 reported
 
-and dropped the whole equivalent-model group.
+       <text> attribute x: Expected length, "NaN"
+       <g> attribute transform: Expected number, "translate(NaN,457) scale(N…"
 
-This test runs the real function from the shipped file (between the
-`@testable-model-layout` markers) in Node, with no DOM needed.
+   and dropped the whole equivalent-model group.
+
+B. `_syncCanvasHeightToContent()` must grow the canvas viewBox to fit real
+   content (dense model diagram real height, formula-card height from replayed
+   SSE lines) but never shrink below the layout base height. Without it the
+   lower part of the model/formula card is clipped by the viewBox and shows up
+   as a big blank "rectangle" under the canvas (2026-11-09 user report).
+
+Both run the real functions from the shipped file (between their `@testable-*`
+markers) in Node, with no DOM needed.
 
 Run: python tests/test_topo_model_layout.py
 """
@@ -158,6 +166,102 @@ def _run_cases():
                 pass
 
 
+_CANVAS_START = "// @testable-canvas-height"
+_CANVAS_END = "/* @testable-canvas-height:end */"
+
+# (name, base_total_h, content_bottom, expected_height)
+# expected = max(base, ceil(content_bottom) + 16)
+_CANVAS_CASES: list[tuple[str, float, float, int]] = [
+    # 用户实测场景（dense DeepSeek-R1-Distill-Qwen-7B，2560 宽画布）：
+    # 估算高 769，公式卡 55 行 => 内容底 922 => 画布必须补到 938
+    ("dense restore: base 769 / content 922", 769, 922, 938),
+    # MoE 画面本身够高：只补不缩，保持 1464
+    ("moe: base 1464 / content 1382", 1464, 1382, 1464),
+    # 内容较矮时不能被压扁：保持 base
+    ("short content: base 769 / content 400", 769, 400, 769),
+]
+
+_CANVAS_DRIVER = """
+function fakeSvg(viewBox, contentBottom) {
+  var attrs = { viewBox: viewBox };
+  return {
+    getAttribute: function (name) { return name in attrs ? attrs[name] : null; },
+    setAttribute: function (name, v) { attrs[name] = String(v); },
+    querySelector: function (sel) {
+      if (sel !== "g.zoom-layer") return null;
+      return {
+        getBBox: function () {
+          return { x: 0, y: 0, width: 100, height: contentBottom };
+        },
+      };
+    },
+  };
+}
+var cases = __CASES__;
+var out = [];
+for (var i = 0; i < cases.length; i++) {
+  var c = cases[i];
+  var svg = fakeSvg("0 0 1000 769", c.contentBottom);
+  var first = _syncCanvasHeightToContent(svg, c.base);
+  var vb1 = (svg.getAttribute("viewBox") || "").split(/\\s+/);
+  // 第二次调用 base 传 0：必须从 data-base-h 回读，不能把画布缩回去
+  var second = _syncCanvasHeightToContent(svg, 0);
+  var vb2 = (svg.getAttribute("viewBox") || "").split(/\\s+/);
+  out.push({
+    name: c.name,
+    first: first,
+    second: second,
+    h1: parseFloat(vb1[3]),
+    h2: parseFloat(vb2[3]),
+    baseAttr: svg.getAttribute("data-base-h"),
+    nullResult: _syncCanvasHeightToContent(null, 100),
+  });
+}
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def _run_canvas_cases():
+    with open(_TOPO, encoding="utf-8") as fh:
+        src = fh.read()
+    if _CANVAS_START not in src or _CANVAS_END not in src:
+        check("topo-renderer.js 里能找到 @testable-canvas-height 标记", False,
+              f"缺少标记，无法取出 _syncCanvasHeightToContent（{_CANVAS_START!r} / {_CANVAS_END!r}）")
+        return None
+    body = src.split(_CANVAS_START, 1)[1].split(_CANVAS_END, 1)[0]
+
+    # 静态守卫：四个「内容会长高」的位置都必须调用画布高度自愈
+    call_count = src.count("_syncCanvasHeightToContent(")
+    check("画布高度自愈至少接入 4 个长高位置（重建末/逐行动画/回放/折叠切换）",
+          call_count >= 4, f"调用点 {call_count} 个")
+    check("画布高度自愈使用 data-base-h 记住布局下限", "data-base-h" in src)
+
+    payload = [
+        {"name": name, "base": base, "contentBottom": bottom}
+        for name, base, bottom, _exp in _CANVAS_CASES
+    ]
+    script = body + _CANVAS_DRIVER.replace("__CASES__", json.dumps(payload))
+
+    tmp_root = os.path.join(_ROOT, ".tmp")
+    os.makedirs(tmp_root, exist_ok=True)
+    js_path = os.path.join(tmp_root, f"topo_canvas_height_probe_{uuid.uuid4().hex}.js")
+    try:
+        with open(js_path, "w", encoding="utf-8") as fh:
+            fh.write(script)
+        proc = subprocess.run(["node", js_path], capture_output=True, timeout=60)
+        if proc.returncode != 0:
+            check("node 执行 _syncCanvasHeightToContent", False,
+                  proc.stderr.decode("utf-8", "replace").strip()[:400])
+            return None
+        return json.loads(proc.stdout.decode("utf-8"))
+    finally:
+        if os.path.realpath(os.path.dirname(js_path)) == os.path.realpath(tmp_root):
+            try:
+                os.remove(js_path)
+            except OSError:
+                pass
+
+
 def main() -> int:
     if shutil.which("node") is None:
         print("  [SKIP] 未找到 node，跳过 (需要 node 执行 topo-renderer.js 里的纯函数)")
@@ -168,7 +272,6 @@ def main() -> int:
         print()
         print(f"  [FAIL] {len(_failures)} 项未通过: {_failures}")
         return 1
-
     for name, _topo, _mo, _me, both, expected in _CASES:
         g = geom.get(name, {})
         x0, areaW, x0Eq, areaWEq = g.get("x0"), g.get("areaW"), g.get("x0Eq"), g.get("areaWEq")
@@ -195,11 +298,37 @@ def main() -> int:
             )
             check(f"{name}: 数值与既有布局一致", ok, f"expected {expected}, got {g}")
 
+    # ── B. 画布高度自愈（_syncCanvasHeightToContent） ──
+    canvas = _run_canvas_cases()
+    if canvas is None:
+        print()
+        print(f"  [FAIL] {len(_failures)} 项未通过: {_failures}")
+        return 1
+    by_name = {c["name"]: c for c in canvas}
+    for name, base, bottom, expected in _CANVAS_CASES:
+        c = by_name.get(name, {})
+        check(
+            f"{name}: 画布高度补到 max(base, content+16) = {expected}",
+            c.get("h1") == expected and c.get("first") == expected,
+            f"got {c}",
+        )
+        check(
+            f"{name}: 二次调用（base=0）不缩小，仍为 {expected}",
+            c.get("h2") == expected,
+            f"got {c}",
+        )
+        if name.startswith("dense restore"):
+            check("dense 场景确实发生补高（769 -> 938）", c.get("first") == 938, str(c))
+            check("data-base-h 记住布局下限 769", c.get("baseAttr") == "769", str(c.get("baseAttr")))
+    if canvas:
+        check("传入空 svg 时安全返回 0", all(c.get("nullResult") == 0 for c in canvas))
+
     print()
     if _failures:
         print(f"  [FAIL] {len(_failures)} 项未通过: {_failures}")
         return 1
     print("  [PASS] 模型区几何量不变量成立：凡是渲染两侧模型的状态都没有 NaN 坐标。")
+    print("  [PASS] 画布高度自愈正确：内容超出估算高度时补高 viewBox，且只补不缩。")
     return 0
 
 
