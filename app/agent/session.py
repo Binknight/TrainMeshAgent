@@ -2,6 +2,7 @@ import json
 import uuid
 import threading
 import logging
+from contextlib import contextmanager
 from typing import Optional
 from app.models.schemas import SessionState
 from app.rank_layout import decompose
@@ -14,11 +15,63 @@ class SessionManager:
 
     In-memory cache (dict) for fast access, backed by database for durability.
     Call save_session() after significant state changes to persist to DB.
+
+    并发约定：`_lock` 只保护 `_sessions` 字典本身；`SessionState` 对象是**可变的
+    共享对象**，多个线程（HTTP 请求线程 / 仿真 WebSocket 轮询线程 / SSE 线程）都会
+    改它。凡是要对同一个会话做「读-改-写」的业务路径，必须用 `session_lock()`
+    串行化，否则会出现任务重复下发、step 互相覆盖、消息丢失等竞态。
     """
 
     def __init__(self):
         self._sessions: dict[str, SessionState] = {}
         self._lock = threading.Lock()
+        # session_id -> RLock。RLock 允许已持锁的调用链里再次 save_session()。
+        self._session_locks: dict[str, threading.RLock] = {}
+        self._session_locks_guard = threading.Lock()
+        # 会话级「长操作」互斥：对话/Step1/Step2/Step3/仿真提交这些耗时操作
+        # （可能秒级甚至分钟级）同一会话同时只允许一个，冲突返回 409。
+        # 只做占用标记，不阻塞等待 —— 否则一个长对话会把另一个标签页的请求
+        # 卡到 LLM 超时。
+        self._exclusive_ops: set[str] = set()
+        self._exclusive_guard = threading.Lock()
+
+    def _lock_for(self, session_id: str) -> threading.RLock:
+        with self._session_locks_guard:
+            lock = self._session_locks.get(session_id)
+            if lock is None:
+                lock = threading.RLock()
+                self._session_locks[session_id] = lock
+            return lock
+
+    @contextmanager
+    def session_lock(self, session_id: str):
+        """串行化同一会话的「读-改-写」。
+
+        `run-simulation` 提交、`_fallback_reconcile_simulation` 补数、
+        `_mark_session_failed` 置失败这三条路径来自不同线程，必须共用同一把锁。
+        """
+        with self._lock_for(session_id):
+            yield
+
+    # ------------------------------------------------------------------
+    # 长操作互斥（非阻塞）：同一会话同一时刻只允许一个对话/生成/仿真提交
+    # ------------------------------------------------------------------
+    def try_begin_exclusive(self, session_id: str) -> bool:
+        """尝试占用会话的长操作名额；已被占用返回 False。"""
+        with self._exclusive_guard:
+            if session_id in self._exclusive_ops:
+                return False
+            self._exclusive_ops.add(session_id)
+            return True
+
+    def end_exclusive(self, session_id: str) -> None:
+        """释放长操作名额（必须与 try_begin_exclusive 成对调用）。"""
+        with self._exclusive_guard:
+            self._exclusive_ops.discard(session_id)
+
+    def is_exclusive_busy(self, session_id: str) -> bool:
+        with self._exclusive_guard:
+            return session_id in self._exclusive_ops
 
     def create_session(self) -> SessionState:
         session_id = str(uuid.uuid4())[:8]
@@ -32,11 +85,17 @@ class SessionManager:
         with self._lock:
             if session_id in self._sessions:
                 return self._sessions[session_id]
-        state = _load_session(session_id)
-        if state:
+        # cache miss 必须只加载一份：并发 miss 时若各自 _load_session()，两个线程会
+        # 拿到两个独立对象，随后分别改、分别落库，状态互相覆盖（真实竞态）。
+        with self._lock_for(session_id):
             with self._lock:
-                self._sessions[session_id] = state
-        return state
+                if session_id in self._sessions:
+                    return self._sessions[session_id]
+            state = _load_session(session_id)
+            if state:
+                with self._lock:
+                    self._sessions[session_id] = state
+            return state
 
     def list_sessions(self) -> list[SessionState]:
         from app.dao import list_session_ids
@@ -58,11 +117,17 @@ class SessionManager:
     def delete_session(self, session_id: str) -> bool:
         from app.dao import delete_session as dao_delete
         dao_delete(session_id)
+        found = False
         with self._lock:
             if session_id in self._sessions:
                 del self._sessions[session_id]
-                return True
-        return False
+                found = True
+        # 会话级锁也一并清理，避免删除后同 id 重建时复用旧锁表/内存泄漏
+        with self._session_locks_guard:
+            self._session_locks.pop(session_id, None)
+        with self._exclusive_guard:
+            self._exclusive_ops.discard(session_id)
+        return found
 
     def update_session(self, session_id: str, **kwargs) -> Optional[SessionState]:
         with self._lock:
@@ -81,15 +146,20 @@ class SessionManager:
         mismatch) is logged and recorded in _persist_failures instead of
         aborting the remaining tables. Failures are surfaced to the history
         panel via get_persist_failure(), so missing data no longer silently
-        degrades to fallback titles like "新建任务"."""
+        degrades to fallback titles like "新建任务".
+
+        同一会话的保存必须串行：`_persist_session()` 是「先删全部消息再逐条插入」，
+        两个线程交错执行会丢消息/互相覆盖；且并行仿真完成时多个线程会同时保存。
+        """
         sid = session.session_id
-        try:
-            if _persist_session(session):
-                _persist_failures.pop(sid, None)
-        except Exception as e:
-            # Safety net — per-table errors are caught inside _persist_session.
-            _persist_failures[sid] = f"unexpected: {e}"
-            logger.error(f"[session] Failed to save session {sid}: {e}")
+        with self._lock_for(sid):
+            try:
+                if _persist_session(session):
+                    _persist_failures.pop(sid, None)
+            except Exception as e:
+                # Safety net — per-table errors are caught inside _persist_session.
+                _persist_failures[sid] = f"unexpected: {e}"
+                logger.error(f"[session] Failed to save session {sid}: {e}")
 
 
 session_manager = SessionManager()

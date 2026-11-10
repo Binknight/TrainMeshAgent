@@ -226,10 +226,11 @@ def _execute_utility_tool(
                 tp=arguments["tp"],
                 pp=arguments["pp"],
             )
-            if session.original_params is None:
-                session.original_params = params
-            else:
-                session.equivalent_params = params
+            with session_manager.session_lock(session.session_id):
+                if session.original_params is None:
+                    session.original_params = params
+                else:
+                    session.equivalent_params = params
         return result.model_dump()
 
     elif tool_name == "run_simulation":
@@ -255,7 +256,8 @@ def _execute_utility_tool(
         if sim_data:
             from app.models.schemas import SimulationParams
 
-            session.simulation_params = SimulationParams(**sim_data)
+            with session_manager.session_lock(session.session_id):
+                session.simulation_params = SimulationParams(**sim_data)
         sim_params_dict = (
             session.simulation_params.model_dump()
             if session.simulation_params
@@ -279,10 +281,11 @@ def _execute_utility_tool(
             if params.model_name is not None:
                 topology_json.setdefault("model_name", params.model_name)
         task_id = mcp_client.execute_task(topology_json, params=sim_params_dict)
-        if "原始" in topo_name:
-            session.original_task_id = task_id
-        else:
-            session.equivalent_task_id = task_id
+        with session_manager.session_lock(session.session_id):
+            if "原始" in topo_name:
+                session.original_task_id = task_id
+            else:
+                session.equivalent_task_id = task_id
         return {"task_id": task_id, "status": "submitted", "topology_name": topo_name}
 
     elif tool_name == "compare_results":
@@ -306,8 +309,9 @@ def _execute_utility_tool(
             session.original_simulation, session.equivalent_simulation,
             orig_dp, orig_tp, orig_pp, eq_dp, eq_tp, eq_pp,
         )
-        session.comparison_report = report
-        session.step = "completed"
+        with session_manager.session_lock(session.session_id):
+            session.comparison_report = report
+            session.step = "completed"
         return report.model_dump(exclude={"original", "equivalent"})
 
     elif tool_name == "emit_formula_line":
@@ -315,10 +319,11 @@ def _execute_utility_tool(
         line = arguments.get("line", "")
         section_done = arguments.get("section_done", False)
         # Accumulate on session so _persist_session saves them to DB
-        if session.formula_lines is None:
-            session.formula_lines = []
-        if line:  # skip section_done events (empty line)
-            session.formula_lines.append({"section": section, "line": line})
+        with session_manager.session_lock(session.session_id):
+            if session.formula_lines is None:
+                session.formula_lines = []
+            if line:  # skip section_done events (empty line)
+                session.formula_lines.append({"section": section, "line": line})
         return {
             "_event_type": "equiv_formula_line",
             "section": section,
@@ -401,13 +406,15 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
             pp=data.pp_size,
         )
         if "原始" in data.name:
-            session.original_topology = data
-            session.original_params = params
-            session.step = "params_collected"
+            with session_manager.session_lock(session.session_id):
+                session.original_topology = data
+                session.original_params = params
+                session.step = "params_collected"
         else:
-            session.equivalent_topology = data
-            session.equivalent_params = params
-            session.step = "equiv_generated"
+            with session_manager.session_lock(session.session_id):
+                session.equivalent_topology = data
+                session.equivalent_params = params
+                session.step = "equiv_generated"
         # Return lightweight summary (full data via REST GET /api/session/<id>/topology)
         return {
             "name": data.name,
@@ -427,10 +434,13 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
         data, SimulationResult
     ):
         if "原始" in data.topology_name:
-            session.original_simulation = data
+            with session_manager.session_lock(session.session_id):
+                session.original_simulation = data
         else:
-            session.equivalent_simulation = data
-        session.step = "simulating"
+            with session_manager.session_lock(session.session_id):
+                session.equivalent_simulation = data
+        with session_manager.session_lock(session.session_id):
+            session.step = "simulating"
         # Return lightweight summary — full per-card data available via REST
         return {
             "topology_name": data.topology_name,
@@ -444,9 +454,11 @@ def _execute_skill_tool(tool_name: str, arguments: dict, session: SessionState) 
     elif tool_name == "training-model-gen-skill" and isinstance(data, TrainingModel):
         role = "equivalent" if arguments.get("is_equivalent") else "original"
         if arguments.get("is_equivalent"):
-            session.equivalent_training_model = data
+            with session_manager.session_lock(session.session_id):
+                session.equivalent_training_model = data
         else:
-            session.original_training_model = data
+            with session_manager.session_lock(session.session_id):
+                session.original_training_model = data
         return {
             "type": data.type,
             "config": data.config.model_dump(),

@@ -175,6 +175,21 @@ def case_failed() -> None:
     check("失败状态已落库", calls["saved"] == ["testsess"], str(calls["saved"]))
 
 
+def case_cancelled() -> None:
+    print("[3b] MCP 报 cancelled（任务被取消）→ 会话落到 failed，不能永远 simulating")
+    calls = _reset_calls()
+    _install_fakes({"sim_orig_1": {"status": "cancelled", "message": "cancelled while running"},
+                    "sim_eq_1": {"status": "completed", "progress": 100}}, calls)
+    state = _make_session()
+    _fallback_reconcile_simulation(state)
+
+    check("step 变为 failed", state.step == "failed", state.step)
+    check("未生成对比报告", state.comparison_report is None)
+    check("取消原因写入会话消息",
+          any("cancelled" in m.get("content", "") for m in state.history),
+          str(state.history))
+
+
 def case_mcp_unreachable() -> None:
     print("[4] MCP 不可达（unavailable）→ 保持现状，不能误判为任务失败")
     calls = _reset_calls()
@@ -225,6 +240,7 @@ def main() -> int:
     case_all_completed()
     case_still_running()
     case_failed()
+    case_cancelled()
     case_mcp_unreachable()
     case_no_task_id()
     case_terminal_step()

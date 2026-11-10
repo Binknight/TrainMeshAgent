@@ -43,23 +43,48 @@ def chat_stream():
     if not session:
         return {"error": "session not found"}, 404
 
+    # 同一会话同一时刻只允许一个长操作（对话/Step/仿真提交）。冲突时返回一条
+    # SSE error 事件（前端 handleSSEEvent 会展示），不能用阻塞等待：一个长对话
+    # 会把另一个标签页的请求卡到 LLM 超时。
+    if not session_manager.try_begin_exclusive(session.session_id):
+        err_event = AgentEvent(
+            event_type="error",
+            message="该任务正在执行其他操作（对话/等效生成/仿真提交），请稍后再试",
+            data={"code": "task_busy"},
+        )
+        return Response(
+            f"event: error\ndata: {json.dumps(err_event.model_dump(), ensure_ascii=False)}\n\n",
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+                "X-Session-Id": session.session_id,
+            },
+        )
+
     # Capture step1 form metadata from frontend before LLM processes the message
-    for role in ("original", "equivalent"):
-        role_model_name = data.get(f"{role}_model_name")
-        role_seq_len = data.get(f"{role}_seq_len")
-        role_batch_size = data.get(f"{role}_batch_size")
-        role_dff = data.get(f"{role}_dff")
-        role_vocab_size = data.get(f"{role}_vocab_size")
-        if role_model_name is not None:
-            setattr(session, f"{role}_model_name", role_model_name)
-        if role_seq_len is not None:
-            setattr(session, f"{role}_seq_len", int(role_seq_len))
-        if role_batch_size is not None:
-            setattr(session, f"{role}_batch_size", int(role_batch_size))
-        if role_dff is not None:
-            setattr(session, f"{role}_dff", int(role_dff))
-        if role_vocab_size is not None:
-            setattr(session, f"{role}_vocab_size", int(role_vocab_size))
+    try:
+        with session_manager.session_lock(session.session_id):
+            for role in ("original", "equivalent"):
+                role_model_name = data.get(f"{role}_model_name")
+                role_seq_len = data.get(f"{role}_seq_len")
+                role_batch_size = data.get(f"{role}_batch_size")
+                role_dff = data.get(f"{role}_dff")
+                role_vocab_size = data.get(f"{role}_vocab_size")
+                if role_model_name is not None:
+                    setattr(session, f"{role}_model_name", role_model_name)
+                if role_seq_len is not None:
+                    setattr(session, f"{role}_seq_len", int(role_seq_len))
+                if role_batch_size is not None:
+                    setattr(session, f"{role}_batch_size", int(role_batch_size))
+                if role_dff is not None:
+                    setattr(session, f"{role}_dff", int(role_dff))
+                if role_vocab_size is not None:
+                    setattr(session, f"{role}_vocab_size", int(role_vocab_size))
+    except Exception:
+        session_manager.end_exclusive(session.session_id)
+        raise
 
     logger.info(f"[chat_stream] session={session.session_id} message={message[:80]}...")
 
@@ -99,6 +124,8 @@ def chat_stream():
             yield f"event: error\ndata: {json.dumps(err_event.model_dump(), ensure_ascii=False)}\n\n"
         finally:
             loop.close()
+            # 释放长操作名额（含客户端中途断开/异常退出的情况）
+            session_manager.end_exclusive(session.session_id)
 
     return Response(
         stream_with_context(generate()),

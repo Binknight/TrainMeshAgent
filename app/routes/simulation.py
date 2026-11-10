@@ -78,16 +78,24 @@ def _poll_task_status(task_id: str) -> dict:
 
 
 def _mark_session_failed(session, reason: str) -> None:
-    """把会话落到 `failed` 并落库（供 WS 轮询的终止分支使用）。"""
+    """把会话落到 `failed` 并落库（供 WS 轮询的终止分支使用）。
+
+    并发约定：与 `run-simulation` / 自愈路径共用会话锁，且在锁内重读 step ——
+    否则 WS 线程可能把「结果已就绪」的会话改回 failed（或把 completed 覆盖成
+    failed），前端随后一直停在失败态、结果永远取不回来。
+    """
     if session is None:
         return
-    try:
-        session.step = "failed"
-        session.history.append({"role": "system", "content": f"❌ 仿真任务失败: {reason}"})
-        session_manager.save_session(session)
-    except Exception as e:  # 落库失败不能反过来打断 WS 的收尾
-        logger.error(f"[ws] mark session failed failed: {e}")
-    logger.warning(f"[ws] {reason}")
+    with session_manager.session_lock(session.session_id):
+        if session.step in ("completed", "failed"):
+            return
+        try:
+            session.step = "failed"
+            session.history.append({"role": "system", "content": f"❌ 仿真任务失败: {reason}"})
+            session_manager.save_session(session)
+        except Exception as e:  # 落库失败不能反过来打断 WS 的收尾
+            logger.error(f"[ws] mark session failed failed: {e}")
+        logger.warning(f"[ws] {reason}")
 
 
 def _poll_simulation_tasks(ws, task_ids: list[str], interval: float, session=None):
@@ -161,6 +169,9 @@ def _poll_simulation_tasks(ws, task_ids: list[str], interval: float, session=Non
                     "task_id": tid,
                     "status": st,
                     "progress": progress,
+                    # MCP 调度器排队位次（1-based，仅 queued 时有值），让前端气泡能显示
+                    # 「排队中（前面还有 N 个任务）」而不是一直停在"运行中"。
+                    "queue_position": status.get("queue_position"),
                 }))
 
                 # Sync logs incrementally
@@ -175,7 +186,7 @@ def _poll_simulation_tasks(ws, task_ids: list[str], interval: float, session=Non
                 except Exception:
                     pass
 
-                if st in ("completed", "failed", "error"):
+                if st in ("completed", "failed", "error", "cancelled"):
                     completed.add(tid)
                     if st == "completed":
                         try:
@@ -190,6 +201,14 @@ def _poll_simulation_tasks(ws, task_ids: list[str], interval: float, session=Non
                                 "type": "error", "task_id": tid,
                                 "message": f"get_result failed: {e}",
                             }))
+                    elif st == "cancelled":
+                        # 任务被取消是终态：必须退出轮询，否则 WS 会永远空转、前端
+                        # 一直停在"仿真验证中"（取消可能来自删除会话或另一标签页重试）。
+                        ws.send(json.dumps({
+                            "type": "error",
+                            "task_id": tid,
+                            "message": "任务已取消",
+                        }))
                     else:
                         ws.send(json.dumps({
                             "type": "error",

@@ -1,5 +1,6 @@
 """REST endpoints for session management."""
 import asyncio
+import functools
 import importlib
 import json
 import logging
@@ -19,7 +20,7 @@ SERVER_BOOT_ID = str(uuid.uuid4())[:8]
 from app.agent.session import session_manager
 from app.agent.guardrails import validate_input_params
 from app.config import config
-from app.mcp.client import mcp_client
+from app.mcp.client import MCPQueueFullError, mcp_client
 from app.models.model_catalog import lookup_builtin_model_config
 from app.rank_layout import pp_rank_of
 from app.models.schemas import (
@@ -54,6 +55,32 @@ EQUIV_STRATEGY_LABELS = {
     "min_equiv": "最小集群等效",
     "single_card_extreme": "单卡极限等效",
 }
+
+# 长操作（对话/Step1/Step2/Step3/仿真提交）互斥：同一会话同一时刻只允许一个。
+# 冲突返回 409 + error=task_busy，前端提示重试；不能用阻塞等待，否则一个
+# 长对话会把另一个标签页的请求卡到 LLM 超时。
+TASK_BUSY_ERROR = "task_busy"
+
+
+def _exclusive_session_op(message: str):
+    """会话长操作互斥装饰器（路由函数第一个参数必须是 session_id）。"""
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(session_id: str, *args, **kwargs):
+            if not session_manager.try_begin_exclusive(session_id):
+                return jsonify({
+                    "error": TASK_BUSY_ERROR,
+                    "message": message or "该任务正在执行其他操作，请稍后再试",
+                }), 409
+            try:
+                return fn(session_id, *args, **kwargs)
+            finally:
+                session_manager.end_exclusive(session_id)
+
+        return wrapper
+
+    return decorator
 
 
 @session_bp.route("", methods=["POST"])
@@ -101,12 +128,17 @@ def save_simulation_params(session_id: str):
     from app.models.schemas import SimulationParams
     from app.dao import save_simulation_params as dao_save_sim_params
     data = request.get_json(silent=True) or {}
-    sim_params = SimulationParams(**data)
-    session.simulation_params = sim_params
+    try:
+        sim_params = SimulationParams(**data)
+    except Exception as exc:  # noqa: BLE001 — 参数非法不应 500
+        return {"error": "invalid_simulation_params", "message": str(exc)}, 400
     d = sim_params.model_dump()
-    dao_save_sim_params(session_id, "original", d)
-    dao_save_sim_params(session_id, "equivalent", d)
-    session_manager.save_session(session)
+    # 短写：与同会话的其它写路径（公式行/step 推进/仿真提交）串行，避免互相覆盖
+    with session_manager.session_lock(session_id):
+        session.simulation_params = sim_params
+        dao_save_sim_params(session_id, "original", d)
+        dao_save_sim_params(session_id, "equivalent", d)
+        session_manager.save_session(session)
     return jsonify({"status": "saved", "simulation_params": d})
 
 
@@ -129,7 +161,18 @@ def get_session(session_id: str):
 @session_bp.route("/<session_id>", methods=["DELETE"])
 def delete_session(session_id: str):
     """Delete a session."""
-    ok = session_manager.delete_session(session_id)
+    if session_manager.is_exclusive_busy(session_id):
+        return jsonify({
+            "error": TASK_BUSY_ERROR,
+            "message": "该任务正在执行操作（对话/等效生成/仿真提交），请稍后再删除",
+        }), 409
+    with session_manager.session_lock(session_id):
+        session = session_manager.get_session(session_id)
+        if session and (session.original_task_id or session.equivalent_task_id):
+            # 删除会话时一并取消仍在跑的 MCP 任务：否则任务继续占用 CPU/内存/磁盘，
+            # 结果与日志目录永久残留（MCP 侧没有清理机制），并行场景下会越积越多。
+            _cancel_sim_tasks(session.original_task_id, session.equivalent_task_id)
+        ok = session_manager.delete_session(session_id)
     if not ok:
         return {"error": "session not found"}, 404
     return {"status": "deleted", "session_id": session_id}
@@ -265,8 +308,10 @@ def save_formula_lines(session_id: str):
     if not data or "lines" not in data:
         return {"error": "missing 'lines' array"}, 400
     from app.dao import save_formula_lines as dao_save_fl
-    session.formula_lines = data["lines"]
-    dao_save_fl(session_id, data["lines"])
+    # 短写：与同会话的 step2 持久化/参数保存/step 推进串行
+    with session_manager.session_lock(session_id):
+        session.formula_lines = data["lines"]
+        dao_save_fl(session_id, data["lines"])
     return jsonify({"ok": True})
 
 
@@ -548,7 +593,18 @@ def _fallback_reconcile_simulation(session) -> dict:
     落到 `failed`。MCP 不可达或还在跑时不做任何修改（保持现状，下次再试）。
 
     只在 step == "simulating" 时触发，因此稳态（completed/failed）下零额外开销。
+
+    并发约定：多个标签页的轮询/刷新可能同时触发自愈，必须用会话锁串行；否则
+    两边都会向 MCP 拉全量卡结果并各自 `save_session()`（1024 卡时是成百上千次
+    MCP 调用 + 大 JSON 写），且 step 可能互相覆盖。
     """
+    if session is None:
+        return {}
+    with session_manager.session_lock(session.session_id):
+        return _reconcile_simulation_locked(session)
+
+
+def _reconcile_simulation_locked(session) -> dict:
     if session.step != "simulating":
         return {}
 
@@ -563,7 +619,7 @@ def _fallback_reconcile_simulation(session) -> dict:
     failed = [
         (tid, st.get("message") or st.get("status"))
         for tid, st in statuses.items()
-        if (st or {}).get("status") in ("failed", "error")
+        if (st or {}).get("status") in ("failed", "error", "cancelled")
     ]
     if failed:
         session.step = "failed"
@@ -709,90 +765,154 @@ def _build_comparison(original: SimulationResult, equivalent: SimulationResult, 
     )
 
 
+def _cancel_sim_tasks(original_task_id: str | None, equivalent_task_id: str | None) -> None:
+    """尽力取消会话绑定的 MCP 任务（force_retry / 删除会话时调用）。
+
+    MCP 侧 `cancel_task` 是幂等的；旧版 MCP Server 没有该 tool 时只记日志，
+    不能阻断重试/删除主流程。
+    """
+    for tid in (original_task_id, equivalent_task_id):
+        if not tid:
+            continue
+        try:
+            mcp_client.cancel_task(tid)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[run_simulation] cancel task {tid} failed: {exc}")
+
+
 @session_bp.route("/<session_id>/run-simulation", methods=["POST"])
+@_exclusive_session_op("该任务有正在进行的对话或参数生成，请稍后再开始仿真")
 def run_simulation(session_id: str):
-    """Directly run simulations for both topologies and return results (no agent/SSE)."""
-    session = session_manager.get_session(session_id)
-    if not session:
-        return {"error": "session not found"}, 404
+    """Directly run simulations for both topologies and return results (no agent/SSE).
 
-    # Accept optional simulation params from request body
-    from app.models.schemas import SimulationParams
+    并发约定：整个「提交 + 推进」过程在 `session_manager.session_lock()` 内串行。
+    否则两个并发请求（两个标签页各点一次「开始仿真」/ 完成回调 + 刷新兜底）会同时
+    看到 task_id=None，各自下发一遍任务 —— 一个会话凭空多出 2 个孤儿仿真进程
+    （已用并发请求实测复现：2 次调用产生 4 个 MCP 任务）。
+
+    `force_retry=true` 是唯一的「重新下发」入口：取消旧任务、清空旧 task_id/结果/
+    对比报告后重新提交。不带该参数时不重复下发，只复用现有 task_id 补取结果
+    （这是完成回调与刷新自愈依赖的幂等行为）。
+    """
     body = request.get_json(silent=True) or {}
-    sim_params_data = body.get("simulation_params", None)
-    if sim_params_data:
-        session.simulation_params = SimulationParams(**sim_params_data)
-    elif session.simulation_params is None:
-        session.simulation_params = SimulationParams()
+    force_retry = bool(body.get("force_retry"))
 
-    sim_params_dict = session.simulation_params.model_dump()
+    with session_manager.session_lock(session_id):
+        session = session_manager.get_session(session_id)
+        if not session:
+            return {"error": "session not found"}, 404
 
-    is_retry = bool(session.original_task_id or session.equivalent_task_id)
-    logger.info(f"[run_simulation] session={session_id}, step={session.step}, "
-                f"orig_task={session.original_task_id}, eq_task={session.equivalent_task_id}, "
-                f"is_retry={is_retry}")
-    # 注意：这里不再往 session.history 写「📊 开始仿真任务...」之类的提示。
-    # 本次验证的过程展示由前端两条常驻进度气泡承担（static/index.html 的 _simTaskBubbles），
-    # 写进 history 只会在刷新后与气泡重复（而且本函数会被提交/完成两次调用，写入即重复两遍）。
-    results = {}
+        # 幂等：已完成的会话直接返回缓存结果，避免重复的完成回调/轮询把全量卡
+        # 结果再拉一遍（1024 卡时一次要读上千个文件、再逐 rank 查 hbm_detail）。
+        if not force_retry and session.step == "completed" and session.comparison_report:
+            return jsonify({
+                "session_id": session_id,
+                "original_task_id": session.original_task_id,
+                "equivalent_task_id": session.equivalent_task_id,
+                "results": {
+                    "original": session.original_simulation.model_dump() if session.original_simulation else None,
+                    "equivalent": session.equivalent_simulation.model_dump() if session.equivalent_simulation else None,
+                    "comparison": session.comparison_report.model_dump(exclude={"original", "equivalent"}),
+                },
+                "step": session.step,
+                "cached": True,
+            })
 
-    try:
-        # ── Original topology ──
-        orig_tid, orig_sim = _run_simulation_for_topology(
-            session.original_topology, session.original_training_model,
-            session.original_task_id, "original", sim_params_dict,
-            seq_len=session.original_seq_len,
-            batch_size=session.original_batch_size,
-            model_name=session.original_model_name,
-            d_ffn=session.original_dff,
-            micro_batch_size=session.original_micro_batch,
-            vocab_size=session.original_vocab_size,
-            ep=session.original_ep,
-        )
-        session.original_task_id = orig_tid or session.original_task_id
-        if orig_sim:
-            session.original_simulation = orig_sim
-            results["original"] = orig_sim.model_dump()
+        # Accept optional simulation params from request body
+        from app.models.schemas import SimulationParams
+        sim_params_data = body.get("simulation_params", None)
+        if sim_params_data:
+            session.simulation_params = SimulationParams(**sim_params_data)
+        elif session.simulation_params is None:
+            session.simulation_params = SimulationParams()
 
-        # ── Equivalent topology ──
-        eq_tid, eq_sim = _run_simulation_for_topology(
-            session.equivalent_topology, session.equivalent_training_model,
-            session.equivalent_task_id, "equivalent", sim_params_dict,
-            seq_len=session.equivalent_seq_len,
-            batch_size=session.equivalent_batch_size,
-            model_name=session.original_model_name,
-            d_ffn=session.equivalent_dff,
-            micro_batch_size=session.equivalent_micro_batch,
-            vocab_size=session.original_vocab_size,
-            ep=session.equivalent_ep,
-        )
-        session.equivalent_task_id = eq_tid or session.equivalent_task_id
-        if eq_sim:
-            session.equivalent_simulation = eq_sim
-            results["equivalent"] = eq_sim.model_dump()
+        if force_retry:
+            # 显式重试：先取消旧任务，再清空旧状态，之后走正常提交。
+            _cancel_sim_tasks(session.original_task_id, session.equivalent_task_id)
+            session.original_task_id = None
+            session.equivalent_task_id = None
+            session.original_simulation = None
+            session.equivalent_simulation = None
+            session.comparison_report = None
+            session.step = "submitted"
 
-        # ── Comparison ──（判定条件与「刷新后自愈」路径共用同一份实现）
-        # 未出报告说明任务还在跑：不写 history（过程展示交给前端进度气泡，见上）
-        report = _build_and_store_comparison(session)
-        if report:
-            results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
+        sim_params_dict = session.simulation_params.model_dump()
 
-    except Exception as exc:
-        logger.error(f"[run_simulation] Failed: {exc}")
-        session.step = "failed"
-        session.history.append({"role": "system", "content": f"❌ 仿真任务失败: {exc}"})
+        logger.info(f"[run_simulation] session={session_id}, step={session.step}, "
+                    f"orig_task={session.original_task_id}, eq_task={session.equivalent_task_id}, "
+                    f"force_retry={force_retry}")
+        # 注意：这里不再往 session.history 写「📊 开始仿真任务...」之类的提示。
+        # 本次验证的过程展示由前端两条常驻进度气泡承担（static/index.html 的 _simTaskBubbles），
+        # 写进 history 只会在刷新后与气泡重复（而且本函数会被提交/完成两次调用，写入即重复两遍）。
+        results = {}
+
+        try:
+            # ── Original topology ──
+            orig_tid, orig_sim = _run_simulation_for_topology(
+                session.original_topology, session.original_training_model,
+                session.original_task_id, "original", sim_params_dict,
+                seq_len=session.original_seq_len,
+                batch_size=session.original_batch_size,
+                model_name=session.original_model_name,
+                d_ffn=session.original_dff,
+                micro_batch_size=session.original_micro_batch,
+                vocab_size=session.original_vocab_size,
+                ep=session.original_ep,
+            )
+            session.original_task_id = orig_tid or session.original_task_id
+            if orig_sim:
+                session.original_simulation = orig_sim
+                results["original"] = orig_sim.model_dump()
+
+            # ── Equivalent topology ──
+            eq_tid, eq_sim = _run_simulation_for_topology(
+                session.equivalent_topology, session.equivalent_training_model,
+                session.equivalent_task_id, "equivalent", sim_params_dict,
+                seq_len=session.equivalent_seq_len,
+                batch_size=session.equivalent_batch_size,
+                model_name=session.original_model_name,
+                d_ffn=session.equivalent_dff,
+                micro_batch_size=session.equivalent_micro_batch,
+                vocab_size=session.original_vocab_size,
+                ep=session.equivalent_ep,
+            )
+            session.equivalent_task_id = eq_tid or session.equivalent_task_id
+            if eq_sim:
+                session.equivalent_simulation = eq_sim
+                results["equivalent"] = eq_sim.model_dump()
+
+            # ── Comparison ──（判定条件与「刷新后自愈」路径共用同一份实现）
+            # 未出报告说明任务还在跑：不写 history（过程展示交给前端进度气泡，见上）
+            report = _build_and_store_comparison(session)
+            if report:
+                results["comparison"] = report.model_dump(exclude={"original", "equivalent"})
+
+        except MCPQueueFullError as exc:
+            # 队列满是背压，不是任务失败：不能把会话标成 failed，返回 429 让前端
+            # 稍后重试（已提交成功的一侧 task_id 要落库，重试时可复用）。
+            logger.warning(f"[run_simulation] MCP queue full (backpressure): {exc}")
+            session_manager.save_session(session)
+            return jsonify({
+                "error": "simulation_queue_full",
+                "message": str(exc),
+                "step": session.step,
+            }), 429
+        except Exception as exc:
+            logger.error(f"[run_simulation] Failed: {exc}")
+            session.step = "failed"
+            session.history.append({"role": "system", "content": f"❌ 仿真任务失败: {exc}"})
+            session_manager.save_session(session)
+            return {"error": str(exc), "step": "failed"}, 502
+
         session_manager.save_session(session)
-        return {"error": str(exc), "step": "failed"}, 502
 
-    session_manager.save_session(session)
-
-    return jsonify({
-        "session_id": session_id,
-        "original_task_id": session.original_task_id,
-        "equivalent_task_id": session.equivalent_task_id,
-        "results": results,
-        "step": session.step,
-    })
+        return jsonify({
+            "session_id": session_id,
+            "original_task_id": session.original_task_id,
+            "equivalent_task_id": session.equivalent_task_id,
+            "results": results,
+            "step": session.step,
+        })
 
 
 # ── Mock operator trace generation (aligned with CSV headers + MCP computed fields) ──
@@ -1264,6 +1384,7 @@ def get_training_script(session_id: str, side: str):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @session_bp.route("/<session_id>/workflow/step1", methods=["POST"])
+@_exclusive_session_op("该任务正在执行其他操作（对话/等效生成/仿真提交），请稍后再试")
 def workflow_step1(session_id: str):
     """Step 1: Receive original params → generate original mesh + model. Returns JSON."""
     session = session_manager.get_session(session_id)
@@ -1445,6 +1566,7 @@ def workflow_step1(session_id: str):
 
 
 @session_bp.route("/<session_id>/workflow/step2", methods=["POST"])
+@_exclusive_session_op("该任务正在执行其他操作（对话/等效生成/仿真提交），请稍后再试")
 def workflow_step2(session_id: str):
     """Step 2: Trigger equivalent calculation. Returns task_id for SSE streaming."""
     session = session_manager.get_session(session_id)
@@ -1797,20 +1919,42 @@ def workflow_step2_stream(session_id: str):
         yield f"data: {json.dumps({'type': 'equiv_formula_line', 'section': 'formula', 'section_done': True, 'line': ''})}\n\n"
 
         # ── Persist formula lines server-side so they survive restart ──
-        try:
-            from app.dao import save_formula_lines as _dao_save_fl
-            session.formula_lines = all_formula_lines
-            _dao_save_fl(session_id, all_formula_lines)
-        except Exception as _e:
-            logger.warning(f"Failed to persist formula_lines for {session_id}: {_e}")
+        with session_manager.session_lock(session_id):
+            try:
+                from app.dao import save_formula_lines as _dao_save_fl
+                session.formula_lines = all_formula_lines
+                _dao_save_fl(session_id, all_formula_lines)
+            except Exception as _e:
+                logger.warning(f"Failed to persist formula_lines for {session_id}: {_e}")
 
         # Signal done
         yield f"data: {json.dumps({'type': 'done', 'data': {'stage': 'step2'}})}\n\n"
 
-    return Response(generate(), mimetype="text/event-stream", headers=_SSE_HEADERS)
+    # 长操作互斥：Step2 流式生成会持续数秒，与对话/Step1/Step3/仿真提交互斥。
+    # 名额在生成器结束时释放（含客户端中途断开），不会因为 Response 返回就提前释放。
+    if not session_manager.try_begin_exclusive(session_id):
+        return Response(
+            "data: " + json.dumps({
+                "type": "error",
+                "message": "该任务正在执行其他操作（对话/参数生成/仿真提交），请稍后再试",
+            }) + "\n\n",
+            mimetype="text/event-stream",
+            headers=_SSE_HEADERS,
+        )
+
+    inner = generate()
+
+    def generate_guarded():
+        try:
+            yield from inner
+        finally:
+            session_manager.end_exclusive(session_id)
+
+    return Response(generate_guarded(), mimetype="text/event-stream", headers=_SSE_HEADERS)
 
 
 @session_bp.route("/<session_id>/workflow/step3", methods=["POST"])
+@_exclusive_session_op("该任务正在执行其他操作（对话/等效生成/仿真提交），请稍后再试")
 def workflow_step3(session_id: str):
     """Step 3: Generate equivalent mesh + model. Returns JSON."""
     session = session_manager.get_session(session_id)
