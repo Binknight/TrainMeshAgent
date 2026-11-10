@@ -9,6 +9,7 @@ from app.routes.chat import chat_bp
 from app.routes.model_catalog import model_catalog_bp
 from app.routes.session import session_bp
 from app.routes.simulation import sim_bp, sock
+from app.routes.simulation_files import files_bp
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +36,7 @@ def create_app() -> Flask:
     app.register_blueprint(session_bp)
     app.register_blueprint(sim_bp)
     app.register_blueprint(model_catalog_bp)
+    app.register_blueprint(files_bp)
 
     # Initialize WebSocket
     sock.init_app(app)

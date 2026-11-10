@@ -1236,6 +1236,386 @@
                 border-radius: 4px;
             }
 
+            /* ── Simulation Flow Files Download（产物下载，MCP 文件 REST + Flask 代理） ── */
+            .sim-download-entry {
+                position: absolute;
+                top: 10px;
+                right: 12px;
+                z-index: 20;
+            }
+            .sim-download-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 10px;
+                background: var(--bg-surface);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                color: var(--text-primary);
+                font-family: var(--font-sans);
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1;
+                cursor: pointer;
+                box-shadow: var(--shadow-soft);
+                transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+            }
+            .sim-download-btn:hover:not(:disabled) {
+                border-color: var(--cyan);
+                color: var(--cyan);
+                background: var(--bg-hover);
+            }
+            .sim-download-btn:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+            .sim-download-btn svg {
+                width: 11px;
+                height: 11px;
+                flex-shrink: 0;
+            }
+            .sim-download-tag {
+                font-family: var(--font-mono);
+                font-size: 9px;
+                font-weight: 500;
+                line-height: 14px;
+                padding: 0 4px;
+                border-radius: 3px;
+                color: var(--cyan);
+                background: rgba(var(--cyan-rgb), 0.1);
+                border: 1px solid rgba(var(--cyan-rgb), 0.25);
+            }
+            .sim-download-btn:disabled .sim-download-tag {
+                color: var(--text-muted);
+                background: transparent;
+                border-color: var(--border);
+            }
+
+            /* 通用轻提示（仅前端交互反馈） */
+            .ui-toast-wrap {
+                position: fixed;
+                left: 50%;
+                bottom: 28px;
+                transform: translateX(-50%);
+                z-index: 3000;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 8px;
+                pointer-events: none;
+            }
+            .ui-toast {
+                background: var(--toast-bg);
+                color: var(--text-primary);
+                border: 1px solid var(--border-active);
+                border-radius: var(--radius-sm);
+                padding: 8px 14px;
+                font-family: var(--font-sans);
+                font-size: 12px;
+                line-height: 1.5;
+                box-shadow: var(--shadow-tip);
+                animation: ui-toast-in 0.18s ease-out;
+                transition: opacity 0.2s ease, transform 0.2s ease;
+            }
+            .ui-toast--out {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+            @keyframes ui-toast-in {
+                from { opacity: 0; transform: translateY(6px); }
+                to { opacity: 1; transform: none; }
+            }
+
+            /* 仿真流量文件下载弹窗 */
+            .sim-download-modal {
+                position: fixed;
+                inset: 0;
+                z-index: 2000;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+            }
+            .sim-download-modal.show { display: flex; }
+            .sim-download-backdrop {
+                position: absolute;
+                inset: 0;
+                background: var(--scrim-strong);
+            }
+            .sim-download-dialog {
+                position: relative;
+                width: min(880px, calc(100vw - 32px));
+                max-height: calc(100vh - 48px);
+                display: flex;
+                flex-direction: column;
+                background: var(--bg-panel);
+                border: 1px solid var(--border-active);
+                border-radius: var(--radius);
+                box-shadow: var(--shadow-modal);
+                overflow: hidden;
+            }
+            .sim-download-head {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 16px 20px 10px;
+                flex-shrink: 0;
+            }
+            .sim-download-title {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 15px;
+                font-weight: 700;
+                color: var(--text-primary);
+            }
+            .sim-download-sub {
+                margin-top: 4px;
+                font-size: 11px;
+                color: var(--text-secondary);
+                line-height: 1.5;
+            }
+            .sim-download-close {
+                flex-shrink: 0;
+                width: 26px;
+                height: 26px;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                background: transparent;
+                color: var(--text-muted);
+                font-size: 12px;
+                line-height: 1;
+                cursor: pointer;
+            }
+            .sim-download-close:hover {
+                color: var(--text-primary);
+                border-color: var(--border-active);
+                background: var(--bg-hover);
+            }
+            .sim-download-banner {
+                margin: 0 20px;
+                padding: 7px 10px;
+                border: 1px dashed rgba(var(--yellow-rgb), 0.35);
+                border-radius: var(--radius-sm);
+                background: rgba(var(--yellow-rgb), 0.06);
+                color: var(--yellow);
+                font-size: 11px;
+                line-height: 1.5;
+                flex-shrink: 0;
+            }
+            .sim-download-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 14px;
+                padding: 14px 20px;
+                overflow-y: auto;
+            }
+            @media (max-width: 760px) {
+                .sim-download-grid { grid-template-columns: 1fr; }
+            }
+            .sim-download-card {
+                display: flex;
+                flex-direction: column;
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                background: var(--bg-surface);
+                overflow: hidden;
+            }
+            .sim-download-card-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 9px 12px;
+                background: var(--bg-elevated);
+                border-bottom: 1px solid var(--border);
+            }
+            .sim-download-dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: var(--text-muted);
+                flex-shrink: 0;
+            }
+            .sim-download-card--orig .sim-download-dot {
+                background: var(--blue);
+                box-shadow: 0 0 6px rgba(var(--blue-rgb), 0.5);
+            }
+            .sim-download-card--equivalent .sim-download-dot {
+                background: var(--teal);
+                box-shadow: 0 0 6px rgba(var(--teal-rgb), 0.5);
+            }
+            .sim-download-card-name {
+                font-size: 12px;
+                font-weight: 700;
+                color: var(--text-primary);
+                flex-shrink: 0;
+            }
+            .sim-download-card--orig .sim-download-card-name { color: var(--blue); }
+            .sim-download-card--equivalent .sim-download-card-name { color: var(--teal); }
+            .sim-download-task {
+                margin-left: auto;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-family: var(--font-mono);
+                font-size: 10px;
+                color: var(--text-muted);
+                max-width: 58%;
+            }
+            .sim-download-state {
+                flex-shrink: 0;
+                font-family: var(--font-mono);
+                font-size: 10px;
+                line-height: 16px;
+                padding: 0 6px;
+                border-radius: 10px;
+                border: 1px solid var(--border);
+                color: var(--text-secondary);
+            }
+            .sim-download-state.is-done {
+                color: var(--green);
+                border-color: rgba(var(--green-rgb), 0.35);
+                background: rgba(var(--green-rgb), 0.08);
+            }
+            .sim-download-state.is-run {
+                color: var(--cyan);
+                border-color: rgba(var(--cyan-rgb), 0.35);
+                background: rgba(var(--cyan-rgb), 0.08);
+            }
+            .sim-download-state.is-fail {
+                color: var(--red);
+                border-color: rgba(var(--red-rgb), 0.35);
+                background: rgba(var(--red-rgb), 0.08);
+            }
+            .sim-download-files {
+                margin: 0;
+                padding: 0;
+                list-style: none;
+            }
+            .sim-download-file {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 9px 12px;
+                border-bottom: 1px solid var(--border);
+            }
+            .sim-download-file:last-child { border-bottom: none; }
+            .sim-download-ext {
+                flex-shrink: 0;
+                min-width: 34px;
+                text-align: center;
+                font-family: var(--font-mono);
+                font-size: 9px;
+                font-weight: 600;
+                letter-spacing: 0.3px;
+                color: var(--text-secondary);
+                background: var(--bg-input);
+                border: 1px solid var(--border);
+                border-radius: 3px;
+                padding: 2px 5px;
+            }
+            .sim-download-meta {
+                flex: 1;
+                min-width: 0;
+            }
+            .sim-download-meta b {
+                display: block;
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--text-primary);
+            }
+            .sim-download-meta small {
+                display: block;
+                margin-top: 2px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-size: 10px;
+                color: var(--text-muted);
+                line-height: 1.4;
+            }
+            .sim-download-file-btn {
+                flex-shrink: 0;
+                padding: 3px 10px;
+                border: 1px solid var(--border-active);
+                border-radius: 4px;
+                background: transparent;
+                color: var(--text-secondary);
+                font-family: var(--font-sans);
+                font-size: 10px;
+                cursor: pointer;
+                transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+            }
+            .sim-download-file-btn:hover {
+                color: var(--cyan);
+                border-color: var(--cyan);
+                background: rgba(var(--cyan-rgb), 0.08);
+            }
+            .sim-download-foot {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 12px 20px;
+                border-top: 1px solid var(--border);
+                background: var(--bg-elevated);
+                flex-shrink: 0;
+            }
+            .sim-download-foot-note {
+                font-size: 10px;
+                color: var(--text-muted);
+                line-height: 1.5;
+            }
+            .sim-download-foot-actions {
+                display: flex;
+                gap: 10px;
+                flex-shrink: 0;
+            }
+            .sim-download-cancel {
+                padding: 5px 14px;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                background: transparent;
+                color: var(--text-primary);
+                font-family: var(--font-sans);
+                font-size: 11px;
+                cursor: pointer;
+            }
+            .sim-download-cancel:hover { border-color: var(--border-active); background: var(--bg-hover); }
+            .sim-download-primary {
+                padding: 5px 14px;
+                border: none;
+                border-radius: 6px;
+                background: var(--cyan);
+                color: var(--on-solid-accent);
+                font-family: var(--font-sans);
+                font-size: 11px;
+                font-weight: 600;
+                cursor: pointer;
+            }
+            .sim-download-primary:hover { filter: brightness(1.08); }
+            .sim-download-primary:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+                filter: none;
+            }
+            .sim-download-empty {
+                padding: 18px 12px;
+                text-align: center;
+                font-size: 10px;
+                line-height: 1.6;
+                color: var(--text-muted);
+            }
+            .sim-download-empty.is-error {
+                color: var(--red);
+            }
+            .sim-download-file-btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+
             /* ── Results Tab ── */
             .results-wrap {
                 flex: 1;
@@ -3920,6 +4300,24 @@
                 <div class="canvas-tab-panel" id="tab-panel-simulation">
                     <div class="sim-panel-wrap">
                         <div class="sim-topo-area" id="sim-topo-area">
+                            <div class="sim-download-entry">
+                                <button
+                                    type="button"
+                                    class="sim-download-btn"
+                                    id="sim-download-btn"
+                                    disabled
+                                    onclick="openSimDownloadPanel()"
+                                    title="仿真开始后可下载流量文件"
+                                >
+                                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M8 2v8" />
+                                        <path d="M4.5 7.5 8 11l3.5-3.5" />
+                                        <path d="M2.5 13.5h11" />
+                                    </svg>
+                                    <span>仿真流量文件</span>
+                                    <span class="sim-download-tag">预览</span>
+                                </button>
+                            </div>
                             <div
                                 class="sim-topo-placeholder"
                                 id="sim-topo-placeholder"
@@ -3984,6 +4382,60 @@
                     </div>
                 </div>
             </main>
+
+            <!-- 仿真流量文件下载（数据来自 MCP 文件 REST，Flask 代理） -->
+            <div class="sim-download-modal" id="sim-download-modal" aria-hidden="true">
+                <div class="sim-download-backdrop" onclick="closeSimDownloadPanel()"></div>
+                <div class="sim-download-dialog" role="dialog" aria-modal="true" aria-labelledby="sim-download-title">
+                    <div class="sim-download-head">
+                        <div>
+                            <div class="sim-download-title" id="sim-download-title">
+                                仿真流量文件
+                            </div>
+                            <div class="sim-download-sub">
+                                按分类查看并下载原始组网 / 等效组网产生的流量明细、统计汇总与运行产物。
+                            </div>
+                        </div>
+                        <button type="button" class="sim-download-close" onclick="closeSimDownloadPanel()" title="关闭" aria-label="关闭">✕</button>
+                    </div>
+                    <div class="sim-download-banner" id="sim-download-banner">
+                        📦 文件由 MCP 仿真任务在 workspace 下生成；分类可单独打包，底部按钮会把两侧文件合并为一个 ZIP 下载。
+                    </div>
+                    <div class="sim-download-grid">
+                        <section class="sim-download-card sim-download-card--orig" aria-labelledby="sim-download-orig-name">
+                            <header class="sim-download-card-header">
+                                <span class="sim-download-dot"></span>
+                                <span class="sim-download-card-name" id="sim-download-orig-name">原始组网</span>
+                                <span class="sim-download-task" id="sim-download-orig-task">task: —</span>
+                                <span class="sim-download-state" id="sim-download-orig-state">未开始</span>
+                            </header>
+                            <ul class="sim-download-files" id="sim-download-orig-files">
+                                <li class="sim-download-empty">正在加载文件列表…</li>
+                            </ul>
+                        </section>
+                        <section class="sim-download-card sim-download-card--equivalent" aria-labelledby="sim-download-eq-name">
+                            <header class="sim-download-card-header">
+                                <span class="sim-download-dot"></span>
+                                <span class="sim-download-card-name" id="sim-download-eq-name">等效组网</span>
+                                <span class="sim-download-task" id="sim-download-eq-task">task: —</span>
+                                <span class="sim-download-state" id="sim-download-eq-state">未开始</span>
+                            </header>
+                            <ul class="sim-download-files" id="sim-download-eq-files">
+                                <li class="sim-download-empty">正在加载文件列表…</li>
+                            </ul>
+                        </section>
+                    </div>
+                    <div class="sim-download-foot">
+                        <div class="sim-download-foot-note" id="sim-download-foot-note">
+                            文件由 MCP 仿真任务在 workspace 下生成；磁盘清理后历史任务的文件将不可下载。
+                        </div>
+                        <div class="sim-download-foot-actions">
+                            <button type="button" class="sim-download-cancel" onclick="closeSimDownloadPanel()">取消</button>
+                            <button type="button" class="sim-download-primary" id="sim-download-bundle-btn" disabled onclick="_downloadSimulationBundle('both')">打包下载（ZIP）</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- RIGHT: Chat -->
             <aside class="panel-right">
@@ -5291,6 +5743,9 @@
 
             function syncWorkflowFromSession(sessionData) {
                 resetWorkflowState(); // reset nodes only, don't touch chat UI
+                // 下载入口：不区分会话阶段，统一记住两侧 task_id（没有则为空）。
+                // 已完成的历史会话也要能显示任务号，否则弹窗里只能看到 “task: —”。
+                _rememberSimTaskIds(sessionData.original_task_id, sessionData.equivalent_task_id);
                 var hasTopology = !!(
                     sessionData.original_topology ||
                     sessionData.equivalent_topology
@@ -6987,6 +7442,7 @@
                     // Show button on modeling tab, or on simulation tab when retry needed
                     simBtn.style.display = (tabName === "modeling" || _simFailed) ? "" : "none";
                 }
+                _updateSimDownloadEntry();
             }
 
             // ── Canvas Fullscreen Toggle ──
@@ -8340,6 +8796,7 @@
             function _renderSimResults() {
                 var area = document.getElementById("sim-results-area");
                 if (!area) return;
+                _updateSimDownloadEntry();
                 var hasSim = (
                     (typeof meshActualOrig !== "undefined" && Object.keys(meshActualOrig || {}).length) ||
                     (typeof meshActualEq !== "undefined" && Object.keys(meshActualEq || {}).length)
@@ -8503,6 +8960,301 @@
                 }
             }
 
+            // ── 仿真流量文件下载（MCP 文件 REST + Flask 代理） ──
+            // 入口在「等效仿真验证」标签页右上角：有仿真任务后才可用；
+            // 弹窗展示原始/等效两侧的产物分类，支持分类 ZIP 与双侧合并 ZIP 下载。
+            window._simTaskIds = window._simTaskIds || { original: "", equivalent: "" };
+
+            function _rememberSimTaskIds(origTaskId, eqTaskId) {
+                window._simTaskIds = {
+                    original: origTaskId || "",
+                    equivalent: eqTaskId || "",
+                };
+                _updateSimDownloadEntry();
+            }
+
+            function _updateSimDownloadEntry() {
+                var btn = document.getElementById("sim-download-btn");
+                if (!btn) return;
+                var ids = window._simTaskIds || {};
+                var hasTask = !!(ids.original || ids.equivalent);
+                var hasData = (typeof _simCompleted !== "undefined" && _simCompleted) || hasTask;
+                btn.disabled = !hasData;
+                btn.title = hasData
+                    ? "查看 / 下载原始组网与等效组网的仿真流量文件"
+                    : "仿真开始后可下载流量文件";
+            }
+
+            function _showUiNotice(text) {
+                var wrap = document.getElementById("ui-toast-wrap");
+                if (!wrap) {
+                    wrap = document.createElement("div");
+                    wrap.id = "ui-toast-wrap";
+                    wrap.className = "ui-toast-wrap";
+                    document.body.appendChild(wrap);
+                }
+                var el = document.createElement("div");
+                el.className = "ui-toast";
+                el.textContent = text;
+                wrap.appendChild(el);
+                setTimeout(function () {
+                    el.classList.add("ui-toast--out");
+                    setTimeout(function () { el.remove(); }, 220);
+                }, 2400);
+            }
+
+            // 仿真文件下载面板：数据来自 GET /api/session/<sid>/simulation-files，
+            // 下载接口为 .../download（单文件）与 .../bundle（分类/整侧/双侧 ZIP）。
+            var _simFilesData = null;
+            var _simFilesLoading = false;
+
+            function _createEl(tag, cls, text) {
+                var el = document.createElement(tag);
+                if (cls) el.className = cls;
+                if (text !== undefined && text !== null) el.textContent = text;
+                return el;
+            }
+
+            function _formatBytes(bytes) {
+                var n = Number(bytes) || 0;
+                if (n < 1024) return n + " B";
+                var units = ["KB", "MB", "GB", "TB"];
+                var idx = -1;
+                do {
+                    n /= 1024;
+                    idx += 1;
+                } while (n >= 1024 && idx < units.length - 1);
+                return n.toFixed(n >= 100 ? 0 : n >= 10 ? 1 : 2) + " " + units[idx];
+            }
+
+            function _simDownloadState(sideData) {
+                var status = sideData && sideData.status ? sideData.status : "";
+                var clsMap = {
+                    completed: "is-done",
+                    running: "is-run",
+                    queued: "is-run",
+                    submitted: "is-run",
+                    failed: "is-fail",
+                    cancelled: "is-fail",
+                };
+                var label = (sideData && sideData.status_label) || status || "未知";
+                return { text: label, cls: clsMap[status] || "" };
+            }
+
+            function _renderSimFileGroups(listEl, side, sideData) {
+                if (!listEl) return;
+                listEl.innerHTML = "";
+                if (!sideData || !sideData.available) {
+                    var reason = (sideData && sideData.error) || "暂无文件";
+                    listEl.appendChild(
+                        _createEl(
+                            "li",
+                            "sim-download-empty" + (sideData && sideData.error ? " is-error" : ""),
+                            reason,
+                        ),
+                    );
+                    return;
+                }
+                var groups = sideData.groups || [];
+                if (!groups.length) {
+                    listEl.appendChild(_createEl("li", "sim-download-empty", "暂无文件（仿真尚未产出或已被清理）"));
+                    return;
+                }
+                groups.forEach(function (group) {
+                    var li = _createEl("li", "sim-download-file");
+                    var formats = (group.formats || []).map(function (f) {
+                        return String(f).toUpperCase();
+                    });
+                    var ext = _createEl("span", "sim-download-ext", formats.join("/") || "FILE");
+                    var meta = _createEl("div", "sim-download-meta");
+                    meta.appendChild(_createEl("b", null, group.label || group.category));
+                    meta.appendChild(
+                        _createEl(
+                            "small",
+                            null,
+                            (group.count || 0) +
+                                " 个文件 · " +
+                                _formatBytes(group.size_bytes || 0) +
+                                " · ZIP 打包下载",
+                        ),
+                    );
+                    var btn = _createEl("button", "sim-download-file-btn", "下载");
+                    btn.type = "button";
+                    btn.onclick = function () {
+                        _downloadSimulationCategory(side, group.category, group.label);
+                    };
+                    li.appendChild(ext);
+                    li.appendChild(meta);
+                    li.appendChild(btn);
+                    listEl.appendChild(li);
+                });
+            }
+
+            function _paintSimDownloadSide(side, sideData) {
+                var prefix = side === "original" ? "orig" : "eq";
+                var taskEl = document.getElementById("sim-download-" + prefix + "-task");
+                var stateEl = document.getElementById("sim-download-" + prefix + "-state");
+                var taskId = sideData && sideData.task_id;
+                if (taskEl) taskEl.textContent = taskId ? "task: " + taskId : "task: —";
+                if (!stateEl) return;
+                var state = _simDownloadState(sideData);
+                stateEl.textContent = state.text;
+                stateEl.className = "sim-download-state" + (state.cls ? " " + state.cls : "");
+            }
+
+            function _renderSimulationFiles() {
+                var data = _simFilesData;
+                if (!data || !data.sides) return;
+                ["original", "equivalent"].forEach(function (side) {
+                    var prefix = side === "original" ? "orig" : "eq";
+                    var sideData = data.sides[side];
+                    _paintSimDownloadSide(side, sideData);
+                    _renderSimFileGroups(
+                        document.getElementById("sim-download-" + prefix + "-files"),
+                        side,
+                        sideData,
+                    );
+                });
+
+                var totalFiles = 0;
+                var totalBytes = 0;
+                var anyFiles = false;
+                ["original", "equivalent"].forEach(function (side) {
+                    var s = data.sides[side];
+                    if (!s || !s.available) return;
+                    var count = Number(s.total_files) || (s.files || []).length;
+                    if (count > 0) anyFiles = true;
+                    totalFiles += count;
+                    totalBytes += Number(s.total_size_bytes) || 0;
+                });
+
+                var bundleBtn = document.getElementById("sim-download-bundle-btn");
+                if (bundleBtn) {
+                    bundleBtn.disabled = !anyFiles;
+                    bundleBtn.title = anyFiles
+                        ? "把两侧文件合并为一个 ZIP 下载"
+                        : "暂无可下载文件";
+                }
+                var note = document.getElementById("sim-download-foot-note");
+                if (note) {
+                    note.textContent = anyFiles
+                        ? "两侧共 " +
+                          totalFiles +
+                          " 个文件 · " +
+                          _formatBytes(totalBytes) +
+                          "；磁盘清理后历史任务的文件将不可下载。"
+                        : "暂无可下载文件；仿真开始并产出结果后会自动出现文件列表。";
+                }
+            }
+
+            function _simFilesPlaceholder(text, isError) {
+                ["orig", "eq"].forEach(function (prefix) {
+                    var listEl = document.getElementById("sim-download-" + prefix + "-files");
+                    if (!listEl) return;
+                    listEl.innerHTML = "";
+                    listEl.appendChild(
+                        _createEl("li", "sim-download-empty" + (isError ? " is-error" : ""), text),
+                    );
+                });
+            }
+
+            async function _loadSimulationFiles() {
+                var sid = sessionId;
+                if (!sid) {
+                    _simFilesPlaceholder("请先打开一个仿真会话", true);
+                    return;
+                }
+                _simFilesLoading = true;
+                _simFilesPlaceholder("正在读取文件列表…", false);
+                var bundleBtn = document.getElementById("sim-download-bundle-btn");
+                if (bundleBtn) bundleBtn.disabled = true;
+                try {
+                    var resp = await fetch(
+                        API + "/session/" + encodeURIComponent(sid) + "/simulation-files",
+                    );
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    var data = await resp.json();
+                    if (sid !== sessionId) return; // 会话已切换，丢弃过期响应
+                    _simFilesData = data;
+                    _renderSimulationFiles();
+                } catch (e) {
+                    console.warn("[simFiles] load failed:", e);
+                    _showUiNotice("仿真文件列表读取失败，请稍后重试");
+                    _simFilesPlaceholder("读取失败，请稍后重试（MCP 服务不可达？）", true);
+                    var note = document.getElementById("sim-download-foot-note");
+                    if (note) note.textContent = "文件列表读取失败：无法连接仿真服务。";
+                } finally {
+                    _simFilesLoading = false;
+                }
+            }
+
+            function _triggerBrowserDownload(url) {
+                var link = document.createElement("a");
+                link.href = url;
+                link.download = "";
+                link.style.display = "none";
+                document.body.appendChild(link);
+                link.click();
+                setTimeout(function () { link.remove(); }, 1000);
+            }
+
+            function _downloadSimulationCategory(side, category, label) {
+                if (!sessionId) return;
+                var url =
+                    API +
+                    "/session/" +
+                    encodeURIComponent(sessionId) +
+                    "/simulation-files/bundle?side=" +
+                    encodeURIComponent(side) +
+                    "&category=" +
+                    encodeURIComponent(category);
+                _triggerBrowserDownload(url);
+                _showUiNotice("正在打包下载「" + (label || category) + "」…");
+            }
+
+            function _downloadSimulationBundle(side) {
+                if (!sessionId) return;
+                var url =
+                    API +
+                    "/session/" +
+                    encodeURIComponent(sessionId) +
+                    "/simulation-files/bundle?side=" +
+                    encodeURIComponent(side);
+                _triggerBrowserDownload(url);
+                _showUiNotice(
+                    side === "both" ? "正在打包下载两侧全部文件…" : "正在打包下载仿真文件…",
+                );
+            }
+
+            function openSimDownloadPanel() {
+                var btn = document.getElementById("sim-download-btn");
+                if (btn && btn.disabled) {
+                    _showUiNotice("仿真开始或完成后再查看/下载流量文件");
+                    return;
+                }
+                var modal = document.getElementById("sim-download-modal");
+                if (!modal) return;
+                modal.classList.add("show");
+                modal.setAttribute("aria-hidden", "false");
+                // 每次打开都重新拉列表：会话可能刚完成仿真，或文件已被清理。
+                _loadSimulationFiles();
+                var closeBtn = modal.querySelector(".sim-download-close");
+                if (closeBtn) closeBtn.focus();
+            }
+
+            function closeSimDownloadPanel() {
+                var modal = document.getElementById("sim-download-modal");
+                if (!modal) return;
+                modal.classList.remove("show");
+                modal.setAttribute("aria-hidden", "true");
+            }
+
+            document.addEventListener("keydown", function (e) {
+                if (e.key !== "Escape") return;
+                var modal = document.getElementById("sim-download-modal");
+                if (modal && modal.classList.contains("show")) closeSimDownloadPanel();
+            });
+
             async function startSimulation(simParams, forceRetryArg) {
                 var btn = document.getElementById("btn-start-sim");
                 if (!btn || btn.disabled) return;
@@ -8511,6 +9263,9 @@
                 // 「取消旧任务 + 清空旧 task_id 重新下发」。普通首次启动必须为 false，
                 // 否则会把并发/重复点击变成「取消再重发」，反而制造孤儿任务。
                 var forceRetry = forceRetryArg === true || _simFailed === true;
+                // 重试会取消旧任务并重新下发：先把下载入口里的旧 task_id 清掉，
+                // 避免弹窗在提交期间展示上一轮已取消的任务。
+                if (forceRetry) _rememberSimTaskIds("", "");
 
                 // 记住提交时的会话：提交是异步的，期间用户可能点「+新任务」或切历史会话，
                 // 返回后不能再把旧会话的仿真状态/气泡写进新会话。
@@ -8711,6 +9466,11 @@
                 _simStarted = false;
                 window._simStarted = false;
                 _comparisonReport = null;
+                // 下载入口绑定旧会话的任务：切换会话时一并清掉，避免把旧任务
+                // 显示/下载成新会话的产物。
+                window._simTaskIds = { original: "", equivalent: "" };
+                _simFilesData = null;
+                _updateSimDownloadEntry();
             }
 
             // Page is going away (refresh/close/navigate): drop the socket explicitly so
@@ -8934,6 +9694,7 @@
             }
 
             function _bindSimTaskBubbles(origTaskId, eqTaskId) {
+                _rememberSimTaskIds(origTaskId, eqTaskId);
                 var pairs = [["original", origTaskId], ["equivalent", eqTaskId]];
                 for (var i = 0; i < pairs.length; i++) {
                     var side = pairs[i][0], tid = pairs[i][1];
@@ -9052,6 +9813,12 @@
                     .then(function (data) {
                         // 请求期间切换了会话：丢弃，不能把旧会话结果写进新会话
                         if (reqSessionId !== sessionId) return;
+                        // 完成同步响应也带 task_id：刷新/重连后用于重建下载入口
+                        var knownIds = window._simTaskIds || {};
+                        _rememberSimTaskIds(
+                            data.original_task_id || knownIds.original,
+                            data.equivalent_task_id || knownIds.equivalent,
+                        );
                         var results = data.results || {};
                         var comparison = results.comparison || null;
                         var step = data.step || "";
@@ -9122,6 +9889,7 @@
                 // 本次触发的两条气泡一起落到失败态（整次验证已中止）
                 _finishSimTaskBubbles("failed");
                 addMessage("error", "仿真任务失败: " + (message || "未知错误"));
+                _updateSimDownloadEntry();
                 checkSimReady();
             }
 
@@ -9250,6 +10018,7 @@
                     });
                 }
                 initWorkflow();
+                _updateSimDownloadEntry();
                 document.getElementById("chat-input").focus();
                 // 首次进入（无历史会话）同样是空画布
                 showStartGuide();

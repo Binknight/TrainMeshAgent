@@ -6,6 +6,8 @@ import json
 import logging
 import requests
 from typing import Any
+from urllib.parse import quote
+
 from app.config import config
 
 logger = logging.getLogger(__name__)
@@ -158,6 +160,68 @@ class MCPClient:
         需要按「尽力取消」处理。
         """
         return self._call_tool("cancel_task", {"task_id": task_id})
+
+    # ── 仿真产物文件（MCP Server 的 REST 扩展，非 JSON-RPC tool） ──
+    # Flask 不直接访问 workspace：文件列举/下载都由 MCP Server 校验任务目录与
+    # 路径后再流式返回，Flask 只做会话侧 task_id 绑定与代理（见 app/routes/simulation_files.py）。
+
+    def _get_json(
+        self, path: str, params: dict[str, Any] | None = None, timeout: int = 20
+    ) -> dict[str, Any]:
+        try:
+            resp = self._session.get(
+                f"{self.server_url}{path}", params=params, timeout=timeout
+            )
+        except requests.RequestException as exc:
+            logger.warning(f"MCP GET '{path}' failed: {exc}")
+            return {"error": str(exc), "status": "unavailable"}
+        if resp.status_code != 200:
+            detail: Any = ""
+            try:
+                body = resp.json()
+                detail = body.get("error") if isinstance(body, dict) else body
+            except ValueError:
+                detail = (resp.text or "").strip()[:200]
+            logger.warning(
+                f"MCP GET '{path}' returned HTTP {resp.status_code}: {detail}"
+            )
+            return {
+                "error": detail or f"HTTP {resp.status_code}",
+                "status": "unavailable",
+                "http_status": resp.status_code,
+            }
+        try:
+            return resp.json()
+        except ValueError as exc:
+            logger.warning(f"MCP GET '{path}' returned invalid JSON: {exc}")
+            return {"error": str(exc), "status": "unavailable"}
+
+    def list_task_files(self, task_id: str) -> dict[str, Any]:
+        """列出任务目录下的仿真产物（文件路径/大小/类别 + 任务状态）。"""
+        return self._get_json(f"/tasks/{quote(task_id, safe='')}/files", timeout=20)
+
+    def open_task_file(
+        self, task_id: str, rel_path: str, timeout: int = 60
+    ) -> requests.Response:
+        """以流式响应打开单个产物文件（调用方负责 iter_content 与 close）。"""
+        return self._session.get(
+            f"{self.server_url}/tasks/{quote(task_id, safe='')}/files/download",
+            params={"path": rel_path},
+            stream=True,
+            timeout=timeout,
+        )
+
+    def open_task_bundle(
+        self, task_id: str, category: str | None = None, timeout: int = 600
+    ) -> requests.Response:
+        """以流式响应打开 MCP 侧打包好的 ZIP（调用方负责 close）。"""
+        params = {"category": category} if category else None
+        return self._session.get(
+            f"{self.server_url}/tasks/{quote(task_id, safe='')}/files/bundle",
+            params=params,
+            stream=True,
+            timeout=(10, timeout),
+        )
 
     def check_health(self) -> bool:
         """Check if MCP server is reachable."""

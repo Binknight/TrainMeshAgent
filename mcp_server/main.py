@@ -1,18 +1,20 @@
 """FastAPI 应用：GET /health、POST /mcp（JSON-RPC tools/call）。"""
 
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional, Union
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from mcp_server import __version__
 from mcp_server.config import settings
 from mcp_server.errors import McpError
 from mcp_server.rpc import JsonRpcRequest, JsonRpcResponse, JsonRpcError, ToolsCallParams
-from mcp_server.services import task_scheduler, workspace_cleaner
+from mcp_server.services import task_files, task_scheduler, workspace_cleaner
 from mcp_server.services.task_loader import recover_interrupted_tasks
 from mcp_server.tools.registry import dispatch_tool, list_tools
 
@@ -94,6 +96,46 @@ async def health() -> dict[str, str]:
 async def tools_catalog() -> dict[str, Any]:
     """非规格接口：列出已注册 tool 及 JSON Schema（便于联调）。"""
     return {"tools": list_tools()}
+
+
+# ── 仿真产物文件（REST，非 JSON-RPC；供 Flask 的「仿真流量文件」下载代理） ──
+# 任务目录由 MCP Server 独占管理，Flask 不直接读 workspace；文件是否存在、路径
+# 是否越权、任务是否已被磁盘清理，都以这里的结果为准（见 services/task_files.py）。
+
+
+@app.get("/tasks/{task_id}/files")
+def task_files_list(task_id: str) -> JSONResponse:
+    """列出任务目录内的文件分组与任务状态（不读文件内容）。"""
+    try:
+        return JSONResponse(content=task_files.list_task_files(task_id))
+    except task_files.TaskFilesError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+
+
+@app.get("/tasks/{task_id}/files/download")
+def task_file_download(task_id: str, path: str) -> Any:
+    """下载单个产物文件（path 为相对任务目录的路径）。"""
+    try:
+        file_path = task_files.resolve_file(task_id, path)
+    except task_files.TaskFilesError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+    media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    return FileResponse(file_path, media_type=media_type, filename=file_path.name)
+
+
+@app.get("/tasks/{task_id}/files/bundle")
+def task_files_bundle(task_id: str, category: Optional[str] = None) -> Any:
+    """按类别（可省略）把任务产物打成 ZIP 流式下载；响应结束后删除临时文件。"""
+    try:
+        bundle_path, filename = task_files.create_bundle(task_id, category=category)
+    except task_files.TaskFilesError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+    return FileResponse(
+        bundle_path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(task_files.remove_quietly, bundle_path),
+    )
 
 
 @app.post("/mcp")

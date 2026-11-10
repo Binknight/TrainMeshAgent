@@ -27,7 +27,7 @@
 | 组件 | 位置 | 职责 | 关键点 |
 |------|------|------|--------|
 | **Flask 应用** | `app/` | 前端 + Agent 编排 + REST/SSE/WebSocket | 入口 `app/main.py`；启动即执行建表迁移 |
-| **MCP 仿真 Server** | `mcp_server/` | 暴露 10 个仿真工具，管理任务生命周期（并发上限 + 排队 + 超时 + 取消） | **独立部署单元**，有自己的 `requirements.txt`；`app/mcp/client.py` 只通过 HTTP 调它 |
+| **MCP 仿真 Server** | `mcp_server/` | 暴露 10 个仿真工具，管理任务生命周期（并发上限 + 排队 + 超时 + 取消）；另有只读产物文件 REST（`/tasks/<task_id>/files*`） | **独立部署单元**，有自己的 `requirements.txt`；`app/mcp/client.py` 只通过 HTTP 调它 |
 | **仿真工具** | `aicm/`（需自行放入） | 真正的仿真程序 `run.py` | 不在版本库中；缺失时 MCP Server 仍能启动，但下发任务报 `sim_tool_home not found` |
 
 **`app/` 与 `mcp_server/` 的依赖必须保持独立。** 前者是 Agent 侧，后者部署在仿真系统一侧，
@@ -193,6 +193,7 @@ DAO 是真正的影响集中点。
 | **会话写路径：长操作非阻塞互斥 + 短写 session_lock** | `SessionManager` 有两把不同用途的锁：`session_lock()`（RLock，短写串行）与 `try_begin_exclusive()/end_exclusive()`（长操作名额，非阻塞）。**Agent 对话 / Step1 / Step2（含流）/ Step3 / run-simulation 必须占用长操作名额**：冲突返回 `409 task_busy`（流式接口返回 SSE error 事件），前端对 409/429 只提示「稍后重试」、不标失败。**不要改成阻塞等待** —— 一个长对话会把另一个标签页卡到 LLM 超时。参数/公式行/删除等短写必须 `with session_manager.session_lock(sid)`；Agent 工具里改 session 的赋值块（orchestrator `_apply_*`）也要加锁。新增「读-改-写会话」的路由时按这个模式接入，跑 `python tests/test_session_write_locks.py` + `python tests/test_session_concurrency.py` |
 | **MCP 启停必须走 lifespan；任务状态要可恢复** | `mcp_server/main.py` 用 FastAPI lifespan 管理后台线程：*startup* = `recover_interrupted_tasks()`（恢复扫描，必须在 scheduler.start 之前）→ `scheduler.start()` → `cleanup_worker.start()`；*shutdown* = `cleanup_worker.stop()` → `scheduler.shutdown(cancel_running=True)`（取消并 kill 运行中进程组、写 cancelled 终态、停 worker）。**不要在 import 时启动/停止后台线程**。任务状态迁移（prepare/queued/running/terminal）必须 best-effort 写 `workspace/<task_id>/task_state.json`（`mcp_server/services/task_state.py`，原子写、失败不影响主流程）；`task_loader` 恢复规则：terminal 原样；running/queued + 有结果 → completed，否则 failed 且消息含「服务重启，任务中断（进程已丢失）」；dry_run submitted 保持；无 state 文件回落 legacy。新增状态迁移点要同步写 state + 更新 loader 规则，跑 `python tests/test_restart_recovery.py` 与 `python tests/test_mcp_server_e2e.py` |
 | **前端“只在某个初始化分支里加载数据”会造成刷新才恢复的间歇 bug** | Step1 的模型名称下拉（`#wf-orig-model-name`）历史上只在 `init()` 的「无会话」分支调用 `loadModelCatalogDropdown()`，而 `init()` 在「有可恢复会话」时会提前 `return`（跳过该行）→ 带会话刷新页面后下拉为空；点「+ 新任务」也不补加载，再刷新一次（`newSession()` 已清 localStorage）才恢复，表现为「有时候为空、刷新才好」。现在 `init()` 开头**无条件**发起加载，`newSession()` / `openWorkflowParams()` 兜底补加载；loader 幂等（`_modelCatalogLoaded/_modelCatalogLoading`）且失败重试 3 次（1.5s/3s 退避）。**新增下拉/目录类初始化不要只写在某个分支里**；改完必须用真实浏览器验证「写入 `localStorage.mesh_session` 后 reload、断言 option 数 > 1」这一场景（回归方式见提交说明/`.tmp/model_catalog_probe.mjs`） |
+| **仿真产物文件只能经 MCP 校验后下载，Flask 不得直接读 workspace** | 下载入口在「等效仿真验证」tab 右上角（`static/index.html` 的 `#sim-download-btn`）。数据链路：前端 → Flask `GET /api/session/<id>/simulation-files*` → MCP Server 只读 REST `GET /tasks/<task_id>/files`、`/files/download?path=`、`/files/bundle?category=`（`mcp_server/services/task_files.py`）。**安全红线**：① `side` 只能 `original`/`equivalent`，task_id 只能来自会话的 `*_task_id`（否则 404），不能接受前端传 task_id；② `path` 由 MCP `_normalize_rel_path` + `resolve().relative_to(task_dir)` 校验，**拒绝 `..`、绝对路径、反斜杠穿越、符号链接逃逸**；③ 打包有 `files_max_list` / `files_bundle_max_bytes`（MCP）与 `SIM_FILES_MAX_BUNDLE_BYTES` / `SIM_FILES_MAX_FILES`（Flask 双侧合并）上限，超出 413；④ 任务目录被磁盘清理后返回 404（前端显示「已被清理/读取失败」），不要 fallback 到别的目录。改完跑 `python tests/test_simulation_files_api.py`（真实 MCP HTTP + Flask test client 端到端） |
 
 ---
 
@@ -219,6 +220,7 @@ python tests/test_mcp_task_scheduler.py       # PASS  MCP 并发上限 / FIFO �
 python tests/test_workspace_cleanup.py        # PASS  workspace 清理优先级 / 两阶段 / 水位应急 / 临界 / dry_run / worker
 python tests/test_session_write_locks.py      # PASS  会话长操作互斥（409）/ 短写并发 / SSE busy / 删除保护
 python tests/test_restart_recovery.py         # PASS  task_state 迁移 / loader 恢复规则 / 启动扫描幂等 / shutdown 取消 / lifespan 优雅停机
+python tests/test_simulation_files_api.py     # PASS  仿真产物下载：MCP REST + Flask 代理 + ZIP 打包 + 路径穿越防护
 
 # 当前基线为失败（exit 1）
 python tests/test_estimate_equivalence.py

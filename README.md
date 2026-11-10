@@ -96,6 +96,8 @@ cp .env.example .env
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000` | 写锁等待上限（毫秒）；WAL 下单写者，靠等待而非报错 |
 | `SQLITE_SYNCHRONOUS` | `NORMAL` | `OFF` / `NORMAL` / `FULL` / `EXTRA`；WAL 下 `NORMAL` 只在 checkpoint 时 fsync |
 | `MCP_SERVER_URL` | `http://localhost:9000` | Flask 侧要连的 MCP 地址 |
+| `SIM_FILES_MAX_BUNDLE_BYTES` | `2147483648` | 「仿真流量文件」双侧合并 ZIP 体积上限（超出 413，提示按分类下载） |
+| `SIM_FILES_MAX_FILES` | `20000` | 双侧合并 ZIP 的文件数上限 |
 | `FLASK_PORT` | `5000` | Flask 端口 |
 | `FLASK_DEBUG` | `false` | 调试模式（本地可设 `true`） |
 | `FLASK_USE_RELOADER` | `false` | 代码热重载 |
@@ -118,6 +120,8 @@ MCP Server 侧变量以 `AICM_MCP_` 为前缀（见 `mcp_server/config.py`），
 | `AICM_MCP_TASK_TIMEOUT_SEC` | `3600` | 单任务执行超时（秒）。超时后 kill 整个仿真进程组并置 `failed`，避免挂死任务永久占槽 |
 | `AICM_MCP_QUEUE_TIMEOUT_SEC` | `900` | 排队超时（秒）。排队超过该时长仍未拿到槽位则置 `failed`，避免无限等待 |
 | `AICM_MCP_MAX_QUEUE_SIZE` | `20` | 排队任务上限；超出时 MCP 返回 JSON-RPC `-32004`（「队列已满」），app 转 HTTP `429 simulation_queue_full` 背压（不把会话标失败） |
+| `AICM_MCP_FILES_MAX_LIST` | `20000` | 单任务最多列举/打包的文件数；列表超出截断展示，打包返回 413 |
+| `AICM_MCP_FILES_BUNDLE_MAX_BYTES` | `2147483648` | MCP 单次 ZIP 打包总字节上限（0 = 不限） |
 | `AICM_MCP_WORKSPACE_RETENTION_DAYS` | `7` | 结果目录 `results/` 保留天数；到期先只删 `results/`（体积大头） |
 | `AICM_MCP_LOG_RETENTION_DAYS` | `14` | 日志/脚本/task_meta 保留天数；到期删整个任务目录 |
 | `AICM_MCP_MIN_KEEP_TASKS` | `20` | 最近 N 个终态任务无论如何保留（正常水位下优先于保留期，冲突时保留更多） |
@@ -157,6 +161,15 @@ MCP Server 侧变量以 `AICM_MCP_` 为前缀（见 `mcp_server/config.py`），
 > 会把「重启前 running/queued 且没有结果」的任务置 `failed`（消息含「服务重启，任务中断
 > （进程已丢失）」），有结果则置 `completed`。Flask 轮询到 failed 会把会话收敛为 failed，
 > 用户可点「重试仿真」重跑。
+
+> **仿真产物下载（⑤）**：MCP Server 暴露只读 REST `GET /tasks/<task_id>/files`（文件清单 +
+> 分类 + 任务状态）、`.../download?path=...`（单文件流式）、`.../bundle?category=...`（ZIP）；
+> Flask 新增 `GET /api/session/<id>/simulation-files`（两侧清单）、`.../download?side=&path=`、
+> `.../bundle?side=original|equivalent|both&category=`，前端「等效仿真验证」tab 右上角的
+> 「仿真流量文件」入口即调用这些接口。**Flask 不直接读 workspace**：只按会话绑定
+> `side` → `original_task_id`/`equivalent_task_id`，路径穿越与文件是否存在由 MCP 校验；
+> 「双侧合并 ZIP」由 Flask 逐文件从 MCP 流式拉取后打包（有体积/文件数上限）。磁盘清理
+> 删除任务目录后，对应文件会返回 404（前端显示「已被清理/读取失败」）。
 
 > **`AICM_MCP_CONDA_ENV` 默认为空串**：`conda_launcher.build_simulation_command` 在空值时
 > **回退到当前 Python 解释器**，因此本机与容器都不需要 conda（容器镜像走的正是这条）。

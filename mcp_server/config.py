@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     task_timeout_sec: int = 3600
     queue_timeout_sec: int = 900
 
+    # 仿真产物文件下载（REST /tasks/{task_id}/files*，见 services/task_files.py）：
+    # 单任务最多列举/打包的文件数；列表超出时 truncated=true，打包直接 413。
+    files_max_list: int = 20000
+    # 单次 ZIP 打包的总字节上限（0 = 不限）；防止超大 results 目录把临时盘写满。
+    files_bundle_max_bytes: int = 2 * 1024**3
+
     # 工作区磁盘清理（见 mcp_server/services/workspace_cleaner.py）。
     # 优先级（从高到低）：运行中/排队中任务永不删 → 磁盘应急水位 → min_keep_tasks
     # → workspace_retention_days（先删 results/，日志/脚本留到 log_retention_days）。
