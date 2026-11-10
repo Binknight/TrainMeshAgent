@@ -3565,7 +3565,7 @@
                         <div class="workflow-param-row">
                             <label>模型名称</label>
                             <select id="wf-orig-model-name" onchange="onModelNameChange()">
-                                <option value="">— 请选择或输入模型名 —</option>
+                                <option value="">— 请选择模型名 —</option>
                             </select>
                         </div>
                         <div class="workflow-param-row" id="wf-model-ref-row" style="display:none">
@@ -5463,28 +5463,77 @@
 
             // ── Model catalog dropdown: dynamic population + auto-fill on select ──
 
-            async function loadModelCatalogDropdown() {
+            // 模型库下拉的加载状态：
+            //   _modelCatalogLoaded  —— 已成功填充过（幂等，避免重复请求）
+            //   _modelCatalogLoading —— 进行中的 Promise（并发去重）
+            // 注意：页面「带可恢复会话刷新」时 init() 会提前 return，所以 init() 顶部
+            // 必须无条件先调一次；newSession() / openWorkflowParams() 也要兜底补加载。
+            var _modelCatalogLoaded = false;
+            var _modelCatalogLoading = null;
+
+            function _appendModelCatalogOptions(models) {
                 var select = document.getElementById("wf-orig-model-name");
-                if (!select) return;
-                try {
-                    var resp = await fetch(API + "/model-catalog");
-                    if (!resp.ok) return;
-                    var models = await resp.json();
-                    if (!Array.isArray(models) || models.length === 0) return;
-                    // Keep the placeholder, append catalog models
-                    models.forEach(function (m) {
-                        var existing = select.querySelector('option[value="' + m.model_name + '"]');
-                        if (existing) return;
-                        var opt = document.createElement("option");
-                        opt.value = m.model_name;
-                        var label = m.model_name + " (" + (m.source || "") + ")";
-                        if (m.model_type === "sparse") label += " [MoE]";
-                        opt.textContent = label;
-                        select.appendChild(opt);
-                    });
-                } catch (e) {
-                    console.warn("[modelCatalog] dropdown load failed:", e);
+                if (!select || !Array.isArray(models)) return 0;
+                var added = 0;
+                models.forEach(function (m) {
+                    var existing = select.querySelector('option[value="' + m.model_name + '"]');
+                    if (existing) return;
+                    var opt = document.createElement("option");
+                    opt.value = m.model_name;
+                    var label = m.model_name + " (" + (m.source || "") + ")";
+                    if (m.model_type === "sparse") label += " [MoE]";
+                    opt.textContent = label;
+                    select.appendChild(opt);
+                    added += 1;
+                });
+                return added;
+            }
+
+            // 后端可能刚重启/短暂 502：失败重试几次再放弃（1.5s / 3s 退避）
+            async function _fetchModelCatalogWithRetry(attempts) {
+                for (var attempt = 1; attempt <= attempts; attempt++) {
+                    try {
+                        var resp = await fetch(API + "/model-catalog");
+                        if (resp.ok) {
+                            var models = await resp.json();
+                            if (Array.isArray(models) && models.length > 0) {
+                                return models;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(
+                            "[modelCatalog] load failed (attempt " + attempt + "/" + attempts + "):",
+                            e,
+                        );
+                    }
+                    if (attempt < attempts) {
+                        await new Promise(function (r) {
+                            setTimeout(r, 1500 * attempt);
+                        });
+                    }
                 }
+                return null;
+            }
+
+            function loadModelCatalogDropdown(force) {
+                var select = document.getElementById("wf-orig-model-name");
+                if (!select) return Promise.resolve();
+                if (_modelCatalogLoaded && !force) return Promise.resolve();
+                if (_modelCatalogLoading) return _modelCatalogLoading;
+                _modelCatalogLoading = (async function () {
+                    try {
+                        var models = await _fetchModelCatalogWithRetry(3);
+                        if (!models) {
+                            console.warn("[modelCatalog] 模型库加载失败，稍后打开参数表单会重试");
+                            return;
+                        }
+                        _appendModelCatalogOptions(models);
+                        if (select.options.length > 1) _modelCatalogLoaded = true;
+                    } finally {
+                        _modelCatalogLoading = null;
+                    }
+                })();
+                return _modelCatalogLoading;
             }
 
             function _showModelRef(referenceUrl) {
@@ -5604,6 +5653,8 @@
                 hideStartGuide();
                 var overlay = document.getElementById("workflow-param-overlay");
                 if (overlay) overlay.style.display = "flex";
+                // 模型库可能因 init 提前 return / 后端刚重启而没加载：打开表单时兜底重试
+                loadModelCatalogDropdown();
                 document.getElementById("wf-equiv-tp").value = document.getElementById("wf-orig-tp").value;
                 updateEquivalentModelL();
                 // 恢复上次未清理的校验态（例如上次选了未实现的策略）
@@ -6338,6 +6389,9 @@
                 _pendingSimData = false;
                 checkSimReady();
                 initWorkflow();
+                // 保证「+ 新任务」打开的 Step1 表单一定拿到模型库（不受 init 提前
+                // return / 首屏加载失败影响；loader 幂等，已加载时立即返回）
+                loadModelCatalogDropdown();
                 renderHistory();
                 // 新建任务后画布是空的，给出两个开始入口
                 showStartGuide();
@@ -9174,6 +9228,10 @@
             };
 
             (async function init() {
+                // 模型库下拉与「恢复会话」并行加载：恢复成功会在下面提前 return，
+                // 所以必须在 return 之前发起，否则页面带会话刷新时下拉永远为空
+                // （表现为“有时候为空、再刷新一次才加载”）。
+                loadModelCatalogDropdown();
                 const saved = JSON.parse(
                     localStorage.getItem("mesh_session") || "{}",
                 );
@@ -9192,7 +9250,6 @@
                     });
                 }
                 initWorkflow();
-                loadModelCatalogDropdown();
                 document.getElementById("chat-input").focus();
                 // 首次进入（无历史会话）同样是空画布
                 showStartGuide();
