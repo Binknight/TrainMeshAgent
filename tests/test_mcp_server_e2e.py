@@ -200,7 +200,7 @@ try:
 
     status, body = get("/tools")
     tools = body.get("tools", [])
-    check("GET /tools 列出 9 个 tool", len(tools) == 9, str(len(tools)))
+    check("GET /tools 列出 10 个 tool", len(tools) == 10, str(len(tools)))
 
     # ── error paths ──
     r = rpc("no_such_tool", {})

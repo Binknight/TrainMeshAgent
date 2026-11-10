@@ -1,23 +1,86 @@
 """FastAPI 应用：GET /health、POST /mcp（JSON-RPC tools/call）。"""
 
 import logging
-from typing import Any, Optional, Union
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Optional, Union
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from mcp_server import __version__
 from mcp_server.config import settings
 from mcp_server.errors import McpError
 from mcp_server.rpc import JsonRpcRequest, JsonRpcResponse, JsonRpcError, ToolsCallParams
+from mcp_server.services import task_scheduler, workspace_cleaner
+from mcp_server.services.task_loader import recover_interrupted_tasks
 from mcp_server.tools.registry import dispatch_tool, list_tools
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """服务启停：启动任务调度/磁盘清理，停机时优雅收尾。
+
+    启动顺序（**必须在 scheduler.start() 之前**做恢复扫描）：
+    1. ``recover_interrupted_tasks()``：把上次进程遗留的 running/queued 任务在磁盘上
+       落成 completed/failed —— 只改状态文件，不拉起任何子进程；
+    2. ``scheduler.start()``：启动调度 worker（空闲槽位拉起排队任务）；
+    3. ``cleanup_worker.start()``：启动 workspace 磁盘清理线程。
+
+    停机顺序（uvicorn 收到 SIGTERM/退出信号后走 lifespan shutdown）：
+    1. ``cleanup_worker.stop()``：先停后台清理线程；
+    2. ``scheduler.shutdown(cancel_running=True)``：取消并 kill 运行中任务的进程组、
+       标记终态（cancelled）并落盘、停调度 worker 线程（幂等）。
+
+    ``python -m mcp_server`` 的 uvicorn 在 SIGTERM 下执行优雅停机 ⇒ 一定会走到本
+    lifespan 的 finally（Windows 上 ``TerminateProcess`` 之类硬杀无法拦截，那种
+    情况由 task_state.json + 下次启动的恢复扫描兜底）。
+    """
+    stats = None
+    try:
+        stats = recover_interrupted_tasks()
+    except Exception:  # noqa: BLE001 — 恢复扫描失败不能阻止服务启动
+        logger.exception("task recovery scan failed (server keeps starting)")
+    if stats is not None:
+        logger.info(
+            "task recovery scan: scanned=%d interrupted=%d completed=%d failed=%d errors=%d",
+            stats["scanned"],
+            stats["interrupted"],
+            stats["completed"],
+            stats["failed"],
+            stats["errors"],
+        )
+
+    # 调度器 worker：在空闲槽位上拉起排队中的仿真任务（幂等）。
+    # 单 worker uvicorn 只有一个事件循环，任务拉起/收尾必须由该线程负责，
+    # 不能占用请求处理路径。
+    task_scheduler.scheduler.start()
+
+    # 工作区磁盘清理：启动后先等 cleanup_initial_delay_sec 扫一次，之后每
+    # cleanup_interval_hours（默认 24h）扫一次。优先级见 workspace_cleaner 模块说明：
+    # 运行中/排队任务永不删 > 磁盘应急水位 > min_keep_tasks > 结果/日志保留期。
+    workspace_cleaner.cleanup_worker.start()
+
+    try:
+        yield
+    finally:
+        # 先停清理线程，再取消运行中任务并停调度器 worker（顺序不要颠倒：
+        # 清理线程依赖调度器的运行中/排队集合判定保护，先停调度器会拿到脏状态）。
+        workspace_cleaner.cleanup_worker.stop()
+        task_scheduler.scheduler.shutdown(cancel_running=True)
+        logger.info(
+            "shutdown complete: cleanup worker stopped, "
+            "task scheduler cancelled running tasks and stopped"
+        )
+
 
 app = FastAPI(
     title="AICM Simulation MCP Server",
     description="equivalent-modeling-service 对接的仿真系统 MCP Server（HTTP JSON-RPC）",
     version=__version__,
+    lifespan=lifespan,
 )
 
 
@@ -83,7 +146,11 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
         )
 
     try:
-        result_data = dispatch_tool(call_params.name, call_params.arguments)
+        # 工具 handler 是同步函数（含子进程 Popen、结果解析等阻塞 IO）——
+        # 放进线程池，避免单 worker 的 uvicorn 事件循环被一次调用卡住。
+        result_data = await run_in_threadpool(
+            dispatch_tool, call_params.name, call_params.arguments
+        )
         response = JsonRpcResponse(id=rpc.id, result=result_data)
         return JSONResponse(content=response.model_dump_response())
 

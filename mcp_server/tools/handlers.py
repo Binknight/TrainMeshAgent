@@ -2,8 +2,11 @@
 
 import logging
 
-from mcp_server.errors import TaskNotFoundError, TaskNotReadyError
+from mcp_server.config import settings
+from mcp_server.errors import QueueFullError, TaskNotFoundError, TaskNotReadyError
 from mcp_server.schemas.common import (
+    CancelTaskInput,
+    CancelTaskOutput,
     CardDetailInput,
     CardDetailOutput,
     CommDetailInput,
@@ -24,39 +27,70 @@ from mcp_server.schemas.common import (
     SyncLogsOutput,
     TaskStatus,
 )
-from mcp_server.services import results_reader
+from mcp_server.services import results_reader, task_scheduler, task_state
 from mcp_server.services.script_generator import resolve_script_filename
-from mcp_server.services.simulation_runner import prepare_and_launch, refresh_task_status
+from mcp_server.services.simulation_runner import prepare_task, refresh_task_status
 from mcp_server.services.task_loader import require_task
-from mcp_server.services.task_store import task_store
 
 logger = logging.getLogger(__name__)
 
 
 def execute_task(params: ExecuteTaskInput) -> ExecuteTaskOutput:
-    """§3 下发仿真任务。"""
-    record = prepare_and_launch(params)
-    return ExecuteTaskOutput(task_id=record.task_id, status=record.status)
+    """§3 下发仿真任务。
+
+    真实模式：prepare（建任务/脚本/meta/启动命令）后立即返回 ``queued``，
+    子进程由调度器 worker 在空闲槽位拉起 —— 不在此处阻塞等待子进程。
+    dry_run 模式保持历史语义：不排队、不占槽位，返回 ``submitted``。
+    队列已满（背压）时 prepare 留下的记录标 failed 并原样抛出
+    ``QueueFullError``（JSON-RPC -32004）—— 既不静默入队，也不在重启后留下
+    「永远 submitted」的孤儿任务。
+    """
+    record = prepare_task(params)
+    if settings.dry_run:
+        return ExecuteTaskOutput(task_id=record.task_id, status=record.status)
+    try:
+        task_scheduler.scheduler.submit(record)
+    except QueueFullError as exc:
+        record.status = TaskStatus.FAILED
+        record.message = exc.message
+        task_state.write_task_state(
+            record,
+            status=TaskStatus.FAILED,
+            message=exc.message,
+            finished_at=task_state.utc_now_iso(),
+        )
+        raise
+    return ExecuteTaskOutput(task_id=record.task_id, status=TaskStatus.QUEUED)
 
 
 def report_status(params: ReportStatusInput) -> ReportStatusOutput:
-    """§4 查询任务状态。"""
+    """§4 查询任务状态（不读日志 —— 日志读取只发生在 sync_logs）。"""
     record = require_task(params.task_id)
-    record.sync_logs_from_file()
     refresh_task_status(record)
+    queue_position = (
+        record.queue_position if record.status == TaskStatus.QUEUED else None
+    )
     return ReportStatusOutput(
         status=record.status,
         progress=record.progress,
         message=record.message,
+        queue_position=queue_position,
     )
 
 
 def sync_logs(params: SyncLogsInput) -> SyncLogsOutput:
-    """§5 增量同步日志。"""
+    """§5 增量同步日志（按字节游标只读新增内容，offset 为行偏移）。"""
     record = require_task(params.task_id)
     record.sync_logs_from_file()
     lines = record.logs[params.offset :]
     return SyncLogsOutput(lines=lines, next_offset=len(record.logs))
+
+
+def cancel_task(params: CancelTaskInput) -> CancelTaskOutput:
+    """§4b 取消任务：queued 出队不启动；running kill 进程组；终态幂等。"""
+    record = require_task(params.task_id)
+    status = task_scheduler.scheduler.cancel(record)
+    return CancelTaskOutput(task_id=params.task_id, status=status)
 
 
 def _is_running(record) -> bool:

@@ -44,6 +44,29 @@ class TaskNotReadyError(McpError):
         )
 
 
+class QueueFullError(McpError):
+    """排队任务已达上限（背压）：调用方应稍后重试，不得静默入队。
+
+    JSON-RPC code 固定 **-32004**（与 TaskNotReadyError 的 -32003 区分开：
+    一个是「资源/队列满，稍后重试」，一个是「任务结果未就绪」，调用方按 code
+    即可判定是否走退避重试）。
+    """
+
+    def __init__(self, *, queue_size: int, max_queue_size: int) -> None:
+        super().__init__(
+            f"队列已满：排队任务已达上限 max_queue_size={max_queue_size}"
+            f"（当前排队 {queue_size} 个，执行槽位已占满），请稍后重试",
+            code=-32004,
+            data={
+                "reason": "queue_full",
+                "queue_size": queue_size,
+                "max_queue_size": max_queue_size,
+            },
+        )
+        self.queue_size = queue_size
+        self.max_queue_size = max_queue_size
+
+
 class NotImplementedToolError(McpError):
     """Tool 已注册但业务逻辑尚未实现。"""
 

@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from mcp_server.errors import InvalidParamsError, McpError, NotImplementedToolError, UnknownToolError
 from mcp_server.schemas.common import (
+    CancelTaskInput,
+    CancelTaskOutput,
     CardDetailInput,
     CardDetailOutput,
     CommDetailInput,
@@ -91,6 +93,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="获取任务绑定的 pretrain 训练脚本（§11）",
         input_model=GetTrainingScriptInput,
         handler=handlers.get_training_script,
+    ),
+    "cancel_task": ToolDefinition(
+        name="cancel_task",
+        description="取消任务：排队中出队不启动，运行中 kill 进程组，终态幂等（§4b）",
+        input_model=CancelTaskInput,
+        handler=handlers.cancel_task,
     ),
 }
 

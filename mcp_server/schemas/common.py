@@ -7,11 +7,27 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class TaskStatus(str, Enum):
+    # dry_run 模式保留的历史状态：任务已准备但不会拉起子进程
     SUBMITTED = "submitted"
+    # 已入队、等待空闲执行槽位（真实仿真任务在 execute_task 后立即处于该状态）
+    QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
     ERROR = "error"
+    # 调用方显式取消（排队中出队 / 运行中 kill 进程组）
+    CANCELLED = "cancelled"
+
+
+# 终态：不可能再发生状态迁移，调度器可释放槽位、cancel 必须幂等
+TERMINAL_TASK_STATUSES: frozenset[TaskStatus] = frozenset(
+    {
+        TaskStatus.COMPLETED,
+        TaskStatus.FAILED,
+        TaskStatus.ERROR,
+        TaskStatus.CANCELLED,
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +220,24 @@ class ReportStatusOutput(BaseModel):
     status: TaskStatus
     progress: Optional[float] = Field(None, ge=0, le=100)
     message: Optional[str] = None
+    # 1-based FIFO 队列位置；非排队状态（running/终态/dry_run submitted）为 null
+    queue_position: Optional[int] = Field(
+        None, ge=1, description="排队位置（1-based），仅 status=queued 时非空"
+    )
+
+
+# ---------------------------------------------------------------------------
+# §4b cancel_task
+# ---------------------------------------------------------------------------
+
+
+class CancelTaskInput(BaseModel):
+    task_id: str
+
+
+class CancelTaskOutput(BaseModel):
+    task_id: str
+    status: TaskStatus
 
 
 # ---------------------------------------------------------------------------
