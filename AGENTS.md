@@ -27,7 +27,7 @@
 | 组件 | 位置 | 职责 | 关键点 |
 |------|------|------|--------|
 | **Flask 应用** | `app/` | 前端 + Agent 编排 + REST/SSE/WebSocket | 入口 `app/main.py`；启动即执行建表迁移 |
-| **MCP 仿真 Server** | `mcp_server/` | 暴露 9 个仿真工具，管理任务生命周期 | **独立部署单元**，有自己的 `requirements.txt`；`app/mcp/client.py` 只通过 HTTP 调它 |
+| **MCP 仿真 Server** | `mcp_server/` | 暴露 10 个仿真工具，管理任务生命周期（并发上限 + 排队 + 超时 + 取消） | **独立部署单元**，有自己的 `requirements.txt`；`app/mcp/client.py` 只通过 HTTP 调它 |
 | **仿真工具** | `aicm/`（需自行放入） | 真正的仿真程序 `run.py` | 不在版本库中；缺失时 MCP Server 仍能启动，但下发任务报 `sim_tool_home not found` |
 
 **`app/` 与 `mcp_server/` 的依赖必须保持独立。** 前者是 Agent 侧，后者部署在仿真系统一侧，
@@ -167,7 +167,7 @@ DAO 是真正的影响集中点。
 |------|------|
 | **不要用 `python app/main.py`** | 实测报 `ModuleNotFoundError: No module named 'app'` —— Python 把**脚本所在目录**（`app/`）放进 `sys.path` 而非 CWD。必须用 `python -m app.main`（或 `PYTHONPATH=. python app/main.py`） |
 | **`AICM_MCP_CONDA_ENV` 默认为空串** | 空值即回退到当前 Python 解释器（`mcp_server/services/conda_launcher.py` 对空值的处理），因此本机与容器都无须 conda。只有显式设了 `<环境名>` 而该环境不存在时，仿真子进程才会起不来 |
-| **`aicm/` 缺失不阻止 MCP Server 启动** | 校验发生在 `simulation_runner.prepare_and_launch`，即真正下发任务时才报错。纯联调可用 `AICM_MCP_DRY_RUN=1`（只建任务不拉子进程） |
+| **`aicm/` 缺失不阻止 MCP Server 启动** | 校验发生在 `simulation_runner.prepare_task`，即真正下发任务时才报错。纯联调可用 `AICM_MCP_DRY_RUN=1`（只建任务不拉子进程） |
 | **依赖名与 import 名不一致** | `python-dotenv`→`dotenv`、`pyyaml`→`yaml`、`psycopg2-binary`→`psycopg2`、`flask-cors`→`flask_cors`、`flask-sock`→`flask_sock`。做依赖审计时必须归一化，否则全部误报 |
 | **`httpx` 是直接依赖** | `app/agent/orchestrator.py` 直接 import 并构造 OpenAI 客户端（承载 `OPENAI_SSL_VERIFY` / `EXTERNAL_PROXY`），已显式声明，不要当成 openai 的传递依赖而移除 |
 | **SQLite 读回 BOOLEAN 是 0/1，不是 bool** | `app/dao` 出口统一走 `normalize_row()`。漏了这一层，`is_equivalent` / `has_shared_expert` 等列进入 `app/models/schemas.py` 的 pydantic 模型时会因严格布尔校验直接抛错（不是美化问题） |
@@ -185,6 +185,13 @@ DAO 是真正的影响集中点。
 | **前端外链资源在部署环境必被 CSP 拦掉** | 平台下发的 CSP 是 `style-src *.huawei.com 'unsafe-inline'`。`<head>` 里曾 `preconnect` + 引 `https://fonts.googleapis.com/css2?family=JetBrains+Mono…`，经域名 + nginx 访问时浏览器报 `Loading the stylesheet '…' violates the following Content Security Policy directive: "style-src *.huawei.com 'unsafe-inline'"` 并直接拦掉（该域名在内网本身也不可达），也就是说 JetBrains Mono **从来没有真正生效过**，只是白留一条控制台报错。现在外链已删除，等宽字体只保留 `local()` 源的 `@font-face`（零网络请求，本机装了就用），并且 `--font-mono` 把 Latin 等宽字体排在中文之前 —— 否则 webfont 缺席时数字/rank/公式会被"微软雅黑"渲染成比例字体。同源脚本/样式能加载，说明白名单覆盖本站域名；**新增字体/CSS/JS/图片前先确认平台 CSP，默认按"不许外链"处理，依赖一律 vendored 进 `static/`** |
 | **「单卡极限等效」只是 UI 占位，未实现参数推导** | Step 1 表单的等效策略下拉里 `single_card_extreme`（单卡极限等效）没有实现，真实生效的只有 `min_equiv`（最小集群等效）。**不能让它静默回落到 min_equiv** —— 用户选了极限等效却拿到最小集群等效的结果（2026-11-09 用户实测报告）。入口校验有两处且必须保持一致：前端 `static/index.html` 的 `IMPLEMENTED_EQUIV_STRATEGIES`（`onEquivStrategyChange()` 即时红框 + 行内提示，`submitWorkflowParams()` 提交时拦截且不建会话/不推进节点）与后端 `app/routes/session.py` 的同名常量（`workflow_step1` 先校验、返回 400 `strategy_not_implemented`）。实现新策略时同步改这两处并跑 `python tests/test_equiv_strategy_guard.py` |
 | **切换会话必须断开上一会话的仿真进度链路** | 仿真进行中时 `_simWs`（WebSocket）/`_simPollTimer`（HTTP 轮询）/`_simTaskBubbles` 都绑在旧会话上。历史上 `newSession()` / `restoreSession()` 只重置 `_simCompleted` 等标志、没关闭 socket，旧会话的迟到帧会走 `_simTaskEntry()` 在重建后的聊天区**重新创建旧任务的进度气泡**（2026-11-09 真实 bug：仿真中点「+ 新任务」，新任务交互区出现上一任务的进度条）。现在两个切换点都先调用 `_resetSimulationUiForSessionSwitch()`（关 socket + 停轮询 + 清气泡引用 + 重置 `_simCompleted/_simFailed/_simStarted`）；WS `onmessage` 另有 `ownerSession` + `_isCurrent()` 陈旧帧守卫，HTTP 轮询带 `pollSessionId` 守卫。**新增会话切换入口（如按 URL 恢复、删除当前会话）时也必须调用它**，否则同样的串扰会再现 |
+| **切换任务必须复位画布标签页** | `sessionStorage.activeCanvasTab` 是**全局**的（不按会话区分），`restoreSession()` 曾直接沿用它：从已完成任务的「等效结果判定」页切到未仿真任务时，result 分支因 `_comparisonReport` 为空而不切换，标签页 DOM/存储都不复位 → 任务已切换但界面停在空的结果页（2026-11-09 用户实测报告）。现在 `selectHistory()` 传 `{ resetTab: true }` 强制回「等效建模分析」；`restoreSession()` 还校验目标标签页对当前会话有效（result 需 `comparison_report`、simulation 需组网数据），无效即回落建模分析；标签页 DOM/存储统一由 `_setCanvasTabClasses()` 切换。**新增任务切换入口也要走 resetTab 或显式切回建模分析** |
+| **同一会话的仿真提交必须持 session_lock 且幂等** | `SessionState` 是**可变共享对象**，HTTP 请求线程 / 仿真 WS 轮询线程 / SSE 线程都会改它。历史上 `run-simulation` 没有任何锁：两个并发请求（两个标签页各点一次「开始仿真」、或完成回调 + 刷新兜底同时到达）都读到 `task_id=None`，各自下发一遍 —— 实测 2 次调用产生 **4 个 MCP 任务**（2 个孤儿仿真进程），会话只记住最后 2 个。现在 `SessionManager` 提供 per-session `RLock`（`session_manager.session_lock()`），`run-simulation` 全程持锁、`save_session()` 同会话串行（`_persist_session` 是先删后插，必须避免交错）、`_fallback_reconcile_simulation` / `_mark_session_failed` 在锁内重读 `step`，`get_session()` 用双检锁避免并发 cache miss 各加载一份实例。重试语义：只有请求体 `force_retry=true` 才**取消旧任务 + 清空 `*_task_id`/仿真结果/报告后重新下发**（前端「重试仿真」与失败态再次点开始都已带该参数）；普通重复调用复用 task_id 补取结果，已完成会话直接返回缓存（`"cached": true`）。新增任何「读-改-写会话」的接口都必须走 `session_lock()`，改完跑 `python tests/test_session_concurrency.py` |
+| **仿真并发上限/排队/超时/取消只能在 MCP Server 侧做** | Flask 侧只做会话级幂等（同会话不重复下发）；真正 `Popen` 拉起 `run.py` 的是 MCP Server，只有它知道有多少子进程在跑。现在 MCP 侧用 `max_concurrent_tasks`（默认 2 = 1 对仿真）做全局槽位，超出按 FIFO 排队（`status=queued` + `queue_position`），`task_timeout_sec` / `queue_timeout_sec` 兜住挂死与无限排队，`cancel_task` 幂等取消（排队出队、运行中 kill 进程组）；Flask 的 `DELETE /api/session/<id>` 与 force_retry 会调用它。前端依赖这些状态字符串（`queued`/`cancelled`）与 `queue_position` 字段。**性能红线**：`report_status` 不得读日志（曾每次整文件 `read_text` + O(n²) 去重，8k 行单次 162ms × 每秒每任务两次，会把 MCP 单事件循环打满，并行任务互相拖死），`sync_logs` 走 byte offset 增量；FastAPI 里的磁盘/DB 工具调用必须走 `run_in_threadpool`，否则阻塞单 worker 事件循环。改这些跑 `python tests/test_mcp_task_scheduler.py` 与 `python tests/test_mcp_server_e2e.py` |
+| **workspace 磁盘清理的优先级不能改错** | `mcp_server/services/workspace_cleaner.py` 在后台删旧任务产物，避免结果文件把盘写满。优先级从高到低：**运行中/排队中任务永不删 → 磁盘水位应急（>=80% 保留期 2 天/必留 5；>=90% 只留最新 1 个）→ `min_keep_tasks`（默认 20；正常水位下与保留期冲突时**保留更多**，即它赢）→ `workspace_retention_days`（默认 7，超期先只删 `results/`）→ `log_retention_days`（默认 14，超期删整个任务目录）**。默认启动后等 10s 扫一次、之后每 24h 一次。常见改错：①把 `min_keep_tasks` 当成「最多保留」——它只保证最近 N 个不删，不是上限；②应急/临界模式还先保 `min_keep`，导致盘满时腾不出空间；③删除前没排除运行中/排队中、或没校验「workspace 直接子目录 + 含 `task_meta.json`」；④把两阶段合成一步，7~14 天的日志/脚本被提前删掉。清理只动磁盘、**不动数据库历史**；被清理的历史任务无法再看「单卡详情/训练脚本」（实时回读结果文件），主对比页与汇总指标仍可看。改这些跑 `python tests/test_workspace_cleanup.py` |
+| **队列满必须用独立错误码 -32004（不是 -32003）** | `-32003` 已被 `TaskNotReadyError`（任务未完成/结果未就绪，get_result/card_detail 等抛出）占用；**队列满用 `-32004`**（`mcp_server/errors.py::QueueFullError`，message 含「队列已满」，data 带 queue_size/max_queue_size）。`app/mcp/client.py` 的 `_call_tool` 会保留 `error.code`，只有 `execute_task` 把 -32004 映射成 `MCPQueueFullError` —— 其余工具仍按普通失败处理，**不要全局按 code 判队列满**。Flask 把它转成 HTTP `429 simulation_queue_full` 且**不把会话标 failed**（背压不是失败）；前端提示稍后重试、完成态同步会自动重试。`AICM_MCP_MAX_QUEUE_SIZE` 默认 20，背压条件 = 排队数达上限且无空闲槽位。改错误码/阈值需三处同步（mcp_server/errors.py、app/mcp/client.py、前端）并跑 `python tests/test_session_concurrency.py`、`python tests/test_mcp_task_scheduler.py` |
+| **会话写路径：长操作非阻塞互斥 + 短写 session_lock** | `SessionManager` 有两把不同用途的锁：`session_lock()`（RLock，短写串行）与 `try_begin_exclusive()/end_exclusive()`（长操作名额，非阻塞）。**Agent 对话 / Step1 / Step2（含流）/ Step3 / run-simulation 必须占用长操作名额**：冲突返回 `409 task_busy`（流式接口返回 SSE error 事件），前端对 409/429 只提示「稍后重试」、不标失败。**不要改成阻塞等待** —— 一个长对话会把另一个标签页卡到 LLM 超时。参数/公式行/删除等短写必须 `with session_manager.session_lock(sid)`；Agent 工具里改 session 的赋值块（orchestrator `_apply_*`）也要加锁。新增「读-改-写会话」的路由时按这个模式接入，跑 `python tests/test_session_write_locks.py` + `python tests/test_session_concurrency.py` |
+| **MCP 启停必须走 lifespan；任务状态要可恢复** | `mcp_server/main.py` 用 FastAPI lifespan 管理后台线程：*startup* = `recover_interrupted_tasks()`（恢复扫描，必须在 scheduler.start 之前）→ `scheduler.start()` → `cleanup_worker.start()`；*shutdown* = `cleanup_worker.stop()` → `scheduler.shutdown(cancel_running=True)`（取消并 kill 运行中进程组、写 cancelled 终态、停 worker）。**不要在 import 时启动/停止后台线程**。任务状态迁移（prepare/queued/running/terminal）必须 best-effort 写 `workspace/<task_id>/task_state.json`（`mcp_server/services/task_state.py`，原子写、失败不影响主流程）；`task_loader` 恢复规则：terminal 原样；running/queued + 有结果 → completed，否则 failed 且消息含「服务重启，任务中断（进程已丢失）」；dry_run submitted 保持；无 state 文件回落 legacy。新增状态迁移点要同步写 state + 更新 loader 规则，跑 `python tests/test_restart_recovery.py` 与 `python tests/test_mcp_server_e2e.py` |
 
 ---
 
@@ -206,12 +213,17 @@ python tests/test_check_workspace.py          # PASS（Windows 上 SKIP mountinf
 python tests/test_simulation_reconcile.py     # PASS  刷新后仿真会话状态自愈（见 §5 陷阱表）
 python tests/test_topo_model_layout.py        # PASS  模型区几何量不变量（无 NaN 坐标；需 node，缺 node 则 SKIP）
 python tests/test_equiv_strategy_guard.py     # PASS  未实现等效策略的入口拦截（单卡极限等效 → 400）
+python tests/test_session_concurrency.py      # PASS  并发提交不重复下发 / force_retry / 删除取消 / get_session 单实例
+python tests/test_mcp_task_scheduler.py       # PASS  MCP 并发上限 / FIFO 排队 / 排队与执行超时 / 取消 / 增量日志
+python tests/test_workspace_cleanup.py        # PASS  workspace 清理优先级 / 两阶段 / 水位应急 / 临界 / dry_run / worker
+python tests/test_session_write_locks.py      # PASS  会话长操作互斥（409）/ 短写并发 / SSE busy / 删除保护
+python tests/test_restart_recovery.py         # PASS  task_state 迁移 / loader 恢复规则 / 启动扫描幂等 / shutdown 取消 / lifespan 优雅停机
 
 # 当前基线为失败（exit 1）
 python tests/test_estimate_equivalence.py
 
 # 需先启动服务（真实 HTTP）
-python tests/test_mcp_server_e2e.py           # 需 MCP Server :9000
+python tests/test_mcp_server_e2e.py           # 自带 dry-run 服务（8799 端口），需已装 fastapi
 ```
 
 **`tests/test_estimate_equivalence.py` 是既有失败，不是环境问题。** 退出码 1，失败项：

@@ -114,6 +114,49 @@ MCP Server 侧变量以 `AICM_MCP_` 为前缀（见 `mcp_server/config.py`），
 | `AICM_MCP_WORKSPACE_ROOT` | `<仓库根>/workspace` | 仿真任务产物目录 |
 | `AICM_MCP_CONDA_ENV` | *(空)* | 拉起 `run.py` 用的 conda 环境名；默认为空 = 用当前 Python 解释器 |
 | `AICM_MCP_DRY_RUN` | `false` | `true` 时只建任务目录与脚本，不拉起子进程 |
+| `AICM_MCP_MAX_CONCURRENT_TASKS` | `2` | **同时运行的仿真子进程上限**。1 对仿真 = 2 个任务（原始/等效），默认 2 = 1 对并发；超出上限的任务按 FIFO 排队（`status=queued` + `queue_position`），不会直接失败 |
+| `AICM_MCP_TASK_TIMEOUT_SEC` | `3600` | 单任务执行超时（秒）。超时后 kill 整个仿真进程组并置 `failed`，避免挂死任务永久占槽 |
+| `AICM_MCP_QUEUE_TIMEOUT_SEC` | `900` | 排队超时（秒）。排队超过该时长仍未拿到槽位则置 `failed`，避免无限等待 |
+| `AICM_MCP_MAX_QUEUE_SIZE` | `20` | 排队任务上限；超出时 MCP 返回 JSON-RPC `-32004`（「队列已满」），app 转 HTTP `429 simulation_queue_full` 背压（不把会话标失败） |
+| `AICM_MCP_WORKSPACE_RETENTION_DAYS` | `7` | 结果目录 `results/` 保留天数；到期先只删 `results/`（体积大头） |
+| `AICM_MCP_LOG_RETENTION_DAYS` | `14` | 日志/脚本/task_meta 保留天数；到期删整个任务目录 |
+| `AICM_MCP_MIN_KEEP_TASKS` | `20` | 最近 N 个终态任务无论如何保留（正常水位下优先于保留期，冲突时保留更多） |
+| `AICM_MCP_DISK_WATERMARK_PCT` | `80` | 磁盘使用率 >= 该值进入应急清理（`emergency_*` 参数接管） |
+| `AICM_MCP_DISK_CRITICAL_PCT` | `90` | 磁盘使用率 >= 该值进入临界清理（只保留最新 1 个任务） |
+| `AICM_MCP_EMERGENCY_RETENTION_DAYS` | `2` | 应急模式下的保留天数 |
+| `AICM_MCP_EMERGENCY_MIN_KEEP_TASKS` | `5` | 应急模式下的必留任务数 |
+| `AICM_MCP_CLEANUP_INTERVAL_HOURS` | `24` | 清理循环间隔（小时）；启动后先等 `CLEANUP_INITIAL_DELAY_SEC`（10s）扫一次 |
+| `AICM_MCP_CLEANUP_DRY_RUN` | `false` | `true` 时只统计不删除（上线前观察阈值用） |
+| `AICM_MCP_WORKSPACE_CLEANUP_ENABLED` | `true` | 关闭磁盘清理总开关 |
+
+> **磁盘清理语义（③）**：MCP Server 是 workspace 目录的所有者，清理在它内部按优先级执行：
+> **运行中/排队中任务永不删 → 磁盘水位（80%/90%）→ `MIN_KEEP_TASKS`（正常水位下优先于
+> 保留期，冲突时保留更多）→ `WORKSPACE_RETENTION_DAYS`（先删 `results/`，日志留到
+> `LOG_RETENTION_DAYS` 再删整个目录）**。默认每天扫一次；清理后任务目录/结果文件可能不
+> 存在，历史任务的「单卡详情/训练脚本」会不可用，但数据库里的汇总指标与对比报告仍可看。
+
+> **并发控制语义**：MCP Server 是唯一的仿真进程拉起方，因此并发上限/排队/超时/取消都在
+> 这一侧实现（Flask 侧只做会话级幂等与锁）。默认 `MAX_CONCURRENT_TASKS=2`（= 1 对
+> 会话），先保证单对任务跑稳；实际能力由单对仿真的 CPU/内存开销决定，压测确认有余量
+> 后再调大（见 `docs/使用指南.md` §3.3 与 §4）。`cancel_task` 工具用于取消任务（排队中
+> 出队、运行中 kill 进程组），Flask 的 `DELETE /api/session/<id>` 与前端「重试仿真」会自动调用它。
+
+> **背压（①）**：排队任务数超过 `MAX_QUEUE_SIZE` 时，MCP 立即拒绝并返回 JSON-RPC
+> `-32004`（消息含「队列已满」，注意 `-32003` 是「结果未就绪」，两者不能混用）。
+> Flask 把它映射为 HTTP `429 simulation_queue_full`，前端提示「稍后重试」且**不把
+> 会话标成失败**；用户重试即可，不会产生孤儿任务。
+
+> **会话写路径并发（②）**：同一会话同一时刻只允许一个「长操作」（Agent 对话 /
+> Step1 / Step2 / Step3 / 仿真提交），冲突返回 `409 task_busy`（流式接口以 SSE
+> error 事件返回）；参数、公式行、删除等短写统一串行（session_lock）。前端对
+> 409/429 一律按「稍后重试」处理，不会误标任务失败。
+
+> **停机/重启语义（④）**：MCP Server 用 FastAPI lifespan 管理后台线程 —— 启动时拉起
+> 调度器与清理线程，SIGTERM 时先停清理、再取消并 kill 运行中任务的进程组、把状态落成
+> 终态。每个任务在 `workspace/<task_id>/task_state.json` 记录状态迁移；重启后的恢复扫描
+> 会把「重启前 running/queued 且没有结果」的任务置 `failed`（消息含「服务重启，任务中断
+> （进程已丢失）」），有结果则置 `completed`。Flask 轮询到 failed 会把会话收敛为 failed，
+> 用户可点「重试仿真」重跑。
 
 > **`AICM_MCP_CONDA_ENV` 默认为空串**：`conda_launcher.build_simulation_command` 在空值时
 > **回退到当前 Python 解释器**，因此本机与容器都不需要 conda（容器镜像走的正是这条）。
