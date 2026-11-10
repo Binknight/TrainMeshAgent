@@ -6081,6 +6081,9 @@
                         return false;
                     }
 
+                    // 切换会话：先断开上一会话的仿真进度链路（旧 WS / 轮询 / 气泡引用）。
+                    // 若恢复出的会话本身在仿真中，下面的 syncWorkflowFromSession() 会重新连接。
+                    _resetSimulationUiForSessionSwitch();
                     sessionId = id;
                     document.getElementById("session-id-display").textContent =
                         sessionId;
@@ -6247,6 +6250,9 @@
             }
 
             async function newSession() {
+                // 切到新任务：先断开上一会话的仿真进度链路（WS / HTTP 轮询 / 气泡引用），
+                // 否则旧会话的进度帧会在新任务的交互区重建进度气泡。
+                _resetSimulationUiForSessionSwitch();
                 // Close any open parameter overlays from the previous session
                 closeWorkflowParams();
                 closeSimParams();
@@ -8408,6 +8414,9 @@
                 var btn = document.getElementById("btn-start-sim");
                 if (!btn || btn.disabled) return;
 
+                // 记住提交时的会话：提交是异步的，期间用户可能点「+新任务」或切历史会话，
+                // 返回后不能再把旧会话的仿真状态/气泡写进新会话。
+                var submitSessionId = sessionId;
                 btn.disabled = true;
                 btn.textContent = "仿真中...";
                 btn.classList.remove("sim-done", "sim-retry");
@@ -8448,6 +8457,7 @@
                     );
 
                     if (!resp.ok) {
+                        if (submitSessionId !== sessionId) return;
                         var errMsg = "仿真任务失败: HTTP " + resp.status;
                         try {
                             var errBody = await resp.json();
@@ -8467,6 +8477,8 @@
                     }
 
                     var data = await resp.json();
+                    // 提交期间切换了会话（+新任务 / 选历史）：丢弃旧会话的结果
+                    if (submitSessionId !== sessionId) return;
                     var results = data.results || {};
 
                     // 把提交阶段的两条气泡绑到本次的 task_id 上
@@ -8530,6 +8542,7 @@
                         _renderSimResults();
                     });
                 } catch (e) {
+                    if (submitSessionId !== sessionId) return;
                     _simStarted = false;
                     window._simStarted = false;
                     setStatus("验证失败");
@@ -8566,6 +8579,21 @@
                     _simWs = null;
                     try { ws.close(1000); } catch (e) {}
                 }
+            }
+
+            // 切换会话（+新任务 / 选历史会话）时调用：彻底断开上一会话的仿真进度链路。
+            // 不清理的话，旧会话 WebSocket 的迟到帧会走 _simTaskEntry()，在**新会话的
+            // 聊天区重建旧任务的进度气泡**（真实环境 bug：仿真中新建任务会看到旧进度条）。
+            function _resetSimulationUiForSessionSwitch() {
+                _closeSimSocket();
+                _simTaskBubbles = {};
+                _pendingSimBubbles = {};
+                _simCompleted = false;
+                window._simCompleted = false;
+                _simFailed = false;
+                _simStarted = false;
+                window._simStarted = false;
+                _comparisonReport = null;
             }
 
             // Page is going away (refresh/close/navigate): drop the socket explicitly so
@@ -8723,7 +8751,8 @@
             }
 
             function _upsertSimTaskMessage(taskId, side, progress, status) {
-                if (!taskId) return;
+                // 没有 task_id 或已经切到新任务（sessionId 为空）时不要再建气泡
+                if (!taskId || !sessionId) return;
                 var stick = _simChatNearBottom();
                 var entry = _simTaskEntry(taskId, side);
                 _renderSimTaskProgress(entry, progress, status);
@@ -8809,16 +8838,22 @@
                 _simWs = ws;
                 var completedTasks = {};
                 var totalTasks = taskIds.length;
+                // 会话切换后（newSession / 选历史会话）旧 socket 的迟到帧必须丢弃，
+                // 否则会在新会话聊天区重建旧任务的进度气泡。
+                var ownerSession = sessionId;
 
                 // Guard so a stale socket's onclose/onerror can't start a second
                 // poller after we already reconnected (or already finished).
                 function _isCurrent() { return _simWs === ws; }
 
                 ws.onopen = function () {
+                    if (!_isCurrent() || ownerSession !== sessionId) return;
                     ws.send(JSON.stringify({ type: "subscribe", task_ids: taskIds }));
                 };
 
                 ws.onmessage = function (event) {
+                    if (ownerSession !== sessionId) return;
+                    if (!_isCurrent()) return;
                     try {
                         var msg = JSON.parse(event.data);
                     } catch (e) { return; }
@@ -8931,11 +8966,14 @@
                 // HTTP fallback when WebSocket fails
                 if (_simPollTimer) clearTimeout(_simPollTimer);
                 if (_simCompleted || _simFailed) return;
+                // 记住发起轮询时的会话：切换会话（newSession / 选历史）后旧轮询必须失效。
+                var pollSessionId = sessionId;
 
                 _simPollTimer = setTimeout(async function () {
                     if (_simCompleted || _simFailed) return;
+                    if (!pollSessionId || pollSessionId !== sessionId) { _simPollTimer = null; return; }
                     try {
-                        var resp = await fetch(API + "/session/" + sessionId + "/simulation");
+                        var resp = await fetch(API + "/session/" + pollSessionId + "/simulation");
                         if (!resp.ok) {
                             // Session gone (deleted / server restarted) — stop polling
                             if (resp.status === 404) { _simPollTimer = null; return; }
