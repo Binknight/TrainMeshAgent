@@ -4476,10 +4476,14 @@
                             method: "POST",
                         },
                     );
-                    if (!triggerResp.ok)
+                    if (!triggerResp.ok) {
+                        var triggerErr = {};
+                        try { triggerErr = await triggerResp.json(); } catch (_) {}
                         throw new Error(
+                            triggerErr.message || triggerErr.error ||
                             "Step2 触发失败 (" + triggerResp.status + ")",
                         );
+                    }
                     // connect SSE stream for line-by-line loading
                     var url =
                         API +
@@ -4501,6 +4505,11 @@
                                 }, 1500);
                             }
                             if (event.type === "error") {
+                                // Step2 流式生成失败/被并发保护拦截（409 转成 SSE error）：
+                                // 必须把后端 message 显示出来，否则用户只看到连接关闭。
+                                setStatus("error");
+                                addMessage("error", event.message || "等效计算失败");
+                                updateWorkflowNode("equiv_calc", "failed");
                                 eventSource.close();
                             }
                         } catch (parseErr) {
@@ -5159,7 +5168,8 @@
                 overlay.querySelector("#sim-retry-cancel").onclick = close;
                 overlay.querySelector("#sim-retry-confirm").onclick = function () {
                     overlay.remove();
-                    startSimulation(getDefaultSimParams());
+                    // 显式 force_retry：旧 task_id 可能已失败/丢失，必须让后端取消并重新下发
+                    startSimulation(getDefaultSimParams(), true);
                 };
                 overlay.addEventListener("click", function (e) {
                     if (e.target === overlay) close();
@@ -6015,7 +6025,9 @@
 
             async function selectHistory(id) {
                 if (id === sessionId) return;
-                if (await restoreSession(id)) {
+                // 切换任务后默认回到「等效建模分析」标签页，不沿用上一个任务的标签页
+                // （历史 bug：从已完成任务的「等效结果判定」页切到未仿真任务，仍停留在结果页）。
+                if (await restoreSession(id, { resetTab: true })) {
                     renderHistory();
                 }
             }
@@ -6051,7 +6063,8 @@
                 return sessionId;
             }
 
-            async function restoreSession(id) {
+            async function restoreSession(id, options) {
+                var opts = options || {};
                 // Close any open parameter overlays from the previous session
                 closeWorkflowParams();
                 closeSimParams();
@@ -6138,15 +6151,35 @@
                     // Sync workflow from session state (may restore formula lines + set _formulaCardReady)
                     syncWorkflowFromSession(data);
 
-                    // Restore active canvas tab BEFORE canvasRebuild to avoid flash
-                    var savedTab = sessionStorage.getItem("activeCanvasTab");
-                    if (savedTab === "simulation" && (meshOriginal || meshEquivalent)) {
-                        document.querySelectorAll(".canvas-tab").forEach(function (t) {
-                            t.classList.toggle("active", t.getAttribute("data-tab") === "simulation");
-                        });
-                        document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
-                            p.classList.toggle("active", p.id === "tab-panel-simulation");
-                        });
+                    // Restore active canvas tab BEFORE canvasRebuild to avoid flash.
+                    // 切换任务时（opts.resetTab）默认回到「等效建模分析」；页面刷新则沿用
+                    // 上次标签页，但目标标签页必须对当前会话有效（结果页需要对比报告、
+                    // 仿真页需要组网数据），否则回落建模分析 —— 历史 bug：从已完成任务的
+                    // 「等效结果判定」页切到未仿真任务，标签页没有复位，停在空的结果页。
+                    var savedTab = opts.resetTab
+                        ? "modeling"
+                        : sessionStorage.getItem("activeCanvasTab");
+                    var hasReport = !!(data.comparison_report || _comparisonReport);
+                    var hasTopo = !!(
+                        data.original_topology ||
+                        data.equivalent_topology ||
+                        meshOriginal ||
+                        meshEquivalent
+                    );
+                    if (savedTab !== "simulation" && savedTab !== "result") {
+                        savedTab = "modeling";
+                    }
+                    if (savedTab === "result" && !hasReport) savedTab = "modeling";
+                    if (savedTab === "simulation" && !hasTopo) savedTab = "modeling";
+                    _setCanvasTabClasses(savedTab);
+                    // 「开始仿真」按钮只在建模分析页/仿真失败（重试）时显示
+                    var _simBtnEl = document.getElementById("btn-start-sim");
+                    if (_simBtnEl) {
+                        _simBtnEl.style.display =
+                            (savedTab === "modeling" || _simFailed) ? "" : "none";
+                    }
+
+                    if (savedTab === "simulation") {
                         _showActualData = true;
                         requestAnimationFrame(function () {
                             requestAnimationFrame(function () {
@@ -6154,21 +6187,21 @@
                                 _renderSimResults();
                             });
                         });
-                    } else if (savedTab === "result" && _comparisonReport) {
-                        document.querySelectorAll(".canvas-tab").forEach(function (t) {
-                            t.classList.toggle("active", t.getAttribute("data-tab") === "result");
-                        });
-                        document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
-                            p.classList.toggle("active", p.id === "tab-panel-result");
-                        });
+                    } else if (savedTab === "result") {
                         requestAnimationFrame(function () {
                             _renderResultPanel();
                         });
                     } else if (meshOriginal || meshEquivalent) {
+                        // 「等效建模分析」
+                        _showActualData = false;
+                        window._renderMode = null;
                         canvasRebuild();
+                        if (typeof canvasRecenter === "function") canvasRecenter();
                     } else {
                         // Restored an empty session — clear canvas & chat to avoid
                         // showing stale content from the previously viewed session.
+                        _showActualData = false;
+                        window._renderMode = null;
                         d3.select("#canvas-section").selectAll("svg").remove();
                         document.getElementById("canvas-section").style.display = "none";
                         var mct = document.getElementById("mesh-config-toolbar");
@@ -6848,10 +6881,9 @@
                 }
             }
 
-            function switchCanvasTab(tabName) {
-                // 引导只针对「等效建模分析」的空画布，切到其他页签即收起
-                if (tabName !== "modeling") hideStartGuide();
-                // Persist active tab across refreshes
+            // 只切标签页 DOM/存储，不触发布局与重绘。
+            // restoreSession 里必须先摆正标签页再重建画布，否则会闪到上一个任务的标签页。
+            function _setCanvasTabClasses(tabName) {
                 try { sessionStorage.setItem("activeCanvasTab", tabName); } catch (e) {}
                 document.querySelectorAll(".canvas-tab").forEach(function (t) {
                     t.classList.toggle("active", t.getAttribute("data-tab") === tabName);
@@ -6859,6 +6891,13 @@
                 document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
                     p.classList.toggle("active", p.id === "tab-panel-" + tabName);
                 });
+            }
+
+            function switchCanvasTab(tabName) {
+                // 引导只针对「等效建模分析」的空画布，切到其他页签即收起
+                if (tabName !== "modeling") hideStartGuide();
+                // Persist active tab across refreshes
+                _setCanvasTabClasses(tabName);
 
                 // Render AFTER panel switch — double RAF ensures browser
                 // completes full layout reflow before measuring dimensions.
@@ -8410,9 +8449,14 @@
                 }
             }
 
-            async function startSimulation(simParams) {
+            async function startSimulation(simParams, forceRetryArg) {
                 var btn = document.getElementById("btn-start-sim");
                 if (!btn || btn.disabled) return;
+
+                // 重试语义：只有显式 force（重试按钮）或当前处于失败态时才让后端
+                // 「取消旧任务 + 清空旧 task_id 重新下发」。普通首次启动必须为 false，
+                // 否则会把并发/重复点击变成「取消再重发」，反而制造孤儿任务。
+                var forceRetry = forceRetryArg === true || _simFailed === true;
 
                 // 记住提交时的会话：提交是异步的，期间用户可能点「+新任务」或切历史会话，
                 // 返回后不能再把旧会话的仿真状态/气泡写进新会话。
@@ -8445,6 +8489,7 @@
                 var body = {};
                 var params = simParams || getDefaultSimParams();
                 body.simulation_params = params;
+                if (forceRetry) body.force_retry = true;
 
                 try {
                     var resp = await fetch(
@@ -8458,11 +8503,29 @@
 
                     if (!resp.ok) {
                         if (submitSessionId !== sessionId) return;
+                        var errBody = {};
+                        try { errBody = await resp.json(); } catch (_) {}
+                        // 背压（队列满 429）/ 同任务长操作（409）：这不是任务失败，
+                        // 不能把工作流节点标成 failed；提示稍后重试，按钮保持可点。
+                        if (resp.status === 429 || resp.status === 409) {
+                            var busyMsg = errBody.message || (resp.status === 429
+                                ? "系统繁忙：仿真队列已满，请稍后重试"
+                                : "该任务有正在进行的操作，请稍后再试");
+                            _finishSimTaskBubbles("failed", "未提交（稍后重试）");
+                            addMessage("system", "⏳ " + busyMsg);
+                            setStatus("等待重试");
+                            _simStarted = false;
+                            window._simStarted = false;
+                            btn.textContent = "开始仿真";
+                            btn.disabled = false;
+                            btn.classList.remove("sim-done", "sim-retry");
+                            checkSimReady();
+                            return;
+                        }
                         var errMsg = "仿真任务失败: HTTP " + resp.status;
-                        try {
-                            var errBody = await resp.json();
-                            if (errBody.error) errMsg = "仿真任务失败: " + errBody.error;
-                        } catch (_) {}
+                        if (errBody.error) {
+                            errMsg = "仿真任务失败: " + (errBody.message || errBody.error);
+                        }
                         _finishSimTaskBubbles("failed", "提交失败");
                         addMessage("error", errMsg);
                         updateWorkflowNode("simulation", "failed");
@@ -8631,8 +8694,10 @@
             }
 
             var _SIM_STATUS_TEXT = {
+                queued: "排队中，等待空闲仿真槽位…",
                 submitted: "已提交，等待调度…",
                 running: "运行中",
+                cancelled: "已取消",
                 unavailable: "任务查询不到（重试中）",
                 unknown: "任务状态未知（重试中）",
                 poll_error: "状态查询失败（重试中）",
@@ -8690,40 +8755,50 @@
             }
 
             // 原地渲染：只改宽度和文字，不重建节点、不走 markdown。返回后不再产生新消息。
-            function _renderSimTaskProgress(entry, progress, status) {
+            // queuePosition：MCP 调度器排队位次（1-based），仅 status==="queued" 时有效。
+            function _renderSimTaskProgress(entry, progress, status, queuePosition) {
                 if (!entry || !entry.bubble) return;
                 status = status || "";
 
                 var done = status === "completed";
                 var failed = status === "failed" || status === "error";
+                var cancelled = status === "cancelled";
+                var queued = status === "queued";
                 var degraded = (status === "unavailable" || status === "unknown" ||
                                 status === "poll_error");
 
                 var pct = (typeof progress === "number" && progress >= 0)
                     ? Math.round(Math.min(progress, 100)) : null;
-                if (degraded && (pct === null || pct <= 0)) {
-                    pct = entry.lastPct;      // 降级帧不要把手上的进度打回 0
+                if ((degraded || queued) && (pct === null || pct <= 0)) {
+                    pct = entry.lastPct;      // 降级/排队帧不要把手上的进度打回 0
                 } else if (pct !== null) {
                     entry.lastPct = pct;
                 }
                 if (done) { pct = 100; entry.lastPct = 100; }
 
-                var key = String(pct) + "|" + status;
+                var qp = (typeof queuePosition === "number") ? queuePosition : null;
+                var key = String(pct) + "|" + status + "|" + (qp === null ? "" : qp);
                 if (entry.lastKey === key) return;   // 同一状态重复帧不写 DOM
                 entry.lastKey = key;
 
-                var finishing = !done && !failed && pct !== null && pct >= 90;
+                var finishing = !done && !failed && !queued && pct !== null && pct >= 90;
                 entry.bubble.classList.toggle("done", done);
-                entry.bubble.classList.toggle("failed", failed);
-                entry.bubble.classList.toggle("pending", !done && !failed && pct === null);
+                entry.bubble.classList.toggle("failed", failed || cancelled);
+                entry.bubble.classList.toggle("pending", !done && !failed && !cancelled && (pct === null || queued));
                 entry.bubble.classList.toggle("finishing", finishing);
 
-                entry.pctEl.textContent = (pct === null) ? (failed ? "—" : "…") : (pct + "%");
+                entry.pctEl.textContent = (pct === null) ? (failed || cancelled ? "—" : "…") : (pct + "%");
                 entry.fillEl.style.width = (pct === null) ? "0%" : (pct + "%");
                 if (entry.titleEl) entry.titleEl.textContent = _simTaskTitle(entry.side, status);
 
                 if (done) entry.statusEl.textContent = "已完成";
                 else if (failed) entry.statusEl.textContent = "失败";
+                else if (cancelled) entry.statusEl.textContent = "已取消";
+                else if (queued) {
+                    entry.statusEl.textContent = (qp !== null && qp > 0)
+                        ? "排队中（前面还有 " + (qp - 1) + " 个任务）"
+                        : "排队中，等待空闲仿真槽位…";
+                }
                 else if (finishing) entry.statusEl.textContent = "收尾中…";
                 else entry.statusEl.textContent = _SIM_STATUS_TEXT[status] || "运行中";
             }
@@ -8750,12 +8825,12 @@
                 return entry;
             }
 
-            function _upsertSimTaskMessage(taskId, side, progress, status) {
+            function _upsertSimTaskMessage(taskId, side, progress, status, queuePosition) {
                 // 没有 task_id 或已经切到新任务（sessionId 为空）时不要再建气泡
                 if (!taskId || !sessionId) return;
                 var stick = _simChatNearBottom();
                 var entry = _simTaskEntry(taskId, side);
-                _renderSimTaskProgress(entry, progress, status);
+                _renderSimTaskProgress(entry, progress, status, queuePosition);
                 var c = document.getElementById("chat-messages");
                 if (stick && c) c.scrollTop = c.scrollHeight;
             }
@@ -8860,7 +8935,7 @@
 
                     if (msg.type === "status") {
                         // 原地更新对应的任务气泡（不再每帧新增消息）
-                        _upsertSimTaskMessage(msg.task_id, sides[msg.task_id], msg.progress, msg.status);
+                        _upsertSimTaskMessage(msg.task_id, sides[msg.task_id], msg.progress, msg.status, msg.queue_position);
                     } else if (msg.type === "complete") {
                         completedTasks[msg.task_id] = true;
                         _upsertSimTaskMessage(msg.task_id, sides[msg.task_id], 100, "completed");
@@ -8901,30 +8976,54 @@
             }
 
             function _onSimulationAllComplete() {
+                // 幂等：多标签/重连/轮询都可能重复触发完成回调，已完成的会话不再重放
+                // （后端对已完成会话也直接返回缓存，避免重复拉全量卡结果）。
+                if (_simCompleted) return;
                 _closeSimSocket();
+                var reqSessionId = sessionId;
                 // Re-call run-simulation: backend finds existing task_ids, skips execute_task,
                 // calls card_detail to fetch real MCP results, builds comparison, persists to DB.
                 fetch(API + "/session/" + sessionId + "/run-simulation", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
                     .then(function (r) {
+                        // 终态同步遇到「同任务长操作（409）」或「队列满（429）」：
+                        // 属于暂时性繁忙，不能当作失败丢掉完成态，稍后自动重试。
+                        if (r.status === 409 || r.status === 429) {
+                            var busyErr = new Error("busy");
+                            busyErr.retryable = true;
+                            throw busyErr;
+                        }
                         if (!r.ok) throw new Error("HTTP " + r.status);
                         return r.json();
                     })
                     .then(function (data) {
+                        // 请求期间切换了会话：丢弃，不能把旧会话结果写进新会话
+                        if (reqSessionId !== sessionId) return;
                         var results = data.results || {};
+                        var comparison = results.comparison || null;
+                        var step = data.step || "";
+                        // MCP 报 completed 但结果文件尚未落齐（竞态）：后端仍是 simulating，
+                        // 此时不能假装「验证完成」——保持气泡 + 自动轮询重试。
+                        if (!comparison && step !== "completed") {
+                            _noteAllSimTaskBubbles("结果同步中，稍后自动重试…");
+                            _pollSimulationResults();
+                            return;
+                        }
                         _simCompleted = true;
                         window._simCompleted = true;
-                        _comparisonReport = results.comparison || null;
+                        _comparisonReport = comparison;
                         setStatus("验证完成");
                         updateWorkflowNode("simulation", "completed");
                         _finishSimTaskBubbles("completed");
-                        if (results.comparison) {
-                            if (results.comparison.is_equivalent === false) {
+                        if (comparison) {
+                            if (comparison.is_equivalent === false) {
                                 updateWorkflowNode("comparison", "failed");
                                 addMessage("system", "⚠️ 仿真完成，等效性对比存在差异，请检查");
                             } else {
                                 updateWorkflowNode("comparison", "completed");
                                 addMessage("system", "✅ 仿真验证已通过，等效性对比一致");
                             }
+                        } else {
+                            addMessage("system", "⚠️ 仿真完成但暂未取到对比报告，请稍后刷新或重试");
                         }
                         // Populate real card data from MCP
                         if (results.original && results.original.cards) {
@@ -8943,6 +9042,16 @@
                         }
                     })
                     .catch(function (e) {
+                        if (reqSessionId !== sessionId) return;
+                        if (e.retryable) {
+                            _noteAllSimTaskBubbles("任务繁忙，3 秒后自动同步结果…");
+                            setTimeout(function () {
+                                if (reqSessionId === sessionId && !_simCompleted && !_simFailed) {
+                                    _onSimulationAllComplete();
+                                }
+                            }, 3000);
+                            return;
+                        }
                         addMessage("error", "获取仿真结果失败: " + e.message);
                         _onSimulationFailed(e.message);
                     });
