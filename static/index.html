@@ -4554,6 +4554,11 @@
             const API = APP_BASE + "/api";
             let sessionId = "";
             let isStreaming = false;
+            // Agent 对话（SSE 流）进行中时，Step1 参数提交需要排队：对话流持有该会话的
+            // 长操作名额，立即 POST /workflow/step1 会返回 409 task_busy（2026-11-09 实测：
+            // Agent 自动填参后用户立即点「确认提交」→「Step 1 失败: 该任务正在执行其他操作」）。
+            // 这里排队到对话结束（sendMessage 的 finally）再自动提交，并记住发起时的会话。
+            var _pendingWorkflowSubmit = null; // { sid, params }
             let _pendingMeshList = []; // batch mesh_json events until "done"
             let _pendingModelList = []; // batch model_json events until "done"
 
@@ -4659,10 +4664,15 @@
                 updateModeSwitchUI(); // calls applyWorkflowModeUI() internally
             }
 
-            function resetWorkflowState() {
+            function resetWorkflowState(opts) {
                 // Reset workflow node states only — does NOT touch chat panel UI.
                 // Used by syncWorkflowFromSession to restore node progress without
                 // wiping the conversation.
+                // opts.keepForm=true：只重置节点/公式卡，**不清空 Step1 参数表单、不关闭参数层**。
+                // Agent 对话结束时前端会用 workflow_state 做一次节点同步；如果连表单一起重置，
+                // Agent 刚自动填好的参数会被清空、参数层被关掉（用户看到“填好了又没了”，
+                // 2026-11-10 实测）。只有 newSession/init/恢复会话才需要真正清空表单。
+                var keepForm = !!(opts && opts.keepForm);
                 workflowNodeStates = {};
                 workflowHighestCompleted = -1;
                 WORKFLOW_STEPS.forEach(function (step, i) {
@@ -4681,10 +4691,12 @@
                 _formulaLineY = 0;
                 _formulaCardG = null;
                 _formulaCardRect = null;
-                // Close any open parameter overlays and reset form fields to defaults
-                closeWorkflowParams();
-                closeSimParams();
-                resetWorkflowFormFields();
+                if (!keepForm) {
+                    // Close any open parameter overlays and reset form fields to defaults
+                    closeWorkflowParams();
+                    closeSimParams();
+                    resetWorkflowFormFields();
+                }
                 renderWorkflow();
             }
 
@@ -4882,6 +4894,17 @@
                         var err = await resp.json().catch(function () {
                             return {};
                         });
+                        if (resp.status === 409) {
+                            // 会话还有长操作（Agent 对话 / 仿真提交）：这是「稍后重试」
+                            // 而非失败，不要把 Step1 节点标红。
+                            setStatus("idle");
+                            addMessage(
+                                "system",
+                                "⏳ 该任务正在执行其他操作（对话/仿真提交中），Step1 参数稍后重试",
+                            );
+                            updateWorkflowNode("params", "waiting_input");
+                            return;
+                        }
                         throw new Error(
                             err.message ||
                                 err.error ||
@@ -5213,6 +5236,38 @@
                     });
                 }
 
+                // ── Chat 回合结束的快速路径 ──
+                // Agent 对话的 done 事件不带 stage（默认 "auto"），也不带任何旧的
+                // mesh/model/sim/formula 事件。旧逻辑会继续落入下面的 step2 分支：
+                //   ① 白等最多 15 秒「等效计算子步骤完成」（聊天回合永远不会去完成它）；
+                //   ② 顺手把 equiv_gen 标成 completed、simulation 标成 active（没发生过的事）；
+                //   ③ renderThenSleep 依赖 requestAnimationFrame，页面在后台时可能长时间不返回。
+                // 而 sendMessage 的 finally 要等 handleDone 返回后才会补发排队中的 Step1
+                // 提交（_flushPendingWorkflowSubmit），于是用户看到「Agent 对话已完成，继续
+                // 提交 Step1 参数…」后要等十几秒以上画布才出图（2026-11-10 实测 15.7s）。
+                // 没有任何待渲染数据时直接同步节点状态返回，Step1 提交就能立即发出。
+                var _hasStagedData = !!(
+                    origMesh ||
+                    eqMesh ||
+                    _pendingModelList.length ||
+                    _pendingSimData ||
+                    (typeof _pendingFormulaLines !== "undefined" &&
+                        _pendingFormulaLines &&
+                        _pendingFormulaLines.length) ||
+                    workflowNodeStates["equiv_calc_sub3"] === "completed"
+                );
+                if (stage === "auto" && !_hasStagedData) {
+                    syncWorkflowFromLoadedData();
+                    if (_pendingWorkflowState) {
+                        // 保留 Agent 刚自动填好的 Step1 参数表单（见 resetWorkflowState 注释）
+                        syncWorkflowFromSession(_pendingWorkflowState, {
+                            keepForm: true,
+                        });
+                        _pendingWorkflowState = null;
+                    }
+                    return;
+                }
+
                 // ── Stage "step1": 原始组网 + 原始模型结构 → single mode, centered ──
                 if (stage === "step1" || (stage === "auto" && (origMesh || _pendingModelList.length))) {
                     if (origMesh) {
@@ -5332,7 +5387,9 @@
                 // Final sync from loaded data + deferred backend state
                 syncWorkflowFromLoadedData();
                 if (_pendingWorkflowState) {
-                    syncWorkflowFromSession(_pendingWorkflowState);
+                    // Agent 对话结束时的节点同步：不能顺手清空/关闭 Agent 刚自动填好的
+                    // Step1 参数表单（否则用户看到“填好了又没了”，2026-11-10 实测）
+                    syncWorkflowFromSession(_pendingWorkflowState, { keepForm: true });
                     _pendingWorkflowState = null;
                 }
 
@@ -5789,8 +5846,8 @@
                 }
             }
 
-            function syncWorkflowFromSession(sessionData) {
-                resetWorkflowState(); // reset nodes only, don't touch chat UI
+            function syncWorkflowFromSession(sessionData, opts) {
+                resetWorkflowState(opts); // reset nodes only（opts.keepForm=true 时保留 Step1 参数表单）
                 // 下载入口：不区分会话阶段，统一记住两侧 task_id（没有则为空）。
                 // 已完成的历史会话也要能显示任务号，否则弹窗里只能看到 “task: —”。
                 _rememberSimTaskIds(sessionData.original_task_id, sessionData.equivalent_task_id);
@@ -6296,7 +6353,39 @@
                     params.has_shared_expert = document.getElementById("wf-orig-moe-shared").value === "1";
                     params.expert_tensor_parallel_size = parseInt(document.getElementById("wf-orig-moe-expert-tp").value) || 1;
                 }
+                _submitStep1WhenIdle(params);
+            }
+
+            // Agent 对话进行中时把 Step1 参数提交排队，等对话流结束再提交。
+            // 原因：chat_stream 全程占用该会话的长操作名额，期间 POST /workflow/step1
+            // 会 409 task_busy（用户实测：Agent 自动填参后立刻点「确认提交」→ Step 1 失败）。
+            function _submitStep1WhenIdle(params) {
+                if (isStreaming) {
+                    _pendingWorkflowSubmit = { sid: sessionId, params: params };
+                    addMessage(
+                        "system",
+                        "⏳ Agent 正在处理本次请求，参数将在对话完成后自动提交…",
+                    );
+                    return;
+                }
+                _pendingWorkflowSubmit = null;
                 submitStep1(params);
+            }
+
+            function _flushPendingWorkflowSubmit() {
+                var pending = _pendingWorkflowSubmit;
+                if (!pending) return;
+                _pendingWorkflowSubmit = null;
+                if (sessionId !== pending.sid) {
+                    // 对话期间切了任务：丢弃排队参数，避免把 A 的参数提交到 B
+                    addMessage(
+                        "system",
+                        "⚠ 已切换任务，之前排队的参数未提交，请在新任务里重新确认",
+                    );
+                    return;
+                }
+                addMessage("system", "📡 Agent 对话已完成，继续提交 Step1 参数…");
+                submitStep1(pending.params);
             }
 
             // ── Step 3 Simulation Params ──
@@ -7071,6 +7160,9 @@
                     document.getElementById("btn-send").disabled = false;
                     document.getElementById("chat-input").focus();
                     setStatus("idle");
+                    // Agent 对话结束：把「Agent 自动填参后用户抢先点提交」而排队的
+                    // Step1 参数补发出去（对话进行中提交会 409 task_busy）
+                    _flushPendingWorkflowSubmit();
                 }
             }
 
