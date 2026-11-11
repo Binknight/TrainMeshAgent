@@ -4932,6 +4932,11 @@
                     setStatus("error");
                     addMessage("error", "Step 1 失败: " + e.message);
                     updateWorkflowNode("params", "failed");
+                } finally {
+                    // Step1 成功会写入标题/模型/节点状态（params_collected）；409「稍后重试」
+                    // 或参数被拒时，至少要让已建的会话出现在列表里。两种情况都刷新左侧任务
+                    // 列表，避免它停在旧快照（用户实测：点「确认提交」后列表不更新）。
+                    renderHistory();
                 }
             }
 
@@ -4995,6 +5000,10 @@
                         );
                     }
                     if (!isCurrent()) return; // 期间已切任务：结果已落库，回到该任务时从会话恢复
+
+                    // Step2 已原子落库（公式行 + 等效组网/模型 + step=equiv_generated）：
+                    // 左侧任务列表立刻同步标题/状态，不再等 SSE 回放动画结束。
+                    renderHistory();
 
                     // connect SSE stream for line-by-line loading（纯回放，无写、无锁）
                     var url =
@@ -5265,6 +5274,8 @@
                         });
                         _pendingWorkflowState = null;
                     }
+                    // Agent 回合可能改变了会话的标题/模型/节点状态：同步左侧任务列表
+                    renderHistory();
                     return;
                 }
 
@@ -5402,6 +5413,10 @@
                 ) {
                     canvasRebuild();
                 }
+
+                // Agent / API 回合可能已推进会话节点（标题/模型/step）：左侧任务列表同步，
+                // 避免它停在旧快照（Step1 提交后列表不更新即为此类问题）。
+                renderHistory();
             }
 
             function getNodeStateClass(stepId) {
@@ -6554,7 +6569,13 @@
             }
 
             // ── History ──
+            // 左侧任务列表是「服务端会话摘要」的投影。凡是会改变当前任务信息（标题 /
+            // 模型 / 节点状态）的操作，结束后都必须调用 renderHistory() 刷新，否则列表
+            // 会停在旧快照：用户实测 Step1 点「确认提交」后左侧列表没有实时更新（新任务
+            // 不出现、当前任务不高亮），必须手动刷新页面才能看到。
             var _historyCache = [];
+            var _historyRenderSeq = 0;   // 并发/乱序保护：只认最新一次请求的响应
+            var _historyPaintedSig = ""; // 已绘制内容签名（含当前 sessionId）：相同则不重绘
 
             function statusBadge(step) {
                 if (step === "completed") return ["done", "已完成"];
@@ -6582,17 +6603,19 @@
                     .replace(/</g, "&lt;");
             }
 
-            async function renderHistory() {
+            function _historySignature() {
+                // sessionId 参与签名：恢复/切换会话后即使摘要没变，也要重画高亮项
+                return String(sessionId || "") + "\u0001" + JSON.stringify(_historyCache);
+            }
+
+            function _paintHistory() {
                 const list = document.getElementById("history-list");
-                try {
-                    const resp = await fetch(API + "/session/summaries");
-                    if (!resp.ok) throw new Error("HTTP " + resp.status);
-                    _historyCache = await resp.json();
-                } catch (e) {
-                    _historyCache = [];
-                }
-                document.getElementById("history-count").textContent =
-                    _historyCache.length;
+                if (!list) return;
+                const countEl = document.getElementById("history-count");
+                if (countEl) countEl.textContent = _historyCache.length;
+                const sig = _historySignature();
+                if (sig === _historyPaintedSig) return; // 内容未变：保留原 DOM（滚动位置/不闪烁）
+                _historyPaintedSig = sig;
                 if (_historyCache.length === 0) {
                     list.innerHTML =
                         '<div class="history-empty">暂无历史任务</div>';
@@ -6666,6 +6689,24 @@
                     .join("");
             }
 
+            async function renderHistory() {
+                // 并发/乱序保护：Step1 提交、恢复会话、切换任务可能几乎同时触发刷新，
+                // 只让最后发出的那次请求落地，避免旧响应把新快照覆盖回去。
+                var seq = ++_historyRenderSeq;
+                try {
+                    const resp = await fetch(API + "/session/summaries");
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    var data = await resp.json();
+                    if (seq !== _historyRenderSeq) return; // 迟到的旧响应：丢弃
+                    _historyCache = data;
+                } catch (e) {
+                    if (seq !== _historyRenderSeq) return;
+                    // 拉取失败保留上一份快照：刷新失败不应把已有列表清成「暂无历史任务」
+                    // （Step1 提交后的列表刷新尤其不能因为一次抖动而清空）。
+                }
+                _paintHistory();
+            }
+
             async function selectHistory(id) {
                 if (id === sessionId) return;
                 // 切换任务后默认回到「等效建模分析」标签页，不沿用上一个任务的标签页
@@ -6703,6 +6744,9 @@
                         boot: data.server_boot_id || "",
                     }),
                 );
+                // 新会话在 DB 里已有行：立刻刷新左侧任务列表，让「当前任务」出现并
+                // 高亮（Step1 响应后的标题/模型/节点状态由 submitStep1 的 finally 再刷新）。
+                renderHistory();
                 return sessionId;
             }
 
@@ -9484,6 +9528,8 @@
                         setStatus("验证失败");
                         _simStarted = false;
                         window._simStarted = false;
+                        // 服务端可能已把会话标成 failed：左侧列表状态徽标同步
+                        renderHistory();
                         checkSimReady();
                         return;
                     }
@@ -9548,6 +9594,9 @@
                             _pollSimulationResults();
                         }
                     }
+                    // 提交成功：会话 step 已变为 simulating（或直接 completed），
+                    // 左侧任务列表的状态徽标立即同步。
+                    renderHistory();
                     checkSimReady();
                     requestAnimationFrame(function () {
                         if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
@@ -9564,6 +9613,7 @@
                     btn.textContent = "重试仿真";
                     btn.disabled = false;
                     btn.classList.add("sim-retry");
+                    renderHistory(); // 提交异常（如服务端 5xx 已标 failed）时同步左侧列表
                     checkSimReady();
                 }
             }
@@ -9989,6 +10039,8 @@
                         } else {
                             addMessage("system", "⚠️ 仿真完成但暂未取到对比报告，请稍后刷新或重试");
                         }
+                        // 终态（step=completed / 对比报告）已落库：左侧任务列表徽标同步
+                        renderHistory();
                         // Populate real card data from MCP
                         if (results.original && results.original.cards) {
                             meshActualOrig = {};
@@ -10033,6 +10085,8 @@
                 _finishSimTaskBubbles("failed");
                 addMessage("error", "仿真任务失败: " + (message || "未知错误"));
                 _updateSimDownloadEntry();
+                // 失败终态已落库（step=failed）：左侧任务列表状态徽标同步
+                renderHistory();
                 checkSimReady();
             }
 
@@ -10148,6 +10202,9 @@
                 );
                 const savedId = saved.id || "";
                 if (savedId && (await restoreSession(savedId))) {
+                    // 恢复会话后 sessionId 才确定：重绘左侧任务列表才能点亮当前任务
+                    //（首屏那次 renderHistory 在 init 之前就发出了，那时 sessionId 还是空串）。
+                    renderHistory();
                     document.getElementById("chat-input").focus();
                     return;
                 }
