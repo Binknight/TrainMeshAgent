@@ -358,12 +358,21 @@ def _load_session(session_id: str) -> Optional[SessionState]:
 
         for role in ("original", "equivalent"):
             tp = get_topology_params(session_id, role)
-            if tp and tp.get("name"):
-                device_type = DeviceType(tp.get("device_type", "A3"))
-                dp_size = tp.get("dp_size", 1)
-                tp_size = tp.get("tp_size", 1)
-                pp_size = tp.get("pp_size", 1)
-                total_nodes = tp.get("total_nodes", dp_size * tp_size * pp_size)
+            if not (tp and tp.get("name")):
+                continue
+            device_type = DeviceType(tp.get("device_type", "A3"))
+            dp_size = tp.get("dp_size", 1)
+            tp_size = tp.get("tp_size", 1)
+            pp_size = tp.get("pp_size", 1)
+            total_nodes = tp.get("total_nodes", dp_size * tp_size * pp_size)
+            # topology_params 同一张表既存「已生成的组网」，也存 Step1 算出的
+            # 「等效目标参数」（用于重启后继续执行 Step2）。等效侧只有带模型参数
+            # （num_layers）时才证明 Step2 真的生成过等效组网；否则只恢复
+            # equivalent_params，绝不能重建 equivalent_topology —— 否则 Step1-only
+            # 会话重启后会被伪装成「已完成等效推导」（前端渲染出没有模型/公式的
+            # 等效组网，2026-11 用户截图问题：缺等效模型 + 推导卡空白）。
+            has_generated_model = tp.get("num_layers") is not None
+            if role == "original" or has_generated_model:
                 # Rebuild nodes from dp/tp/pp (deterministic, no need to persist separately)
                 nodes = []
                 for g in range(total_nodes):
@@ -389,62 +398,66 @@ def _load_session(session_id: str) -> Optional[SessionState]:
                     nodes=nodes,
                 ))
 
-                params_attr = f"{role}_params"
-                setattr(state, params_attr, TopologyParams(
-                    device_type=device_type,
-                    dp=tp.get("dp_size", 1),
-                    tp=tp.get("tp_size", 1),
-                    pp=tp.get("pp_size", 1),
-                    ep=tp.get("ep"),
-                ))
+            # 参数始终恢复：重启后 Step2 依赖 equivalent_params 才能继续执行
+            params_attr = f"{role}_params"
+            setattr(state, params_attr, TopologyParams(
+                device_type=device_type,
+                dp=tp.get("dp_size", 1),
+                tp=tp.get("tp_size", 1),
+                pp=tp.get("pp_size", 1),
+                ep=tp.get("ep"),
+            ))
 
-                if tp.get("num_layers"):
-                    d_model = tp.get("hidden_dim", 4096)
-                    num_heads = tp.get("num_heads", 32)
-                    d_ffn = tp.get("d_ffn", 11008)
-                    # ── MoE fields (None for dense models) ──
-                    model_type = tp.get("model_type", "dense")
-                    num_experts = tp.get("num_experts")
-                    moe_router_topk = tp.get("moe_router_topk")
-                    num_moe_layers = tp.get("num_moe_layers")
-                    moe_ffn_hidden_size = tp.get("moe_ffn_hidden_size")
-                    has_shared_expert = tp.get("has_shared_expert", False)
-                    expert_tp = tp.get("expert_tensor_parallel_size", 1)
-                    config = TrainingModelConfig(
-                        num_layers=tp.get("num_layers", 32),
-                        d_model=d_model,
-                        num_heads=num_heads,
-                        d_ffn=d_ffn,
-                        model_type=model_type,
-                        num_experts=num_experts,
-                        moe_router_topk=moe_router_topk,
-                        num_moe_layers=num_moe_layers,
-                        moe_ffn_hidden_size=moe_ffn_hidden_size,
-                        has_shared_expert=has_shared_expert,
-                        expert_tensor_parallel_size=expert_tp,
-                    )
-                    d_head = d_model // num_heads
-                    computed = TrainingModelComputed(
-                        d_head=d_head,
-                        total_params_billions="~0.0",
-                    )
-                    import importlib
-                    _model_gen = importlib.import_module("app.skills.training-model-gen-skill")
-                    layers = _model_gen._build_layers(
-                        config.num_layers, num_heads, d_head, d_ffn, "GELU",
-                        num_experts=num_experts,
-                        moe_ffn_hidden_size=moe_ffn_hidden_size,
-                        num_moe_layers=num_moe_layers,
-                        has_shared_expert=has_shared_expert,
-                    )
-                    model_attr = f"{role}_training_model"
-                    setattr(state, model_attr, TrainingModel(
-                        type="transformer",
-                        model_name=tp.get("model_name"),
-                        config=config,
-                        computed=computed,
-                        layers=layers,
-                    ))
+            if has_generated_model:
+                # DB 里这些列对老会话可能是 NULL（规范列/旧版本缺省），必须给
+                # 非空兜底：否则 pydantic 校验（如 has_shared_expert 必填 bool）
+                # 会抛错，整个会话加载失败（表现成历史任务打不开）。
+                d_model = tp.get("hidden_dim") or 4096
+                num_heads = tp.get("num_heads") or 32
+                d_ffn = tp.get("d_ffn") or 11008
+                # ── MoE fields (None for dense models) ──
+                model_type = tp.get("model_type") or "dense"
+                num_experts = tp.get("num_experts")
+                moe_router_topk = tp.get("moe_router_topk")
+                num_moe_layers = tp.get("num_moe_layers")
+                moe_ffn_hidden_size = tp.get("moe_ffn_hidden_size")
+                has_shared_expert = bool(tp.get("has_shared_expert"))
+                expert_tp = tp.get("expert_tensor_parallel_size") or 1
+                config = TrainingModelConfig(
+                    num_layers=tp.get("num_layers") or 32,
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    d_ffn=d_ffn,
+                    model_type=model_type,
+                    num_experts=num_experts,
+                    moe_router_topk=moe_router_topk,
+                    num_moe_layers=num_moe_layers,
+                    moe_ffn_hidden_size=moe_ffn_hidden_size,
+                    has_shared_expert=has_shared_expert,
+                    expert_tensor_parallel_size=expert_tp,
+                )
+                d_head = d_model // num_heads
+                computed = TrainingModelComputed(
+                    d_head=d_head,
+                    total_params_billions="~0.0",
+                )
+                import importlib
+                _model_gen = importlib.import_module("app.skills.training-model-gen-skill")
+                layers = _model_gen._build_layers(
+                    config.num_layers, num_heads, d_head, d_ffn, "GELU",
+                    num_experts=num_experts,
+                    moe_ffn_hidden_size=moe_ffn_hidden_size,
+                    num_moe_layers=num_moe_layers,
+                    has_shared_expert=has_shared_expert,
+                )
+                model_attr = f"{role}_training_model"
+                setattr(state, model_attr, TrainingModel(
+                    type="transformer",
+                    model_name=tp.get("model_name"),
+                    config=config,
+                    computed=computed,
+                    layers=layers,
+                ))
 
         # Restore session-level runtime fields from topology_params (survive server restart)
         orig_tp = get_topology_params(session_id, "original")

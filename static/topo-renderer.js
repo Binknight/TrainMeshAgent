@@ -285,6 +285,7 @@ function meshBuildDisplayList(ppList) {
 // i.e. TP is the innermost (fastest-varying) dimension, then DP, then PP.
 // Any place that maps between a global rank and its (dp, tp, pp) position must
 // use these two helpers so the mesh labels agree with the simulation ranks.
+/* @testable-entry-view:start */
 function meshRankOf(tp, dp, ppIdx, dpIdx, tpIdx) {
   return ppIdx * (tp * dp) + dpIdx * tp + tpIdx;
 }
@@ -338,9 +339,25 @@ function _getPpColorIndex(ppIdx, ppCount, otherPpCount) {
   return 1;
 }
 
-function _mapRankToOtherSide(side, globalRank) {
-  var srcTopo = side === "orig" ? meshOriginal : meshEquivalent;
-  var dstTopo = side === "orig" ? meshEquivalent : meshOriginal;
+function _mapRankToOtherSide(side, globalRank, origTopoArg, eqTopoArg) {
+  // 允许显式传入两侧组网（纯函数化，供 Node 回归测试直接调用）；不传则回落到
+  // 当前画布上的全局 meshOriginal / meshEquivalent。
+  var srcTopo =
+    side === "orig"
+      ? origTopoArg !== undefined
+        ? origTopoArg
+        : meshOriginal
+      : eqTopoArg !== undefined
+        ? eqTopoArg
+        : meshEquivalent;
+  var dstTopo =
+    side === "orig"
+      ? eqTopoArg !== undefined
+        ? eqTopoArg
+        : meshEquivalent
+      : origTopoArg !== undefined
+        ? origTopoArg
+        : meshOriginal;
   if (!srcTopo || !dstTopo) return null;
 
   var srcTp = srcTopo.tp,
@@ -372,10 +389,211 @@ function _mapRankToOtherSide(side, globalRank) {
   return meshRankOf(dstTp, dstTopo.dp, dstPpIdx, dstDp, dstTpIdx);
 }
 
+// ── 默认进入视图（点击历史任务 / 刷新恢复）─────────────────────────────
+// 产品规则（2026-11 已确认）：
+//   · 两侧仿真结果都齐 → 默认「等效仿真验证」页签；否则 → 「等效建模分析」；
+//   · 默认页签固定原始组网 global rank 0；有等效组网时联动映射出的等效侧 rank。
+//   · 「等效结果判定」页签不作为默认入口，仍需用户手动点开。
+function resolveEntryCanvasTab(state) {
+  state = state || {};
+  // 仿真页画布要求两侧组网同时存在（只有一侧时渲染不出完整对比）；
+  // 「两侧仿真结果齐」在正常链路上必然意味着两侧组网都在，这里再兜一层。
+  var hasBothTopo = !!(state.hasOriginalTopology && state.hasEquivalentTopology);
+  if (state.simCompleted && hasBothTopo) return "simulation";
+  return "modeling";
+}
+
+// 默认固定的 rank 计划：原始组网 global rank 0；仅当两侧组网都在时才有映射 rank
+// （只有原始组网时 mappedRank=null，前端只做高亮 + 模型联动，不渲染对比卡）。
+function resolveEntryRankPlan(origTopo, eqTopo) {
+  if (!origTopo) return null;
+  var pos = meshDecomposeRank(0, origTopo.tp, origTopo.dp);
+  return {
+    side: "orig",
+    globalRank: 0,
+    mappedRank: eqTopo ? _mapRankToOtherSide("orig", 0, origTopo, eqTopo) : null,
+    tpIndex: pos.tpIdx,
+    ppIndex: pos.ppIdx,
+  };
+}
+/* @testable-entry-view:end */
+
 function _getRoundRobinDp(srcDp, dstDpCount) {
   if (!dstDpCount || dstDpCount <= 0) return 0;
   return srcDp % dstDpCount;
 }
+
+// ── 默认进入时的「第一个 rank」固定（可编程版，复用点击 rank 的联动渲染）──
+// 状态语义：_entryAutoPin 是「本次进入任务仍希望自动固定第一个 rank」的意图标记。
+// 用户一旦手动点 rank / 取消固定 / 主动切页签，就清空意图 —— 这样异步仿真数据
+// 回填（fetchSimulationData → meshRebuild 会清空 pinned rank）时，不会把用户
+// 刚做的选择覆盖掉；而用户没操作过时，重放能保证默认固定不会凭空消失。
+var _entryAutoPin = null;
+// 「想自动固定第一个 rank，但进入时还没有任何组网」的待办标记：
+// 空会话 / 新建任务进入时先记下，等 Step1 把原始组网送上来（loadMeshData）再建立
+// pin；否则 Step1 渲染完成后画布上不会有默认 rank/模型联动（2026-11 用户实测）。
+var _entryAutoPinWanted = false;
+
+function clearEntryAutoPin() {
+  _entryAutoPin = null;
+  _entryAutoPinWanted = false;
+}
+
+function requestEntryAutoPin() {
+  _entryAutoPin = null;
+  _entryAutoPinWanted = true;
+}
+
+function hasEntryAutoPin() {
+  return !!_entryAutoPin;
+}
+
+function hasEntryAutoPinWanted() {
+  return !!_entryAutoPinWanted;
+}
+
+function _isSimulationCanvasActive() {
+  var simPanel = document.getElementById("tab-panel-simulation");
+  return !!(simPanel && simPanel.classList.contains("active"));
+}
+
+// 拓扑到达后建立默认固定（只处理「等待中」的入口意图；用户已手动操作过则不会走到这里）
+function _maybeEstablishEntryPin() {
+  if (!_entryAutoPinWanted || !meshOriginal) return;
+  if (_isSimulationCanvasActive()) return; // 仿真页由 fetchSimulationData 的重放处理
+  var plan = resolveEntryRankPlan(meshOriginal, meshEquivalent);
+  if (!plan) return;
+  _entryAutoPinWanted = false;
+  _entryAutoPin = plan;
+  _setEntryPinState("modeling", plan);
+}
+
+// 等效组网后到（Step2 完成）时刷新映射 rank：
+// 入口阶段只有原始组网时 mappedRank 为 null，若不刷新，联动线/对比卡永远不出现。
+function _refreshEntryRankPinForTopologyChange() {
+  if (!_entryAutoPin || !meshOriginal) return;
+  var plan = resolveEntryRankPlan(meshOriginal, meshEquivalent);
+  if (!plan) return;
+  if (
+    plan.globalRank === _entryAutoPin.globalRank &&
+    plan.mappedRank === _entryAutoPin.mappedRank
+  ) {
+    return;
+  }
+  _entryAutoPin = plan;
+  if (_isSimulationCanvasActive()) return; // 仿真页由 fetchSimulationData 重放
+  _setEntryPinState("modeling", plan);
+  // 画布由调用方稍后重建；重建三栏模式时 canvasRebuild 会按 _entryAutoPin 补画
+  // 联动卡 bar（见 canvasRebuild 里的 hook）。这里的 rAF 只是兜底，防止某些
+  // 调用路径没有重建画布。
+  requestAnimationFrame(function () {
+    if (!_entryAutoPin) return;
+    if (_entryAutoPin.mappedRank != null && _centerPanelState.barG) {
+      _centerPanelState._skipBarAnim = true; // 兜底重绘不重播生长动画，避免闪烁
+      _updateCenterBarChart(_entryAutoPin.globalRank, _entryAutoPin.side);
+    }
+  });
+}
+
+// 彻底清空「当前是哪张画布上的哪个 rank 被固定」的全部状态。
+// 用于切换会话 / 新建任务：否则新会话手动打开仿真页时，会看到上一会话遗留的
+// 幽灵 pin（window._pinnedSim 还会让底部详情按旧 rank 渲染）。
+function clearAllRankPins() {
+  meshPinnedRank = null;
+  meshPinnedTpInfo = null;
+  _simPinnedRank = null;
+  _simPinnedTpInfo = null;
+  window._pinnedSim = null;
+  _centerPanelState.barCardVisible = false;
+  _centerPanelState.rankData = null;
+  _centerPanelState.detailVisible = false;
+  _centerPanelState.detailMetric = null;
+  _centerPanelState.detailData = null;
+}
+
+function _setEntryPinState(tabName, plan) {
+  // 清掉上一会话可能残留的 rank 卡片/详情状态（canvasRebuild 不会清 rankData）
+  _centerPanelState.rankData = null;
+  _centerPanelState.detailVisible = false;
+  _centerPanelState.detailMetric = null;
+  _centerPanelState.detailData = null;
+  if (tabName === "simulation") {
+    _simPinnedRank = {
+      side: plan.side,
+      globalRank: plan.globalRank,
+      mappedRank: plan.mappedRank,
+    };
+    _simPinnedTpInfo = {
+      side: plan.side,
+      tpIndex: plan.tpIndex,
+      ppIndex: plan.ppIndex,
+      globalRank: plan.globalRank,
+    };
+    window._pinnedSim = _simPinnedRank;
+  } else {
+    meshPinnedRank = {
+      side: plan.side,
+      globalRank: plan.globalRank,
+      mappedRank: plan.mappedRank,
+    };
+    meshPinnedTpInfo = {
+      side: plan.side,
+      tpIndex: plan.tpIndex,
+      ppIndex: plan.ppIndex,
+      globalRank: plan.globalRank,
+    };
+    _centerPanelState.barCardVisible = plan.mappedRank != null;
+  }
+}
+
+// 在重建画布「之前」放入 pin 状态：首帧即带固定高亮 / 联动线 / 对比卡
+function stageEntryRankPin(tabName) {
+  var plan = resolveEntryRankPlan(meshOriginal, meshEquivalent);
+  if (!plan) {
+    _entryAutoPin = null;
+    return null;
+  }
+  _entryAutoPin = plan;
+  _setEntryPinState(tabName, plan);
+  return plan;
+}
+
+// 画布已按 pin 状态重建后调用：
+//   · 建模页：补画联动卡里的 rank bar（估算值在此前已随 loadMeshData 就绪）；
+//   · 仿真页：交给 _onSimRankPinned（重建 + bar + 底部原始/等效双侧详情）。
+function applyEntryRankPin(tabName, opts) {
+  opts = opts || {};
+  if (!_entryAutoPin) return false;
+  var plan = _entryAutoPin;
+  _setEntryPinState(tabName, plan);
+  if (tabName === "simulation") {
+    if (typeof window._onSimRankPinned === "function") {
+      window._onSimRankPinned();
+      return true;
+    }
+    return false;
+  }
+  if (opts.rebuild) canvasRebuild("#canvas-section");
+  if (plan.mappedRank != null && _centerPanelState.barG) {
+    _updateCenterBarChart(plan.globalRank, plan.side);
+  }
+  return true;
+}
+
+// fetchSimulationData 的 meshRebuild 清空 pin 之后重放（仅在意图仍有效时）
+function reapplyEntryRankPin(tabName) {
+  if (!_entryAutoPin) return false;
+  return applyEntryRankPin(tabName, { rebuild: true });
+}
+
+window._stageEntryRankPin = stageEntryRankPin;
+window._applyEntryRankPin = applyEntryRankPin;
+window._reapplyEntryRankPin = reapplyEntryRankPin;
+window._clearEntryAutoPin = clearEntryAutoPin;
+window._hasEntryAutoPin = hasEntryAutoPin;
+window._clearAllRankPins = clearAllRankPins;
+window._requestEntryAutoPin = requestEntryAutoPin;
+window._hasEntryAutoPinWanted = hasEntryAutoPinWanted;
 
 function _meshCalcDims(tp, pp) {
   var displayCount = Math.min(MESH_CARD.maxPpDisplay, pp);
@@ -752,17 +970,24 @@ function _clearBothTooltips() {
     _centerPanelState.rankData = null;
     _centerPanelState.barG.selectAll("*").remove();
   }
+  // 用户主动取消固定：放弃「默认进入自动固定 rank」的重放意图，
+  // 防止异步仿真数据回来后把已取消的固定重新加回来。
+  clearEntryAutoPin();
 }
 
 // ── Fetch simulation data from REST ──
 
 function fetchSimulationData() {
   if (!sessionId) return;
+  // 会话快照：请求是异步的，期间用户可能切任务。迟到的旧响应不能把上一会话
+  // 的卡指标/完成标记写进新会话，更不能触发默认 rank 固定重放。
+  var reqSessionId = sessionId;
   try {
-    fetch(API + "/session/" + sessionId + "/simulation")
+    fetch(API + "/session/" + reqSessionId + "/simulation")
       .then(function (resp) {
         if (!resp.ok) return;
         return resp.json().then(function (data) {
+          if (reqSessionId !== sessionId) return; // 期间已切换会话：丢弃
           var changed = false;
           if (data.original_simulation && data.original_simulation.cards) {
             meshActualOrig = {};
@@ -790,7 +1015,18 @@ function fetchSimulationData() {
             var activeTab = "modeling";
             try { activeTab = sessionStorage.getItem("activeCanvasTab") || "modeling"; } catch (e) {}
             meshRebuild(activeTab === "simulation" ? "#sim-canvas-section" : "#canvas-section");
-            if (typeof _renderSimResults === "function") _renderSimResults();
+            // meshRebuild 会清空 pinned rank。若当前仍处于「默认进入自动固定 rank」
+            // 状态（用户还没手动点过 rank / 没切过页签），数据到位后必须重放一次，
+            // 否则首帧的默认固定会凭空消失。
+            var entryTabName = activeTab === "simulation" ? "simulation" : "modeling";
+            var reapplied = false;
+            if (activeTab !== "result" && typeof window._reapplyEntryRankPin === "function") {
+              reapplied = window._reapplyEntryRankPin(entryTabName);
+            }
+            // 仿真页的重放（_onSimRankPinned）内部已重绘底部双侧详情，避免重复渲染
+            if (!(reapplied && activeTab === "simulation") && typeof _renderSimResults === "function") {
+              _renderSimResults();
+            }
             if (activeTab === "result" && typeof _renderResultPanel === "function") _renderResultPanel();
           }
         });
@@ -1185,6 +1421,9 @@ function _meshBuildView(
         })
         .on("click", function (event) {
           event.stopPropagation();
+          // 用户手动点 rank：放弃「默认进入自动固定」的意图，
+          // 后续异步数据回填不再覆盖用户这次选择。
+          if (typeof clearEntryAutoPin === "function") clearEntryAutoPin();
           var svgRoot = this.closest("svg");
           var isSimCanvas = svgRoot && svgRoot.classList.contains("sim-svg");
           var d3svg = d3.select(svgRoot);
@@ -1921,10 +2160,11 @@ function _renderFormulaCard(parentG, viewX, viewY, viewW, viewH, skipBarCard) {
     .attr("pointer-events", "none")
     .text(_centerPanelState.formulasCollapsed ? "▶" : "▼");
 
-  // Formula content
+  // Formula content（默认占位模板；带 formula-content-placeholder 标记：
+  // Step2 的 SSE 流式打字机开始写真实公式行前必须先清掉它，否则会和占位文字重叠）
   var formulaG = formulaCardG
     .append("g")
-    .attr("class", "formula-content-group");
+    .attr("class", "formula-content-group formula-content-placeholder");
   if (_centerPanelState.formulasCollapsed) {
     formulaG.attr("display", "none");
   }
@@ -3195,6 +3435,9 @@ function meshRebuild(targetSelector) {
   if (targetSelector === "#sim-canvas-section") {
     _simPinnedRank = null;
     _simPinnedTpInfo = null;
+    // 与画布 pin 同步清空：否则底部仿真详情仍按旧 rank 渲染（画布无高亮、
+    // 底部却显示 Rank #N 的悬空态，用户会以为选中仍然有效）。
+    window._pinnedSim = null;
   } else {
     meshPinnedRank = null;
     meshPinnedTpInfo = null;
@@ -3732,7 +3975,21 @@ function canvasRebuild(targetSelector) {
       );
       _replayFormulaLines();
 
+      // 默认进入的自动固定 rank：Step2 完成后画布会分段重建多次（等效组网/模型/
+      // 估算值刷新/最终同步），每次重建都重播 bar 生长动画会让联动卡闪 3~4 次
+      //（2026-11 用户实测）。自动固定场景下面板是程序重建、非用户点击，直接
+      // 静态出数即可，不播放生长动画。
+      if (_entryAutoPin && _entryAutoPin.mappedRank != null) {
+        _centerPanelState._skipBarAnim = true;
+      }
       _drawPinnedLink(zoomLayer, svg.node(), false);
+      // 三栏模式：若默认进入的 rank 固定已带上映射 rank（Step2 完成后或恢复会话时），
+      // 重建画布后补画联动卡里的 rank bar —— 否则卡片只显示占位文案（用户实测
+      // Step2 完成后等效组网 rank0 没有联动/对比卡数据）。
+      if (_entryAutoPin && _entryAutoPin.mappedRank != null && _centerPanelState.barG) {
+        _centerPanelState._skipBarAnim = true; // 同上：重建时不再重播生长动画
+        _updateCenterBarChart(_entryAutoPin.globalRank, _entryAutoPin.side);
+      }
 
       _topoLayout = {
         mode: "three",
@@ -4328,6 +4585,13 @@ async function loadMeshData(topoData) {
     meshEqDp = 0;
   }
   if (typeof checkSimReady === "function") checkSimReady();
+  // 默认 rank 联动：空会话/新建任务进入时还没有拓扑，等 Step1/Step2 把拓扑送上来后
+  // 再建立固定；等效组网后到（Step2 完成）时把 mappedRank 刷新成真实映射，
+  // 否则联动线/对比卡永远不出现（2026-11 用户实测两个问题）。
+  if (typeof _maybeEstablishEntryPin === "function") _maybeEstablishEntryPin();
+  if (typeof _refreshEntryRankPinForTopologyChange === "function") {
+    _refreshEntryRankPinForTopologyChange();
+  }
 
   // Skip estimate fetch if already populated, or if model params not yet available
   // (loadModelData will trigger _refetchMeshEstimate with full params later)
@@ -4574,7 +4838,15 @@ function _ensureFormulaCard() {
   }
 
   var contentG = cardG.select(".formula-content-group");
-  if (contentG.empty()) {
+  // SSE 流式公式行开始写入：若卡片里还是「默认占位模板」，先清掉并把行游标
+  // 复位到表头下方，否则真实公式行会画在占位文字上，出现文字重叠/堆成一团
+  //（2026-11 用户实测：点 Step2 后推导卡文字叠在一起、随后又动态堆一遍）。
+  if (!contentG.empty() && contentG.classed("formula-content-placeholder")) {
+    contentG.remove();
+    contentG = null;
+    _formulaLineY = _formulaCardHeaderH;
+  }
+  if (!contentG || contentG.empty()) {
     contentG = cardG.append("g").attr("class", "formula-content-group");
     if (typeof _centerPanelState !== "undefined") {
       _centerPanelState.formulaG = contentG;
@@ -4709,11 +4981,14 @@ function _replayFormulaLines() {
   // Reset
   _formulaCardHeaderH = _formulaCardPad + 16 + 10;
   _formulaLineY = _formulaCardHeaderH;
-  cardG.select(".formula-content-group").remove();
 
   var lines = window._pendingFormulaLines || [];
-  if (!lines.length) return;
-
+  if (!lines.length) {
+    // 没有任何待回放公式行（Step2 未完成 / 旧会话没有落 formula_lines）：
+    // 保留 _renderFormulaCard 刚渲染的默认占位内容，不要把卡片清成空白。
+    return;
+  }
+  cardG.select(".formula-content-group").remove();
   var contentG = cardG.append("g").attr("class", "formula-content-group");
   var formulaTexts = [];
   lines.forEach(function (item) {

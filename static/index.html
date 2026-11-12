@@ -6709,9 +6709,9 @@
 
             async function selectHistory(id) {
                 if (id === sessionId) return;
-                // 切换任务后默认回到「等效建模分析」标签页，不沿用上一个任务的标签页
-                // （历史 bug：从已完成任务的「等效结果判定」页切到未仿真任务，仍停留在结果页）。
-                if (await restoreSession(id, { resetTab: true })) {
+                // 默认页签与默认 rank 固定由 restoreSession 按会话状态统一决定
+                // （两侧仿真结果齐 → 等效仿真验证页；否则 → 等效建模分析页）。
+                if (await restoreSession(id)) {
                     renderHistory();
                 }
             }
@@ -6746,12 +6746,15 @@
                 );
                 // 新会话在 DB 里已有行：立刻刷新左侧任务列表，让「当前任务」出现并
                 // 高亮（Step1 响应后的标题/模型/节点状态由 submitStep1 的 finally 再刷新）。
+                // 新会话也记下「待建立默认 rank 联动」：拓扑到达后自动固定 rank 0。
+                if (typeof window._requestEntryAutoPin === "function") {
+                    window._requestEntryAutoPin();
+                }
                 renderHistory();
                 return sessionId;
             }
 
-            async function restoreSession(id, options) {
-                var opts = options || {};
+            async function restoreSession(id) {
                 // Close any open parameter overlays from the previous session
                 closeWorkflowParams();
                 closeSimParams();
@@ -6838,53 +6841,71 @@
                     // Sync workflow from session state (may restore formula lines + set _formulaCardReady)
                     syncWorkflowFromSession(data);
 
-                    // Restore active canvas tab BEFORE canvasRebuild to avoid flash.
-                    // 切换任务时（opts.resetTab）默认回到「等效建模分析」；页面刷新则沿用
-                    // 上次标签页，但目标标签页必须对当前会话有效（结果页需要对比报告、
-                    // 仿真页需要组网数据），否则回落建模分析 —— 历史 bug：从已完成任务的
-                    // 「等效结果判定」页切到未仿真任务，标签页没有复位，停在空的结果页。
-                    var savedTab = opts.resetTab
-                        ? "modeling"
-                        : sessionStorage.getItem("activeCanvasTab");
-                    var hasReport = !!(data.comparison_report || _comparisonReport);
-                    var hasTopo = !!(
-                        data.original_topology ||
-                        data.equivalent_topology ||
-                        meshOriginal ||
-                        meshEquivalent
-                    );
-                    if (savedTab !== "simulation" && savedTab !== "result") {
-                        savedTab = "modeling";
-                    }
-                    if (savedTab === "result" && !hasReport) savedTab = "modeling";
-                    if (savedTab === "simulation" && !hasTopo) savedTab = "modeling";
-                    _setCanvasTabClasses(savedTab);
+                    // ── 默认进入视图（2026-11 产品规则，点击任务与刷新/恢复统一）──
+                    // 1) 两侧仿真结果都齐 → 默认「等效仿真验证」页签；
+                    // 2) 未开始 / 进行中 / 失败 / 只有一侧结果 → 默认「等效建模分析」；
+                    // 3) 默认页签固定原始组网 global rank 0（有等效组网时联动映射 rank）：
+                    //    建模页自动出联动对比卡，仿真页自动加载底部原始/等效双侧详情。
+                    // 不再沿用 sessionStorage 里的上次标签页；「等效结果判定」页签仍由用户手动点开。
+                    var entrySimDone = !!(data.original_simulation && data.equivalent_simulation);
+                    var entryHasOrigTopo = !!(data.original_topology || meshOriginal);
+                    var entryHasEqTopo = !!(data.equivalent_topology || meshEquivalent);
+                    var entryHasTopo = entryHasOrigTopo || entryHasEqTopo;
+                    // 完成状态必须在渲染前生效：仿真画布联动卡（_drawPinnedLink）与 rank bar
+                    // （_onSimRankPinned）分别读 window._simCompleted / _simCompleted，而它们
+                    // 原本由下方异步 fetchSimulationData 回填，首帧会丢联动卡。
+                    _simCompleted = entrySimDone;
+                    window._simCompleted = entrySimDone;
+                    checkSimReady();
+                    var entryTab = resolveEntryCanvasTab({
+                        simCompleted: entrySimDone,
+                        hasOriginalTopology: entryHasOrigTopo,
+                        hasEquivalentTopology: entryHasEqTopo,
+                    });
+                    // 先摆正标签页与 sessionStorage（异步 fetchSimulationData 会按
+                    // activeCanvasTab 决定重建哪块画布），再挂默认 rank 固定状态并重建。
+                    _setCanvasTabClasses(entryTab);
                     // 「开始仿真」按钮只在建模分析页/仿真失败（重试）时显示
                     var _simBtnEl = document.getElementById("btn-start-sim");
                     if (_simBtnEl) {
                         _simBtnEl.style.display =
-                            (savedTab === "modeling" || _simFailed) ? "" : "none";
+                            (entryTab === "modeling" || _simFailed) ? "" : "none";
                     }
 
-                    if (savedTab === "simulation") {
+                    if (entryTab === "simulation") {
                         _showActualData = true;
+                        // 先放 pin 状态再重建：首帧即带固定高亮 / 联动线 / 浮动对比卡；
+                        // 仿真值（bar + 底部双侧详情）由异步 fetchSimulationData 回填后重放。
+                        if (entryHasTopo && typeof window._stageEntryRankPin === "function") {
+                            window._stageEntryRankPin("simulation");
+                        }
                         requestAnimationFrame(function () {
                             requestAnimationFrame(function () {
                                 if (typeof canvasRebuild === "function") canvasRebuild("#sim-canvas-section");
                                 _renderSimResults();
                             });
                         });
-                    } else if (savedTab === "result") {
-                        requestAnimationFrame(function () {
-                            _renderResultPanel();
-                        });
-                    } else if (meshOriginal || meshEquivalent) {
+                    } else if (entryHasTopo) {
                         // 「等效建模分析」
                         _showActualData = false;
                         window._renderMode = null;
+                        // 先放 pin 状态再重建，首帧就带固定高亮/模型联动/对比卡
+                        if (typeof window._stageEntryRankPin === "function") {
+                            window._stageEntryRankPin("modeling");
+                        }
                         canvasRebuild();
                         if (typeof canvasRecenter === "function") canvasRecenter();
+                        // 估算值已随 loadMeshData 就绪：补画联动卡里的 rank bar
+                        if (typeof window._applyEntryRankPin === "function") {
+                            window._applyEntryRankPin("modeling", { rebuild: false });
+                        }
                     } else {
+                        // 空会话进入时还没有任何组网：先记下「待建立默认 rank 联动」，
+                        // 等 Step1 把原始组网送上来后由 loadMeshData 自动建立
+                        //（否则 Step1 渲染完成后没有 rank/模型结构图的默认联动）。
+                        if (typeof window._requestEntryAutoPin === "function") {
+                            window._requestEntryAutoPin();
+                        }
                         // Restored an empty session — clear canvas & chat to avoid
                         // showing stale content from the previously viewed session.
                         _showActualData = false;
@@ -6953,13 +6974,19 @@
                         );
                     }
 
-                    _simCompleted = !!(
-                        data.original_simulation && data.equivalent_simulation
-                    );
-                    if (_simCompleted && data.comparison_report) {
+                    // /topology 只返回 comparison_report 布尔值，对比报告对象由 GET
+                    // /simulation 异步回填；这里不能把布尔赋给 _comparisonReport
+                    // （否则「等效结果判定」页会拿到 true 而不是报告对象）。
+                    if (
+                        entrySimDone &&
+                        data.comparison_report &&
+                        typeof data.comparison_report === "object"
+                    ) {
                         _comparisonReport = data.comparison_report;
                     }
                     checkSimReady();
+                    // 仿真结果（卡指标 + 对比报告）异步到达后会 meshRebuild（清空 pin），
+                    // fetchSimulationData 内部会按 _entryAutoPin 重放默认 rank 固定。
                     fetchSimulationData();
 
                     return true;
@@ -7024,6 +7051,10 @@
                 window._simStarted = false;
                 _pendingSimData = false;
                 checkSimReady();
+                // 新建任务：等 Step1 拓扑到达后自动建立默认 rank 联动
+                if (typeof window._requestEntryAutoPin === "function") {
+                    window._requestEntryAutoPin();
+                }
                 initWorkflow();
                 // 保证「+ 新任务」打开的 Step1 表单一定拿到模型库（不受 init 提前
                 // return / 首屏加载失败影响；loader 幂等，已加载时立即返回）
@@ -7587,6 +7618,13 @@
             }
 
             function switchCanvasTab(tabName) {
+                // 用户/流程主动切到「另一个」页签：放弃「默认进入自动固定 rank」的
+                // 重放意图，避免异步仿真数据回来后覆盖用户当前的选择。
+                var curTabEl = document.querySelector("#canvas-tabs .canvas-tab.active");
+                var curTabName = curTabEl ? curTabEl.getAttribute("data-tab") : null;
+                if (tabName !== curTabName && typeof window._clearEntryAutoPin === "function") {
+                    window._clearEntryAutoPin();
+                }
                 // 引导只针对「等效建模分析」的空画布，切到其他页签即收起
                 if (tabName !== "modeling") hideStartGuide();
                 // Persist active tab across refreshes
@@ -9649,6 +9687,11 @@
             // 同时关闭上一会话的 Step2 公式回放流：Step2 已由后端原子落库，回放流只是
             // 动画，断掉不丢数据；不关的话旧流事件会继续驱动新会话的公式卡/节点状态。
             function _resetSimulationUiForSessionSwitch() {
+                // 切会话：放弃上一会话「默认进入自动固定 rank」的重放意图，
+                // 并彻底清空上一会话的全部 rank 固定/联动状态 —— 否则新会话
+                // 手动打开仿真页时会看到遗留的幽灵 pin（底部详情还会按旧 rank 渲染）。
+                if (typeof window._clearEntryAutoPin === "function") window._clearEntryAutoPin();
+                if (typeof window._clearAllRankPins === "function") window._clearAllRankPins();
                 _closeSimSocket();
                 _closeAllStep2Streams();
                 _simTaskBubbles = {};
@@ -10145,18 +10188,8 @@
             // ── Init ──
             renderHistory();
 
-            // Switch to saved tab BEFORE any async work to avoid modeling-tab flash
-            (function () {
-                var savedTab = sessionStorage.getItem("activeCanvasTab");
-                var hasSession = !!(JSON.parse(localStorage.getItem("mesh_session") || "{}")).id;
-                if ((savedTab !== "simulation" && savedTab !== "result") || !hasSession) return;
-                document.querySelectorAll(".canvas-tab").forEach(function (t) {
-                    t.classList.toggle("active", t.getAttribute("data-tab") === savedTab);
-                });
-                document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
-                    p.classList.toggle("active", p.id === "tab-panel-" + savedTab);
-                });
-            })();
+            // 默认页签由 restoreSession 按会话状态决定（不再在异步恢复前预切标签页，
+            // 否则会在「上次停在仿真页、新会话未仿真」时闪一下错误的页签）。
 
             // Callback: rank click on simulation tab refreshes bar chart + results
             // Must be defined BEFORE restoreSession so it's available on refresh
@@ -10208,15 +10241,7 @@
                     document.getElementById("chat-input").focus();
                     return;
                 }
-                // If restore failed and we pre-switched to simulation tab, revert to modeling
-                if (sessionStorage.getItem("activeCanvasTab") === "simulation") {
-                    document.querySelectorAll(".canvas-tab").forEach(function (t) {
-                        t.classList.toggle("active", t.getAttribute("data-tab") === "modeling");
-                    });
-                    document.querySelectorAll(".canvas-tab-panel").forEach(function (p) {
-                        p.classList.toggle("active", p.id === "tab-panel-modeling");
-                    });
-                }
+                // 恢复失败（无会话 / 服务重启）：保持 HTML 默认的「等效建模分析」页签
                 initWorkflow();
                 _updateSimDownloadEntry();
                 document.getElementById("chat-input").focus();
@@ -10289,7 +10314,7 @@
             })();
         </script>
         <script src="static/moe-arch-renderer.js?v=20261008"></script>
-        <script src="static/topo-renderer.js?v=20261109"></script>
+        <script src="static/topo-renderer.js?v=20261112d"></script>
         <script src="static/sim-data-stream.js?v=20260506"></script>
     </body>
 </html>
